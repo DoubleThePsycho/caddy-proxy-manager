@@ -85,7 +85,7 @@ It does not store IP addresses, user agents or any other request metadata, and i
 
 This section is the information Articles 13 and 14 of the GDPR require for the usage ping.
 
-- **Controller:** the publisher of Ingressi, [legal name, address and privacy contact e-mail to be added before release].
+- **Controller:** FUO.FI Cybersecurity di Nicolò Campari (P.IVA 04388461206), the publisher of Ingressi. The postal address is on the [imprint](https://ingres.si/legal/imprint/). Privacy contact: [privacy@ingres.si](mailto:privacy@ingres.si).
 - **What is processed:** the JSON document above. The install id is random and the rest is ranges and yes/no answers, but the id singles out one install, which can belong to one person (a homelab), so it is treated as personal data. The IP address the request comes from is seen by the receiving service's provider in transit and is not stored.
 - **Purpose:** knowing how many installs run which versions, editions and features, to decide which releases still need security fixes, what to support and what to deprecate.
 - **Legal basis:** consent (Article 6(1)(a) GDPR), which also covers sending information from your server under Article 5(3) of the ePrivacy Directive (in Italy, Article 122 of the Privacy Code). Nothing is sent unless an administrator answers yes or the operator sets `USAGE_PING_ENABLED`; both answers are offered alike and neither is preselected. An install only ever sends after a yes, and its audit log records who answered and when.
