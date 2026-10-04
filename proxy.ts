@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import crypto from "node:crypto";
 import { auth } from "@/src/lib/auth";
+import { MFA_SETUP_PATH, mfaEnrolmentRequired } from "@/src/lib/mfa";
 import { buildCsp } from "@/src/lib/csp";
+import { isHaStandby } from "@/ee/high-availability/role";
+import { isRequestPathRoute } from "@/ee/high-availability/request-path";
+import { standbyResponse } from "@/ee/high-availability/standby-response";
+import { replicaRefusal, replicaRefusedResponse } from "@/ee/high-availability/replica-admission";
 
 /**
  * Next.js Proxy for route protection.
@@ -39,6 +44,35 @@ function withSecurityHeaders(req: NextRequest): NextResponse {
 export default async function middleware(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
 
+  // A high availability standby (ee/docs/high-availability.md) answers the
+  // health check and the request-path routes only; the dashboard and the API
+  // are the leader's. The routes continue to their usual handling below.
+  if (isHaStandby() && pathname !== "/api/health" && !isRequestPathRoute(pathname)) {
+    return standbyResponse(pathname);
+  }
+
+  // A PostgreSQL replica the cluster did not admit (src/lib/cluster-nodes.ts:
+  // the license rule for a new replica) serves nothing but its health check.
+  const refusal = replicaRefusal();
+  if (refusal && pathname !== "/api/health") {
+    return replicaRefusedResponse(pathname, refusal);
+  }
+
+  // The API monetization gate: Caddy calls it once for every request to a
+  // monetized host, and it authenticates Caddy with its own gate token. It
+  // skips the session lookup and the page headers to stay cheap.
+  if (pathname === "/api/monetization/gate") {
+    return NextResponse.next();
+  }
+
+  // White-label logos and favicon: public, because the sign-in pages and the
+  // forward-auth portal show them before sign-in. The route sets its own
+  // image headers (nosniff, a sandboxing CSP), which the page policy below
+  // would replace.
+  if (pathname.startsWith("/api/branding/")) {
+    return NextResponse.next();
+  }
+
   // Allow public routes. They get the same security headers as authenticated
   // pages as defense in depth. After a credential login the login page loads
   // the dashboard as a new document, which gets its own policy and nonce.
@@ -48,8 +82,19 @@ export default async function middleware(req: NextRequest) {
     pathname.startsWith("/api/auth") ||
     pathname === "/api/health" ||
     pathname === "/api/instances/sync" ||
+    // Pull replicas (ee/fleet): the route authenticates the replica's pull
+    // credential and proof of its sync key itself.
+    pathname === "/api/instances/pull" ||
     pathname.startsWith("/api/v1/") ||
-    pathname.startsWith("/api/forward-auth/")
+    // SCIM provisioning (ee/scim): the route handlers authenticate the
+    // identity provider's SCIM token themselves.
+    pathname.startsWith("/scim/v2/") ||
+    pathname.startsWith("/api/forward-auth/") ||
+    // API monetization: the Stripe webhook, the consumer API and the consumer
+    // portal authenticate with signatures, API keys and portal tokens.
+    pathname.startsWith("/api/monetization/") ||
+    pathname === "/api-portal" ||
+    pathname.startsWith("/api-portal/")
   ) {
     return withSecurityHeaders(req);
   }
@@ -62,6 +107,12 @@ export default async function middleware(req: NextRequest) {
   if (!isAuthenticated && !pathname.startsWith("/login")) {
     const loginUrl = new URL("/login", req.url);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // An account the MFA policy requires to set up MFA, after the grace
+  // period, can only reach the setup page (src/lib/mfa.ts).
+  if (session?.user && pathname !== MFA_SETUP_PATH && await mfaEnrolmentRequired(Number(session.user.id))) {
+    return NextResponse.redirect(new URL(MFA_SETUP_PATH, req.url));
   }
 
   return withSecurityHeaders(req);

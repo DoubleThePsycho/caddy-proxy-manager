@@ -13,23 +13,18 @@ const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null =>
-      value ? new Date(value).toISOString() : null,
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 vi.mock('../../src/lib/api-auth', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/lib/api-auth')>()),
+  requireApiPermission: vi.fn((request: unknown) => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireApiAdmin(request))),
   requireApiAdmin: vi.fn(),
 }));
 vi.mock('../../src/lib/auth', () => ({
   auth: vi.fn(),
   checkSameOrigin: vi.fn(() => null),
+  requirePermission: vi.fn(() => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireAdmin())),
   requireAdmin: vi.fn(),
 }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
@@ -250,7 +245,11 @@ describe('DELETE /api/v1/instances/{id}/sync-key-pin', () => {
 
     for (const [id, error] of [
       [instance.id + 1, 'Instance not found'],
+      // Text no id column can hold is no instance, on SQLite and PostgreSQL alike.
       ['not-a-number', 'Instance not found'],
+      ['1.5', 'Instance not found'],
+      ['2147483648', 'Instance not found'],
+      ['99999999999999', 'Instance not found'],
       [instance.id, 'Sync key pin not found'],
     ] as const) {
       const response = await resetInstancePinRoute(request('DELETE'), params(id));
@@ -449,8 +448,8 @@ describe('Settings page actions', () => {
 
     expect(result).toEqual({
       success: true,
-      message: `Sync key pin ${key.keyId} reset. The next sync pins the key the slave presents; use Sync now, ` +
-        "then check the new key id against the slave's.",
+      message: `Sync key pin ${key.keyId} reset. The next sync pins the key the replica presents; use Sync now, ` +
+        "then check the new key id against the replica's.",
     });
     expect(await getSyncKeyPin(SLAVE_URL)).toBeNull();
     expect(revalidatePath).toHaveBeenCalledWith('/settings');
@@ -472,8 +471,8 @@ describe('Settings page actions', () => {
   });
 
   it.each([
-    ['no slave', {}, 'Invalid slave'],
-    ['a malformed instance id', { instanceId: 'abc' }, 'Invalid slave'],
+    ['no slave', {}, 'Invalid replica'],
+    ['a malformed instance id', { instanceId: 'abc' }, 'Invalid replica'],
     ['an unknown instance', { instanceId: '999' }, 'Instance not found'],
     ['a URL without a pin', { slaveUrl: OTHER_URL }, 'Sync key pin not found'],
   ])('report %s', async (_case, fields, message) => {
@@ -494,7 +493,7 @@ describe('Settings page actions', () => {
     process.env.INSTANCE_MODE = 'standalone';
     expect(await resetSlaveSyncKeyPinAction(null, fields)).toEqual({
       success: false,
-      message: 'Instance mode must be set to master to manage slaves',
+      message: 'Instance mode must be set to master to manage replicas',
     });
 
     process.env.INSTANCE_MODE = 'master';
@@ -527,7 +526,7 @@ describe('Settings page', () => {
   type SettingsProps = Parameters<typeof SettingsClient>[0];
 
   async function renderSettings() {
-    const element = (await SettingsPage()) as { props: SettingsProps };
+    const element = (await SettingsPage({ searchParams: Promise.resolve({ section: 'sync' }) })) as { props: SettingsProps };
     return { props: element.props, html: renderToStaticMarkup(createElement(SettingsClient, element.props)) };
   }
 
@@ -582,12 +581,12 @@ describe('Settings page', () => {
 
     expect(html).toContain(`${pin.keyId}</span>, pinned ${formatDateTimeUtc(pin.pinnedAt)} UTC (first use)`);
     expect(html).toContain(`${envPin.keyId}</span>, pinned ${formatDateTimeUtc(envPin.pinnedAt)} UTC (rotated)`);
-    expect(html).toContain(`${orphanPin.keyId}</span>, pinned ${formatDateTimeUtc(orphanPin.pinnedAt)} UTC (set by an admin)`);
+    expect(html).toContain(`${orphanPin.keyId}</span>, pinned ${formatDateTimeUtc(orphanPin.pinnedAt)} UTC (set by an administrator)`);
     expect(html).toContain(`${explicitKey.keyId}</span> (set in INSTANCE_SLAVES)`);
     expect(html).toContain(`${fullKey.keyId}</span> (full key set in INSTANCE_SLAVES)`);
-    expect(html.match(/Sync key not pinned yet: pinned on the next sealed sync, or pin the slave(’|&rsquo;|&#x27;)s key now/g))
+    expect(html.match(/Sync key not pinned yet: pinned on the next sealed sync, or pin the replica(’|&rsquo;|&#x27;)s key now/g))
       .toHaveLength(2);
-    expect(html).toContain('Key pins without a slave');
+    expect(html).toContain('Key pins without a replica');
     // Every slave whose pin the master keeps, pinned or not, and the pin without a slave.
     expect(html.match(/>Key pin</g)).toHaveLength(5);
     expect(html.match(/>Edit</g)).toHaveLength(2);
@@ -629,8 +628,8 @@ describe('Settings page', () => {
 
     const own = getSyncPublicKey();
     expect(props.instanceSync.slave).toMatchObject({ syncKeyId: own.keyId, syncPublicKey: own.publicKey.toString('base64') });
-    expect(html).toContain(`sync key id is <span class="font-mono">${own.keyId}</span>`);
-    expect(html).toContain(`<span class="font-mono break-all">${own.publicKey.toString('base64')}</span>`);
+    expect(html).toContain(`sync key id is <span class="num">${own.keyId}</span>`);
+    expect(html).toContain(`<span class="num break-all">${own.publicKey.toString('base64')}</span>`);
   });
 });
 
@@ -651,12 +650,12 @@ describe('Settings page dialogs', () => {
 
     expect(html).toContain('name="publicKey"');
     // The full pinned key, to compare with the slave's.
-    expect(html).toContain(`Pinned public key: <span class="font-mono break-all">${base64(key)}</span>`);
+    expect(html).toContain(`Pinned public key: <span class="num break-all">${base64(key)}</span>`);
     expect(html).toContain('>Pin key<');
     expect(html).toContain('>Reset key pin<');
     expect(html).toContain('<input type="hidden" name="instanceId" value="3"/>');
     // The legacy payload a 405 gets once nothing is pinned.
-    expect(html).toMatch(/Until a key is\s+pinned again, anything answering there like a slave on v1\.12\.0 or earlier \(HTTP 405\) receives the\s+certificate private keys unsealed/);
+    expect(html).toMatch(/Until a key is\s+pinned again, anything answering there like a replica on v1\.12\.0 or earlier \(HTTP 405\) receives the\s+certificate private keys unsealed/);
     expect(html).toContain('pinning its new key above avoids');
 
     const unpinned = renderOpen(createElement(SyncKeyPinDialogBody, {
@@ -737,8 +736,8 @@ describe('PUT /api/v1/instances/{id}/sync-key-pin', () => {
     expect(await pinEvents()).toEqual([]);
   });
 
-  it('answers 404 for an unknown instance', async () => {
-    const response = await pinInstanceKeyRoute(request('PUT', '', { publicKey: base64(slaveKey()) }), params(999));
+  it.each([999, 'not-a-number', '2147483648'])('answers 404 for an unknown instance (%s)', async (id) => {
+    const response = await pinInstanceKeyRoute(request('PUT', '', { publicKey: base64(slaveKey()) }), params(id));
 
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: 'Instance not found' });
@@ -858,7 +857,7 @@ describe('Settings page actions for editing and pinning', () => {
 
     expect(await updateSlaveInstanceAction(null, form({
       instanceId: String(instance.id), name: 'Renamed', baseUrl: `${SLAVE_URL}/`, apiToken: '',
-    }))).toEqual({ success: true, message: 'Slave instance "Renamed" updated' });
+    }))).toEqual({ success: true, message: 'Replica "Renamed" updated' });
 
     expect(await getInstance(instance.id)).toMatchObject({ name: 'Renamed', baseUrl: SLAVE_URL });
     expect(decryptSecret((await getInstance(instance.id))!.apiToken)).toBe(TOKEN);
@@ -875,7 +874,7 @@ describe('Settings page actions for editing and pinning', () => {
   });
 
   it.each<[string, Record<string, string>, string]>([
-    ['no instance', { name: 'x', baseUrl: SLAVE_URL }, 'Invalid slave'],
+    ['no instance', { name: 'x', baseUrl: SLAVE_URL }, 'Invalid replica'],
     ['no name', { instanceId: 'ID', name: '', baseUrl: SLAVE_URL }, 'Name and base URL are required'],
     ['a weak token', { instanceId: 'ID', name: 'x', baseUrl: SLAVE_URL, apiToken: 'short' },
       'Sync token must be at least 32 characters. Consider using a randomly generated 32-byte token.'],
@@ -918,15 +917,15 @@ describe('Settings page actions for editing and pinning', () => {
     process.env.INSTANCE_MODE = 'standalone';
     expect(await pinSlaveSyncKeyAction(null, fields)).toEqual({
       success: false,
-      message: 'Instance mode must be set to master to manage slaves',
+      message: 'Instance mode must be set to master to manage replicas',
     });
     expect(await updateSlaveInstanceAction(null, form({ instanceId: String(instance.id), name: 'x', baseUrl: OTHER_URL })))
-      .toEqual({ success: false, message: 'Instance mode must be set to master to manage slaves' });
+      .toEqual({ success: false, message: 'Instance mode must be set to master to manage replicas' });
     process.env.INSTANCE_MODE = 'master';
     vi.mocked(requireAdmin).mockRejectedValue(new Error('Administrator privileges required'));
     expect(await pinSlaveSyncKeyAction(null, fields)).toEqual({ success: false, message: 'Failed to pin sync key' });
     expect(await updateSlaveInstanceAction(null, form({ instanceId: String(instance.id), name: 'x', baseUrl: OTHER_URL })))
-      .toEqual({ success: false, message: 'Failed to update slave instance' });
+      .toEqual({ success: false, message: 'Failed to update the replica' });
 
     expect(await getSyncKeyPin(SLAVE_URL)).toBeNull();
     expect(await getInstance(instance.id)).toMatchObject({ name: 'Replica', baseUrl: SLAVE_URL });

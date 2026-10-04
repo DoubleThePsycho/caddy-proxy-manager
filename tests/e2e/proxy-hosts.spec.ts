@@ -1,151 +1,114 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import { findHostRow, proxyHostIdByName } from '../helpers/proxy-api';
 
 const API_PROXY_HOSTS = 'http://localhost:3000/api/v1/proxy-hosts';
-const API_AUTHENTIK_SETTINGS = 'http://localhost:3000/api/v1/settings/authentik';
+
+/** Opens the row menu of the host named `name` (found with the list's search). */
+async function openRowMenu(page: Page, name: string) {
+  const row = await findHostRow(page, name);
+  await row.getByRole('button', { name: /^more actions for/i }).click();
+  return row;
+}
+
+/**
+ * Runs `fn` with one host in the list, so the table (and its sortable
+ * headers) shows even when this spec runs on an empty stack.
+ */
+async function withHost(page: Page, name: string, domain: string, fn: () => Promise<void>) {
+  const origin = new URL(page.url()).origin;
+  const created = await (await page.request.post(API_PROXY_HOSTS, {
+    headers: { Origin: origin },
+    data: { name, domains: [domain], upstreams: ['localhost:9978'] },
+  })).json() as { id: number };
+  try {
+    await page.reload();
+    await fn();
+  } finally {
+    await page.request.delete(`${API_PROXY_HOSTS}/${created.id}`, { headers: { Origin: origin } });
+  }
+}
 
 test.describe('Proxy Hosts', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/proxy-hosts');
   });
 
-  test('page loads with Create Host button visible', async ({ page }) => {
-    await expect(page.getByRole('button', { name: /create host/i })).toBeVisible();
+  test('page loads with the New proxy host link', async ({ page }) => {
+    await expect(page.getByRole('heading', { level: 1, name: /proxy hosts/i })).toBeVisible();
+    // The header's link (an empty list shows a second one in its empty state).
+    await expect(page.getByRole('link', { name: /new proxy host/i }).first()).toHaveAttribute('href', '/proxy-hosts/new');
   });
 
-  test('clicking Create Host opens a dialog with form fields', async ({ page }) => {
-    await page.getByRole('button', { name: /create host/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByLabel(/domains/i)).toBeVisible();
+  test('the create deep link opens the host editor', async ({ page }) => {
+    await page.goto('/proxy-hosts?create=1');
+    await expect(page).toHaveURL(/\/proxy-hosts\/new$/);
+    await expect(page.getByLabel('Add domains')).toBeVisible();
   });
 
-  test('create a proxy host — appears in the table', async ({ page }) => {
-    await page.getByRole('button', { name: /create host/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-
-    await page.getByLabel('Name').fill('E2E Test Host');
-    await page.getByLabel(/domains/i).fill('e2etest.local');
-    // Upstream field uses placeholder text, not a label
-    await page.getByPlaceholder('10.0.0.5:8080').fill('localhost:9999');
-
-    await page.getByRole('button', { name: /^create$/i }).click();
-
-    // Dialog should close and host appear in table
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('table').getByText('E2E Test Host')).toBeVisible({ timeout: 10000 });
-  });
-
-  test('clicking Name / Domain header sorts the table', async ({ page }) => {
-    const sortBtn = page.getByRole('button', { name: 'Name / Domain' });
-    await expect(sortBtn).toBeVisible({ timeout: 10_000 });
-
-    // Click to sort ascending
-    await sortBtn.click();
-    await expect(page).toHaveURL(/sortBy=name/);
-    await expect(page).toHaveURL(/sortDir=asc/);
-
-    // Click again to toggle to descending
-    await sortBtn.click();
-    await expect(page).toHaveURL(/sortDir=desc/);
-  });
-
-  test('clicking Status header sorts by enabled state', async ({ page }) => {
-    const sortBtn = page.getByRole('button', { name: 'Status' });
-    await expect(sortBtn).toBeVisible();
-
-    await sortBtn.click();
-    await expect(page).toHaveURL(/sortBy=enabled/);
-  });
-
-  /**
-   * Regression test for #119: Advanced Options (HSTS Subdomains, Skip HTTPS
-   * Validation) were not saved because the form field names used camelCase
-   * (hstsSubdomains, skipHttpsHostnameValidation) while the server action
-   * expected snake_case (hsts_subdomains, skip_https_hostname_validation).
-   */
-  test('advanced options are saved and persist after edit (#119)', async ({ page }) => {
-    // Create a host (defaults: HSTS Subdomains ON, Skip HTTPS OFF)
-    await page.getByRole('button', { name: /create host/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-
-    await page.getByLabel('Name').fill('Advanced Options Test');
-    await page.getByLabel(/domains/i).fill('advanced-opts-test.local');
-    await page.getByPlaceholder('10.0.0.5:8080').fill('localhost:9990');
-    await page.getByRole('button', { name: /^create$/i }).click();
-
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('table').getByText('Advanced Options Test')).toBeVisible({ timeout: 10000 });
-
+  test('the edit deep link opens the host editor of that host', async ({ page }) => {
+    const origin = new URL(page.url()).origin;
+    const created = await (await page.request.post(API_PROXY_HOSTS, {
+      headers: { Origin: origin },
+      data: { name: 'Edit Deep Link Host', domains: ['edit-deep-link.local'], upstreams: ['localhost:9979'] },
+    })).json() as { id: number };
     try {
-      // Find the created host in the API to verify initial state
-      const listResp = await page.request.get(API_PROXY_HOSTS);
-      const hosts = await listResp.json() as Array<{ id: number; name: string; hstsSubdomains: boolean; skipHttpsHostnameValidation: boolean }>;
-      const created = hosts.find((h) => h.name === 'Advanced Options Test');
-      expect(created).toBeDefined();
-      expect(created!.hstsSubdomains).toBe(true);
-      expect(created!.skipHttpsHostnameValidation).toBe(false);
-
-      // Open edit dialog for the host
-      const row = page.locator('tr', { hasText: 'Advanced Options Test' });
-      await row.getByRole('button').first().click();
-      await page.getByRole('menuitem', { name: /edit/i }).click();
-      await expect(page.getByRole('dialog')).toBeVisible();
-
-      // Locate Advanced Options toggles via their hidden _present inputs, which
-      // uniquely identify each row and avoid ambiguity with ancestor divs.
-      const dialog = page.getByRole('dialog');
-      const hstsSwitch = dialog.locator('div:has(> input[name="hstsSubdomainsPresent"])').getByRole('switch');
-      const skipSwitch = dialog.locator('div:has(> input[name="skipHttpsHostnameValidationPresent"])').getByRole('switch');
-
-      // Verify initial state matches what was saved
-      await expect(hstsSwitch).toHaveAttribute('data-state', 'checked');
-      await expect(skipSwitch).toHaveAttribute('data-state', 'unchecked');
-
-      // Toggle HSTS Subdomains OFF and Skip HTTPS Validation ON
-      await hstsSwitch.click();
-      await skipSwitch.click();
-
-      await expect(hstsSwitch).toHaveAttribute('data-state', 'unchecked');
-      await expect(skipSwitch).toHaveAttribute('data-state', 'checked');
-
-      // Save the changes
-      await dialog.getByRole('button', { name: /save changes/i }).click();
-      await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 10000 });
-
-      // Verify via API that the settings were actually persisted
-      const afterResp = await page.request.get(`${API_PROXY_HOSTS}/${created!.id}`);
-      const after = await afterResp.json() as { hstsSubdomains: boolean; skipHttpsHostnameValidation: boolean };
-      expect(after.hstsSubdomains).toBe(false);
-      expect(after.skipHttpsHostnameValidation).toBe(true);
-
-      // Reopen edit dialog and verify UI reflects saved state
-      await row.getByRole('button').first().click();
-      await page.getByRole('menuitem', { name: /edit/i }).click();
-      await expect(page.getByRole('dialog')).toBeVisible();
-
-      const dialog2 = page.getByRole('dialog');
-      const hstsSwitch2 = dialog2.locator('div:has(> input[name="hstsSubdomainsPresent"])').getByRole('switch');
-      const skipSwitch2 = dialog2.locator('div:has(> input[name="skipHttpsHostnameValidationPresent"])').getByRole('switch');
-
-      await expect(hstsSwitch2).toHaveAttribute('data-state', 'unchecked');
-      await expect(skipSwitch2).toHaveAttribute('data-state', 'checked');
-
-      await dialog2.getByRole('button', { name: /cancel|close/i }).first().click();
+      await page.goto(`/proxy-hosts?edit=${created.id}`);
+      await expect(page).toHaveURL(new RegExp(`/proxy-hosts/${created.id}/edit$`));
+      await expect(page.getByRole('heading', { level: 1, name: 'Edit Edit Deep Link Host' })).toBeVisible();
     } finally {
-      // Cleanup: delete the test host
-      const listResp2 = await page.request.get(API_PROXY_HOSTS);
-      const hosts2 = await listResp2.json() as Array<{ id: number; name: string }>;
-      const toDelete = hosts2.find((h) => h.name === 'Advanced Options Test');
-      if (toDelete) {
-        await page.request.delete(`${API_PROXY_HOSTS}/${toDelete.id}`);
-      }
+      await page.request.delete(`${API_PROXY_HOSTS}/${created.id}`, { headers: { Origin: origin } });
+    }
+  });
+
+  test('clicking the Host header sorts the table', async ({ page }) => {
+    await withHost(page, 'Sort By Host', 'sort-by-host.local', async () => {
+      const sortBtn = page.getByRole('button', { name: 'Host', exact: true });
+      await expect(sortBtn).toBeVisible({ timeout: 10_000 });
+
+      // Click to sort ascending
+      await sortBtn.click();
+      await expect(page).toHaveURL(/sortBy=host/);
+      await expect(page).toHaveURL(/sortDir=asc/);
+
+      // Click again to toggle to descending
+      await sortBtn.click();
+      await expect(page).toHaveURL(/sortDir=desc/);
+    });
+  });
+
+  test('clicking Status header sorts by status', async ({ page }) => {
+    await withHost(page, 'Sort By Status', 'sort-by-status.local', async () => {
+      const sortBtn = page.getByRole('button', { name: 'Status', exact: true });
+      await expect(sortBtn).toBeVisible();
+
+      await sortBtn.click();
+      await expect(page).toHaveURL(/sortBy=status/);
+    });
+  });
+
+  test('the status filter shows disabled hosts only', async ({ page }) => {
+    const origin = new URL(page.url()).origin;
+    const created = await (await page.request.post(API_PROXY_HOSTS, {
+      headers: { Origin: origin },
+      data: { name: 'Status Filter Disabled', domains: ['status-filter-disabled.local'], upstreams: ['localhost:9984'], enabled: false },
+    })).json() as { id: number };
+    try {
+      await page.goto('/proxy-hosts?search=status-filter');
+      await page.getByRole('group', { name: 'Status' }).getByRole('button', { name: /^Disabled/ }).click();
+      await expect(page).toHaveURL(/status=disabled/);
+      const row = page.locator('tr', { hasText: 'Status Filter Disabled' });
+      await expect(row).toBeVisible({ timeout: 10_000 });
+      await expect(row.getByText('Disabled', { exact: true })).toBeVisible();
+    } finally {
+      await page.request.delete(`${API_PROXY_HOSTS}/${created.id}`, { headers: { Origin: origin } });
     }
   });
 
   /**
    * Regression test for #120: Toggling a proxy host disabled then re-enabled
-   * via the row-level switch wiped custom configs (redirects, rewrite,
-   * location_rules) because they were not included in existingMeta when
-   * updateProxyHost was called with only { enabled }.
+   * from the list wiped custom configs (redirects, rewrite, location_rules)
+   * because they were not included in existingMeta when updateProxyHost was
+   * called with only { enabled }.
    */
   test('toggling enabled/disabled preserves redirects and rewrite config (#120)', async ({ page }) => {
     const origin = new URL(page.url()).origin;
@@ -166,34 +129,28 @@ test.describe('Proxy Hosts', () => {
     expect(created.redirects).toHaveLength(1);
     expect(created.rewrite).toBeDefined();
 
-    try {
-      await page.reload();
-      await expect(page.getByRole('table').getByText('Toggle Persistence Test')).toBeVisible({ timeout: 10000 });
+    const readHost = async () => (await page.request.get(`${API_PROXY_HOSTS}/${created.id}`)).json() as Promise<{
+      redirects: unknown[]; rewrite: unknown; enabled: boolean
+    }>;
 
-      // Click the Switch in the row to disable the host
-      const row = page.locator('tr', { hasText: 'Toggle Persistence Test' });
-      const rowSwitch = row.getByRole('switch').first();
-      await expect(rowSwitch).toHaveAttribute('data-state', 'checked');
-      await rowSwitch.click();
-      await expect(rowSwitch).toHaveAttribute('data-state', 'unchecked', { timeout: 10000 });
+    try {
+      // Disable the host from its row menu
+      await openRowMenu(page, 'Toggle Persistence Test');
+      await page.getByRole('menuitem', { name: 'Disable' }).click();
+      await expect.poll(async () => (await readHost()).enabled, { timeout: 10000 }).toBe(false);
 
       // Verify redirects and rewrite survive the disable toggle
-      const afterDisable = await (await page.request.get(`${API_PROXY_HOSTS}/${created.id}`)).json() as {
-        redirects: unknown[]; rewrite: unknown; enabled: boolean
-      };
-      expect(afterDisable.enabled).toBe(false);
+      const afterDisable = await readHost();
       expect(afterDisable.redirects).toHaveLength(1);
       expect(afterDisable.rewrite).toBeDefined();
 
       // Re-enable
-      await rowSwitch.click();
-      await expect(rowSwitch).toHaveAttribute('data-state', 'checked', { timeout: 10000 });
+      await openRowMenu(page, 'Toggle Persistence Test');
+      await page.getByRole('menuitem', { name: 'Enable' }).click();
+      await expect.poll(async () => (await readHost()).enabled, { timeout: 10000 }).toBe(true);
 
       // Verify redirects and rewrite survive the re-enable toggle
-      const afterEnable = await (await page.request.get(`${API_PROXY_HOSTS}/${created.id}`)).json() as {
-        redirects: unknown[]; rewrite: unknown; enabled: boolean
-      };
-      expect(afterEnable.enabled).toBe(true);
+      const afterEnable = await readHost();
       expect(afterEnable.redirects).toHaveLength(1);
       expect(afterEnable.rewrite).toBeDefined();
     } finally {
@@ -201,281 +158,19 @@ test.describe('Proxy Hosts', () => {
     }
   });
 
-  test('create host Authentik fields are prefilled from global defaults (#141)', async ({ page }) => {
-    const origin = new URL(page.url()).origin;
-    const defaultSettings = {
-      outpostDomain: 'auth.example.test',
-      outpostUpstream: 'http://authentik.internal:9000',
-      authEndpoint: '/outpost.goauthentik.io/auth/caddy',
-    };
-
-    const originalSettingsResp = await page.request.get(API_AUTHENTIK_SETTINGS);
-    expect(originalSettingsResp.ok()).toBeTruthy();
-    const originalSettings = await originalSettingsResp.json() as Partial<typeof defaultSettings>;
-
-    try {
-      await page.goto('/settings');
-      const sidebar = page.locator('aside[aria-label="Settings navigation"]');
-      const navBtn = sidebar.getByRole('button', { name: 'Authentik Defaults', exact: true });
-      await expect(navBtn).toBeVisible({ timeout: 10_000 });
-      await navBtn.click();
-
-      await page.locator('input[name="outpostDomain"]').fill(defaultSettings.outpostDomain);
-      await page.locator('input[name="outpostUpstream"]').fill(defaultSettings.outpostUpstream);
-      await page.locator('input[name="authEndpoint"]').fill(defaultSettings.authEndpoint);
-      await page.getByRole('button', { name: /save authentik defaults/i }).click();
-      await expect(page.getByText(/authentik defaults saved successfully/i)).toBeVisible({ timeout: 10000 });
-
-      await page.goto('/proxy-hosts');
-      await page.getByRole('button', { name: /create host/i }).click();
-      await expect(page.getByRole('dialog')).toBeVisible();
-
-      const dialog = page.getByRole('dialog');
-      const authentikSection = dialog.locator('div:has(> input[name="authentikPresent"])');
-      const authentikSwitch = authentikSection.getByRole('switch');
-      await expect(authentikSwitch).toHaveAttribute('data-state', 'unchecked');
-
-      await authentikSwitch.click();
-      await expect(authentikSwitch).toHaveAttribute('data-state', 'checked');
-
-      await expect(dialog.locator('input[name="authentikOutpostDomain"]')).toHaveValue(defaultSettings.outpostDomain);
-      await expect(dialog.locator('input[name="authentikOutpostUpstream"]')).toHaveValue(defaultSettings.outpostUpstream);
-      await expect(dialog.locator('input[name="authentikAuthEndpoint"]')).toHaveValue(defaultSettings.authEndpoint);
-    } finally {
-      if (originalSettings.outpostDomain && originalSettings.outpostUpstream) {
-        const restoreResp = await page.request.put(API_AUTHENTIK_SETTINGS, {
-          headers: { Origin: origin },
-          data: {
-            outpostDomain: originalSettings.outpostDomain,
-            outpostUpstream: originalSettings.outpostUpstream,
-            authEndpoint: originalSettings.authEndpoint ?? '',
-          },
-        });
-        expect(restoreResp.ok()).toBeTruthy();
-      }
-    }
-  });
-
-  /**
-   * Regression (#232): Authentik defaults reached the create dialog but not the
-   * edit dialog — `EditHostDialog` never accepted an `authentikDefaults` prop, so
-   * `AuthentikFields` fell back to empty strings. Enabling Authentik on an
-   * existing host left Outpost Domain / Upstream / Auth Endpoint blank and the
-   * save failed on the required fields, while new hosts worked fine.
-   */
-  test('edit host Authentik fields are prefilled from global defaults (#232)', async ({ page }) => {
-    const origin = new URL(page.url()).origin;
-    const defaultSettings = {
-      outpostDomain: 'edit-defaults.example.test',
-      outpostUpstream: 'http://authentik-edit.internal:9000',
-      authEndpoint: '/outpost.goauthentik.io/auth/caddy',
-    };
-
-    const originalSettings = await (await page.request.get(API_AUTHENTIK_SETTINGS)).json() as Partial<typeof defaultSettings>;
-
-    // A pre-existing host with no Authentik config of its own.
-    const createResp = await page.request.post(API_PROXY_HOSTS, {
-      headers: { Origin: origin },
-      data: {
-        name: 'Authentik Edit Defaults Host',
-        domains: ['authentik-edit-defaults.local'],
-        upstreams: ['localhost:9987'],
-      },
-    });
-    expect(createResp.ok()).toBeTruthy();
-    const created = await createResp.json() as { id: number };
-
-    try {
-      const saveResp = await page.request.put(API_AUTHENTIK_SETTINGS, {
-        headers: { Origin: origin },
-        data: defaultSettings,
-      });
-      expect(saveResp.ok()).toBeTruthy();
-
-      await page.goto('/proxy-hosts');
-      const row = page.locator('tr', { hasText: 'Authentik Edit Defaults Host' });
-      await expect(row).toBeVisible({ timeout: 10_000 });
-      await row.getByRole('button', { name: /open menu/i }).click();
-      await page.getByRole('menuitem', { name: 'Edit' }).click();
-
-      const dialog = page.getByRole('dialog');
-      await expect(dialog).toBeVisible();
-
-      const authentikSection = dialog.locator('div:has(> input[name="authentikPresent"])');
-      const authentikSwitch = authentikSection.getByRole('switch');
-      await expect(authentikSwitch).toHaveAttribute('data-state', 'unchecked');
-      await authentikSwitch.click();
-      await expect(authentikSwitch).toHaveAttribute('data-state', 'checked');
-
-      await expect(dialog.locator('input[name="authentikOutpostDomain"]')).toHaveValue(defaultSettings.outpostDomain);
-      await expect(dialog.locator('input[name="authentikOutpostUpstream"]')).toHaveValue(defaultSettings.outpostUpstream);
-      await expect(dialog.locator('input[name="authentikAuthEndpoint"]')).toHaveValue(defaultSettings.authEndpoint);
-    } finally {
-      await page.request.delete(`${API_PROXY_HOSTS}/${created.id}`, { headers: { Origin: origin } });
-      if (originalSettings.outpostDomain && originalSettings.outpostUpstream) {
-        await page.request.put(API_AUTHENTIK_SETTINGS, {
-          headers: { Origin: origin },
-          data: {
-            outpostDomain: originalSettings.outpostDomain,
-            outpostUpstream: originalSettings.outpostUpstream,
-            authEndpoint: originalSettings.authEndpoint ?? '',
-          },
-        });
-      }
-    }
-  });
-
-  /**
-   * The other half of #232: defaults must only fill blanks. A host with its own
-   * Authentik config must keep it when the edit dialog opens, never be
-   * overwritten by the global defaults.
-   */
-  test('edit host keeps its own Authentik values instead of global defaults (#232)', async ({ page }) => {
-    const origin = new URL(page.url()).origin;
-    const hostSettings = {
-      outpostDomain: 'host-specific.example.test',
-      outpostUpstream: 'http://host-specific.internal:9000',
-    };
-    const globalDefaults = {
-      outpostDomain: 'global-default.example.test',
-      outpostUpstream: 'http://global-default.internal:9000',
-      authEndpoint: '/outpost.goauthentik.io/auth/caddy',
-    };
-
-    const originalSettings = await (await page.request.get(API_AUTHENTIK_SETTINGS)).json() as Partial<typeof globalDefaults>;
-
-    const createResp = await page.request.post(API_PROXY_HOSTS, {
-      headers: { Origin: origin },
-      data: {
-        name: 'Authentik Own Values Host',
-        domains: ['authentik-own-values.local'],
-        upstreams: ['localhost:9986'],
-        authentik: {
-          enabled: true,
-          outpostDomain: hostSettings.outpostDomain,
-          outpostUpstream: hostSettings.outpostUpstream,
-        },
-      },
-    });
-    expect(createResp.ok()).toBeTruthy();
-    const created = await createResp.json() as {
-      id: number;
-      authentik: { outpostDomain: string | null; outpostUpstream: string | null } | null;
-    };
-    // Guard the test itself: if the payload shape drifts, the host would be stored
-    // without its own config and this test would silently assert the default path.
-    expect(created.authentik?.outpostDomain).toBe(hostSettings.outpostDomain);
-    expect(created.authentik?.outpostUpstream).toBe(hostSettings.outpostUpstream);
-
-    try {
-      const saveResp = await page.request.put(API_AUTHENTIK_SETTINGS, {
-        headers: { Origin: origin },
-        data: globalDefaults,
-      });
-      expect(saveResp.ok()).toBeTruthy();
-
-      await page.goto('/proxy-hosts');
-      const row = page.locator('tr', { hasText: 'Authentik Own Values Host' });
-      await expect(row).toBeVisible({ timeout: 10_000 });
-      await row.getByRole('button', { name: /open menu/i }).click();
-      await page.getByRole('menuitem', { name: 'Edit' }).click();
-
-      const dialog = page.getByRole('dialog');
-      await expect(dialog).toBeVisible();
-
-      // Already enabled, so the fields are visible without touching the switch.
-      await expect(dialog.locator('input[name="authentikOutpostDomain"]')).toHaveValue(hostSettings.outpostDomain);
-      await expect(dialog.locator('input[name="authentikOutpostUpstream"]')).toHaveValue(hostSettings.outpostUpstream);
-    } finally {
-      await page.request.delete(`${API_PROXY_HOSTS}/${created.id}`, { headers: { Origin: origin } });
-      if (originalSettings.outpostDomain && originalSettings.outpostUpstream) {
-        await page.request.put(API_AUTHENTIK_SETTINGS, {
-          headers: { Origin: origin },
-          data: {
-            outpostDomain: originalSettings.outpostDomain,
-            outpostUpstream: originalSettings.outpostUpstream,
-            authEndpoint: originalSettings.authEndpoint ?? '',
-          },
-        });
-      }
-    }
-  });
-
-  /**
-   * Regression: per-host geoblock "Override global" toggle was silently dropped.
-   *
-   * The form action's `parseGeoBlockConfig` returned `geoblock_mode` (snake_case)
-   * while ProxyHostInput uses `geoblockMode` (camelCase), so the spread into
-   * createProxyHost / updateProxyHost dropped the field and the host always
-   * stayed in merge mode regardless of UI state.
-   */
-  test('per-host geoblock override mode persists after save', async ({ page }) => {
-    await page.getByRole('button', { name: /create host/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-
-    await page.getByLabel('Name').fill('Geoblock Override Host');
-    await page.getByLabel(/domains/i).fill('geoblock-override.local');
-    await page.getByPlaceholder('10.0.0.5:8080').fill('localhost:9991');
-
-    // Enable per-host geoblock (the rose-colored card with a Switch).
-    const dialog = page.getByRole('dialog');
-    const geoCard = dialog.locator('div:has(> input[name="geoblockPresent"])');
-    await geoCard.scrollIntoViewIfNeeded();
-    const geoSwitch = geoCard.getByRole('switch').first();
-    await geoSwitch.click();
-    await expect(geoSwitch).toHaveAttribute('data-state', 'checked');
-
-    // Pick "Override global" from the two-tile mode selector.
-    await geoCard.getByText('Override global').click();
-
-    await dialog.getByRole('button', { name: /^create$/i }).click();
-    await expect(dialog).not.toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('table').getByText('Geoblock Override Host')).toBeVisible({ timeout: 10000 });
-
-    // Verify the API reflects the override mode (this is what was broken).
-    const listResp = await page.request.get(API_PROXY_HOSTS);
-    const hosts = (await listResp.json()) as Array<{ id: number; name: string; geoblockMode: string }>;
-    const created = hosts.find((h) => h.name === 'Geoblock Override Host');
-    expect(created).toBeDefined();
-    expect(created!.geoblockMode).toBe('override');
-
-    // Reopen the edit dialog and confirm the mode tile is still selected.
-    const row = page.locator('tr', { hasText: 'Geoblock Override Host' });
-    await row.getByRole('button').first().click();
-    await page.getByRole('menuitem', { name: /edit/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-
-    const editGeoCard = page.getByRole('dialog').locator('div:has(> input[name="geoblockPresent"])');
-    // Selected mode tile carries the highlighted "border-yellow-500" class.
-    await expect(editGeoCard.locator('div.border-yellow-500', { hasText: 'Override global' })).toBeVisible();
-
-    // Switch back to merge and verify that round-trips too.
-    await editGeoCard.getByText('Merge with global').click();
-    await page.getByRole('dialog').getByRole('button', { name: /save changes/i }).click();
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 10000 });
-
-    const listResp2 = await page.request.get(API_PROXY_HOSTS);
-    const hosts2 = (await listResp2.json()) as Array<{ name: string; geoblockMode: string }>;
-    const updated = hosts2.find((h) => h.name === 'Geoblock Override Host');
-    expect(updated!.geoblockMode).toBe('merge');
-  });
-
   test('delete proxy host removes it from table', async ({ page }) => {
-    // Create one to delete
-    await page.getByRole('button', { name: /create host/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-
-    await page.getByLabel('Name').fill('Host To Delete');
-    await page.getByLabel(/domains/i).fill('delete-me.local');
-    await page.getByPlaceholder('10.0.0.5:8080').fill('localhost:7777');
-    await page.getByRole('button', { name: /^create$/i }).click();
-
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 10000 });
+    // Create one to delete (the host editor has its own spec, proxy-hosts-editor.spec.ts)
+    const origin = new URL(page.url()).origin;
+    const createResp = await page.request.post(API_PROXY_HOSTS, {
+      headers: { Origin: origin },
+      data: { name: 'Host To Delete', domains: ['delete-me.local'], upstreams: ['localhost:7777'] },
+    });
+    expect(createResp.ok()).toBeTruthy();
+    await page.reload();
     await expect(page.getByRole('table').getByText('Host To Delete')).toBeVisible({ timeout: 10000 });
 
-    // Open the dropdown menu for that row and click Delete
-    const row = page.locator('tr', { hasText: 'Host To Delete' });
-    await row.getByRole('button').first().click();
+    // Open the row menu for that host and click Delete
+    await openRowMenu(page, 'Host To Delete');
     await page.getByRole('menuitem', { name: /delete/i }).click();
 
     // Confirm dialog
@@ -488,30 +183,28 @@ test.describe('Proxy Hosts', () => {
   });
 
   /**
-   * The Features column renders a "Forward Auth" badge when a host has CPM
-   * forward auth enabled. This badge was previously missing even though the
-   * feature was fully supported by the data model and edit dialog.
+   * The Protection column shows an "SSO" pill when a host has Ingressi
+   * forward auth (sign-in with dashboard accounts) enabled, and only then.
    */
-  test('Forward Auth feature badge shows for hosts with CPM forward auth enabled', async ({ page }) => {
+  test('SSO protection pill shows for hosts with Ingressi forward auth enabled', async ({ page }) => {
     const origin = new URL(page.url()).origin;
 
-    // Host WITH forward auth enabled. Note: names deliberately avoid the
-    // substring "Forward Auth" so the badge assertions match the badge text
-    // (asserted with exact:true) and never the host's name cell.
+    // Host WITH forward auth enabled. Names avoid "SSO" so the pill assertions
+    // (exact: true) never match the host's name cell.
     const withResp = await page.request.post(API_PROXY_HOSTS, {
       headers: { Origin: origin },
       data: {
         name: 'FwdAuth Badge Host',
         domains: ['fwdauth-badge.local'],
         upstreams: ['localhost:9777'],
-        cpmForwardAuth: { enabled: true },
+        ingressiForwardAuth: { enabled: true },
       },
     });
     expect(withResp.ok()).toBeTruthy();
-    const withHost = await withResp.json() as { id: number; cpmForwardAuth: { enabled: boolean } | null };
-    expect(withHost.cpmForwardAuth?.enabled).toBe(true);
+    const withHost = await withResp.json() as { id: number; ingressiForwardAuth: { enabled: boolean } | null };
+    expect(withHost.ingressiForwardAuth?.enabled).toBe(true);
 
-    // Host WITHOUT forward auth — used to confirm the badge is conditional
+    // Host WITHOUT forward auth — used to confirm the pill is conditional
     const withoutResp = await page.request.post(API_PROXY_HOSTS, {
       headers: { Origin: origin },
       data: {
@@ -524,18 +217,118 @@ test.describe('Proxy Hosts', () => {
     const withoutHost = await withoutResp.json() as { id: number };
 
     try {
-      await page.reload();
+      const enabledRow = await findHostRow(page, 'FwdAuth Badge Host');
+      await expect(enabledRow.getByText('SSO', { exact: true })).toBeVisible({ timeout: 10000 });
 
-      const enabledRow = page.locator('tr', { hasText: 'FwdAuth Badge Host' });
-      await expect(enabledRow.getByText('Forward Auth', { exact: true })).toBeVisible({ timeout: 10000 });
-
-      // The host without forward auth must NOT render the badge.
-      const disabledRow = page.locator('tr', { hasText: 'Plain Proxy Host' });
-      await expect(disabledRow).toBeVisible({ timeout: 10000 });
-      await expect(disabledRow.getByText('Forward Auth', { exact: true })).toHaveCount(0);
+      // The host without forward auth must NOT render the pill.
+      const disabledRow = await findHostRow(page, 'Plain Proxy Host');
+      await expect(disabledRow.getByText('SSO', { exact: true })).toHaveCount(0);
     } finally {
       await page.request.delete(`${API_PROXY_HOSTS}/${withHost.id}`, { headers: { Origin: origin } });
       await page.request.delete(`${API_PROXY_HOSTS}/${withoutHost.id}`, { headers: { Origin: origin } });
+    }
+  });
+
+  test('bulk actions tag, disable and delete the selected hosts', async ({ page }) => {
+    const origin = new URL(page.url()).origin;
+    const ids: number[] = [];
+    for (const n of [1, 2]) {
+      const resp = await page.request.post(API_PROXY_HOSTS, {
+        headers: { Origin: origin },
+        data: { name: `Bulk E2E ${n}`, domains: [`bulk-e2e-${n}.local`], upstreams: [`localhost:970${n}`] },
+      });
+      expect(resp.ok()).toBeTruthy();
+      ids.push(((await resp.json()) as { id: number }).id);
+    }
+    const readHost = async (id: number) =>
+      (await page.request.get(`${API_PROXY_HOSTS}/${id}`)).json() as Promise<{ enabled: boolean; tags: string[] }>;
+    const selectBoth = async () => {
+      await page.goto('/proxy-hosts?search=bulk-e2e');
+      await page.getByRole('checkbox', { name: 'Select bulk-e2e-1.local' }).click();
+      await page.getByRole('checkbox', { name: 'Select bulk-e2e-2.local' }).click();
+      await expect(page.getByText('2 hosts selected')).toBeVisible();
+    };
+
+    try {
+      await selectBoth();
+      await page.getByRole('button', { name: 'Add tag' }).click();
+      await page.getByLabel('Tag', { exact: true }).fill('bulk-e2e');
+      await page.getByRole('button', { name: 'Add to 2 hosts' }).click();
+      await expect.poll(async () => (await readHost(ids[1])).tags, { timeout: 10000 }).toContain('bulk-e2e');
+      expect((await readHost(ids[0])).tags).toContain('bulk-e2e');
+
+      await selectBoth();
+      await page.getByRole('button', { name: 'Disable', exact: true }).click();
+      await expect.poll(async () => (await readHost(ids[0])).enabled, { timeout: 10000 }).toBe(false);
+      expect((await readHost(ids[1])).enabled).toBe(false);
+
+      await selectBoth();
+      await page.getByRole('button', { name: 'Delete', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Delete 2 proxy hosts' });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+      await expect.poll(async () => (await page.request.get(`${API_PROXY_HOSTS}/${ids[0]}`)).status(), { timeout: 10000 }).toBe(404);
+      expect((await page.request.get(`${API_PROXY_HOSTS}/${ids[1]}`)).status()).toBe(404);
+    } finally {
+      for (const id of ids) await page.request.delete(`${API_PROXY_HOSTS}/${id}`, { headers: { Origin: origin } });
+    }
+  });
+
+  test('the host name opens the host page', async ({ page }) => {
+    const origin = new URL(page.url()).origin;
+    const resp = await page.request.post(API_PROXY_HOSTS, {
+      headers: { Origin: origin },
+      data: { name: 'Detail Page Host', domains: ['detail-page.local', 'www.detail-page.local'], upstreams: ['http://localhost:9779'] },
+    });
+    expect(resp.ok()).toBeTruthy();
+    const created = (await resp.json()) as { id: number };
+
+    try {
+      const row = await findHostRow(page, 'Detail Page Host');
+      await row.getByRole('link', { name: 'detail-page.local' }).click();
+      await expect(page).toHaveURL(new RegExp(`/proxy-hosts/${created.id}$`));
+      await expect(page.getByRole('heading', { level: 1, name: 'detail-page.local' })).toBeVisible();
+      await expect(page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Proxy hosts' })).toHaveAttribute('href', '/proxy-hosts');
+      const tabs = page.getByRole('navigation', { name: 'Host sections' });
+      await expect(tabs.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'page');
+      await expect(tabs.getByRole('link', { name: 'Routing' })).toHaveAttribute('href', `/proxy-hosts/${created.id}/edit?section=routing`);
+      await expect(page.getByRole('link', { name: 'Edit host' })).toHaveAttribute('href', `/proxy-hosts/${created.id}/edit`);
+      await expect(page.getByRole('heading', { name: 'Configuration' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Upstreams' })).toBeVisible();
+      await expect(page.getByText('http://localhost:9779')).toBeVisible();
+      await expect(page.getByText('Health checks are off')).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Changes to this host' })).toBeVisible();
+    } finally {
+      await page.request.delete(`${API_PROXY_HOSTS}/${created.id}`, { headers: { Origin: origin } });
+    }
+  });
+
+  test('an unknown host page answers 404', async ({ page }) => {
+    const response = await page.goto('/proxy-hosts/999999');
+    expect(response?.status()).toBe(404);
+  });
+
+  test('GET /api/v1/proxy-hosts/{id}/health reports the upstreams from Caddy', async ({ page }) => {
+    const origin = new URL(page.url()).origin;
+    const resp = await page.request.post(API_PROXY_HOSTS, {
+      headers: { Origin: origin },
+      data: { name: 'Health API Host', domains: ['health-api.local'], upstreams: ['localhost:9780'] },
+    });
+    expect(resp.ok()).toBeTruthy();
+    const created = (await resp.json()) as { id: number };
+    try {
+      const id = await proxyHostIdByName(page, 'Health API Host');
+      const health = await page.request.get(`${API_PROXY_HOSTS}/${id}/health`);
+      expect(health.status()).toBe(200);
+      const body = (await health.json()) as { proxyHostId: number; caddyReachable: boolean; upstreams: Array<{ dial: string; status: string }> };
+      expect(body.proxyHostId).toBe(id);
+      expect(body.caddyReachable).toBe(true);
+      expect(body.upstreams).toHaveLength(1);
+      expect(body.upstreams[0].dial).toBe('localhost:9780');
+      expect(['unchecked', 'unknown', 'degraded']).toContain(body.upstreams[0].status);
+      expect((await page.request.get(`${API_PROXY_HOSTS}/999999/health`)).status()).toBe(404);
+    } finally {
+      await page.request.delete(`${API_PROXY_HOSTS}/${created.id}`, { headers: { Origin: origin } });
     }
   });
 });

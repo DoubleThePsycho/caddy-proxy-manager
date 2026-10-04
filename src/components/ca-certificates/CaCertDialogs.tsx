@@ -106,7 +106,7 @@ export function IssueClientCertDialog({
         Cancel
       </Button>
       <Button type="submit" form="issue-cert-form" disabled={isPending}>
-        {isPending ? "Issuing..." : "Issue Certificate"}
+        {isPending ? "Issuing…" : "Issue certificate"}
       </Button>
     </>
   );
@@ -115,7 +115,7 @@ export function IssueClientCertDialog({
     <AppDialog
       open={open}
       onClose={handleClose}
-      title="Issue Client Certificate"
+      title="Issue client certificate"
       maxWidth="sm"
       actions={actions}
     >
@@ -140,7 +140,7 @@ export function IssueClientCertDialog({
             }
           >
             <Download className="mr-2 h-4 w-4" />
-            Download Client Certificate (.p12)
+            Download client certificate (.p12)
           </Button>
           {issued.passwordProtected && (
             <p className="text-sm text-muted-foreground">
@@ -152,7 +152,7 @@ export function IssueClientCertDialog({
         <form id="issue-cert-form" ref={formRef} onSubmit={handleSubmit}>
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="common_name">Common Name (CN)</Label>
+              <Label htmlFor="common_name">Common name (CN)</Label>
               <Input
                 id="common_name"
                 name="common_name"
@@ -180,7 +180,7 @@ export function IssueClientCertDialog({
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="export_password">Export Password</Label>
+              <Label htmlFor="export_password">Export password</Label>
               <Input
                 id="export_password"
                 name="export_password"
@@ -255,7 +255,7 @@ export function ManageIssuedClientCertsDialog({
     <AppDialog
       open={open}
       onClose={onClose}
-      title="Issued Client Certificates"
+      title="Issued client certificates"
       maxWidth="md"
       actions={
         <Button variant="outline" onClick={onClose} disabled={isPending}>
@@ -322,7 +322,7 @@ export function ManageIssuedClientCertsDialog({
                       disabled={isPending}
                       onClick={() => handleRevoke(item.id)}
                     >
-                      {isPending ? "Revoking..." : "Revoke"}
+                      {isPending ? "Revoking…" : "Revoke"}
                     </Button>
                   </div>
                 )}
@@ -363,7 +363,7 @@ export function DeleteCaCertDialog({
     <AppDialog
       open={open}
       onClose={onClose}
-      title="Delete CA Certificate"
+      title="Delete certificate authority"
       maxWidth="sm"
       actions={
         <>
@@ -375,15 +375,19 @@ export function DeleteCaCertDialog({
             onClick={handleDelete}
             disabled={isPending}
           >
-            {isPending ? "Deleting..." : "Delete"}
+            {isPending ? "Deleting…" : "Delete"}
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">
-          Delete CA certificate <strong className="text-foreground">{cert.name}</strong>? This cannot be undone.
-          Proxy hosts using this CA for mTLS will stop requiring client certificates.
+          Delete the certificate authority <strong className="text-foreground">{cert.name}</strong>? This cannot be undone.
+          The client certificates it issued are deleted with it and leave their roles.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          A certificate authority cannot be deleted while a proxy host&apos;s mutual TLS trusts it, one of its client
+          certificates or a role holding one: change those hosts first.
         </p>
         {error && <p className="text-sm text-destructive">{error}</p>}
       </div>

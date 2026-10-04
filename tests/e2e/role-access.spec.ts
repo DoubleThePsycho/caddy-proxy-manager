@@ -9,17 +9,11 @@
  *
  * Test setup:
  * - Creates "testuser" (role=user) and "testviewer" (role=viewer) in the database
- *   via `docker compose exec` + bun script inside the web container.
+ *   (tests/helpers/e2e-sql.ts).
  * - Logs in as each role in separate browser contexts.
  */
 import { test, expect, type BrowserContext } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
-
-const COMPOSE_ARGS = [
-  'compose',
-  '-f', 'docker-compose.yml',
-  '-f', 'tests/docker-compose.test.yml',
-];
+import { ensureLocalUser } from '../helpers/e2e-sql';
 
 // Pages that require admin role (via requireAdmin in their own page.tsx)
 const ADMIN_ONLY_PAGES = [
@@ -29,6 +23,7 @@ const ADMIN_ONLY_PAGES = [
   '/access-lists',
   '/analytics',
   '/waf',
+  '/security',
   '/audit-log',
   '/settings',
   '/users',
@@ -45,44 +40,9 @@ const USER_ACCESSIBLE_PAGES = [
 // All dashboard pages (union of both sets)
 const ALL_DASHBOARD_PAGES = [...USER_ACCESSIBLE_PAGES, ...ADMIN_ONLY_PAGES];
 
-/**
- * Create a test user inside the running web container using bun.
- * Uses Bun's built-in Bun.password.hash (bcrypt) — no npm deps needed.
- */
+/** Creates (or resets) a local test user with the given role in the stack's database. */
 function ensureTestUser(username: string, password: string, role: string) {
-  const script = `
-    import { Database } from "bun:sqlite";
-    const db = new Database("./data/caddy-proxy-manager.db");
-    const email = "${username}@localhost";
-    const hash = await Bun.password.hash("${password}", { algorithm: "bcrypt", cost: 12 });
-    const now = new Date().toISOString();
-    const existing = db.query("SELECT id FROM users WHERE email = ?").get(email);
-    if (existing) {
-      db.run("UPDATE users SET passwordHash = ?, role = ?, status = 'active', updatedAt = ? WHERE email = ?",
-        [hash, "${role}", now, email]);
-      // Update or create credential account for Better Auth
-      const acc = db.query("SELECT id FROM accounts WHERE userId = ? AND providerId = 'credential'").get(existing.id);
-      if (acc) {
-        db.run("UPDATE accounts SET password = ?, updatedAt = ? WHERE id = ?", [hash, now, acc.id]);
-      } else {
-        db.run("INSERT INTO accounts (userId, issuer, accountId, providerId, password, createdAt, updatedAt) VALUES (?, 'local:credential', ?, 'credential', ?, ?, ?)",
-          [existing.id, String(existing.id), hash, now, now]);
-      }
-    } else {
-      db.run(
-        "INSERT INTO users (email, name, passwordHash, role, provider, subject, username, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, 'credentials', ?, ?, 'active', ?, ?)",
-        [email, "${username}", hash, "${role}", "${username}", "${username}", now, now]
-      );
-      const user = db.query("SELECT id FROM users WHERE email = ?").get(email);
-      // Create credential account for Better Auth
-      db.run("INSERT INTO accounts (userId, issuer, accountId, providerId, password, createdAt, updatedAt) VALUES (?, 'local:credential', ?, 'credential', ?, ?, ?)",
-        [user.id, String(user.id), hash, now, now]);
-    }
-  `;
-  execFileSync('docker', [...COMPOSE_ARGS, 'exec', '-T', 'web', 'bun', '-e', script], {
-    cwd: process.cwd(),
-    stdio: 'pipe',
-  });
+  ensureLocalUser({ username, password, role });
 }
 
 /**
@@ -145,24 +105,26 @@ test.describe('Role-based access control', () => {
 
   // ── "user" role — can access / and /profile ─────────────────────────
 
-  test('user role: / loads with welcome message', async () => {
+  test('user role: / loads the overview', async () => {
     const page = await userContext.newPage();
     try {
       await page.goto('/');
       await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
-      await expect(page.getByText(/welcome back/i)).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible({ timeout: 5_000 });
     } finally {
       await page.close();
     }
   });
 
-  test('user role: / does not show admin stat cards', async () => {
+  test('user role: / shows no admin sections', async () => {
     const page = await userContext.newPage();
     try {
       await page.goto('/');
-      await expect(page.getByText(/welcome back/i)).toBeVisible({ timeout: 5_000 });
-      // Non-admin gets empty stats — no Proxy Hosts / Certificates / Access Lists cards
-      await expect(page.getByRole('link', { name: /proxy hosts/i })).not.toBeVisible({ timeout: 3_000 });
+      await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible({ timeout: 5_000 });
+      // No permissions: what needs their attention and their account, no hosts, traffic or changes
+      await expect(page.getByRole('link', { name: /proxy host/i })).not.toBeVisible({ timeout: 3_000 });
+      await expect(page.getByRole('region', { name: 'Needs attention' })).toBeVisible();
+      await expect(page.getByText('Nothing else to show for your role')).toBeVisible();
     } finally {
       await page.close();
     }
@@ -172,13 +134,13 @@ test.describe('Role-based access control', () => {
     const page = await userContext.newPage();
     try {
       await page.goto('/');
-      await expect(page.getByText(/welcome back/i)).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible({ timeout: 5_000 });
       // Overview should be in the nav
       await expect(page.getByRole('link', { name: 'Overview' })).toBeVisible();
       // Admin-only nav items should not be visible
-      await expect(page.getByRole('link', { name: 'Proxy Hosts' })).not.toBeVisible();
-      await expect(page.getByRole('link', { name: 'Settings' })).not.toBeVisible();
-      await expect(page.getByRole('link', { name: 'Users' })).not.toBeVisible();
+      await expect(page.getByRole('link', { name: 'Proxy hosts' })).not.toBeVisible();
+      await expect(page.getByRole('link', { name: 'Settings', exact: true })).not.toBeVisible();
+      await expect(page.getByRole('link', { name: 'Users and groups', exact: true })).not.toBeVisible();
     } finally {
       await page.close();
     }
@@ -189,7 +151,7 @@ test.describe('Role-based access control', () => {
     try {
       await page.goto('/profile');
       await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
-      await expect(page.getByText(/profile|password/i).first()).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible({ timeout: 5_000 });
     } finally {
       await page.close();
     }
@@ -197,23 +159,24 @@ test.describe('Role-based access control', () => {
 
   // ── "viewer" role — can access / and /profile ───────────────────────
 
-  test('viewer role: / loads with welcome message', async () => {
+  test('viewer role: / loads the overview', async () => {
     const page = await viewerContext.newPage();
     try {
       await page.goto('/');
       await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
-      await expect(page.getByText(/welcome back/i)).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible({ timeout: 5_000 });
     } finally {
       await page.close();
     }
   });
 
-  test('viewer role: / does not show admin stat cards', async () => {
+  test('viewer role: / shows no admin sections', async () => {
     const page = await viewerContext.newPage();
     try {
       await page.goto('/');
-      await expect(page.getByText(/welcome back/i)).toBeVisible({ timeout: 5_000 });
-      await expect(page.getByRole('link', { name: /proxy hosts/i })).not.toBeVisible({ timeout: 3_000 });
+      await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByRole('link', { name: /proxy host/i })).not.toBeVisible({ timeout: 3_000 });
+      await expect(page.getByRole('region', { name: 'Busiest hosts' })).toHaveCount(0);
     } finally {
       await page.close();
     }
@@ -223,10 +186,10 @@ test.describe('Role-based access control', () => {
     const page = await viewerContext.newPage();
     try {
       await page.goto('/');
-      await expect(page.getByText(/welcome back/i)).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible({ timeout: 5_000 });
       await expect(page.getByRole('link', { name: 'Overview' })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Proxy Hosts' })).not.toBeVisible();
-      await expect(page.getByRole('link', { name: 'Settings' })).not.toBeVisible();
+      await expect(page.getByRole('link', { name: 'Proxy hosts' })).not.toBeVisible();
+      await expect(page.getByRole('link', { name: 'Settings', exact: true })).not.toBeVisible();
     } finally {
       await page.close();
     }
@@ -237,7 +200,7 @@ test.describe('Role-based access control', () => {
     try {
       await page.goto('/profile');
       await expect(page).not.toHaveURL(/\/login/, { timeout: 10_000 });
-      await expect(page.getByText(/profile|password/i).first()).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByRole('heading', { level: 1, name: 'Profile' })).toBeVisible({ timeout: 5_000 });
     } finally {
       await page.close();
     }
@@ -321,9 +284,9 @@ test.describe('Role-based access control', () => {
       const page = await adminContext.newPage();
       await page.goto('/');
       await expect(page.getByRole('link', { name: 'Overview' })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Proxy Hosts', exact: true })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Users' })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Proxy hosts', exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Users and groups', exact: true })).toBeVisible();
       await page.close();
     } finally {
       await adminContext.close();

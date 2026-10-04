@@ -33,7 +33,7 @@ export function createSelfSignedServerCertificate(
 
   const subject = [
     { name: 'commonName', value: commonName },
-    { name: 'organizationName', value: 'Caddy Proxy Manager E2E' },
+    { name: 'organizationName', value: 'Ingressi E2E' },
   ];
 
   cert.setSubject(subject);

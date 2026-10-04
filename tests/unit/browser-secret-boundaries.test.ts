@@ -53,7 +53,7 @@ describe("browser secret boundaries", () => {
 
     expect(settingsPage).toContain("redactDnsProviderSettingsForApi(dnsProvider)");
     expect(settingsPage).not.toMatch(/dnsProvider=\{dnsProvider\}/);
-    expect(proxyHostsPage).toContain("certificates.map(toCertificatePickerOption)");
+    expect(proxyHostsPage).toContain(".map(toCertificatePickerOption)");
     expect(proxyHostsPage).not.toMatch(/certificates=\{certificates\}/);
   });
 

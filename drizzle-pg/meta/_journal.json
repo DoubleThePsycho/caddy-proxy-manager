@@ -1,0 +1,41 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1791230000000,
+      "tag": "0000_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1791240000000,
+      "tag": "0053_cluster_nodes",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1791250000000,
+      "tag": "0054_shared_runtime_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1791270000000,
+      "tag": "0055_cluster_node_instance",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1791280000000,
+      "tag": "0056_monetization_phase2",
+      "breakpoints": true
+    }
+  ]
+}

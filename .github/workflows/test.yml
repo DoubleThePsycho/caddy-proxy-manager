@@ -40,8 +40,8 @@ jobs:
         env:
           NODE_ENV: production
           NEXT_TELEMETRY_DISABLED: "1"
-          DATABASE_PATH: /tmp/caddy-proxy-manager-build.db
-          DATABASE_URL: file:/tmp/caddy-proxy-manager-build.db
+          DATABASE_PATH: /tmp/ingressi-build.db
+          DATABASE_URL: file:/tmp/ingressi-build.db
           SESSION_SECRET: ci-build-session-secret-at-least-32-chars
           ADMIN_PASSWORD: ci-build-admin-password
         run: bun run build

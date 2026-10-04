@@ -21,16 +21,8 @@ afterAll(() => {
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    get sqlite() { return undefined; },
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (v: string | Date | null | undefined): string | null =>
-      !v ? null : v instanceof Date ? v.toISOString() : new Date(v).toISOString(),
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 vi.mock('better-auth', () => ({
@@ -59,5 +51,20 @@ describe('OAuth role-from-claims opt-in (AUTH_ALLOW_OAUTH_ROLE_FROM_CLAIMS=true)
 
     expect(result.data.role).toBe('admin'); // claim honored — not forced to "user"
     expect(result.data.status).toBe('active');
+  });
+
+  it.each(['user', 'viewer'])('maps a %s role claim to that built-in role, as before custom roles', async (role) => {
+    const auth = getAuth() as any;
+    const hook = auth.options.databaseHooks.user.create.before;
+    const result = await hook({ email: `${role}@idp.example`, name: role, role, status: 'active' });
+    expect(result.data.role).toBe(role);
+  });
+
+  it('never takes a custom role from the claims', async () => {
+    const auth = getAuth() as any;
+    const hook = auth.options.databaseHooks.user.create.before;
+    const result = await hook({ email: 'teams@idp.example', name: 'Teams', role: 'user', customRoleId: 1, status: 'active' });
+    expect(result.data.role).toBe('user');
+    expect(result.data).not.toHaveProperty('customRoleId');
   });
 });

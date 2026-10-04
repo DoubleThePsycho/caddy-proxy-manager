@@ -1,20 +1,28 @@
 import AccessListsClient from "./AccessListsClient";
-import { listAccessLists, getAccessListUsageMap } from "@/src/lib/models/access-lists";
-import { requireAdmin } from "@/src/lib/auth";
+import { blockedSourcesPlaceholder } from "@/src/lib/models/access-lists";
+import { loadAccessListOverview } from "@/src/lib/access-list-overview";
+import { getTrustedProxiesSettings } from "@/src/lib/settings";
+import { requirePermission } from "@/src/lib/auth";
+import { can } from "@/src/lib/permissions";
+import { dashboardOrganizationFilter } from "@/ee/multi-tenancy/view";
 
 export default async function AccessListsPage() {
-  await requireAdmin();
-
-  const [lists, usageMap] = await Promise.all([
-    listAccessLists(),
-    getAccessListUsageMap(),
+  const { access } = await requirePermission("access_lists:read");
+  // An organisation user sees their organisation only; a provider-level user the organisation they picked (ee/multi-tenancy).
+  const organizationId = await dashboardOrganizationFilter(access);
+  const [overview, trustedProxies] = await Promise.all([
+    loadAccessListOverview(access, organizationId),
+    getTrustedProxiesSettings(),
   ]);
 
-  // Serialize usage map to a plain object for client
-  const usage: Record<number, { id: number; name: string; domains: string[]; enabled: boolean }[]> = {};
-  for (const [listId, hosts] of usageMap) {
-    usage[listId] = hosts;
-  }
-
-  return <AccessListsClient lists={lists} usage={usage} />;
+  return (
+    <AccessListsClient
+      lists={overview.lists}
+      usage={overview.usage}
+      blockedSources={overview.blockedSourcesVisible ? overview.blockedSources ?? blockedSourcesPlaceholder() : null}
+      stats={overview.stats}
+      canWrite={can(access, "access_lists:write")}
+      trustedProxiesConfigured={(trustedProxies?.ranges ?? []).some((range) => range.trim().length > 0)}
+    />
+  );
 }

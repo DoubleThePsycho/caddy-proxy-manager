@@ -1,15 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 
 // Mock heavy dependencies before importing
-vi.mock('@/src/lib/db', () => ({
-  default: {
-    select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ get: vi.fn().mockReturnValue(null) }) }) }),
-    insert: vi.fn().mockReturnValue({ values: vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockReturnValue({ run: vi.fn() }) }) }),
-    delete: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ run: vi.fn() }) }),
-    run: vi.fn(),
-  },
-  nowIso: () => new Date().toISOString(),
-}));
+vi.mock('@/src/lib/db', async () => {
+  // A real, empty test database: these tests do not look at the parse state.
+  const { createTestDb } = await import('../helpers/db');
+  const db = createTestDb();
+  return (await import('../helpers/db-module')).mockDbModule(() => db);
+});
 
 vi.mock('maxmind', () => ({
   default: { open: vi.fn().mockResolvedValue(null) },
@@ -538,5 +535,19 @@ describe('stored WAF event serialization', () => {
     const row = parseLine(line, new Map());
     expect(row!.ts).toBe(1700000000);
     expect(row!.raw_data).toContain('"unix_timestamp":1700000000123456789');
+  });
+});
+
+describe('WAF event id', () => {
+  it('stores Coraza\'s transaction id as the event id', () => {
+    const line = '{"transaction":{"id":"nDLkXnTNSxQmfKGTSAN","client_ip":"1.2.3.4","is_interrupted":true,'
+      + '"request":{"method":"GET","uri":"/","headers":{"host":["example.com"]}}}}';
+    expect(parseLine(line, new Map())!.tx_id).toBe('nDLkXnTNSxQmfKGTSAN');
+  });
+
+  it('leaves the id to ClickHouse when the record has none', () => {
+    const line = '{"transaction":{"id":42,"client_ip":"1.2.3.4","is_interrupted":true,'
+      + '"request":{"method":"GET","uri":"/","headers":{"host":["example.com"]}}}}';
+    expect(parseLine(line, new Map())).not.toHaveProperty('tx_id');
   });
 });

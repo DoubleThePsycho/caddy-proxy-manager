@@ -1,178 +1,243 @@
 "use client";
 
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
-import { Card, CardContent } from "@/components/ui/card";
-import { BarChart2, Activity } from "lucide-react";
-import { ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { Plus, UserRound } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { SectionCard } from "@/components/ui/SectionCard";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { cn } from "@/lib/utils";
+import { useFormat } from "@/src/components/preferences/PreferencesProvider";
+import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
+import { OVERVIEW_RANGE_LABELS, OVERVIEW_RANGES, type OverviewData, type OverviewRange, type OverviewTraffic } from "@/src/lib/overview-shared";
+import UsagePingQuestion from "./UsagePingQuestion";
+import { AttentionSection } from "./_overview/AttentionSection";
+import { BusiestHosts } from "./_overview/BusiestHosts";
+import { NodesCard } from "./_overview/NodesCard";
+import { RecentChanges } from "./_overview/RecentChanges";
+import { SetupChecklist } from "./_overview/SetupChecklist";
+import { KpiRow, TrafficChart, TrafficUnavailable } from "./_overview/TrafficSection";
+import { headerDateLine } from "./_overview/format";
 
-type StatCard = {
-  label: string;
-  icon: ReactNode;
-  count: number;
-  href: string;
-};
-
-type RecentEvent = {
-  summary: string;
-  createdAt: string;
-};
-
-type TrafficSummary = {
-  totalRequests: number;
-  blockedPercent: number;
-} | null;
-
-// Per-position accent colors for stat cards (proxy hosts, certs, access lists, traffic)
-const CARD_ACCENTS = [
-  { border: "border-l-violet-500", icon: "border-violet-500/30 bg-violet-500/10 text-violet-500", count: "text-violet-600 dark:text-violet-400" },
-  { border: "border-l-emerald-500", icon: "border-emerald-500/30 bg-emerald-500/10 text-emerald-500", count: "text-emerald-600 dark:text-emerald-400" },
-  { border: "border-l-amber-500", icon: "border-amber-500/30 bg-amber-500/10 text-amber-500", count: "text-amber-600 dark:text-amber-400" },
-];
-
-const TRAFFIC_ACCENT = {
-  border: "border-l-cyan-500",
-  icon: "border-cyan-500/30 bg-cyan-500/10 text-cyan-500",
-  count: "text-cyan-600 dark:text-cyan-400",
-};
-
-function getEventDotColor(summary: string): string {
-  const lower = summary.toLowerCase();
-  if (lower.startsWith("delete") || lower.startsWith("remove")) return "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.5)]";
-  if (lower.startsWith("create") || lower.startsWith("add")) return "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]";
-  return "bg-primary shadow-[0_0_6px_var(--primary)]";
+/** The server's "now" at first, then the browser's clock, minute by minute (after hydration, so both renders match). */
+function useNow(initial: string): number {
+  const [now, setNow] = useState(() => Date.parse(initial));
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
 }
 
-function formatRelativeTime(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return new Date(iso).toLocaleDateString();
+/**
+ * Whether the usage ping question shows. Kept from the first render: answering
+ * revalidates the page, which then no longer asks, and the question's own
+ * "thank you" line must stay on screen.
+ */
+function useAskedUsagePing(ask: boolean): boolean {
+  const [asked] = useState(ask);
+  return asked;
 }
 
-export default function OverviewClient({
-  userName,
-  stats,
-  trafficSummary,
-  recentEvents,
-  isAdmin = true
-}: {
-  userName: string;
-  stats: StatCard[];
-  trafficSummary: TrafficSummary;
-  recentEvents: RecentEvent[];
-  isAdmin?: boolean;
-}) {
+function rangeHref(range: OverviewRange): string {
+  return range === "24h" ? "/" : `/?range=${range}`;
+}
+
+/** "Saturday 3 October · 11:36 UTC", with whatever follows it. */
+function DateLine({ now, children }: { now: number; children?: ReactNode }) {
+  const fmt = useFormat();
   return (
-    <div className="flex flex-col gap-8">
-      {/* Welcome header */}
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">
-          Welcome back, <span className="text-primary">{userName}</span>
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Everything you need to orchestrate Caddy proxies, certificates, and secure edge services.
-        </p>
-      </div>
+    <p className="m-0 text-[13px] leading-5 text-soft max-md:leading-[18px]" data-testid="overview-date">
+      {headerDateLine(now, fmt.timeZone)}
+      {children}
+    </p>
+  );
+}
 
-      {/* Stat grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {stats.map((stat, i) => {
-          const accent = CARD_ACCENTS[i % CARD_ACCENTS.length];
-          return (
-            <Link key={stat.label} href={stat.href} className="block group">
-              <Card className={`border-l-2 ${accent.border} hover:bg-muted/40 transition-colors`}>
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${accent.icon} transition-transform group-hover:scale-110`}>
-                      {stat.icon}
-                    </div>
-                    <span className={`text-3xl font-bold tabular-nums ${accent.count}`}>
-                      {stat.count}
-                    </span>
-                  </div>
-                  <p className="text-sm font-medium text-muted-foreground mt-3">{stat.label}</p>
-                </CardContent>
-              </Card>
-            </Link>
-          );
-        })}
+function NewProxyHostButton({ className }: { className?: string }) {
+  return (
+    <Button asChild className={cn("h-[38px] rounded-[10px] px-3.5 text-sm", className)}>
+      <Link href="/proxy-hosts?create=1">
+        <Plus aria-hidden="true" strokeWidth={2.4} />
+        New proxy host
+      </Link>
+    </Button>
+  );
+}
 
-        {/* Traffic (24h) card — admin only */}
-        {isAdmin && (
-          <Link href="/analytics" className="block group">
-            <Card className={`border-l-2 ${TRAFFIC_ACCENT.border} hover:bg-muted/40 transition-colors`}>
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between gap-2">
-                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${TRAFFIC_ACCENT.icon} transition-transform group-hover:scale-110`}>
-                    <BarChart2 className="h-4 w-4" />
-                  </div>
-                  <span className={`text-3xl font-bold tabular-nums ${TRAFFIC_ACCENT.count}`}>
-                    {trafficSummary ? trafficSummary.totalRequests.toLocaleString() : "—"}
-                  </span>
-                </div>
-                <p className="text-sm font-medium text-muted-foreground mt-3">Traffic (24h)</p>
-                {trafficSummary && trafficSummary.totalRequests > 0 && (
-                  <div className="mt-2">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-muted-foreground">Blocked</span>
-                      <span className={`text-xs font-semibold tabular-nums ${trafficSummary.blockedPercent > 0 ? "text-rose-500" : "text-muted-foreground"}`}>
-                        {trafficSummary.blockedPercent}%
-                      </span>
-                    </div>
-                    <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-rose-500 transition-all"
-                        style={{ width: `${Math.min(trafficSummary.blockedPercent, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </Link>
+/** Analytics answered for the range (they may be off, or ClickHouse may not answer). */
+function answered(traffic: OverviewTraffic): boolean {
+  return traffic.status === "ok";
+}
+
+/** The overview of an install that is set up: Main.dc.html, stacked on a phone as Phone.dc.html. */
+function Overview({ data }: { data: OverviewData }) {
+  const router = useRouter();
+  const now = useNow(data.generatedAt);
+  // The pressed range: the one asked for, while its figures load (the sections show data.range's).
+  const [range, setRange] = useState<OverviewRange>(data.range);
+  const [pending, startTransition] = useTransition();
+  const askUsagePing = useAskedUsagePing(data.askUsagePing);
+  useEffect(() => setRange(data.range), [data.range]);
+  const { permissions, traffic, hosts, nodes, changes } = data;
+
+  function changeRange(next: OverviewRange) {
+    setRange(next);
+    startTransition(() => router.push(rangeHref(next), { scroll: false }));
+  }
+
+  const nothingElse = !traffic && !hosts && !nodes && !changes;
+  const left = traffic !== null || hosts !== null;
+  const right = nodes !== null || changes !== null;
+
+  return (
+    <div className="flex flex-col gap-3 md:gap-5">
+      <header className="flex flex-wrap items-end gap-x-4 gap-y-2.5">
+        <div className="flex min-w-0 flex-[1_1_280px] flex-col gap-1">
+          <DateLine now={now}>
+            {permissions.readAnalytics && <span className="md:hidden"> · {OVERVIEW_RANGE_LABELS[data.range]}</span>}
+          </DateLine>
+          <h1 className="m-0 text-2xl leading-8 font-semibold tracking-[-0.015em] max-md:sr-only">Overview</h1>
+        </div>
+        {(permissions.readAnalytics || permissions.createProxyHost) && (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {permissions.readAnalytics && (
+              <SegmentedControl
+                label="Time range"
+                mono
+                value={range}
+                onChange={changeRange}
+                options={OVERVIEW_RANGES.map((value) => ({ value, label: value }))}
+              />
+            )}
+            {permissions.createProxyHost && <NewProxyHostButton className="max-md:hidden" />}
+          </div>
+        )}
+      </header>
+
+      {askUsagePing && <UsagePingQuestion />}
+
+      <AttentionSection attention={data.attention} alertsHref={permissions.readAlerts ? "/alerts" : null} />
+
+      <div className={cn("flex flex-col gap-3 transition-opacity md:gap-5", pending && "opacity-60")} aria-busy={pending || undefined}>
+        {traffic && answered(traffic) && <KpiRow traffic={traffic} range={data.range} />}
+
+        {(left || right) && (
+          <div className="flex flex-wrap items-start gap-3 md:gap-5">
+            {left && (
+              <div className="flex min-w-0 flex-[2_1_560px] flex-col gap-3 md:gap-5">
+                {traffic &&
+                  (answered(traffic) ? (
+                    <TrafficChart traffic={traffic} range={data.range} security={permissions.readSecurity} />
+                  ) : (
+                    <TrafficUnavailable status={traffic.status === "disabled" ? "disabled" : "unavailable"} />
+                  ))}
+                {hosts && <BusiestHosts hosts={hosts} canCreate={permissions.createProxyHost} canList={permissions.readProxyHosts} />}
+              </div>
+            )}
+            {right && (
+              <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-3 md:gap-5">
+                {nodes && <NodesCard nodes={nodes} now={now} />}
+                {changes && <RecentChanges changes={changes} now={now} />}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
-      {/* Recent Activity — admin only */}
-      {isAdmin && (
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-primary/30 bg-primary/10 text-primary">
-              <Activity className="h-3.5 w-3.5" />
-            </div>
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Recent Activity</h2>
-          </div>
-
-          <Card>
-            <CardContent className="p-0">
-              {recentEvents.length === 0 ? (
-                <p className="px-5 py-6 text-sm text-muted-foreground">No activity recorded yet.</p>
-              ) : (
-                <div className="relative">
-                  {/* Vertical timeline line */}
-                  <div className="absolute left-[28px] top-4 bottom-4 w-px bg-border" />
-                  {recentEvents.map((event, index) => (
-                    <div
-                      key={`${event.createdAt}-${index}`}
-                      className="relative flex items-start gap-4 px-5 py-3 hover:bg-muted/30 transition-colors"
-                    >
-                      {/* Dot */}
-                      <div className={`relative z-10 mt-1 h-3 w-3 shrink-0 rounded-full ${getEventDotColor(event.summary)}`} />
-                      <span className="flex-1 text-sm leading-snug">{event.summary}</span>
-                      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                        {formatRelativeTime(event.createdAt)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+      {nothingElse && (
+        <SectionCard title="Your account" divided={false}>
+          <EmptyState
+            compact
+            icon={UserRound}
+            title="Nothing else to show for your role"
+            description="You can manage your profile, passkeys and API tokens. An administrator can give your role access to hosts, analytics or settings."
+            action={
+              <Button asChild variant="secondary" size="sm">
+                <Link href="/profile">Profile</Link>
+              </Button>
+            }
+            className="px-[18px] pt-0"
+          />
+        </SectionCard>
       )}
     </div>
   );
+}
+
+/** A fresh install: the setup checklist, the usage ping question and empty traffic (Onboarding.dc.html). */
+function FirstRun({ data }: { data: OverviewData & { firstRun: NonNullable<OverviewData["firstRun"]> } }) {
+  const branding = useBranding();
+  const now = useNow(data.generatedAt);
+  const askUsagePing = useAskedUsagePing(data.askUsagePing);
+  const { permissions, traffic, hosts, firstRun } = data;
+  const { checklist } = firstRun;
+  const nothingDone = checklist.done === 0;
+  return (
+    <div className="flex flex-col gap-3 md:gap-5">
+      <header className="flex flex-col gap-1">
+        <DateLine now={now}>
+          {data.version !== "unknown" && (
+            <>
+              {" "}
+              · {branding.productName} <span className="num">{/^\d/.test(data.version) ? `v${data.version}` : data.version}</span>
+            </>
+          )}
+        </DateLine>
+        <h1 className="m-0 text-2xl leading-8 font-semibold tracking-[-0.015em]">Welcome, {data.userName}</h1>
+        <p className="m-0 max-w-2xl text-muted-foreground">
+          {nothingDone
+            ? "Nothing is configured yet and Caddy is running. The steps below can be done in any order."
+            : `${checklist.done} of ${checklist.total} setup steps are done. The rest can be done in any order.`}
+        </p>
+      </header>
+
+      {askUsagePing && <UsagePingQuestion />}
+
+      <AttentionSection attention={data.attention} alertsHref={permissions.readAlerts ? "/alerts" : null} exclude={["setup"]} hideWhenEmpty />
+
+      <div className="flex flex-wrap items-start gap-3 md:gap-5">
+        <SetupChecklist firstRun={firstRun} permissions={permissions} />
+        {(traffic || hosts) && (
+          <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-3 md:gap-5">
+            {traffic &&
+              (answered(traffic) && traffic.totals.requests > 0 ? (
+                <TrafficChart traffic={traffic} range={data.range} security={permissions.readSecurity} compact />
+              ) : (
+                <SectionCard title={`Traffic, ${OVERVIEW_RANGE_LABELS[data.range]}`} divided={false} padded contentClassName="pt-0">
+                  <div className="flex min-h-[168px] flex-col items-center justify-center gap-2.5 border-b border-line2 px-4 text-center">
+                    <p className="m-0 max-w-[280px] text-[13px] leading-[19px] text-muted-foreground text-pretty">
+                      {traffic.status === "disabled"
+                        ? "Analytics are off, so there is nothing to chart yet."
+                        : traffic.status === "unavailable"
+                          ? "ClickHouse did not answer, so there is nothing to chart right now."
+                          : "No requests yet. Traffic shows here as soon as a proxy host serves one."}
+                    </p>
+                    {traffic.status === "disabled" && (
+                      <Button asChild variant="secondary" size="sm">
+                        <a href="#step-analytics">How to turn them on</a>
+                      </Button>
+                    )}
+                  </div>
+                </SectionCard>
+              ))}
+            {hosts && <BusiestHosts hosts={hosts} canCreate={permissions.createProxyHost} canList={permissions.readProxyHosts} compact />}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The overview page. A fresh install (setup checklist neither complete nor
+ * hidden, for readers of the settings) gets the first-run layout; every
+ * other section is only there when the viewer may read it.
+ */
+export default function OverviewClient({ data }: { data: OverviewData }) {
+  if (data.firstRun) return <FirstRun data={{ ...data, firstRun: data.firstRun }} />;
+  return <Overview data={data} />;
 }

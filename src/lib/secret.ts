@@ -5,6 +5,10 @@ export const ENCRYPTED_SECRET_PREFIX = "enc:v1:";
 const PREFIX = ENCRYPTED_SECRET_PREFIX;
 const IV_LENGTH = 12;
 
+/**
+ * The HKDF info string predates the rename to Ingressi and must not change:
+ * every stored secret was encrypted under the key it derives.
+ */
 function hkdfKey(secret: string): Buffer {
   return Buffer.from(
     hkdfSync("sha256", secret, Buffer.alloc(0), "caddy-proxy-manager:secret:v1", 32)

@@ -5,14 +5,9 @@
  * Runs as admin (testadmin) — the page requires admin role.
  */
 import { test, expect } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
+import { webDb } from '../helpers/e2e-sql';
 
 const BASE = 'http://localhost:3000';
-const COMPOSE_ARGS = [
-  'compose',
-  '-f', 'docker-compose.yml',
-  '-f', 'tests/docker-compose.test.yml',
-];
 
 type CreatedUserRecord = {
   email: string;
@@ -26,42 +21,32 @@ type CreatedUserRecord = {
   role: string;
 };
 
-function execInContainer(script: string): string {
-  return execFileSync('docker', [...COMPOSE_ARGS, 'exec', '-T', 'web', 'bun', '-e', script], {
-    cwd: process.cwd(),
-    stdio: 'pipe',
-    encoding: 'utf8',
-  });
-}
-
 function getCreatedUserRecord(email: string): CreatedUserRecord {
-  const output = execInContainer(`
-    import { Database } from "bun:sqlite";
-    const db = new Database("./data/caddy-proxy-manager.db");
-    const user = db.query(
-      "SELECT id, email, provider, subject, username, displayUsername, role FROM users WHERE email = ?"
-    ).get(${JSON.stringify(email)});
-    if (!user) {
-      console.error("User not found");
-      process.exit(1);
+  const record = webDb<CreatedUserRecord | null>(`
+    const user = await db.get(
+      'SELECT id, email, provider, subject, username, "displayUsername", role FROM users WHERE email = ?',
+      [${JSON.stringify(email)}]
+    );
+    if (user) {
+      const account = await db.get(
+        'SELECT "providerId", "accountId", password FROM accounts WHERE "userId" = ? AND "providerId" = ?',
+        [user.id, "credential"]
+      );
+      emit({
+        email: user.email,
+        provider: user.provider,
+        subject: user.subject,
+        username: user.username,
+        displayUsername: user.displayUsername,
+        accountProviderId: account?.providerId ?? null,
+        accountId: account?.accountId ?? null,
+        accountHasPassword: !!account?.password,
+        role: user.role,
+      });
     }
-    const account = db.query(
-      "SELECT providerId, accountId, password FROM accounts WHERE userId = ? AND providerId = 'credential'"
-    ).get(user.id);
-    console.log(JSON.stringify({
-      email: user.email,
-      provider: user.provider,
-      subject: user.subject,
-      username: user.username,
-      displayUsername: user.displayUsername,
-      accountProviderId: account?.providerId ?? null,
-      accountId: account?.accountId ?? null,
-      accountHasPassword: !!account?.password,
-      role: user.role,
-    }));
-  `).trim();
-
-  return JSON.parse(output) as CreatedUserRecord;
+  `);
+  if (!record) throw new Error(`User not found: ${email}`);
+  return record;
 }
 
 async function loginWithCredentials(
@@ -86,72 +71,84 @@ test.describe('Users page', () => {
     await page.goto('/users');
   });
 
-  test('page loads with Users heading', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible();
-    await expect(page.getByText('Manage user accounts, roles, and access.')).toBeVisible();
+  /** Opens the row menu of the first user whose row contains `text`. */
+  async function rowMenu(page: import('@playwright/test').Page, text: string) {
+    const row = page.getByRole('row').filter({ hasText: text }).first();
+    await row.getByRole('button', { name: /^More actions for / }).click();
+  }
+
+  test('page loads with the Users and groups heading and tabs', async ({ page }) => {
+    await expect(page.getByRole('heading', { level: 1, name: 'Users and groups' })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /^Users/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tab', { name: /^Groups/ })).toBeVisible();
+    await expect(page.getByRole('tab', { name: /^Roles/ })).toBeVisible();
   });
 
   test('displays at least one user (the admin)', async ({ page }) => {
-    await expect(page.getByText(/\d+ users?/)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/^\d+ users?$/)).toBeVisible({ timeout: 5000 });
+    for (const header of ['User', 'Role', 'Comes from', 'Second factor', 'Last sign-in', 'Status']) {
+      await expect(page.getByRole('columnheader', { name: header, exact: true })).toBeVisible();
+    }
   });
 
   test('search input filters users', async ({ page }) => {
-    await page.getByPlaceholder('Search users...').fill('testadmin');
-    await expect(page.getByText(/1 user/)).toBeVisible({ timeout: 5000 });
+    const search = page.getByPlaceholder('Name, e-mail, role or source');
+    await search.fill('testadmin');
+    await expect(page.getByText(/^1 of \d+ users$/)).toBeVisible({ timeout: 5000 });
 
-    await page.getByPlaceholder('Search users...').fill('nonexistent-zzz');
-    await expect(page.getByText('No users found.')).toBeVisible({ timeout: 5000 });
+    await search.fill('nonexistent-zzz');
+    await expect(page.getByText('No user matches these filters.')).toBeVisible({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Clear filters' }).click();
+    await expect(search).toHaveValue('');
   });
 
-  test('admin user shows admin role badge', async ({ page }) => {
-    await expect(page.getByText('admin', { exact: true }).first()).toBeVisible();
+  test('filters by administrators', async ({ page }) => {
+    await page.getByRole('group', { name: 'Show' }).getByRole('button', { name: /^Administrators/ }).click();
+    await expect(page.getByRole('cell', { name: /Admin/ }).first()).toBeVisible();
   });
 
-  test('clicking edit button shows edit form', async ({ page }) => {
-    await page.getByTitle('Edit user').first().click();
-    await expect(page.getByText(/editing/i)).toBeVisible();
-    await expect(page.getByPlaceholder('Display name')).toBeVisible();
-    await expect(page.getByPlaceholder('Email address')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Cancel' })).toBeVisible();
+  test('admin user shows the Admin role', async ({ page }) => {
+    await expect(page.getByText('Admin', { exact: true }).first()).toBeVisible();
   });
 
-  test('clicking cancel closes the edit form', async ({ page }) => {
-    await page.getByTitle('Edit user').first().click();
-    await expect(page.getByText(/editing/i)).toBeVisible();
-
-    await page.getByRole('button', { name: 'Cancel' }).click();
-    await expect(page.getByText(/editing/i)).not.toBeVisible();
+  test('opening a user shows the panel with role, MFA and sessions', async ({ page }) => {
+    await page.getByRole('row').filter({ hasText: 'testadmin' }).first().getByRole('button').first().click();
+    const panel = page.getByRole('dialog');
+    await expect(panel.getByRole('heading', { name: 'Role' })).toBeVisible();
+    await expect(panel.getByRole('heading', { name: 'Multi-factor authentication' })).toBeVisible();
+    await expect(panel.getByRole('heading', { name: 'Sessions' })).toBeVisible();
+    // The signed-in administrator cannot change their own role.
+    await expect(panel.getByText('You cannot change your own role.')).toBeVisible();
+    await expect(panel.getByText('This session')).toBeVisible({ timeout: 10_000 });
   });
 
-  test('edit form has role select with Admin, User, Viewer options', async ({ page }) => {
-    await page.getByTitle('Edit user').first().click();
-
-    // The role select trigger should be visible
-    const roleTrigger = page.getByRole('combobox').first();
-    await expect(roleTrigger).toBeVisible();
-    await roleTrigger.click();
-
-    // Check dropdown options
-    await expect(page.getByRole('option', { name: 'Admin' })).toBeVisible();
-    await expect(page.getByRole('option', { name: 'User' })).toBeVisible();
-    await expect(page.getByRole('option', { name: 'Viewer' })).toBeVisible();
+  test('Edit user opens the details form in the panel', async ({ page }) => {
+    await rowMenu(page, '@');
+    await page.getByRole('menuitem', { name: 'Edit user' }).click();
+    const panel = page.getByRole('dialog');
+    await expect(panel.getByText(/editing/i)).toBeVisible();
+    await expect(panel.getByPlaceholder('Display name')).toBeVisible();
+    await expect(panel.getByPlaceholder('Email address')).toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+    await panel.getByRole('button', { name: 'Cancel' }).click();
+    await expect(panel.getByText(/editing/i)).not.toBeVisible();
   });
 
-  test('user row shows action buttons (edit, disable, delete)', async ({ page }) => {
-    await expect(page.getByTitle('Edit user').first()).toBeVisible();
-    await expect(page.getByTitle('Disable user').first()).toBeVisible();
-    await expect(page.getByTitle('Delete user').first()).toBeVisible();
+  test('row menu offers the account actions', async ({ page }) => {
+    await rowMenu(page, '@');
+    await expect(page.getByRole('menuitem', { name: 'Open details' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Edit user' })).toBeVisible();
+    await expect(page.getByRole('menuitem', { name: 'Sign out everywhere' })).toBeVisible();
   });
 
   // ── Create user (UI) ──────────────────────────────────────────────────
 
-  test('Create User button is visible', async ({ page }) => {
-    await expect(page.getByRole('button', { name: /create user/i })).toBeVisible();
+  test('Add user button is visible', async ({ page }) => {
+    await expect(page.getByRole('button', { name: 'Add user' })).toBeVisible();
   });
 
-  test('clicking Create User shows create form', async ({ page }) => {
-    await page.getByRole('button', { name: /create user/i }).click();
+  test('clicking Add user shows the create form', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add user' }).click();
 
     await expect(page.getByTestId('create-email')).toBeVisible();
     await expect(page.getByTestId('create-name')).toBeVisible();
@@ -162,7 +159,7 @@ test.describe('Users page', () => {
   });
 
   test('clicking Cancel hides the create form', async ({ page }) => {
-    await page.getByRole('button', { name: /create user/i }).click();
+    await page.getByRole('button', { name: 'Add user' }).click();
     await expect(page.getByTestId('create-email')).toBeVisible();
 
     await page.getByRole('button', { name: 'Cancel' }).click();
@@ -174,7 +171,7 @@ test.describe('Users page', () => {
     const password = 'SecurePass2026!';
     const expectedUsername = email;
 
-    await page.getByRole('button', { name: /create user/i }).click();
+    await page.getByRole('button', { name: 'Add user' }).click();
 
     await page.getByTestId('create-email').fill(email);
     await page.getByTestId('create-name').fill('New Test User');
@@ -200,12 +197,12 @@ test.describe('Users page', () => {
     await context.close();
   });
 
-  test('creating a user with a specific role shows correct badge and email login works', async ({ page, browser }) => {
+  test('creating a user with a specific role shows the role and email login works', async ({ page, browser }) => {
     const email = `viewer-ui-${Date.now()}@test.local`;
     const password = 'ViewerPass2026!';
     const expectedUsername = email;
 
-    await page.getByRole('button', { name: /create user/i }).click();
+    await page.getByRole('button', { name: 'Add user' }).click();
 
     await page.getByTestId('create-email').fill(email);
     await page.getByTestId('create-name').fill('Viewer User');
@@ -217,8 +214,10 @@ test.describe('Users page', () => {
 
     await page.getByRole('button', { name: 'Create', exact: true }).click();
 
-    await expect(page.getByText(email)).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText('viewer', { exact: true }).first()).toBeVisible({ timeout: 5000 });
+    const row = page.getByRole('row').filter({ hasText: email });
+    await expect(row).toBeVisible({ timeout: 5000 });
+    await expect(row.getByText('Viewer', { exact: true })).toBeVisible({ timeout: 5000 });
+    await expect(row.getByText('Invited')).toBeVisible();
 
     const created = getCreatedUserRecord(email);
     expect(created.role).toBe('viewer');
@@ -228,6 +227,53 @@ test.describe('Users page', () => {
 
     const { context } = await loginWithCredentials(browser, expectedUsername, password);
     await context.close();
+  });
+
+  test('a new user can be disabled and enabled from the row menu', async ({ page }) => {
+    const email = `toggle-ui-${Date.now()}@test.local`;
+    await page.getByRole('button', { name: 'Add user' }).click();
+    await page.getByTestId('create-email').fill(email);
+    await page.getByTestId('create-password').fill('TogglePass2026!');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(page.getByText(email)).toBeVisible({ timeout: 5000 });
+
+    await rowMenu(page, email);
+    await page.getByRole('menuitem', { name: 'Disable user' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Disable user' }).click();
+    await expect(page.getByRole('row').filter({ hasText: email }).getByText('Disabled')).toBeVisible({ timeout: 5000 });
+
+    await rowMenu(page, email);
+    await page.getByRole('menuitem', { name: 'Enable user' }).click();
+    await expect(page.getByRole('row').filter({ hasText: email }).getByText('Disabled')).not.toBeVisible({ timeout: 5000 });
+  });
+
+  test('the edit form has a role select with Admin, User, Viewer in the panel of another user', async ({ page }) => {
+    const email = `role-ui-${Date.now()}@test.local`;
+    await page.getByRole('button', { name: 'Add user' }).click();
+    await page.getByTestId('create-email').fill(email);
+    await page.getByTestId('create-password').fill('RolePass2026!x');
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await expect(page.getByText(email)).toBeVisible({ timeout: 5000 });
+
+    await rowMenu(page, email);
+    await page.getByRole('menuitem', { name: 'Open details' }).click();
+    const roleTrigger = page.locator('[data-testid^="edit-role-"]').first();
+    await expect(roleTrigger).toBeVisible();
+    await roleTrigger.click();
+    await expect(page.getByRole('option', { name: 'Admin' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'User' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'Viewer' })).toBeVisible();
+  });
+
+  test('the Roles tab lists the built-in roles', async ({ page }) => {
+    await page.getByRole('tab', { name: /^Roles/ }).click();
+    await expect(page).toHaveURL(/\/users\?tab=roles/);
+    const roles = page.getByRole('region', { name: 'Roles' });
+    for (const name of ['Admin', 'User', 'Viewer']) {
+      await expect(roles.getByText(name, { exact: true }).first()).toBeVisible();
+    }
+    await roles.getByRole('button', { name: /^Admin/ }).click();
+    await expect(page.getByText('Built-in roles cannot be edited or deleted.')).toBeVisible();
   });
 });
 

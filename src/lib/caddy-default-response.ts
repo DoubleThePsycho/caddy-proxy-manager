@@ -133,7 +133,7 @@ function caddyHeaders(headers: Record<string, string> | undefined): Record<strin
 }
 
 /**
- * Build the final matcher-less route for CPM's main HTTP server.
+ * Build the final matcher-less route for Ingressi's main HTTP server.
  *
  * Request placeholders ({http.*}) in the body, header values and redirect
  * target are expanded by Caddy as usual; host placeholders ({env.*},

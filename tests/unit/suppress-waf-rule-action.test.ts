@@ -6,21 +6,27 @@ vi.mock('next/cache', () => ({
 }));
 
 vi.mock('@/src/lib/auth', () => ({
+  requirePermission: vi.fn(() => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireAdmin())),
   requireAdmin: vi.fn(async () => ({ user: { id: '1' } })),
 }));
 
-type UpdateProxyHostMock = (id: number, input: unknown, userId: number) => Promise<object>;
+type CreateExclusionMock = (input: { ruleId: number; proxyHostId: number | null; reason?: string }, userId: number, options: unknown) => Promise<object>;
 
-const { listProxyHostsMock, updateProxyHostMock } = vi.hoisted(() => ({
+const { listProxyHostsMock, createExclusionMock, listExclusionsMock } = vi.hoisted(() => ({
   listProxyHostsMock: vi.fn(async () => [] as unknown[]),
-  // Type-only signature mirrors updateProxyHost(id, input, actorUserId) so mock.calls
-  // preserves the arg tuple without unused-parameter lint noise.
-  updateProxyHostMock: vi.fn<UpdateProxyHostMock>(async () => ({})),
+  // Suppressing a rule for a host adds a whole-host exclusion record.
+  createExclusionMock: vi.fn<CreateExclusionMock>(async () => ({})),
+  listExclusionsMock: vi.fn(async () => [] as { path: string | null; variable: string | null }[]),
 }));
 
 vi.mock('@/src/lib/models/proxy-hosts', () => ({
   listProxyHosts: listProxyHostsMock,
-  updateProxyHost: updateProxyHostMock,
+  updateProxyHost: vi.fn(),
+}));
+vi.mock('@/src/lib/models/waf-exclusions', () => ({
+  createWafExclusion: createExclusionMock,
+  deleteWafExclusion: vi.fn(),
+  listWafExclusions: listExclusionsMock,
 }));
 
 // Stub other transitive deps of actions.ts that we don't exercise.
@@ -64,7 +70,8 @@ vi.mock('@/src/lib/dns-providers', () => ({
 import { suppressWafRuleForHostAction } from '@/app/(dashboard)/settings/actions';
 
 beforeEach(() => {
-  updateProxyHostMock.mockClear();
+  createExclusionMock.mockClear();
+  listExclusionsMock.mockClear();
   listProxyHostsMock.mockClear();
 });
 
@@ -79,8 +86,8 @@ describe('suppressWafRuleForHostAction port normalization', () => {
     listProxyHostsMock.mockResolvedValueOnce([fakeHost]);
     const result = await suppressWafRuleForHostAction(941100, 'app.example.com');
     expect(result.success).toBe(true);
-    expect(updateProxyHostMock).toHaveBeenCalledTimes(1);
-    expect(updateProxyHostMock.mock.calls[0]![0]).toBe(42);
+    expect(createExclusionMock).toHaveBeenCalledTimes(1);
+    expect(createExclusionMock.mock.calls[0]![0]).toMatchObject({ ruleId: 941100, proxyHostId: 42 });
   });
 
   it('matches a host when the hostname includes :443 (regression)', async () => {
@@ -91,17 +98,16 @@ describe('suppressWafRuleForHostAction port normalization', () => {
     listProxyHostsMock.mockResolvedValueOnce([fakeHost]);
     const result = await suppressWafRuleForHostAction(941100, 'app.example.com:443');
     expect(result.success).toBe(true);
-    expect(updateProxyHostMock).toHaveBeenCalledTimes(1);
-    expect(updateProxyHostMock.mock.calls[0]![0]).toBe(42);
+    expect(createExclusionMock).toHaveBeenCalledTimes(1);
+    expect(createExclusionMock.mock.calls[0]![0]).toMatchObject({ ruleId: 941100, proxyHostId: 42 });
   });
 
   it('matches a host when the hostname includes an arbitrary port', async () => {
     listProxyHostsMock.mockResolvedValueOnce([fakeHost]);
     const result = await suppressWafRuleForHostAction(941100, 'app.example.com:8443');
     expect(result.success).toBe(true);
-    expect(updateProxyHostMock).toHaveBeenCalledWith(
-      42,
-      expect.objectContaining({ waf: expect.objectContaining({ excluded_rule_ids: [941100] }) }),
+    expect(createExclusionMock).toHaveBeenCalledWith(
+      expect.objectContaining({ ruleId: 941100, proxyHostId: 42, reason: 'Suppressed from a WAF event' }),
       1,
     );
   });
@@ -111,16 +117,23 @@ describe('suppressWafRuleForHostAction port normalization', () => {
     const result = await suppressWafRuleForHostAction(941100, 'other.example.com:443');
     expect(result.success).toBe(false);
     expect(result.message).toContain('No proxy host found');
-    expect(updateProxyHostMock).not.toHaveBeenCalled();
+    expect(createExclusionMock).not.toHaveBeenCalled();
   });
 
-  it('appends to existing excluded_rule_ids without duplicating', async () => {
-    listProxyHostsMock.mockResolvedValueOnce([
-      { ...fakeHost, waf: { enabled: true, waf_mode: 'merge' as const, excluded_rule_ids: [941100, 920100] } },
-    ]);
+  it('adds nothing when the rule is already excluded for the whole host', async () => {
+    listProxyHostsMock.mockResolvedValueOnce([fakeHost]);
+    listExclusionsMock.mockResolvedValueOnce([{ path: null, variable: null }]);
     const result = await suppressWafRuleForHostAction(941100, 'app.example.com:443');
     expect(result.success).toBe(true);
-    const updateArg = updateProxyHostMock.mock.calls[0]![1] as { waf: { excluded_rule_ids: number[] } };
-    expect(updateArg.waf.excluded_rule_ids.sort()).toEqual([920100, 941100]);
+    expect(listExclusionsMock).toHaveBeenCalledWith({ proxyHostId: 42, ruleId: 941100 });
+    expect(createExclusionMock).not.toHaveBeenCalled();
+  });
+
+  it('still adds a whole-host exclusion when only a narrower one exists', async () => {
+    listProxyHostsMock.mockResolvedValueOnce([fakeHost]);
+    listExclusionsMock.mockResolvedValueOnce([{ path: '/api/', variable: null }]);
+    const result = await suppressWafRuleForHostAction(941100, 'app.example.com');
+    expect(result.success).toBe(true);
+    expect(createExclusionMock).toHaveBeenCalledTimes(1);
   });
 });

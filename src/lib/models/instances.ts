@@ -1,6 +1,6 @@
-import db, { nowIso, toIso } from "../db";
+import { appDb, nowIso, toIso } from "../db";
 import { instances } from "../db/schema";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { encryptSecret } from "../secret";
 import { assertValidInstanceSyncToken } from "../instance-sync-token";
 import { sanitizeInstanceSyncError } from "../instance-sync-error";
@@ -16,11 +16,16 @@ import {
   type SyncKeyPin,
 } from "../instance-sync-key-pins";
 import { decodeSyncPublicKey } from "../sync-crypto";
+import { forgetFleetInstance } from "@/ee/fleet/state";
+import { asc } from "@/src/lib/db/ops";
 
 export type Instance = {
   id: number;
   name: string;
+  /** For a pull replica, "pull:" and a random id: it names the replica, nothing is sent to it. */
   baseUrl: string;
+  /** "pull" for a pull replica (ee/fleet/pull-replicas.ts), which fetches its configuration itself. */
+  syncMode: "push" | "pull";
   enabled: boolean;
   hasToken: boolean;
   lastSyncAt: string | null;
@@ -48,6 +53,7 @@ function toInstance(row: InstanceRow, syncKeyPin: SyncKeyPin | null): Instance {
     id: row.id,
     name: row.name,
     baseUrl: row.baseUrl,
+    syncMode: row.syncMode === "pull" ? "pull" : "push",
     enabled: Boolean(row.enabled),
     hasToken: row.apiToken.length > 0,
     lastSyncAt: row.lastSyncAt ? toIso(row.lastSyncAt) : null,
@@ -60,8 +66,8 @@ function toInstance(row: InstanceRow, syncKeyPin: SyncKeyPin | null): Instance {
 
 export async function listInstances(): Promise<Instance[]> {
   const [rows, pins] = await Promise.all([
-    db.query.instances.findMany({
-      orderBy: (table) => asc(table.name)
+    appDb.query.instances.findMany({
+      orderBy: (table) => [asc(table.name), asc(table.id)]
     }),
     listSyncKeyPins(),
   ]);
@@ -100,7 +106,7 @@ function assertValidInstanceBaseUrl(baseUrl: unknown): void {
 }
 
 export async function getInstance(id: number): Promise<InstanceRow | null> {
-  return await db.query.instances.findFirst({
+  return await appDb.query.instances.findFirst({
     where: (table, operators) => operators.eq(table.id, id)
   }) ?? null;
 }
@@ -109,7 +115,7 @@ export async function createInstance(input: InstanceInput): Promise<Instance> {
   assertValidInstanceSyncToken(input.apiToken, "Instance API token");
   assertValidInstanceBaseUrl(input.baseUrl);
   const now = nowIso();
-  const [row] = await db
+  const [row] = await appDb
     .insert(instances)
     .values({
       name: input.name.trim(),
@@ -149,9 +155,14 @@ export async function updateInstance(
   if (!existing) {
     throw new ApiClientError("Instance not found", 404);
   }
+  if (existing.syncMode === "pull" && (input.baseUrl !== undefined || input.apiToken !== undefined)) {
+    throw new ApiValidationError(
+      "A pull replica has no base URL or sync token: it fetches its configuration with its pull credential (rotate it under Fleet)"
+    );
+  }
 
   const now = nowIso();
-  const [row] = await db
+  const [row] = await appDb
     .update(instances)
     .set({
       name: input.name?.trim() ?? existing.name,
@@ -176,7 +187,10 @@ export async function updateInstance(
 export async function deleteInstance(id: number, actorUserId: number | null = null): Promise<void> {
   const existing = await getInstance(id);
   if (!existing) return;
-  await db.delete(instances).where(eq(instances.id, id));
+  await appDb.delete(instances).where(eq(instances.id, id));
+  // Its environment assignment, pending rollout pushes and, for a pull
+  // replica, its credential and reports (ee/fleet).
+  await forgetFleetInstance(id);
   await releaseSyncKeyPin(existing.baseUrl, existing, "instance_deleted", actorUserId);
 }
 
@@ -188,7 +202,7 @@ export function describeSyncKeyPin(pin: SyncKeyPin): string {
 }
 
 /** Audit the removal of a sync key pin, as its pinning is audited (see instance-sync.ts). */
-function auditSyncKeyUnpin(
+async function auditSyncKeyUnpin(
   pin: SyncKeyPin,
   baseUrl: string,
   slave: { id: number; name: string } | null,
@@ -203,7 +217,7 @@ function auditSyncKeyUnpin(
     instance_deleted: `Removed ${described} of deleted ${target}`,
     base_url_changed: `Removed ${described} of ${target} after its base URL changed`,
   };
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "instance_sync_key_unpinned",
     entityType: "instance",
@@ -228,14 +242,14 @@ async function releaseSyncKeyPin(
   // Loaded here: instance-sync imports this module.
   const { getEnvSlaveInstances } = await import("../instance-sync");
   const envIdentities = new Set(getEnvSlaveInstances().map((slave) => syncKeyPinIdentity(slave.url)));
-  const pin = await takeSyncKeyPin(baseUrl, (identity) =>
+  const pin = await takeSyncKeyPin(baseUrl, async (identity) =>
     envIdentities.has(identity) ||
     // Read inside the pin store's transaction, so an instance added at the
     // URL meanwhile keeps the pin.
-    db.select({ baseUrl: instances.baseUrl }).from(instances).all()
+    (await appDb.select({ baseUrl: instances.baseUrl }).from(instances))
       .some((row) => syncKeyPinIdentity(row.baseUrl) === identity)
   );
-  if (pin) auditSyncKeyUnpin(pin, baseUrl, instance, reason, actorUserId);
+  if (pin) await auditSyncKeyUnpin(pin, baseUrl, instance, reason, actorUserId);
 }
 
 /**
@@ -253,7 +267,7 @@ export async function resetInstanceSyncKeyPin(id: number, actorUserId: number | 
   if (!instance) throw new ApiClientError("Instance not found", 404);
   const pin = await takeSyncKeyPin(instance.baseUrl);
   if (!pin) throw new ApiClientError("Sync key pin not found", 404);
-  auditSyncKeyUnpin(pin, instance.baseUrl, instance, "reset", actorUserId);
+  await auditSyncKeyUnpin(pin, instance.baseUrl, instance, "reset", actorUserId);
   return pin;
 }
 
@@ -267,7 +281,7 @@ export async function resetInstanceSyncKeyPin(id: number, actorUserId: number | 
 export async function resetSyncKeyPin(baseUrl: string, actorUserId: number | null): Promise<SyncKeyPin> {
   const pin = await takeSyncKeyPin(baseUrl);
   if (!pin) throw new ApiClientError("Sync key pin not found", 404);
-  auditSyncKeyUnpin(pin, baseUrl, null, "reset", actorUserId);
+  await auditSyncKeyUnpin(pin, baseUrl, null, "reset", actorUserId);
   return pin;
 }
 
@@ -292,7 +306,7 @@ async function pinSyncKeyManually(
   const raw = parsePinnedPublicKey(publicKey);
   const { pin, replaced } = await replaceSyncKeyPin(baseUrl, { publicKey: raw, source: "manual" });
   const identity = syncKeyPinIdentity(baseUrl);
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "instance_sync_key_pinned",
     entityType: "instance",
@@ -349,9 +363,9 @@ export type SyncKeyPinListing = SyncKeyPin & {
 export async function listSyncKeyPinsWithSlaves(): Promise<SyncKeyPinListing[]> {
   const [pins, rows] = await Promise.all([
     listSyncKeyPins(),
-    db.select({ id: instances.id, name: instances.name, baseUrl: instances.baseUrl })
+    appDb.select({ id: instances.id, name: instances.name, baseUrl: instances.baseUrl })
       .from(instances)
-      .orderBy(asc(instances.name)),
+      .orderBy(asc(instances.name), asc(instances.id)),
   ]);
   const { getEnvSlaveInstances } = await import("../instance-sync");
   const envSlaves = getEnvSlaveInstances();
@@ -385,7 +399,7 @@ export async function withSyncKeyPins<T extends { url: string }>(
 
 export async function recordInstanceSyncResult(id: number, result: { ok: boolean; error?: string | null }) {
   const now = nowIso();
-  await db
+  await appDb
     .update(instances)
     .set({
       lastSyncAt: now,

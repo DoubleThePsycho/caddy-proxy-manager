@@ -1,16 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 
 // Mock heavy dependencies before importing the module under test
-vi.mock('@/src/lib/db', () => ({
-  default: {
-    select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ get: vi.fn().mockReturnValue(null) }) }) }),
-    insert: vi.fn().mockReturnValue({ values: vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockReturnValue({ run: vi.fn() }) }) }),
-    delete: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ run: vi.fn() }) }),
-    run: vi.fn(),
-  },
-  nowIso: () => new Date().toISOString(),
-  toIso: (v: string | Date | null | undefined) => v ? new Date(v as string).toISOString() : null,
-}));
+vi.mock('@/src/lib/db', async () => {
+  // A real, empty test database: these tests do not look at the parse state.
+  const { createTestDb } = await import('../helpers/db');
+  const db = createTestDb();
+  return (await import('../helpers/db-module')).mockDbModule(() => db);
+});
 
 vi.mock('maxmind', () => ({
   default: {
@@ -28,7 +24,8 @@ vi.mock('@/src/lib/clickhouse/client', () => ({
   insertTrafficEvents: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { parseLine, collectBlockedSignatures, pruneBlockedSignatures } from '@/src/lib/log-parser';
+import { existsSync } from 'node:fs';
+import { parseLine, collectBlockedSignatures, pruneBlockedSignatures, missingLogDirectoryWarning } from '@/src/lib/log-parser';
 
 describe('log-parser', () => {
   describe('collectBlockedSignatures', () => {
@@ -250,5 +247,44 @@ describe('log-parser', () => {
       pruneBlockedSignatures(blocked, now);
       expect(blocked.size).toBe(0);
     });
+  });
+
+  describe('rate-limited requests', () => {
+    const handled = (extra: Record<string, unknown>) => JSON.stringify({
+      ts: 1700000000.5,
+      msg: 'handled request',
+      status: 429,
+      request: { client_ip: '192.0.2.7', remote_ip: '192.0.2.7', host: 'app.example.com', method: 'POST', uri: '/login', proto: 'HTTP/2.0' },
+      ...extra,
+    });
+
+    it("counts a 429 that names the limiter's zone", () => {
+      expect(parseLine(handled({ rate_limit_zone: 'ingressi_rl_h1_0123456789ab_ip' }), new Set())!.is_rate_limited).toBe(true);
+    });
+
+    it("does not count the upstream's or the monetization gate's 429, which name no zone", () => {
+      expect(parseLine(handled({}), new Set())!.is_rate_limited).toBe(false);
+      expect(parseLine(handled({ rate_limit_zone: '' }), new Set())!.is_rate_limited).toBe(false);
+      expect(parseLine(handled({ rate_limit_zone: null }), new Set())!.is_rate_limited).toBe(false);
+    });
+
+    it('needs the 429 status as well', () => {
+      expect(parseLine(handled({ status: 200, rate_limit_zone: 'ingressi_rl_h1_0123456789ab_ip' }), new Set())!.is_rate_limited).toBe(false);
+    });
+  });
+});
+
+// The replica that runs the parsers (the leader of PostgreSQL replicas) must
+// see Caddy's logs; without the volume it says so instead of collecting nothing.
+describe('missingLogDirectoryWarning', () => {
+  it('warns in production when the log directory is missing', () => {
+    vi.mocked(existsSync).mockReturnValueOnce(false);
+    expect(missingLogDirectoryWarning('/logs', true)).toMatch(/\/logs is not mounted in this container/);
+  });
+
+  it('stays quiet when the directory exists, and outside production', () => {
+    vi.mocked(existsSync).mockReturnValueOnce(true);
+    expect(missingLogDirectoryWarning('/logs', true)).toBeNull();
+    expect(missingLogDirectoryWarning('/logs', false)).toBeNull();
   });
 });

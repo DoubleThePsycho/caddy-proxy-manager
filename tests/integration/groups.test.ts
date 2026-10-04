@@ -1,12 +1,19 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createTestDb, type TestDb } from '../helpers/db';
-import { groups, groupMembers, users } from '@/src/lib/db/schema';
-import { eq } from 'drizzle-orm';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createTestDb, disableForeignKeys, type TestDb } from '../helpers/db';
+import { forwardAuthAccess, groups, groupMembers, proxyHosts, users } from '@/src/lib/db/schema';
 
 let db: TestDb;
 
-beforeEach(() => {
+vi.mock('@/src/lib/db', async () => (await import('../helpers/db-module')).mockDbModule(() => db));
+
+import { addGroupMember, deleteGroup, getGroup } from '@/src/lib/models/groups';
+import { deleteUser } from '@/src/lib/models/user';
+import { ApiClientError } from '@/src/lib/api-errors';
+
+beforeEach(async () => {
   db = createTestDb();
+  // As in production: SQLite runs with foreign keys off, PostgreSQL has none.
+  await disableForeignKeys(db);
 });
 
 function nowIso() {
@@ -83,32 +90,66 @@ describe('groups integration', () => {
     ).rejects.toThrow();
   });
 
-  it('cascades group deletion to members', async () => {
-    const group = await insertGroup();
+  it('deleting a group deletes its memberships and forward-auth grants, without foreign keys', async () => {
+    const group = await insertGroup({ name: 'Doomed' });
+    const kept = await insertGroup({ name: 'Kept' });
     const user = await insertUser();
     const now = nowIso();
+    const [host] = await db.insert(proxyHosts).values({
+      name: 'Host', domains: '["app.example.com"]', upstreams: '["backend:80"]', createdAt: now, updatedAt: now,
+    }).returning();
 
-    await db.insert(groupMembers).values({ groupId: group.id, userId: user.id, createdAt: now });
-    await db.delete(groups).where(eq(groups.id, group.id));
+    await db.insert(groupMembers).values([
+      { groupId: group.id, userId: user.id, createdAt: now },
+      { groupId: kept.id, userId: user.id, createdAt: now },
+    ]);
+    await db.insert(forwardAuthAccess).values([
+      { proxyHostId: host.id, userId: null, groupId: group.id, createdAt: now },
+      { proxyHostId: host.id, userId: null, groupId: kept.id, createdAt: now },
+    ]);
 
-    const members = await db.query.groupMembers.findMany({
-      where: (t, { eq }) => eq(t.groupId, group.id),
-    });
-    expect(members).toHaveLength(0);
+    await deleteGroup(group.id, user.id);
+
+    expect(await db.query.groups.findFirst({ where: (t, { eq }) => eq(t.id, group.id) })).toBeUndefined();
+    expect(await db.query.groupMembers.findMany({ where: (t, { eq }) => eq(t.groupId, group.id) })).toHaveLength(0);
+    expect(await db.query.forwardAuthAccess.findMany({ where: (t, { eq }) => eq(t.groupId, group.id) })).toHaveLength(0);
+    // The other group keeps its member and its grant.
+    expect(await db.query.groupMembers.findMany({ where: (t, { eq }) => eq(t.groupId, kept.id) })).toHaveLength(1);
+    expect(await db.query.forwardAuthAccess.findMany({ where: (t, { eq }) => eq(t.groupId, kept.id) })).toHaveLength(1);
   });
 
-  it('cascades user deletion to memberships', async () => {
+  it('deleting a user deletes their memberships, without foreign keys', async () => {
     const group = await insertGroup();
     const user = await insertUser();
+    const other = await insertUser();
     const now = nowIso();
 
-    await db.insert(groupMembers).values({ groupId: group.id, userId: user.id, createdAt: now });
-    await db.delete(users).where(eq(users.id, user.id));
+    await db.insert(groupMembers).values([
+      { groupId: group.id, userId: user.id, createdAt: now },
+      { groupId: group.id, userId: other.id, createdAt: now },
+    ]);
+    await deleteUser(user.id);
 
     const members = await db.query.groupMembers.findMany({
       where: (t, { eq }) => eq(t.groupId, group.id),
     });
-    expect(members).toHaveLength(0);
+    expect(members.map((member) => member.userId)).toEqual([other.id]);
+  });
+
+  it('refuses a member that does not exist instead of storing the id (404)', async () => {
+    const group = await insertGroup();
+    const user = await insertUser();
+    // The next user would get this id.
+    const unknownId = user.id + 1;
+
+    const error = await addGroupMember(group.id, unknownId, user.id).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ApiClientError);
+    expect((error as ApiClientError).status).toBe(404);
+    await expect(addGroupMember(group.id, Number.NaN, user.id)).rejects.toMatchObject({ status: 404 });
+    expect(await db.query.groupMembers.findMany({ where: (t, { eq }) => eq(t.groupId, group.id) })).toHaveLength(0);
+
+    await addGroupMember(group.id, user.id, user.id);
+    expect((await getGroup(group.id))!.members.map((member) => member.userId)).toEqual([user.id]);
   });
 
   it('supports multiple groups per user', async () => {

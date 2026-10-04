@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 /** Empty geoblock config used to reset state between tests. */
 const EMPTY_GEOBLOCK = {
@@ -21,6 +21,11 @@ const SAFE_ALLOW_CIDR_2 = '233.252.0.0/24';  // MCAST-TEST-NET
 
 const API_GEOBLOCK = 'http://localhost:3000/api/v1/settings/geoblock';
 
+/** The Geo blocking and GeoIP group of the settings page (its default rules and save bar). */
+function geoPane(page: Page) {
+  return page.locator('section[data-settings-group="geoblock"]');
+}
+
 /**
  * Find the visible text input inside a TagInput component by its hidden input name.
  */
@@ -36,11 +41,8 @@ test.describe('Geo Blocking — form persistence', () => {
 
   test.beforeEach(async ({ page }) => {
     await resetGeoblock(page);
-    await page.goto('/settings');
-    // Navigate to Global Geoblocking section in the settings sidebar
-    const sidebar = page.locator('aside');
-    await sidebar.getByRole('button', { name: 'Global Geoblocking', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Global Geoblocking' })).toBeVisible();
+    await page.goto('/settings?section=geoblock');
+    await expect(page.getByRole('heading', { level: 2, name: 'Geo blocking and GeoIP' })).toBeVisible();
   });
 
   test.afterEach(async ({ page }) => {
@@ -55,7 +57,7 @@ test.describe('Geo Blocking — form persistence', () => {
    * Uses RFC 5737 test ranges to avoid blocking real traffic.
    */
   test('saving block rules does not wipe allow rules', async ({ page }) => {
-    const geoSection = page.locator('form', { has: page.getByRole('button', { name: /save geoblocking settings/i }) });
+    const geoSection = geoPane(page);
     const enableSwitch = geoSection.getByRole('switch');
     if (!(await enableSwitch.isChecked())) {
       await enableSwitch.click();
@@ -73,12 +75,11 @@ test.describe('Geo Blocking — form persistence', () => {
     await blockInput.press('Enter');
     await expect(geoSection.locator(`text=${SAFE_BLOCK_CIDR}`)).toBeVisible();
 
-    await geoSection.getByRole('button', { name: /save geoblocking settings/i }).click();
-    await expect(geoSection.locator('text=/saved|success/i')).toBeVisible({ timeout: 10000 });
+    await geoSection.getByRole('button', { name: 'Save changes' }).click();
+    await expect(geoSection.getByText(/saved|success/i).first()).toBeVisible({ timeout: 10000 });
 
     await page.reload();
-    await page.locator('aside').getByRole('button', { name: 'Global Geoblocking', exact: true }).click();
-    const fresh = page.locator('form', { has: page.getByRole('button', { name: /save geoblocking settings/i }) });
+    const fresh = geoPane(page);
 
     await fresh.getByRole('tab', { name: /block rules/i }).click();
     await expect(fresh.locator(`text=${SAFE_BLOCK_CIDR}`)).toBeVisible({ timeout: 5000 });
@@ -88,7 +89,7 @@ test.describe('Geo Blocking — form persistence', () => {
   });
 
   test('saving allow rules does not wipe block rules', async ({ page }) => {
-    const geoSection = page.locator('form', { has: page.getByRole('button', { name: /save geoblocking settings/i }) });
+    const geoSection = geoPane(page);
     const enableSwitch = geoSection.getByRole('switch');
     if (!(await enableSwitch.isChecked())) {
       await enableSwitch.click();
@@ -106,12 +107,11 @@ test.describe('Geo Blocking — form persistence', () => {
     await allowInput.press('Enter');
     await expect(geoSection.locator(`text=${SAFE_ALLOW_CIDR_2}`)).toBeVisible();
 
-    await geoSection.getByRole('button', { name: /save geoblocking settings/i }).click();
-    await expect(geoSection.locator('text=/saved|success/i')).toBeVisible({ timeout: 10000 });
+    await geoSection.getByRole('button', { name: 'Save changes' }).click();
+    await expect(geoSection.getByText(/saved|success/i).first()).toBeVisible({ timeout: 10000 });
 
     await page.reload();
-    await page.locator('aside').getByRole('button', { name: 'Global Geoblocking', exact: true }).click();
-    const fresh = page.locator('form', { has: page.getByRole('button', { name: /save geoblocking settings/i }) });
+    const fresh = geoPane(page);
 
     await fresh.getByRole('tab', { name: /block rules/i }).click();
     await expect(fresh.locator(`text=${SAFE_BLOCK_CIDR_2}`)).toBeVisible({ timeout: 5000 });
@@ -126,7 +126,7 @@ test.describe('Geo Blocking — form persistence', () => {
    * wiped when saving with the accordion collapsed.
    */
   test('advanced settings survive save when accordion is collapsed', async ({ page }) => {
-    const geoSection = page.locator('form', { has: page.getByRole('button', { name: /save geoblocking settings/i }) });
+    const geoSection = geoPane(page);
     const enableSwitch = geoSection.getByRole('switch');
     if (!(await enableSwitch.isChecked())) {
       await enableSwitch.click();
@@ -139,12 +139,11 @@ test.describe('Geo Blocking — form persistence', () => {
 
     await geoSection.getByRole('button', { name: /trusted proxies/i }).click();
 
-    await geoSection.getByRole('button', { name: /save geoblocking settings/i }).click();
-    await expect(geoSection.locator('text=/saved|success/i')).toBeVisible({ timeout: 10000 });
+    await geoSection.getByRole('button', { name: 'Save changes' }).click();
+    await expect(geoSection.getByText(/saved|success/i).first()).toBeVisible({ timeout: 10000 });
 
     await page.reload();
-    await page.locator('aside').getByRole('button', { name: 'Global Geoblocking', exact: true }).click();
-    const fresh = page.locator('form', { has: page.getByRole('button', { name: /save geoblocking settings/i }) });
+    const fresh = geoPane(page);
     await fresh.getByRole('button', { name: /trusted proxies/i }).click();
     await expect(fresh.locator('input[name="geoblockRedirectUrl"]'))
       .toHaveValue('https://example.com/blocked', { timeout: 5000 });
@@ -158,7 +157,7 @@ test.describe('Geo Blocking — form persistence', () => {
    * no page reload.
    */
   test('form reflects saved values immediately without reload', async ({ page }) => {
-    const geoSection = page.locator('form', { has: page.getByRole('button', { name: /save geoblocking settings/i }) });
+    const geoSection = geoPane(page);
     const enableSwitch = geoSection.getByRole('switch');
     if (!(await enableSwitch.isChecked())) {
       await enableSwitch.click();
@@ -172,8 +171,8 @@ test.describe('Geo Blocking — form persistence', () => {
     const statusInput = geoSection.locator('input[name="geoblockResponseStatus"]');
     await statusInput.fill('418');
 
-    await geoSection.getByRole('button', { name: /save geoblocking settings/i }).click();
-    await expect(geoSection.locator('text=/saved|success/i')).toBeVisible({ timeout: 10000 });
+    await geoSection.getByRole('button', { name: 'Save changes' }).click();
+    await expect(geoSection.getByText(/saved|success/i).first()).toBeVisible({ timeout: 10000 });
 
     // No page.reload() here — the visible form must already reflect the save.
     await expect(geoSection.locator('input[name="geoblockRedirectUrl"]'))
@@ -187,7 +186,7 @@ test.describe('Geo Blocking — form persistence', () => {
    * This test does NOT save, so no Caddy config is affected.
    */
   test('LAN Only preset: values survive tab switching', async ({ page }) => {
-    const geoSection = page.locator('form', { has: page.getByRole('button', { name: /save geoblocking settings/i }) });
+    const geoSection = geoPane(page);
     const enableSwitch = geoSection.getByRole('switch');
     if (!(await enableSwitch.isChecked())) {
       await enableSwitch.click();
@@ -215,15 +214,15 @@ test.describe('Geo Blocking — form persistence', () => {
    * to minimize the window where 0.0.0.0/0 blocks all traffic.
    */
   test('LAN Only preset: values persist after save', async ({ page }) => {
-    const geoSection = page.locator('form', { has: page.getByRole('button', { name: /save geoblocking settings/i }) });
+    const geoSection = geoPane(page);
     const enableSwitch = geoSection.getByRole('switch');
     if (!(await enableSwitch.isChecked())) {
       await enableSwitch.click();
     }
 
     await geoSection.getByRole('button', { name: /lan only/i }).click();
-    await geoSection.getByRole('button', { name: /save geoblocking settings/i }).click();
-    await expect(geoSection.locator('text=/saved|success/i')).toBeVisible({ timeout: 10000 });
+    await geoSection.getByRole('button', { name: 'Save changes' }).click();
+    await expect(geoSection.getByText(/saved|success/i).first()).toBeVisible({ timeout: 10000 });
 
     // Read saved values via API, then immediately reset to stop blocking traffic
     const res = await page.request.get(API_GEOBLOCK);

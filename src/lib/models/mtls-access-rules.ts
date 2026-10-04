@@ -1,8 +1,15 @@
-import db, { nowIso, toIso } from "../db";
+import { appDb, nowIso, toIso } from "../db";
 import { applyCaddyConfig } from "../caddy";
 import { logAuditEvent } from "../audit";
-import { mtlsAccessRules } from "../db/schema";
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { mtlsAccessRules, proxyHosts } from "../db/schema";
+import { eq, inArray } from "drizzle-orm";
+import { actorOrganizationId, TenantError } from "@/ee/multi-tenancy/scope";
+import { asc, desc, first } from "@/src/lib/db/ops";
+
+/** mTLS rests on the provider's trust anchors: organisation users (ee/multi-tenancy) never change rules. */
+async function assertProviderActor(actorUserId: number): Promise<void> {
+  if (await actorOrganizationId(actorUserId) !== null) throw new TenantError("mTLS access rules are managed by your provider");
+}
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -59,7 +66,7 @@ function toMtlsAccessRule(row: RuleRow): MtlsAccessRule {
 // ── CRUD ─────────────────────────────────────────────────────────────
 
 export async function listMtlsAccessRules(proxyHostId: number): Promise<MtlsAccessRule[]> {
-  const rows = await db
+  const rows = await appDb
     .select()
     .from(mtlsAccessRules)
     .where(eq(mtlsAccessRules.proxyHostId, proxyHostId))
@@ -68,7 +75,7 @@ export async function listMtlsAccessRules(proxyHostId: number): Promise<MtlsAcce
 }
 
 export async function getMtlsAccessRule(id: number): Promise<MtlsAccessRule | null> {
-  const row = await db.query.mtlsAccessRules.findFirst({
+  const row = await appDb.query.mtlsAccessRules.findFirst({
     where: (table, { eq: cmpEq }) => cmpEq(table.id, id),
   });
   return row ? toMtlsAccessRule(row) : null;
@@ -78,26 +85,34 @@ export async function createMtlsAccessRule(
   input: MtlsAccessRuleInput,
   actorUserId: number
 ): Promise<MtlsAccessRule> {
+  await assertProviderActor(actorUserId);
   const now = nowIso();
-  const [record] = await db
-    .insert(mtlsAccessRules)
-    .values({
-      proxyHostId: input.proxyHostId,
-      pathPattern: input.pathPattern.trim(),
-      allowedRoleIds: JSON.stringify(input.allowedRoleIds ?? []),
-      allowedCertIds: JSON.stringify(input.allowedCertIds ?? []),
-      denyAll: input.denyAll ?? false,
-      priority: input.priority ?? 0,
-      description: input.description ?? null,
-      createdBy: actorUserId,
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
+  // The host is read in the transaction that inserts the rule: foreign keys
+  // are not enforced, and a rule of a host id nobody has yet would belong to
+  // whichever host gets it.
+  const record = await appDb.transaction(async (tx) => {
+    const host = await first(tx.select({ id: proxyHosts.id }).from(proxyHosts).where(eq(proxyHosts.id, input.proxyHostId)).limit(1));
+    if (!host) throw new Error("Proxy host not found");
+    return await first(tx
+      .insert(mtlsAccessRules)
+      .values({
+        proxyHostId: input.proxyHostId,
+        pathPattern: input.pathPattern.trim(),
+        allowedRoleIds: JSON.stringify(input.allowedRoleIds ?? []),
+        allowedCertIds: JSON.stringify(input.allowedCertIds ?? []),
+        denyAll: input.denyAll ?? false,
+        priority: input.priority ?? 0,
+        description: input.description ?? null,
+        createdBy: actorUserId,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning());
+  });
 
   if (!record) throw new Error("Failed to create mTLS access rule");
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "create",
     entityType: "mtls_access_rule",
@@ -114,7 +129,8 @@ export async function updateMtlsAccessRule(
   input: Partial<Omit<MtlsAccessRuleInput, "proxyHostId">>,
   actorUserId: number
 ): Promise<MtlsAccessRule> {
-  const existing = await db.query.mtlsAccessRules.findFirst({
+  await assertProviderActor(actorUserId);
+  const existing = await appDb.query.mtlsAccessRules.findFirst({
     where: (table, { eq: cmpEq }) => cmpEq(table.id, id),
   });
   if (!existing) throw new Error("mTLS access rule not found");
@@ -129,9 +145,9 @@ export async function updateMtlsAccessRule(
   if (input.priority !== undefined) updates.priority = input.priority;
   if (input.description !== undefined) updates.description = input.description ?? null;
 
-  await db.update(mtlsAccessRules).set(updates).where(eq(mtlsAccessRules.id, id));
+  await appDb.update(mtlsAccessRules).set(updates).where(eq(mtlsAccessRules.id, id));
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "update",
     entityType: "mtls_access_rule",
@@ -147,14 +163,15 @@ export async function deleteMtlsAccessRule(
   id: number,
   actorUserId: number
 ): Promise<void> {
-  const existing = await db.query.mtlsAccessRules.findFirst({
+  await assertProviderActor(actorUserId);
+  const existing = await appDb.query.mtlsAccessRules.findFirst({
     where: (table, { eq: cmpEq }) => cmpEq(table.id, id),
   });
   if (!existing) throw new Error("mTLS access rule not found");
 
-  await db.delete(mtlsAccessRules).where(eq(mtlsAccessRules.id, id));
+  await appDb.delete(mtlsAccessRules).where(eq(mtlsAccessRules.id, id));
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "delete",
     entityType: "mtls_access_rule",
@@ -174,7 +191,7 @@ export async function getAccessRulesForHosts(
 ): Promise<Map<number, MtlsAccessRule[]>> {
   if (proxyHostIds.length === 0) return new Map();
 
-  const rows = await db
+  const rows = await appDb
     .select()
     .from(mtlsAccessRules)
     .where(inArray(mtlsAccessRules.proxyHostId, proxyHostIds))

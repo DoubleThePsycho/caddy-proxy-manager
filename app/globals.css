@@ -1,6 +1,29 @@
 @import "tailwindcss";
 
+/*
+ * Ingressi design tokens. Dark is the default theme, light the alternative;
+ * next-themes puts the "dark" or "light" class on <html>, and a nested
+ * element with either class switches its subtree (the print view, previews).
+ *
+ * Interface: one accent, violet. `brand` is the accent for text, links,
+ * outlines and selection (readable on every panel); `primary` (the accent
+ * fill) is for filled controls with `primary-foreground` on top.
+ * Data: blue for served traffic, the orange family for what Ingressi stopped
+ * (WAF darkest, then access and geo rules, then rate limiting), red only for
+ * upstream failures (5xx), grey for 4xx. Data colours never reuse the accent.
+ *
+ * Every text token meets 4.5:1 on `panel` and `panel2` in both themes. The
+ * white-label accent (ee/white-label/colors.ts) overrides --brand-fill,
+ * --on-brand-fill, --brand and --brand-tint at runtime.
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme inline {
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* shadcn/ui names, mapped onto the palette below. */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -20,9 +43,56 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
+
+  /* Surfaces and text. */
+  --color-ground: var(--ground);
+  --color-panel: var(--panel);
+  --color-panel2: var(--panel2);
+  --color-raise: var(--raise);
+  --color-line: var(--line);
+  --color-line2: var(--line2);
+  --color-soft: var(--soft);
+  --color-brand: var(--brand);
+  --color-brand-fill: var(--brand-fill);
+  --color-on-brand-fill: var(--on-brand-fill);
+  --color-brand-tint: var(--brand-tint);
+
+  /* Traffic colours: the same meaning on every chart. */
+  --color-served: var(--served);
+  --color-served2: var(--served2);
+  --color-waf: var(--waf);
+  --color-waf-ink: var(--waf-ink);
+  --color-access: var(--access);
+  --color-rl: var(--rl);
+  --color-err5: var(--err5);
+  --color-err4: var(--err4);
+
+  /* Status. */
+  --color-ok: var(--ok);
+  --color-ok-tint: var(--ok-tint);
+  --color-warn: var(--warn);
+  --color-warn-tint: var(--warn-tint);
+  --color-bad: var(--bad);
+  --color-bad-tint: var(--bad-tint);
+  --color-scrim: var(--scrim);
+
+  /*
+   * `primary` as text or as a border is the accent as text (readable on every
+   * panel); as a background it stays the accent fill. Existing pages use
+   * text-primary for links and emphasis, so this keeps them readable in dark.
+   */
+  --text-color-primary: var(--brand);
+  --border-color-primary: var(--brand);
+  --outline-color-primary: var(--brand);
+
+  --shadow-overlay: var(--shadow-overlay);
+
   --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 2px);
+  --radius-2xl: calc(var(--radius) + 4px);
+
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
 }
@@ -38,55 +108,152 @@
 }
 
 @layer base {
-  :root {
-    --radius: 0.65rem;
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.141 0.005 285.823);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.141 0.005 285.823);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.141 0.005 285.823);
-    --primary: oklch(0.541 0.281 293.009);
-    --primary-foreground: oklch(0.969 0.016 293.756);
-    --secondary: oklch(0.967 0.001 286.375);
-    --secondary-foreground: oklch(0.21 0.006 285.885);
-    --muted: oklch(0.967 0.001 286.375);
-    --muted-foreground: oklch(0.502 0.016 285.938);
-    --accent: oklch(0.967 0.001 286.375);
-    --accent-foreground: oklch(0.21 0.006 285.885);
-    --destructive: oklch(0.577 0.245 27.325);
-    --destructive-foreground: oklch(1 0 0);
-    --border: oklch(0.92 0.004 286.32);
-    --input: oklch(0.92 0.004 286.32);
-    --ring: oklch(0.702 0.183 293.541);
+  /* Dark, the default. */
+  :root,
+  .dark {
+    --ground: #0E1014;
+    --panel: #15181E;
+    --panel2: #1B1F27;
+    --raise: #262B35;
+    --line: #252A33;
+    --line2: #343B48;
+    --text: #E8EAEF;
+    --text-muted: #A3AAB8;
+    --soft: #878F9F;
+    --brand: #A194FF;
+    --brand-fill: #5B49DC;
+    --on-brand-fill: #FFFFFF;
+    --brand-tint: rgba(150, 135, 255, 0.14);
+    --served: #4D8EFF;
+    --served2: #A5C4FF;
+    --waf: #FF7A2E;
+    --waf-ink: #FF7A2E;
+    --access: #FFB070;
+    --rl: #FFDDB0;
+    --err5: #F2555B;
+    --err4: #7E8AA3;
+    --ok: #3DD68C;
+    --ok-tint: rgba(61, 214, 140, 0.13);
+    --warn: #F5B83D;
+    --warn-tint: rgba(245, 184, 61, 0.14);
+    --bad: #FF6B70;
+    --bad-tint: rgba(242, 85, 91, 0.14);
+    --on-bad: #0E1014;
+    --shadow-overlay: 0 16px 40px rgba(0, 0, 0, 0.45);
+    --scrim: rgba(5, 7, 10, 0.68);
+    color-scheme: dark;
   }
 
-  .dark {
-    --background: oklch(0.141 0.005 285.823);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0.008 285.885);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0.008 285.885);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.606 0.25 292.717);
-    --primary-foreground: oklch(0.969 0.016 293.756);
-    --secondary: oklch(0.28 0.008 286.033);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.28 0.008 286.033);
-    --muted-foreground: oklch(0.85 0.010 286.067);
-    --accent: oklch(0.28 0.008 286.033);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --destructive-foreground: oklch(0.985 0 0);
-    --border: oklch(1 0 0 / 16%);
-    --input: oklch(1 0 0 / 20%);
-    --ring: oklch(0.38 0.189 293.745);
+  .light {
+    --ground: #F4F5F7;
+    --panel: #FFFFFF;
+    --panel2: #F4F5F8;
+    --raise: #E8EBF0;
+    --line: #E3E6EB;
+    --line2: #CDD3DC;
+    --text: #13161B;
+    --text-muted: #4D5564;
+    --soft: #606878;
+    --brand: #5240D6;
+    --brand-fill: #5240D6;
+    --on-brand-fill: #FFFFFF;
+    --brand-tint: rgba(82, 64, 214, 0.09);
+    --served: #2F6FE4;
+    --served2: #93B6F4;
+    --waf: #E2570B;
+    /* --waf as text: darker, for 4.5:1 on light panels. */
+    --waf-ink: #B84A0C;
+    --access: #F2994A;
+    --rl: #F5C98C;
+    --err5: #D42F3B;
+    --err4: #8E98AB;
+    /* Darker than the foundations sheet's #12915A, which is 4.0:1 on white. */
+    --ok: #0E7C4D;
+    --ok-tint: rgba(18, 145, 90, 0.10);
+    --warn: #9A630B;
+    --warn-tint: rgba(230, 160, 40, 0.16);
+    --bad: #C42834;
+    --bad-tint: rgba(212, 47, 59, 0.09);
+    --on-bad: #FFFFFF;
+    --shadow-overlay: 0 16px 40px rgba(20, 24, 32, 0.14);
+    --scrim: rgba(19, 22, 27, 0.40);
+    color-scheme: light;
+  }
+
+  /* shadcn/ui variables. Repeated per theme class so a nested theme recomputes them. */
+  :root,
+  .dark,
+  .light {
+    --radius: 0.625rem;
+    --background: var(--ground);
+    --foreground: var(--text);
+    --card: var(--panel);
+    --card-foreground: var(--text);
+    --popover: var(--panel);
+    --popover-foreground: var(--text);
+    --primary: var(--brand-fill);
+    --primary-foreground: var(--on-brand-fill);
+    --secondary: var(--panel2);
+    --secondary-foreground: var(--text);
+    --muted: var(--panel2);
+    --muted-foreground: var(--text-muted);
+    --accent: var(--raise);
+    --accent-foreground: var(--text);
+    --destructive: var(--bad);
+    --destructive-foreground: var(--on-bad);
+    --border: var(--line);
+    --input: var(--line2);
+    --ring: var(--brand);
   }
 
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  ::placeholder {
+    color: var(--soft);
+  }
+
+  kbd {
+    font-family: var(--font-mono);
+  }
+}
+
+/* Numbers, addresses, paths and rule ids: mono with tabular figures, so columns line up. */
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hides a scrollbar while keeping the element scrollable (horizontal chip rows). */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* White-label logos (ee/white-label/ui/BrandParts.tsx): one per theme, following the theme class. */
+.brand-logo-light {
+  display: none;
+}
+.light .brand-logo-light {
+  display: inline-block;
+}
+.light .brand-logo-dark {
+  display: none;
 }

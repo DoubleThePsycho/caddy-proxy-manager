@@ -27,7 +27,7 @@ const SESSION_HEADERS = { Origin: BASE_URL };
 test.describe.serial('L4 TCP Load Balancing', () => {
   test('setup: create L4 host with load balancing and active health check', async ({ page }) => {
     await page.goto('/l4-proxy-hosts');
-    await page.getByRole('button', { name: /create l4 host/i }).click();
+    await page.getByRole('button', { name: /new l4 host/i }).first().click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 

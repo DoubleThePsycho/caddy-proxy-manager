@@ -9,10 +9,10 @@ type StatusChipProps = {
 };
 
 const STATUS_CONFIG: Record<StatusType, { dot: string; text: string; label: string }> = {
-  active:   { dot: "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]",  text: "text-green-500",  label: "Active"  },
-  inactive: { dot: "bg-zinc-500",                                          text: "text-zinc-600 dark:text-zinc-400",   label: "Paused"  },
-  error:    { dot: "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]",    text: "text-red-500",    label: "Error"   },
-  warning:  { dot: "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]", text: "text-amber-500",  label: "Warning" },
+  active:   { dot: "bg-ok",   text: "text-foreground", label: "Active"  },
+  inactive: { dot: "bg-soft", text: "text-soft",       label: "Paused"  },
+  error:    { dot: "bg-bad",  text: "text-bad",        label: "Error"   },
+  warning:  { dot: "bg-warn", text: "text-warn",       label: "Warning" },
 };
 
 export function StatusChip({ status, label, className }: StatusChipProps) {
@@ -21,12 +21,11 @@ export function StatusChip({ status, label, className }: StatusChipProps) {
 
   return (
     <span className={cn(
-      "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full",
-      "bg-muted/30 border border-border",
+      "inline-flex h-[22px] items-center gap-1.5 rounded-full border border-line2 px-2",
       className
     )}>
       <span className={cn("w-2 h-2 rounded-full shrink-0", config.dot)} />
-      <span className={cn("text-xs font-semibold leading-none", config.text)}>
+      <span className={cn("text-xs font-medium leading-none", config.text)}>
         {displayLabel}
       </span>
     </span>

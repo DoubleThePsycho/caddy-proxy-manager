@@ -4,9 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -17,50 +15,19 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { authClient } from "@/src/lib/auth-client";
-import { Camera, Check, Clock, Copy, Key, Link, LogIn, Lock, LogOut, Monitor, Plus, Trash2, Unlink, User, AlertTriangle } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { Camera, LogIn, LogOut, Trash2, Unlink } from "lucide-react";
 import type { ApiToken } from "@/lib/models/api-tokens";
 import type { PasswordSignInBlocker } from "@/src/lib/models/user";
-import { createApiTokenAction, deleteApiTokenAction } from "../api-tokens/actions";
-import { revokeSessionAction, revokeOtherSessionsAction } from "./session-actions";
+import type { SessionView } from "@/src/lib/models/sessions";
+import type { PasskeyView } from "@/src/lib/passkeys";
+import type { Permission } from "@/src/lib/permissions";
 import { passwordPolicyMessage } from "@/src/lib/password-policy";
-
-interface ActiveSession {
-  id: number;
-  createdAt: string;
-  updatedAt: string;
-  expiresAt: string;
-  ipAddress: string | null;
-  userAgent: string | null;
-  current: boolean;
-}
-
-/** Best-effort friendly device label from a User-Agent string. */
-function describeDevice(ua: string | null): string {
-  if (!ua) return "Unknown device";
-  const browser = /Edg\//.test(ua) ? "Edge"
-    : /Chrome\//.test(ua) ? "Chrome"
-    : /Firefox\//.test(ua) ? "Firefox"
-    : /Safari\//.test(ua) ? "Safari"
-    : "Browser";
-  const os = /Windows/.test(ua) ? "Windows"
-    : /Mac OS X|Macintosh/.test(ua) ? "macOS"
-    : /Android/.test(ua) ? "Android"
-    : /iPhone|iPad|iOS/.test(ua) ? "iOS"
-    : /Linux/.test(ua) ? "Linux"
-    : "";
-  return os ? `${browser} on ${os}` : browser;
-}
-
-function relativeTime(iso: string): string {
-  try {
-    return formatDistanceToNow(new Date(iso), { addSuffix: true });
-  } catch {
-    return iso;
-  }
-}
+import type { MfaStatus } from "@/src/lib/mfa";
+import SignInSecurity from "./SignInSecurity";
+import SessionsSection from "./SessionsSection";
+import TokensSection from "./TokensSection";
+import InterfaceSection from "./InterfaceSection";
 
 interface UserData {
   id: number;
@@ -74,6 +41,8 @@ interface UserData {
   /** Why signInUsername is null. */
   passwordSignInBlocker: PasswordSignInBlocker | null;
   role: string;
+  /** The role as people read it: Administrator, User, or the custom role's name. */
+  roleLabel?: string;
   avatarUrl: string | null;
 }
 
@@ -82,7 +51,7 @@ interface UserData {
  * it, or null when it accepts it or the user has not set one (which needs no
  * explanation).
  */
-function passwordSignInProblem(user: UserData): string | null {
+export function passwordSignInProblem(user: Pick<UserData, "signInUsername" | "passwordSignInBlocker" | "hasPassword">): string | null {
   if (user.signInUsername) return null;
   if (user.passwordSignInBlocker === "no-username") {
     const prefix = "Your account has no sign-in username the login page can use, so you cannot sign in there with a password. " +
@@ -97,16 +66,51 @@ function passwordSignInProblem(user: UserData): string | null {
   return null;
 }
 
+function providerLabel(provider: string): string {
+  if (provider === "credentials" || provider === "credential") return "Password";
+  if (provider.startsWith("ldap:")) return "LDAP directory";
+  if (provider.startsWith("saml:")) return "SAML provider";
+  return provider;
+}
+
+function initialsOf(name: string | null, email: string): string {
+  const source = (name ?? "").trim() || email.split("@")[0];
+  const parts = source.split(/[\s._-]+/).filter(Boolean);
+  return (parts.length > 1 ? parts[0][0] + parts[1][0] : source.slice(0, 2)).toUpperCase();
+}
+
 interface ProfileClientProps {
   user: UserData;
   /** Linked OAuth identities, read from the authoritative accounts table (#261). */
   linkedProviders: Array<{ providerId: string; accountId: string }>;
-  enabledProviders: Array<{ id: string; name: string; autoLink: boolean }>;
+  enabledProviders: Array<{ id: string; name: string; autoLink: boolean; host?: string | null }>;
   apiTokens: ApiToken[];
-  sessions: ActiveSession[];
+  maxApiTokens?: number;
+  sessions: SessionView[];
+  /** Multi-factor authentication state; never holds the secret or the backup codes. */
+  mfa: MfaStatus;
+  passkeys?: PasskeyView[];
+  /** Why the account cannot add a passkey now; null when it can. */
+  passkeyBlocker?: string | null;
+  /** Enforced SSO: whether it is on and whether this account is a break-glass account. */
+  sso?: { enforced: boolean; breakGlass: boolean };
+  /** What the user's role holds: the permissions an API token can be limited to. */
+  heldPermissions?: Permission[];
 }
 
-export default function ProfileClient({ user, linkedProviders, enabledProviders, apiTokens, sessions }: ProfileClientProps) {
+export default function ProfileClient({
+  user,
+  linkedProviders,
+  enabledProviders,
+  apiTokens,
+  maxApiTokens = 10,
+  sessions,
+  mfa,
+  passkeys = [],
+  passkeyBlocker = null,
+  sso = { enforced: false, breakGlass: false },
+  heldPermissions = [],
+}: ProfileClientProps) {
   const router = useRouter();
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [unlinkDialogOpen, setUnlinkDialogOpen] = useState(false);
@@ -114,64 +118,57 @@ export default function ProfileClient({ user, linkedProviders, enabledProviders,
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(user.avatarUrl);
-  const [newToken, setNewToken] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  const getProviderName = (provider: string) => {
-    if (provider === "credentials") return "Username/Password";
-    if (provider === "oauth2") return "OAuth2";
-    if (provider === "authentik") return "Authentik";
-    return provider;
-  };
 
   const hasPassword = user.hasPassword;
   const canUnlinkOAuth = user.signInUsername !== null;
   const signInProblem = passwordSignInProblem(user);
-  const linkedNames = linkedProviders.map((l) =>
-    enabledProviders.find((p) => p.id === l.providerId)?.name ?? getProviderName(l.providerId)
-  );
-  const hasOAuth = linkedNames.length > 0;
+  const linked = linkedProviders.map((link) => {
+    const provider = enabledProviders.find((p) => p.id === link.providerId);
+    return { id: link.providerId, name: provider?.name ?? providerLabel(link.providerId), host: provider?.host ?? null };
+  });
+  const hasOAuth = linked.length > 0;
+  // While SSO is enforced only a break-glass account's password still works.
+  const passwordRefused = sso.enforced && !sso.breakGlass;
+
+  const openPasswordDialog = () => {
+    setPasswordError(null);
+    setPasswordDialogOpen(true);
+  };
 
   const handlePasswordChange = async () => {
-    setError(null);
+    setPasswordError(null);
     setSuccess(null);
 
     if (newPassword !== confirmPassword) {
-      setError("Passwords do not match");
+      setPasswordError("Passwords do not match");
       return;
     }
 
     // Mirrors the server-side policy so most mistakes show up without a round trip.
     const policyError = passwordPolicyMessage(newPassword);
     if (policyError) {
-      setError(policyError);
+      setPasswordError(policyError);
       return;
     }
 
     setLoading(true);
-
     try {
       const response = await fetch("/api/user/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currentPassword,
-          newPassword
-        })
+        body: JSON.stringify({ currentPassword, newPassword }),
       });
-
       const data = await response.json();
-
       if (!response.ok) {
-        setError(data.error || "Failed to change password");
+        setPasswordError(data.error || "Failed to change password");
         setLoading(false);
         return;
       }
-
-      setSuccess(data.message || "Password changed successfully");
+      setSuccess(data.message || "Password changed.");
       setPasswordDialogOpen(false);
       setCurrentPassword("");
       setNewPassword("");
@@ -180,7 +177,7 @@ export default function ProfileClient({ user, linkedProviders, enabledProviders,
       // Picks up hasPassword for a first password and drops the revoked sessions.
       router.refresh();
     } catch {
-      setError("An error occurred while changing password");
+      setPasswordError("An error occurred while changing password");
       setLoading(false);
     }
   };
@@ -190,30 +187,23 @@ export default function ProfileClient({ user, linkedProviders, enabledProviders,
       setError("Cannot unlink OAuth: You must set a password first");
       return;
     }
-
     setError(null);
     setSuccess(null);
     setLoading(true);
-
     try {
       const response = await fetch("/api/user/unlink-oauth", {
         method: "POST",
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
-
       const data = await response.json();
-
       if (!response.ok) {
         setError(data.error || "Failed to unlink OAuth");
         setLoading(false);
         return;
       }
-
-      setSuccess("OAuth account unlinked successfully. Reloading...");
+      setSuccess("Unlinked. Reloading…");
       setUnlinkDialogOpen(false);
       setLoading(false);
-
-      // Reload page to reflect changes
       setTimeout(() => window.location.reload(), 1500);
     } catch {
       setError("An error occurred while unlinking OAuth");
@@ -225,21 +215,13 @@ export default function ProfileClient({ user, linkedProviders, enabledProviders,
     setError(null);
     setSuccess(null);
     setLoading(true);
-
     try {
       // linkSocial (not signIn.social) binds the identity to the session user
       // and requires the provider email to match, so an unrelated IdP account
-      // cannot silently swap the browser onto a different CPM user.
-      const { error: linkError } = await authClient.linkSocial({
-        provider: providerId,
-        callbackURL: "/profile",
-      });
-
+      // cannot silently swap the browser onto a different Ingressi user.
+      const { error: linkError } = await authClient.linkSocial({ provider: providerId, callbackURL: "/profile" });
       if (linkError) {
-        setError(
-          linkError.message ||
-            "Failed to start OAuth linking. Enable \"Auto-link accounts\" for this provider first."
-        );
+        setError(linkError.message || "Failed to start OAuth linking. Enable \"Auto-link accounts\" for this provider first.");
         setLoading(false);
       }
       // On success the client follows the provider redirect.
@@ -249,129 +231,74 @@ export default function ProfileClient({ user, linkedProviders, enabledProviders,
     }
   };
 
-  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    if (!file.type.startsWith("image/")) {
-      setError("Please upload an image file");
-      return;
-    }
-
-    // Validate file size (max 2MB)
-    if (file.size > 2 * 1024 * 1024) {
-      setError("Image must be smaller than 2MB");
-      return;
-    }
-
+  const uploadAvatar = async (value: string | null, done: string) => {
     setError(null);
     setLoading(true);
-
-    try {
-      // Convert to base64
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64 = reader.result as string;
-
-        const response = await fetch("/api/user/update-avatar", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ avatarUrl: base64 })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          setError(data.error || "Failed to upload avatar");
-          setLoading(false);
-          return;
-        }
-
-        setAvatarUrl(base64);
-        setSuccess("Avatar updated successfully. Refreshing...");
-        setLoading(false);
-
-        setTimeout(() => window.location.reload(), 1000);
-      };
-
-      reader.readAsDataURL(file);
-    } catch {
-      setError("An error occurred while uploading avatar");
-      setLoading(false);
-    }
-  };
-
-  const handleAvatarDelete = async () => {
-    setError(null);
-    setLoading(true);
-
     try {
       const response = await fetch("/api/user/update-avatar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ avatarUrl: null })
+        body: JSON.stringify({ avatarUrl: value }),
       });
-
       const data = await response.json();
-
       if (!response.ok) {
-        setError(data.error || "Failed to delete avatar");
+        setError(data.error || "Failed to update the picture");
         setLoading(false);
         return;
       }
-
-      setAvatarUrl(null);
-      setSuccess("Avatar removed successfully. Refreshing...");
+      setAvatarUrl(value);
+      setSuccess(done);
       setLoading(false);
-
       setTimeout(() => window.location.reload(), 1000);
     } catch {
-      setError("An error occurred while deleting avatar");
+      setError("An error occurred while updating the picture");
       setLoading(false);
     }
   };
 
-  const handleCreateToken = async (formData: FormData) => {
-    setError(null);
-    setNewToken(null);
-    const result = await createApiTokenAction(formData);
-    if ("error" in result) {
-      setError(result.error);
-    } else {
-      setNewToken(result.rawToken);
-      setSuccess("API token created successfully");
+  const handleAvatarUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setError("Please upload an image file");
+      return;
     }
-  };
-
-  const handleCopyToken = () => {
-    if (newToken) {
-      navigator.clipboard.writeText(newToken);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+    if (file.size > 2 * 1024 * 1024) {
+      setError("Image must be smaller than 2MB");
+      return;
     }
+    const reader = new FileReader();
+    reader.onloadend = () => void uploadAvatar(reader.result as string, "Picture updated. Refreshing…");
+    reader.readAsDataURL(file);
   };
 
-  const formatDate = (iso: string | null): string => {
-    if (!iso) return "Never";
-    return new Date(iso).toLocaleDateString(undefined, {
-      year: "numeric", month: "short", day: "numeric",
-      hour: "2-digit", minute: "2-digit",
-    });
-  };
-
-  const isExpired = (expiresAt: string | null): boolean => {
-    if (!expiresAt) return false;
-    return new Date(expiresAt) <= new Date();
-  };
+  const unlinkedProviders = enabledProviders.filter((provider) => !linked.some((link) => link.id === provider.id));
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-bold tracking-tight">Profile & Account Settings</h1>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <nav aria-label="Breadcrumb" className="flex gap-1.5 text-xs text-muted-foreground">
+            <span>Account</span>
+            <span aria-hidden="true">/</span>
+            <span>Profile</span>
+          </nav>
+          <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Your account, how you sign in, where you are signed in and your API tokens. Nothing here changes anyone else&apos;s account.
+          </p>
+        </div>
+        <form action="/api/auth/logout" method="POST">
+          <Button type="submit" variant="outline">
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </Button>
+        </form>
+      </header>
 
       {error && (
         <Alert variant="destructive">
-          <AlertDescription className="flex justify-between items-center">
+          <AlertDescription className="flex items-center justify-between gap-2">
             {error}
             <Button variant="ghost" size="sm" onClick={() => setError(null)} className="h-auto p-0 text-xs">Dismiss</Button>
           </AlertDescription>
@@ -380,410 +307,170 @@ export default function ProfileClient({ user, linkedProviders, enabledProviders,
 
       {success && (
         <Alert>
-          <AlertDescription className="flex justify-between items-center">
+          <AlertDescription className="flex items-center justify-between gap-2">
             {success}
             <Button variant="ghost" size="sm" onClick={() => setSuccess(null)} className="h-auto p-0 text-xs">Dismiss</Button>
           </AlertDescription>
         </Alert>
       )}
 
-      <div className="flex flex-col gap-4">
-        {/* Account Information */}
-        <Card>
-          <CardContent className="flex flex-col gap-4 pt-6">
-            <div className="flex items-center gap-2">
-              <User className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold">Account Information</h2>
-            </div>
+      <div className="grid gap-6 xl:grid-cols-2">
+        <section aria-labelledby="acct-title" className="flex flex-col gap-5 rounded-xl border bg-card p-6">
+          <h2 id="acct-title" className="text-base font-semibold">Account</h2>
 
-            <Separator />
-
-            {/* Avatar Section */}
-            <div className="flex flex-col gap-2">
-              <p className="text-sm text-muted-foreground">Profile Picture</p>
-              <div className="flex items-center gap-4">
-                <Avatar className="h-20 w-20">
-                  <AvatarImage src={avatarUrl || undefined} alt={user.name || user.email} />
-                  <AvatarFallback className="text-2xl">
-                    {(!avatarUrl && user.name) ? user.name.charAt(0).toUpperCase() : user.email.charAt(0).toUpperCase()}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex gap-2">
-                  <Button variant="outline" asChild disabled={loading}>
-                    <label className="cursor-pointer">
-                      <Camera className="h-4 w-4 mr-2" />
-                      Upload
-                      <input
-                        type="file"
-                        className="hidden"
-                        accept="image/*"
-                        onChange={handleAvatarUpload}
-                      />
-                    </label>
-                  </Button>
-                  {avatarUrl && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-destructive"
-                      onClick={handleAvatarDelete}
-                      disabled={loading}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">Recommended: Square image, max 2MB</p>
-            </div>
-
-            <Separator />
-
-            <div>
-              <p className="text-sm text-muted-foreground">Email</p>
-              <p className="text-sm">{user.email}</p>
-            </div>
-
-            <div>
-              <p className="text-sm text-muted-foreground">Name</p>
-              <p className="text-sm">{user.name || "Not set"}</p>
-            </div>
-
-            <div>
-              <p className="text-sm text-muted-foreground">Role</p>
-              <Badge>{user.role}</Badge>
-            </div>
-
-            <div>
-              <p className="text-sm text-muted-foreground">Authentication Method</p>
-              <Badge variant={user.provider === "credentials" ? "secondary" : "default"}>
-                {getProviderName(user.provider ?? "")}
-              </Badge>
-            </div>
-
-            {user.signInUsername && (
-              <div>
-                <p className="text-sm text-muted-foreground">Sign-in username</p>
-                <p className="text-sm">{user.signInUsername}</p>
-              </div>
-            )}
-
-            {hasPassword && (
-              <div>
-                <p className="text-sm text-muted-foreground">Password</p>
-                <p className="text-sm text-green-600 dark:text-green-400">&#10003; Password is set</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Password Management */}
-        <Card>
-          <CardContent className="flex flex-col gap-4 pt-6">
-            <div className="flex items-center gap-2">
-              <Lock className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold">Password Management</h2>
-            </div>
-
-            <Separator />
-
-            {hasPassword ? (
-              <div className="flex flex-col gap-3">
-                {signInProblem && (
-                  <Alert className="border-yellow-500/50 text-yellow-700 dark:text-yellow-400">
-                    <AlertDescription>{signInProblem}</AlertDescription>
-                  </Alert>
-                )}
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Change your password to maintain account security</p>
-                  <Button variant="outline" onClick={() => setPasswordDialogOpen(true)}>
-                    Change Password
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-3">
-                <Alert className="border-yellow-500/50 text-yellow-700 dark:text-yellow-400">
-                  <AlertDescription>
-                    {signInProblem ?? (
-                      <>
-                        You are using OAuth-only authentication. Setting a password will allow you to
-                        sign in with either OAuth or credentials.
-                      </>
-                    )}
-                  </AlertDescription>
-                </Alert>
-                <Button onClick={() => setPasswordDialogOpen(true)}>
-                  Set Password
+          <div className="flex items-center gap-4">
+            <Avatar className="h-16 w-16">
+              <AvatarImage src={avatarUrl || undefined} alt={user.name || user.email} />
+              <AvatarFallback className="text-lg font-semibold">{initialsOf(user.name, user.email)}</AvatarFallback>
+            </Avatar>
+            <div className="flex flex-col gap-1.5">
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" asChild disabled={loading}>
+                  <label className="cursor-pointer">
+                    <Camera className="h-4 w-4" />
+                    Upload picture
+                    <input type="file" className="sr-only" accept="image/*" onChange={handleAvatarUpload} />
+                  </label>
                 </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Active Sessions */}
-        <Card>
-          <CardContent className="flex flex-col gap-4 pt-6">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Monitor className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-semibold">Active Sessions</h2>
-              </div>
-              {sessions.some((s) => !s.current) && (
-                <form action={revokeOtherSessionsAction}>
-                  <Button type="submit" variant="outline" size="sm" className="text-destructive border-destructive/40">
-                    <LogOut className="h-3.5 w-3.5 mr-1.5" />
-                    Sign out all other sessions
+                {avatarUrl && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive"
+                    onClick={() => void uploadAvatar(null, "Picture removed. Refreshing…")}
+                    disabled={loading}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Remove
                   </Button>
-                </form>
-              )}
-            </div>
-
-            <Separator />
-
-            <p className="text-sm text-muted-foreground">
-              Devices currently signed in to your account. Revoke any you don&apos;t recognise.
-            </p>
-
-            <div className="flex flex-col divide-y divide-border rounded-md border overflow-hidden">
-              {sessions.map((s) => (
-                <div key={s.id} className="flex items-center justify-between px-4 py-3 bg-muted/20">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium truncate">{describeDevice(s.userAgent)}</p>
-                        {s.current && (
-                          <span className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                            This device
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap gap-x-3 gap-y-0">
-                        <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          Signed in {relativeTime(s.createdAt)}
-                        </p>
-                        {s.ipAddress && (
-                          <p className="text-xs text-muted-foreground">IP {s.ipAddress}</p>
-                        )}
-                        <p className="text-xs text-muted-foreground">Expires {formatDate(s.expiresAt)}</p>
-                      </div>
-                    </div>
-                  </div>
-                  {!s.current && (
-                    <form action={revokeSessionAction.bind(null, s.id)}>
-                      <Button
-                        type="submit"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        title="Revoke session"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </form>
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* OAuth Management */}
-        {enabledProviders.length > 0 && (
-          <Card>
-            <CardContent className="flex flex-col gap-4 pt-6">
-              <div className="flex items-center gap-2">
-                <Link className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-semibold">OAuth Connections</h2>
+                )}
               </div>
+              <span className="text-xs text-muted-foreground">Square image, up to 2 MB.</span>
+            </div>
+          </div>
 
-              <Separator />
+          <dl className="grid gap-4 text-sm sm:grid-cols-[minmax(0,10rem)_1fr]">
+            <dt className="text-muted-foreground">Name</dt>
+            <dd>{user.name || "Not set"}</dd>
+            <dt className="text-muted-foreground">E-mail</dt>
+            <dd className="break-all">{user.email}</dd>
+            {user.signInUsername && (
+              <>
+                <dt className="text-muted-foreground">Sign-in username</dt>
+                <dd className="flex flex-col gap-0.5">
+                  <span className="font-mono">{user.signInUsername}</span>
+                </dd>
+              </>
+            )}
+            <dt className="text-muted-foreground">Role</dt>
+            <dd>{user.roleLabel ?? user.role}</dd>
+            <dt className="text-muted-foreground">Signs in with</dt>
+            <dd className="flex flex-col gap-1">
+              <span>
+                {[
+                  ...(hasPassword ? ["Password"] : []),
+                  ...linked.map((link) => (link.host ? `${link.name}, through ${link.host}` : link.name)),
+                ].join(" · ") || "No sign-in method yet"}
+              </span>
+              {passwordRefused && hasPassword && (
+                <span className="text-xs text-muted-foreground">Password sign-in is off while single sign-on is enforced.</span>
+              )}
+            </dd>
+          </dl>
+          <p className="text-xs text-muted-foreground">
+            Your name and e-mail show in the audit log and on approvals. An administrator changes them on Users and groups.
+          </p>
 
-              {hasOAuth ? (
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">
-                    {linkedNames.length === 1
-                      ? <>Your account is linked to {linkedNames[0]}</>
-                      : <>Your account is linked to: {linkedNames.join(", ")}</>}
-                  </p>
-
-                  {canUnlinkOAuth ? (
-                    <Button
-                      variant="outline"
-                      className="text-yellow-600 border-yellow-600/50"
-                      onClick={() => setUnlinkDialogOpen(true)}
-                    >
-                      <Unlink className="h-4 w-4 mr-2" />
+          {(enabledProviders.length > 0 || hasOAuth) && (
+            <div className="flex flex-col gap-3 border-t pt-4">
+              <h3 className="text-sm font-medium">Identity providers</h3>
+              {hasOAuth && (
+                canUnlinkOAuth ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      Your account is linked to {linked.map((link) => link.name).join(", ")}.
+                    </span>
+                    <Button variant="outline" size="sm" onClick={() => setUnlinkDialogOpen(true)}>
+                      <Unlink className="h-4 w-4" />
                       Unlink OAuth Account
                     </Button>
-                  ) : (
-                    <Alert className="border-blue-500/50 text-blue-700 dark:text-blue-400">
-                      <AlertDescription>
-                        {signInProblem
-                          ? `${signInProblem} OAuth can be unlinked once password sign-in works.`
-                          : "To unlink OAuth, you must first set a password as a fallback authentication method."}
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                </div>
-              ) : (
-                <div>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    Link an OAuth provider to enable single sign-on
-                  </p>
-
-                  <div className="flex flex-col gap-2">
-                    {enabledProviders.map((provider) => (
-                      <div key={provider.id} className="flex flex-col gap-1">
-                        <Button
-                          variant="outline"
-                          onClick={() => handleLinkOAuth(provider.id)}
-                          disabled={!provider.autoLink}
-                          className="w-full"
-                        >
-                          <LogIn className="h-4 w-4 mr-2" />
-                          Link {provider.name}
-                        </Button>
-                        {!provider.autoLink && (
-                          <p className="text-xs text-muted-foreground">
-                            Enable &quot;Auto-link accounts&quot; for {provider.name} in
-                            Settings → OAuth Providers to allow linking.
-                          </p>
-                        )}
-                      </div>
-                    ))}
                   </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {signInProblem
+                      ? `${signInProblem} OAuth can be unlinked once password sign-in works.`
+                      : "To unlink OAuth, you must first set a password as a fallback authentication method."}
+                  </p>
+                )
+              )}
+              {!hasOAuth && unlinkedProviders.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm text-muted-foreground">Link an OAuth provider to enable single sign-on.</p>
+                  {unlinkedProviders.map((provider) => (
+                    <div key={provider.id} className="flex flex-col gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-fit"
+                        onClick={() => handleLinkOAuth(provider.id)}
+                        disabled={!provider.autoLink || loading}
+                      >
+                        <LogIn className="h-4 w-4" />
+                        Link {provider.name}
+                      </Button>
+                      {!provider.autoLink && (
+                        <p className="text-xs text-muted-foreground">
+                          Enable &quot;Auto-link accounts&quot; for {provider.name} in Settings → OAuth Providers to allow linking.
+                        </p>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* API Tokens */}
-        <Card>
-          <CardContent className="flex flex-col gap-4 pt-6">
-            <div className="flex items-center gap-2">
-              <Key className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-semibold">API Tokens</h2>
             </div>
+          )}
+        </section>
 
-            <Separator />
-
-            <p className="text-sm text-muted-foreground">
-              Create tokens for programmatic access to the API using <code className="text-xs bg-muted px-1 py-0.5 rounded">Authorization: Bearer {'<token>'}</code>
-            </p>
-
-            {/* Newly created token */}
-            {newToken && (
-              <div className="rounded-lg border border-emerald-500/50 bg-emerald-500/5 p-4 flex flex-col gap-2">
-                <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                  Copy this token now — it will not be shown again.
-                </p>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 rounded-md border bg-muted/50 px-3 py-2 text-xs font-mono break-all select-all">
-                    {newToken}
-                  </code>
-                  <Button variant="outline" size="sm" className="shrink-0 h-8 gap-1.5" onClick={handleCopyToken}>
-                    {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                    {copied ? "Copied" : "Copy"}
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Existing tokens */}
-            {apiTokens.length > 0 && (
-              <div className="flex flex-col divide-y divide-border rounded-md border overflow-hidden">
-                {apiTokens.map((token) => {
-                  const expired = isExpired(token.expiresAt);
-                  return (
-                    <div
-                      key={token.id}
-                      className={`flex items-center justify-between px-4 py-3 bg-muted/20 hover:bg-muted/40 transition-colors ${expired ? "opacity-60" : ""}`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <Key className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-medium truncate">{token.name}</p>
-                            {expired && (
-                              <span className="inline-flex items-center gap-1 rounded-full border border-destructive/30 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
-                                <AlertTriangle className="h-2.5 w-2.5" />
-                                Expired
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap gap-x-3 gap-y-0">
-                            <p className="text-xs text-muted-foreground">
-                              Created {formatDate(token.createdAt)}
-                            </p>
-                            <p className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              Used {formatDate(token.lastUsedAt)}
-                            </p>
-                            {token.expiresAt && (
-                              <p className="text-xs text-muted-foreground">
-                                {expired ? "Expired" : "Expires"} {formatDate(token.expiresAt)}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <form action={deleteApiTokenAction.bind(null, token.id)}>
-                        <Button type="submit" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </form>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {apiTokens.length === 0 && !newToken && (
-              <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
-                <Key className="h-4 w-4 shrink-0" />
-                No API tokens yet — create one below.
-              </div>
-            )}
-
-            {/* Create new token */}
-            <form action={handleCreateToken} className="flex flex-col gap-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="token-name" className="text-xs">
-                    Name <span className="text-destructive">*</span>
-                  </Label>
-                  <Input id="token-name" name="name" required placeholder="e.g. CI/CD Pipeline" className="h-8 text-sm" />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="token-expires" className="text-xs">Expires at</Label>
-                  <Input id="token-expires" name="expires_at" type="datetime-local" className="h-8 text-sm" />
-                </div>
-              </div>
-              <div className="flex justify-end">
-                <Button type="submit" size="sm">
-                  <Plus className="h-3.5 w-3.5 mr-1.5" />
-                  Create Token
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+        <SignInSecurity
+          hasPassword={hasPassword}
+          signInProblem={signInProblem}
+          oauthOnlyNote={!hasPassword && !signInProblem}
+          passwordRefused={passwordRefused}
+          ssoEnforced={sso.enforced}
+          ssoHost={linked.find((link) => link.host)?.host ?? enabledProviders.find((p) => p.host)?.host ?? null}
+          mfa={mfa}
+          passkeys={passkeys}
+          passkeyBlocker={passkeyBlocker}
+          onChangePassword={openPasswordDialog}
+        />
       </div>
 
-      {/* Change Password Dialog */}
+      <SessionsSection sessions={sessions} />
+
+      <TokensSection tokens={apiTokens} maxTokens={maxApiTokens} heldPermissions={heldPermissions} />
+
+      <InterfaceSection />
+
+      {/* Change password dialog */}
       <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{hasPassword ? "Change Password" : "Set Password"}</DialogTitle>
+            <DialogTitle>{hasPassword ? "Change password" : "Set password"}</DialogTitle>
+            <DialogDescription>
+              {hasPassword
+                ? "Signing in again is needed everywhere else: your other sessions end."
+                : "A password lets you sign in on the login page as well as through your identity provider."}
+            </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-3 mt-2">
+          <div className="mt-2 flex flex-col gap-3">
+            {passwordError && (
+              <Alert variant="destructive">
+                <AlertDescription>{passwordError}</AlertDescription>
+              </Alert>
+            )}
             {hasPassword && (
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="currentPassword">Current Password</Label>
+                <Label htmlFor="currentPassword">Current password</Label>
                 <Input
                   id="currentPassword"
                   type="password"
@@ -794,7 +481,7 @@ export default function ProfileClient({ user, linkedProviders, enabledProviders,
               </div>
             )}
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="newPassword">New Password</Label>
+              <Label htmlFor="newPassword">New password</Label>
               <Input
                 id="newPassword"
                 type="password"
@@ -802,10 +489,10 @@ export default function ProfileClient({ user, linkedProviders, enabledProviders,
                 onChange={(e) => setNewPassword(e.target.value)}
                 autoComplete="new-password"
               />
-              <p className="text-xs text-muted-foreground">Minimum 12 characters</p>
+              <p className="text-xs text-muted-foreground">Minimum 12 characters.</p>
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="confirmPassword">Confirm New Password</Label>
+              <Label htmlFor="confirmPassword">Confirm new password</Label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -818,31 +505,26 @@ export default function ProfileClient({ user, linkedProviders, enabledProviders,
           <DialogFooter>
             <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>Cancel</Button>
             <Button onClick={handlePasswordChange} disabled={loading}>
-              {loading ? "Saving..." : hasPassword ? "Change Password" : "Set Password"}
+              {loading ? "Saving…" : hasPassword ? "Change password" : "Set password"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Unlink OAuth Dialog */}
+      {/* Unlink OAuth dialog */}
       <Dialog open={unlinkDialogOpen} onOpenChange={setUnlinkDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Unlink OAuth Account</DialogTitle>
+            <DialogTitle>Unlink your identity provider</DialogTitle>
             <DialogDescription>
-              Are you sure you want to unlink your {linkedNames.join(", ")} account?
-              You will only be able to sign in with your username ({user.signInUsername}) and password after this.
+              Unlink your {linked.map((link) => link.name).join(", ")} account? You will only be able to sign in with your
+              username ({user.signInUsername}) and password after this.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setUnlinkDialogOpen(false)}>Cancel</Button>
-            <Button
-              onClick={handleUnlinkOAuth}
-              className="text-yellow-600 border-yellow-600/50"
-              variant="outline"
-              disabled={loading}
-            >
-              {loading ? "Unlinking..." : "Unlink OAuth"}
+            <Button onClick={handleUnlinkOAuth} variant="destructive" disabled={loading}>
+              {loading ? "Unlinking…" : "Unlink OAuth"}
             </Button>
           </DialogFooter>
         </DialogContent>

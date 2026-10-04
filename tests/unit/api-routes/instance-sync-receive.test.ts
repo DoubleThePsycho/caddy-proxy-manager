@@ -126,7 +126,7 @@ describe('POST /api/instances/sync', () => {
   });
 
   /**
-   * Regression (#295): an L4 host on a port CPM's own Caddy listeners bind
+   * Regression (#295): an L4 host on a port Ingressi's own Caddy listeners bind
    * (80/443/2019) must not be applied on the replica — two listeners on the
    * same port silently split connections via SO_REUSEPORT.
    */
@@ -164,7 +164,7 @@ describe('POST /api/instances/sync', () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
-      error: "L4 proxy host 1: listen port 443 is reserved for CPM's own Caddy listeners (HTTP 80/443, admin API 2019)",
+      error: "L4 proxy host 1: listen port 443 is reserved for Ingressi's own Caddy listeners (HTTP 80/443, admin API 2019)",
     });
     expect(mockApplySyncPayload).not.toHaveBeenCalled();
   });

@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAdmin, apiErrorResponse } from "@/src/lib/api-auth";
+import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
+import { assertUnscopedCertificates } from "@/src/lib/access-scope";
 import { getCaCertificate, updateCaCertificate, deleteCaCertificate } from "@/src/lib/models/ca-certificates";
+import { routeRowId } from "@/src/lib/row-ids";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiAdmin(request);
+    const { access } = await requireApiPermission(request, "certificates:read");
+    assertUnscopedCertificates(access);
     const { id } = await params;
-    const cert = await getCaCertificate(Number(id));
+    const cert = await getCaCertificate(routeRowId(id, "Not found"));
     if (!cert) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -24,10 +27,11 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId, access } = await requireApiPermission(request, "certificates:write");
+    assertUnscopedCertificates(access);
     const { id } = await params;
     const body = await request.json();
-    const cert = await updateCaCertificate(Number(id), body, userId);
+    const cert = await updateCaCertificate(routeRowId(id), body, userId);
     return NextResponse.json(cert);
   } catch (error) {
     return apiErrorResponse(error);
@@ -39,9 +43,10 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId, access } = await requireApiPermission(request, "certificates:write");
+    assertUnscopedCertificates(access);
     const { id } = await params;
-    await deleteCaCertificate(Number(id), userId);
+    await deleteCaCertificate(routeRowId(id), userId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return apiErrorResponse(error);

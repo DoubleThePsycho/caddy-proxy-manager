@@ -1,0 +1,205 @@
+# High availability example (ee/docs/high-availability.md, Enterprise
+# edition): two dashboard nodes, one leader and one warm standby, with
+#   - Valkey for the leader lease,
+#   - MinIO (S3-compatible) for the database replica that Litestream writes,
+#   - a Caddy load balancer that sends the dashboard to the leader only.
+#
+# An override of docker-compose.yml, for trying high availability on one
+# machine. It changes nothing unless you name it:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ha.yml up -d
+#
+# The dashboard is then at http://localhost:3000 through the load balancer.
+# Needs Docker Compose 2.24 or later, and in .env besides the usual variables:
+#
+#   HA_REDIS_PASSWORD=...          Valkey's password
+#   HA_S3_ACCESS_KEY_ID=...        MinIO's root user (letters and digits)
+#   HA_S3_SECRET_ACCESS_KEY=...    MinIO's root password (8 or more letters and digits)
+#
+# Set it up from an install that ran without high availability and has an
+# Enterprise license installed: the first leader turns that database (the
+# caddy-manager-data volume) into the cluster's first replica.
+#
+# Not for production as it is: run Valkey and the object storage highly
+# available on other machines, keep their ports private, and use TLS when
+# the traffic leaves a private network. MinIO's own images are no longer
+# published; this example uses Chainguard's free MinIO images.
+
+x-ha-environment: &ha-environment
+  HA_ENABLED: "true"
+  HA_REDIS_ADDRESSES: valkey:6379
+  HA_REDIS_PASSWORD: ${HA_REDIS_PASSWORD:?ERROR - HA_REDIS_PASSWORD is required}
+  HA_S3_ENDPOINT: http://minio:9000
+  HA_S3_BUCKET: ingressi-ha
+  HA_S3_PATH: example
+  HA_S3_ACCESS_KEY_ID: ${HA_S3_ACCESS_KEY_ID:?ERROR - HA_S3_ACCESS_KEY_ID is required}
+  HA_S3_SECRET_ACCESS_KEY: ${HA_S3_SECRET_ACCESS_KEY:?ERROR - HA_S3_SECRET_ACCESS_KEY is required}
+  # Caddy reaches forward auth and the API gate through the load balancer's
+  # second port (the request-path routes).
+  FORWARD_AUTH_INTERNAL_URL: http://dashboard-lb:3001
+
+services:
+  web:
+    environment:
+      <<: *ha-environment
+      HA_NODE_ID: web-1
+    # The load balancer publishes the dashboard instead.
+    ports: !reset []
+    # A standby answers /api/health with 503 by design; the container is
+    # healthy while the process runs.
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health?scope=live',r=>{process.exit(r.statusCode<400?0:1)}).on('error',()=>process.exit(1))"]
+    # Time to stop the dashboard, let Litestream send its last changes and
+    # hand the lease over.
+    stop_grace_period: 60s
+    depends_on:
+      valkey:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  web-2:
+    extends:
+      file: docker-compose.yml
+      service: web
+    container_name: ingressi-web-2
+    environment:
+      <<: *ha-environment
+      HA_NODE_ID: web-2
+    ports: !reset []
+    volumes: !override
+      # Each node keeps its own database file; the leader's is replicated.
+      - ha-web-2-data:/app/data
+      - geoip-data:/usr/share/GeoIP:ro,z
+      - caddy-logs:/logs
+      - acme-ca:/acme-ca
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health?scope=live',r=>{process.exit(r.statusCode<400?0:1)}).on('error',()=>process.exit(1))"]
+    stop_grace_period: 60s
+    depends_on:
+      caddy:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  dashboard-lb:
+    container_name: ingressi-dashboard-lb
+    image: ghcr.io/ingres-si/ingressi-caddy:latest
+    restart: unless-stopped
+    command: ["caddy", "run", "--config", "/etc/caddy/dashboard-lb.Caddyfile", "--adapter", "caddyfile"]
+    configs:
+      - source: dashboard-lb
+        target: /etc/caddy/dashboard-lb.Caddyfile
+    ports:
+      - "3000:3000"
+    networks:
+      - caddy-network
+
+  valkey:
+    container_name: ingressi-valkey
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    environment:
+      VALKEY_PASSWORD: ${HA_REDIS_PASSWORD:?ERROR - HA_REDIS_PASSWORD is required}
+    command: ["sh", "-c", "exec valkey-server --appendonly yes --requirepass \"$$VALKEY_PASSWORD\""]
+    volumes:
+      - ha-valkey-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -a \"$$VALKEY_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - caddy-network
+
+  minio:
+    container_name: ingressi-minio
+    image: cgr.dev/chainguard/minio:latest
+    restart: unless-stopped
+    command: ["server", "/home/nonroot/data"]
+    environment:
+      MINIO_ROOT_USER: ${HA_S3_ACCESS_KEY_ID:?ERROR - HA_S3_ACCESS_KEY_ID is required}
+      MINIO_ROOT_PASSWORD: ${HA_S3_SECRET_ACCESS_KEY:?ERROR - HA_S3_SECRET_ACCESS_KEY is required}
+    volumes:
+      # Mounted on the image's home directory so the volume belongs to its user.
+      - ha-minio-data:/home/nonroot
+    networks:
+      - caddy-network
+
+  # Creates the bucket once MinIO answers, then exits.
+  minio-init:
+    container_name: ingressi-minio-init
+    image: cgr.dev/chainguard/minio-client:latest-dev
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'until mc ready local >/dev/null 2>&1; do sleep 1; done; mc mb --ignore-existing local/ingressi-ha'
+    environment:
+      MC_HOST_local: http://${HA_S3_ACCESS_KEY_ID}:${HA_S3_SECRET_ACCESS_KEY}@minio:9000
+    depends_on:
+      minio:
+        condition: service_started
+    networks:
+      - caddy-network
+
+configs:
+  dashboard-lb:
+    content: |
+      {
+      	admin off
+      	auto_https off
+      	# Keep the X-Forwarded-* headers Caddy sets on forward-auth calls.
+      	servers {
+      		trusted_proxies static private_ranges
+      	}
+      }
+
+      # The dashboard and the API: the leader only. /api/health answers 200
+      # there and 503 on a standby.
+      :3000 {
+      	reverse_proxy web:3000 web-2:3000 {
+      		health_uri /api/health
+      		health_interval 2s
+      		health_timeout 2s
+      		health_status 200
+      		lb_try_duration 15s
+      		lb_try_interval 250ms
+      	}
+      }
+
+      # The request-path routes Caddy calls (forward auth, the API gate).
+      :3001 {
+      	# Checking a forward-auth session only reads: every node that has a
+      	# copy of the database answers it, so protected hosts keep working
+      	# while the cluster fails over.
+      	@reads path /api/forward-auth/verify
+      	handle @reads {
+      		reverse_proxy web:3000 web-2:3000 {
+      			health_uri /api/health?scope=request-path
+      			health_interval 2s
+      			health_timeout 2s
+      			health_status 200
+      			lb_try_duration 5s
+      			lb_try_interval 250ms
+      		}
+      	}
+      	# The sign-in callback and the API gate change state (sign-in codes,
+      	# metered usage): the leader, until that state is shared between the
+      	# nodes (ee/docs/high-availability.md, request-path routes).
+      	handle {
+      		reverse_proxy web:3000 web-2:3000 {
+      			health_uri /api/health
+      			health_interval 2s
+      			health_timeout 2s
+      			health_status 200
+      			lb_try_duration 15s
+      			lb_try_interval 250ms
+      		}
+      	}
+      }
+
+volumes:
+  ha-web-2-data:
+  ha-valkey-data:
+  ha-minio-data:

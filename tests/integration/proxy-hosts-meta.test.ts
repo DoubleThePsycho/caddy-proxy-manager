@@ -256,10 +256,10 @@ describe('proxy-hosts authentik meta', () => {
 });
 
 // ---------------------------------------------------------------------------
-// CPM forward auth meta round-trip
+// Ingressi forward auth meta round-trip
 // ---------------------------------------------------------------------------
 
-describe('proxy-hosts CPM forward auth meta', () => {
+describe('proxy-hosts Ingressi forward auth meta', () => {
   it('stores and retrieves cpm_forward_auth config with excluded_paths', async () => {
     const meta = {
       cpm_forward_auth: {

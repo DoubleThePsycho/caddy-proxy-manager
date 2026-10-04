@@ -1,6 +1,11 @@
+This license applies to every file in this repository except those under the
+ee/ directory, which are licensed under the Elastic License 2.0 (ee/LICENSE).
+Files outside ee/ that route to ee/ (pages and API routes in app/ that only
+re-export code from ee/) contain no paid functionality.
+
 MIT License
 
-Copyright (c) 2017 
+Copyright (c) 2025-2026 fuomag9 and contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -17,18 +17,8 @@ process.env.FORWARD_AUTH_ALLOWED_PORTS = '8443, 9443';
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    sqlite: undefined,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null => {
-      if (!value) return null;
-      return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-    },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 vi.mock('../../src/lib/audit', () => ({ logAuditEvent: vi.fn() }));
@@ -53,9 +43,13 @@ import {
 import { GET as forwardAuthCallback } from '../../app/api/forward-auth/callback/route';
 import { GET as forwardAuthVerify } from '../../app/api/forward-auth/verify/route';
 import {
+  FORWARD_AUTH_CALLBACK_PATH,
   FORWARD_AUTH_PORTAL_TARGET_HEADER,
   FORWARD_AUTH_PROXY_HOST_ID_HEADER,
   FORWARD_AUTH_PROXY_PROOF_HEADER,
+  LEGACY_FORWARD_AUTH_CALLBACK_PATH,
+  LEGACY_FORWARD_AUTH_PROXY_HOST_ID_HEADER,
+  LEGACY_FORWARD_AUTH_PROXY_PROOF_HEADER,
   getForwardAuthProxyProof,
   getTrustedForwardAuthOrigin,
 } from '../../src/lib/forward-auth-trust';
@@ -272,7 +266,7 @@ describe('trusted Caddy callback boundary', () => {
     const response = await forwardAuthCallback(legitimateRequest);
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe(target);
-    expect(response.headers.get('set-cookie')).toContain('_cpm_fa=');
+    expect(response.headers.get('set-cookie')).toContain('_ingressi_fa=');
   });
 
   it('rejects malformed or forged proxy proofs using a timing-safe fixed-length check', () => {
@@ -500,7 +494,7 @@ describe('verify endpoint portal target', () => {
     const forbidden = await forwardAuthVerify(verifyRequest({
       ...proxyHeaders('https://private.example.com', undefined, host.id),
       'x-forwarded-uri': '/admin',
-      cookie: `_cpm_fa=${redeemed!.rawSessionToken}`,
+      cookie: `_ingressi_fa=${redeemed!.rawSessionToken}`,
     }));
     expect(forbidden.status).toBe(403);
     expect(forbidden.headers.get(FORWARD_AUTH_PORTAL_TARGET_HEADER)).toBe('https://private.example.com/admin');
@@ -514,7 +508,7 @@ describe('verify endpoint portal target', () => {
       const response = await forwardAuthVerify(verifyRequest({
         ...proxyHeaders('https://private.example.com', undefined, host.id),
         'x-forwarded-uri': '/',
-        cookie: `_cpm_fa=${redeemed!.rawSessionToken}`,
+        cookie: `_ingressi_fa=${redeemed!.rawSessionToken}`,
       }));
       expect(response.status).toBe(200);
       return response.headers;
@@ -523,13 +517,13 @@ describe('verify endpoint portal target', () => {
     // Display name "admin", as anyone can pick; no username: the email address.
     await ctx.db.update(schema.users).set({ name: 'admin' }).where(eq(schema.users.id, user.id));
     let headers = await verifiedHeaders();
-    expect(headers.get('X-CPM-User')).toBe('alice@localhost');
-    expect(headers.get('X-CPM-User-Id')).toBe(String(user.id));
+    expect(headers.get('X-Ingressi-User')).toBe('alice@localhost');
+    expect(headers.get('X-Ingressi-User-Id')).toBe(String(user.id));
 
     await ctx.db.update(schema.users).set({ username: 'alice' }).where(eq(schema.users.id, user.id));
     headers = await verifiedHeaders();
-    expect(headers.get('X-CPM-User')).toBe('alice');
-    expect(headers.get('X-CPM-Email')).toBe('alice@localhost');
+    expect(headers.get('X-Ingressi-User')).toBe('alice');
+    expect(headers.get('X-Ingressi-Email')).toBe('alice@localhost');
   });
 
   it('sends no target without the proxy proof or for a non origin-form URI', async () => {
@@ -550,5 +544,75 @@ describe('verify endpoint portal target', () => {
       expect(response.status).toBe(401);
       expect(response.headers.get(FORWARD_AUTH_PORTAL_TARGET_HEADER)).toBeNull();
     }
+  });
+});
+
+describe('names from before the rename to Ingressi', () => {
+  function verifyRequest(headers: HeadersInit) {
+    return new NextRequest('http://localhost/api/forward-auth/verify', { headers });
+  }
+
+  async function sessionToken(userId: number) {
+    const { rawCode, audience } = await createCode(userId, 'https://private.example.com/');
+    return (await redeemExchangeCode(rawCode, audience))!.rawSessionToken;
+  }
+
+  it('accepts the proof and proxy-host headers a not yet re-applied Caddy config sends', async () => {
+    const { user, host } = await setupAuthorizedWildcard();
+    const response = await forwardAuthVerify(verifyRequest({
+      'x-forwarded-proto': 'https',
+      'x-forwarded-host': 'private.example.com',
+      'x-forwarded-uri': '/',
+      [LEGACY_FORWARD_AUTH_PROXY_PROOF_HEADER]: getForwardAuthProxyProof(),
+      [LEGACY_FORWARD_AUTH_PROXY_HOST_ID_HEADER]: String(host.id),
+      cookie: `_ingressi_fa=${await sessionToken(user.id)}`,
+    }));
+    expect(response.status).toBe(200);
+  });
+
+  it('never pairs the current proof with a proxy-host id sent under the legacy name', async () => {
+    const { user, host } = await setupAuthorizedWildcard();
+    const response = await forwardAuthVerify(verifyRequest({
+      'x-forwarded-proto': 'https',
+      'x-forwarded-host': 'private.example.com',
+      'x-forwarded-uri': '/',
+      [FORWARD_AUTH_PROXY_PROOF_HEADER]: getForwardAuthProxyProof(),
+      [LEGACY_FORWARD_AUTH_PROXY_HOST_ID_HEADER]: String(host.id),
+      cookie: `_ingressi_fa=${await sessionToken(user.id)}`,
+    }));
+    expect(response.status).toBe(401);
+  });
+
+  it('accepts a session cookie under the old name and sends the old identity headers too', async () => {
+    const { user, host } = await setupAuthorizedWildcard();
+    const response = await forwardAuthVerify(verifyRequest({
+      ...proxyHeaders('https://private.example.com', undefined, host.id),
+      'x-forwarded-uri': '/',
+      cookie: `_cpm_fa=${await sessionToken(user.id)}`,
+    }));
+    expect(response.status).toBe(200);
+    for (const field of ['User', 'Email', 'Groups', 'User-Id']) {
+      expect(response.headers.get(`X-CPM-${field}`), field).toBe(response.headers.get(`X-Ingressi-${field}`));
+    }
+    expect(response.headers.get('X-CPM-User-Id')).toBe(String(user.id));
+  });
+
+  it('replaces an old-name session cookie on sign-in', async () => {
+    const { user, host } = await setupAuthorizedWildcard();
+    const { rawCode } = await createCode(user.id, 'https://private.example.com/');
+    const response = await forwardAuthCallback(new NextRequest(`http://localhost/api/forward-auth/callback?code=${rawCode}`, {
+      headers: { ...proxyHeaders('https://private.example.com', undefined, host.id), cookie: '_cpm_fa=stale' },
+    }));
+    expect(response.status).toBe(302);
+    const cookies = response.headers.getSetCookie();
+    expect(cookies.some((cookie) => cookie.startsWith('_ingressi_fa=') && !cookie.startsWith('_ingressi_fa=;'))).toBe(true);
+    expect(cookies.some((cookie) => cookie.startsWith('_cpm_fa=;') && /Max-Age=0/.test(cookie))).toBe(true);
+  });
+
+  it('routes both callback paths to the callback endpoint', async () => {
+    await setupAuthorizedWildcard();
+    const callbackRoutes = JSON.stringify(await buildCaddyDocument());
+    expect(callbackRoutes).toContain(FORWARD_AUTH_CALLBACK_PATH);
+    expect(callbackRoutes).toContain(LEGACY_FORWARD_AUTH_CALLBACK_PATH);
   });
 });

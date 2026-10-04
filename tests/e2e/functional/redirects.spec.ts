@@ -5,42 +5,31 @@
  * Caddy issues the correct redirect responses for matched paths while
  * still proxying unmatched paths to the upstream.
  *
- * The redirects_json hidden field is injected directly (same pattern used
- * for other non-labeled form controls like ssl_forced_present) so the test
- * doesn't have to click through the MUI Select for each status code.
+ * The rules are entered in the host editor's Advanced section.
  *
  * Domain: func-redirects.test
  */
 import { test, expect } from '@playwright/test';
-import { httpGet, injectFormFields, waitForRoute } from '../../helpers/http';
+import { openCreateHostDialog, addRedirect, fillHostBasics, openEditorSection, saveHostEditor, setEditorSwitch } from '../../helpers/proxy-api';
+import { httpGet, waitForRoute } from '../../helpers/http';
 
 const DOMAIN = 'func-redirects.test';
 
 test.describe.serial('Per-path Redirect Rules', () => {
   test('setup: create proxy host with redirect rules', async ({ page }) => {
-    await page.goto('/proxy-hosts');
-    await page.getByRole('button', { name: /create host/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    await openCreateHostDialog(page);
+    await fillHostBasics(page, { name: 'Functional Redirects Test', domain: DOMAIN, upstream: 'echo-server:8080' });
 
-    await page.getByLabel('Name').fill('Functional Redirects Test');
-    await page.getByLabel(/domains/i).fill(DOMAIN);
-    await page.getByPlaceholder('10.0.0.5:8080').first().fill('echo-server:8080');
-
-    // Inject redirect rules and form flags directly.
-    // redirects_json is a hidden input rendered by RedirectsFields whose value
-    // reflects React state; setting .value just before submit works because no
-    // React render cycle fires between the injection and form data collection.
-    await injectFormFields(page, {
-      sslForcedPresent: 'on',
-      redirectsJson: JSON.stringify([
+    await openEditorSection(page, 'Advanced');
+    const rules: Array<{ from: string; to: string; status: 301 | 302 | 307 | 308 }> = [
         { from: '/.well-known/carddav', to: '/remote.php/dav/', status: 301 },
         { from: '/.well-known/caldav',  to: '/remote.php/dav/', status: 302 },
-      ]),
-    });
+      ];
+    for (const rule of rules) await addRedirect(page, rule);
 
-    await page.getByRole('button', { name: /^create$/i }).click();
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('table').getByText('Functional Redirects Test')).toBeVisible({ timeout: 10_000 });
+    await openEditorSection(page, 'Certificate');
+    await setEditorSwitch(page, 'Redirect HTTP to HTTPS', false);
+    await saveHostEditor(page);
 
     await waitForRoute(DOMAIN);
   });

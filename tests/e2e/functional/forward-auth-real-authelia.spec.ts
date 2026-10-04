@@ -14,7 +14,7 @@
  *    suite does not cover.
  *
  * Authelia only accepts https/wss target schemes, so the protected hosts are
- * served over TLS with a self-signed certificate imported into CPM, matching
+ * served over TLS with a self-signed certificate imported into Ingressi, matching
  * real deployments.
  *
  * Domain: app.auth.test (Authelia portal: auth.test, localhost:9092).
@@ -126,7 +126,7 @@ test.describe.serial('Generic Forward Auth — Real Authelia', () => {
     // Real Authelia treats a leading Accept: */* as browser-like and responds
     // with a 302 portal redirect (verified against v4.38.19 source:
     // AcceptsMIME counts a first-entry wildcard as accepting text/html).
-    // The CPM API branch converts that 302 into a bare 401 so machine clients
+    // The Ingressi API branch converts that 302 into a bare 401 so machine clients
     // never receive the redirect — this test only passes when the conversion
     // actually fired against the real IdP's 302.
     const res = await httpsGet(DOMAIN, '/api/status', {}, { Accept: '*/*' });

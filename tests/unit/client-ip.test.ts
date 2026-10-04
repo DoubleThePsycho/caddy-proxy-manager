@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getClientIp, ipRateLimitBucket, UNKNOWN_CLIENT_IP } from '@/src/lib/client-ip';
+import { getClientIp, ipRateLimitBucket, parseClientIp, UNKNOWN_CLIENT_IP } from '@/src/lib/client-ip';
 
 function headers(init: Record<string, string>) {
   return new Headers(init);
@@ -74,6 +74,14 @@ describe('getClientIp with TRUSTED_CLIENT_IP_HEADER', () => {
 });
 
 describe('ipRateLimitBucket', () => {
+  it('reduces IPv6 addresses to their /48 when asked (the x402 per-address limit), IPv4 kept whole', () => {
+    expect(ipRateLimitBucket('192.0.2.7', 48)).toBe('192.0.2.7');
+    expect(ipRateLimitBucket('2001:db8:aa:bb::1', 48)).toBe('2001:db8:aa::/48');
+    expect(ipRateLimitBucket('2001:db8:aa:cc:1::2', 48)).toBe('2001:db8:aa::/48');
+    expect(parseClientIp('[2001:db8::1]:443')).toBe('2001:db8::1');
+    expect(parseClientIp('not an address')).toBeNull();
+  });
+
   it('keeps IPv4 addresses and the unknown marker whole', () => {
     expect(ipRateLimitBucket('192.0.2.1')).toBe('192.0.2.1');
     expect(ipRateLimitBucket(UNKNOWN_CLIENT_IP)).toBe(UNKNOWN_CLIENT_IP);

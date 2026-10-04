@@ -1,13 +1,19 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createTestDb, type TestDb } from '../helpers/db';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createTestDb, disableForeignKeys, type TestDb } from '../helpers/db';
 import { apiTokens, users } from '@/src/lib/db/schema';
 import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 
 let db: TestDb;
 
-beforeEach(() => {
+vi.mock('@/src/lib/db', async () => (await import('../helpers/db-module')).mockDbModule(() => db));
+
+import { deleteUser } from '@/src/lib/models/user';
+
+beforeEach(async () => {
   db = createTestDb();
+  // As in production: SQLite runs with foreign keys off, PostgreSQL has none.
+  await disableForeignKeys(db);
 });
 
 function nowIso() {
@@ -131,16 +137,19 @@ describe('api-tokens integration', () => {
     expect(row).toBeUndefined();
   });
 
-  it('cascade deletes tokens when user is deleted', async () => {
+  it('deleting a user deletes their tokens, without foreign keys', async () => {
     const user = await insertUser();
+    const other = await insertUser({ email: 'other@localhost', subject: 'other@localhost' });
     const { token } = await insertApiToken(user.id);
+    const { token: otherToken } = await insertApiToken(other.id);
 
-    await db.delete(users).where(eq(users.id, user.id));
+    await deleteUser(user.id);
 
     const row = await db.query.apiTokens.findFirst({
       where: (t, { eq }) => eq(t.id, token.id),
     });
     expect(row).toBeUndefined();
+    expect(await db.query.apiTokens.findFirst({ where: (t, { eq }) => eq(t.id, otherToken.id) })).toBeDefined();
   });
 
   it('lastUsedAt is initially null', async () => {

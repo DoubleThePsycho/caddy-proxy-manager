@@ -27,12 +27,13 @@ vi.mock('drizzle-orm', async (importOriginal) => ({
   eq: (_column: unknown, value: string) => ({ __key: value }),
 }));
 
-vi.mock('@/src/lib/db', () => ({
-  default: {
+vi.mock('@/src/lib/db', async () => {
+  // Queries are awaited: the chain ends in promises.
+  const fake = {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         where: vi.fn((cond: { __key: string }) => ({
-          get: vi.fn(() => (store.has(cond.__key) ? { value: store.get(cond.__key) } : null)),
+          limit: vi.fn(async () => (store.has(cond.__key) ? [{ value: store.get(cond.__key) }] : [])),
         })),
       })),
     })),
@@ -40,12 +41,12 @@ vi.mock('@/src/lib/db', () => ({
       values: vi.fn((v: { key: string; value: string }) => {
         state.inserted.push(v);
         store.set(v.key, v.value);
-        return { onConflictDoUpdate: vi.fn().mockReturnValue({ run: vi.fn() }) };
+        return { onConflictDoUpdate: vi.fn().mockResolvedValue(undefined) };
       }),
     })),
-  },
-  nowIso: () => new Date().toISOString(),
-}));
+  };
+  return (await import('../helpers/db-module')).mockDbModule(() => fake);
+});
 
 vi.mock('maxmind', () => ({
   default: { open: vi.fn().mockResolvedValue(null) },

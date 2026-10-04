@@ -8,7 +8,7 @@
  *
  * Flow:
  *   1. Read Step-CA's auto-generated root cert out of its container.
- *   2. Point CPM's global ACME settings at Step-CA's directory + paste the root.
+ *   2. Point Ingressi's global ACME settings at Step-CA's directory + paste the root.
  *   3. Create an auto-managed proxy host for `acme-e2e.test` (aliased to Caddy,
  *      so Step-CA can validate the HTTP-01 / TLS-ALPN-01 challenge).
  *   4. Assert the leaf cert Caddy serves for that domain was issued by Step-CA.
@@ -20,9 +20,9 @@ import tls from 'node:tls';
 const BASE_URL = 'http://localhost:3000';
 const API = `${BASE_URL}/api/v1`;
 const DOMAIN = 'acme-e2e.test';
-const STEP_CA_NAME = 'CPM E2E Step-CA';
+const STEP_CA_NAME = 'Ingressi E2E Step-CA';
 const STEP_CA_DIRECTORY = 'https://step-ca:9000/acme/acme/directory';
-const STEP_CA_CONTAINER = 'caddy-proxy-manager-step-ca';
+const STEP_CA_CONTAINER = 'ingressi-step-ca';
 
 /** Read Step-CA's root cert from its container, retrying until init completes. */
 function readStepCaRoot(timeoutMs = 60_000): string {

@@ -27,8 +27,9 @@ export const ACCOUNT_FAILURE_CEILING = Math.max(
 
 // Separate from the shared limiter so portal keys, which unauthenticated
 // clients choose, never evict entries of the dashboard credential routes.
-const perClient = createRateLimiter(LOGIN_RATE_LIMIT);
+const perClient = createRateLimiter({ name: "portal-login-client", ...LOGIN_RATE_LIMIT });
 const perAccount = createRateLimiter({
+  name: "portal-login-account",
   ...LOGIN_RATE_LIMIT,
   maxAttempts: ACCOUNT_FAILURE_CEILING,
   windowMs: ACCOUNT_FAILURE_WINDOW_MS,
@@ -55,7 +56,7 @@ export function portalLoginKeys(username: string, ip: string) {
 /** A login attempt admitted by beginPortalLoginAttempt; the first call to any method ends it. */
 export type PortalLoginAttempt = {
   /** Counts a failed login against the client, the (account, client) pair and the account. */
-  fail(): void;
+  fail(): Promise<void>;
   /**
    * Clears the client's own counters. The account counter is left to expire:
    * it holds failures from other clients, and clearing it would give a
@@ -63,9 +64,9 @@ export type PortalLoginAttempt = {
    * per-(account, client) counter is what still limits a client that clears
    * its IP counter by signing in to an account of its own.
    */
-  succeed(): void;
+  succeed(): Promise<void>;
   /** Ends the attempt without counting it, e.g. when checking it threw. */
-  release(): void;
+  release(): Promise<void>;
 };
 
 /**
@@ -73,40 +74,40 @@ export type PortalLoginAttempt = {
  * still being checked count towards every limit, so a burst of concurrent
  * requests gets no more guesses than the same requests sent one by one.
  */
-export function beginPortalLoginAttempt(username: string, ip: string): PortalLoginAttempt | null {
+export async function beginPortalLoginAttempt(username: string, ip: string): Promise<PortalLoginAttempt | null> {
   const keys = portalLoginKeys(username, ip);
   const slots: Array<[RateLimiter, string]> = [
     [perClient, keys.ip],
     [perClient, keys.accountIp],
     [perAccount, keys.account],
   ];
-  const releases: Array<() => void> = [];
+  const releases: Array<() => Promise<void>> = [];
   for (const [limiter, key] of slots) {
-    const release = limiter.reserveAttempt(key);
+    const release = await limiter.reserveAttempt(key);
     if (!release) {
-      releases.forEach((held) => held());
+      for (const held of releases) await held();
       return null;
     }
     releases.push(release);
   }
 
   let ended = false;
-  const end = (record: () => void) => {
+  const end = async (record: () => Promise<void>) => {
     if (ended) return;
     ended = true;
-    releases.forEach((held) => held());
-    record();
+    for (const held of releases) await held();
+    await record();
   };
   return {
     fail: () =>
-      end(() => {
-        for (const [limiter, key] of slots) limiter.registerAttempt(key);
+      end(async () => {
+        for (const [limiter, key] of slots) await limiter.registerAttempt(key);
       }),
     succeed: () =>
-      end(() => {
-        perClient.resetAttempts(keys.ip);
-        perClient.resetAttempts(keys.accountIp);
+      end(async () => {
+        await perClient.resetAttempts(keys.ip);
+        await perClient.resetAttempts(keys.accountIp);
       }),
-    release: () => end(() => {}),
+    release: () => end(async () => {}),
   };
 }

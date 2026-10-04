@@ -16,14 +16,8 @@ const ctx = vi.hoisted(() => ({
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    sqlite: undefined,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 vi.mock('../../src/lib/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/lib/config')>()),
@@ -34,6 +28,7 @@ import * as schema from '../../src/lib/db/schema';
 import { decryptSecret, encryptSecret, reencryptSecret } from '../../src/lib/secret';
 import { reencryptStoredSecrets } from '../../src/lib/secret-rotation';
 import { getCloudflareSettings, saveCloudflareSettings } from '../../src/lib/settings';
+import { first } from '@/src/lib/db/ops';
 
 const PLACEHOLDER_SECRET = 'your-secure-session-secret-here-min-32-chars';
 const OLD_SECRET = 'old-operator-secret-abcdefghijklmnopqrstuvwxyz';
@@ -110,13 +105,13 @@ async function seedStoredSecrets() {
 /** Every stored encrypted value, keyed like PLAINTEXT. */
 async function readStoredSecrets(): Promise<Record<keyof typeof PLAINTEXT, string>> {
   const db = ctx.db;
-  const account = (await db.select().from(schema.accounts).get())!;
-  const provider = (await db.select().from(schema.oauthProviders).get())!;
-  const certificate = (await db.select().from(schema.certificates).get())!;
-  const ca = (await db.select().from(schema.caCertificates).get())!;
-  const instance = (await db.select().from(schema.instances).get())!;
+  const account = (await first(db.select().from(schema.accounts).limit(1)))!;
+  const provider = (await first(db.select().from(schema.oauthProviders).limit(1)))!;
+  const certificate = (await first(db.select().from(schema.certificates).limit(1)))!;
+  const ca = (await first(db.select().from(schema.caCertificates).limit(1)))!;
+  const instance = (await first(db.select().from(schema.instances).limit(1)))!;
   const settingValue = async (key: string) =>
-    JSON.parse((await db.select().from(schema.settings).all()).find((row) => row.key === key)!.value);
+    JSON.parse((await db.select().from(schema.settings)).find((row) => row.key === key)!.value);
   const dnsProvider = await settingValue('dns_provider');
   return {
     accessToken: account.accessToken!,
@@ -177,7 +172,7 @@ describe('reencryptStoredSecrets', () => {
     await expectAllUnderCurrentKey();
 
     // Unrelated settings and non-secret fields are untouched.
-    const rows = await ctx.db.select().from(schema.settings).all();
+    const rows = await ctx.db.select().from(schema.settings);
     expect(JSON.parse(rows.find((row) => row.key === 'general')!.value)).toEqual({ primaryDomain: 'example.com' });
     expect(JSON.parse(rows.find((row) => row.key === 'dns_provider')!.value).providers.cloudflare.zone).toBe('example.com');
   });
@@ -235,7 +230,7 @@ describe('reencryptStoredSecrets', () => {
     expect(result).toMatchObject({ clearedOAuthTokens: 2, failed: STORED_VALUE_COUNT - OAUTH_TOKEN_COUNT });
     expect(warnings()).not.toContain('OAuth account');
 
-    const account = (await ctx.db.select().from(schema.accounts).get())!;
+    const account = (await first(ctx.db.select().from(schema.accounts).limit(1)))!;
     expect(account).toMatchObject({ accountId: 'sub-1', accessToken: null, refreshToken: null });
     expect(reencryptSecret(account.idToken!)).toBeNull();
     expect(decryptSecret(account.idToken!)).toBe(PLAINTEXT.idToken);
@@ -248,11 +243,11 @@ describe('reencryptStoredSecrets', () => {
     useSecret(NEW_SECRET, [OLD_SECRET]);
     await seedStoredSecrets();
     const before = await readStoredSecrets();
-    const settingsBefore = await ctx.db.select().from(schema.settings).all();
+    const settingsBefore = await ctx.db.select().from(schema.settings);
 
     expect(await reencryptStoredSecrets()).toEqual({ reencrypted: 0, encryptedPlaintext: 0, failed: 0, clearedOAuthTokens: 0 });
     expect(await readStoredSecrets()).toEqual(before);
-    expect(await ctx.db.select().from(schema.settings).all()).toEqual(settingsBefore);
+    expect(await ctx.db.select().from(schema.settings)).toEqual(settingsBefore);
   });
 
   it('is idempotent', async () => {
@@ -278,7 +273,7 @@ describe('reencryptStoredSecrets', () => {
     expect(await reencryptStoredSecrets()).toEqual({ reencrypted: 1, encryptedPlaintext: 0, failed: 0, clearedOAuthTokens: 0 });
 
     useSecret(NEW_SECRET);
-    const row = (await ctx.db.select().from(schema.settings).all()).find((r) => r.key === 'synced:dns_provider')!;
+    const row = (await ctx.db.select().from(schema.settings)).find((r) => r.key === 'synced:dns_provider')!;
     const token = JSON.parse(row.value).providers.cloudflare.api_token;
     expect(reencryptSecret(token)).toBeNull();
     expect(decryptSecret(token)).toBe('synced-token');
@@ -295,7 +290,7 @@ describe('reencryptStoredSecrets', () => {
     const warnings = spyOnWarnings();
     expect(await reencryptStoredSecrets()).toEqual({ reencrypted: 0, encryptedPlaintext: 0, failed: 0, clearedOAuthTokens: 0 });
     expect(warnings()).toBe('');
-    const row = (await ctx.db.select().from(schema.settings).all()).find((r) => r.key === 'synced:dns_provider')!;
+    const row = (await ctx.db.select().from(schema.settings)).find((r) => r.key === 'synced:dns_provider')!;
     expect(row.value).toBe(synced);
   });
 
@@ -326,7 +321,7 @@ describe('reencryptStoredSecrets', () => {
     expect(warnings()).toBe('');
 
     const setting = async (key: string) =>
-      JSON.parse((await ctx.db.select().from(schema.settings).all()).find((row) => row.key === key)!.value);
+      JSON.parse((await ctx.db.select().from(schema.settings)).find((row) => row.key === key)!.value);
     const local = await setting('dns_provider');
     expect(decryptSecret(local.providers.cloudflare.api_token)).toBe('plain-cloudflare-token');
     expect(decryptSecret(local.providers.route53.secret_access_key)).toBe('plain-route53-secret');
@@ -349,7 +344,7 @@ describe('reencryptStoredSecrets', () => {
 
     expect(await reencryptStoredSecrets()).toEqual({ reencrypted: 0, encryptedPlaintext: 2, failed: 0, clearedOAuthTokens: 0 });
 
-    const rows = await ctx.db.select().from(schema.settings).all();
+    const rows = await ctx.db.select().from(schema.settings);
     const setting = (key: string) => JSON.parse(rows.find((row) => row.key === key)!.value);
     expect(decryptSecret(setting('cloudflare').apiToken)).toBe('plain-legacy-token');
     expect(setting('cloudflare').zoneId).toBe('zone-1');

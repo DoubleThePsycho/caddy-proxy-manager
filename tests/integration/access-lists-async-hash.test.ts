@@ -10,15 +10,7 @@ import { users } from '@/src/lib/db/schema';
 
 let db: TestDb;
 
-vi.mock('@/src/lib/db', () => ({
-  get default() { return db; },
-  get sqlite() { return undefined; },
-  nowIso: () => new Date().toISOString(),
-  toIso: (value: string | Date | null | undefined): string | null => {
-    if (!value) return null;
-    return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-  },
-}));
+vi.mock('@/src/lib/db', async () => (await import('../helpers/db-module')).mockDbModule(() => db));
 
 import { addAccessListEntry, createAccessList } from '@/src/lib/models/access-lists';
 

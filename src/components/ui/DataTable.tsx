@@ -62,17 +62,19 @@ function PaginationBar({ page, perPage, total }: { page: number; perPage: number
         size="icon"
         onClick={() => goTo(page - 1)}
         disabled={page <= 1}
+        aria-label="Previous page"
       >
         <ChevronLeft className="h-4 w-4" />
       </Button>
-      <span className="text-sm text-muted-foreground">
-        Page {page} of {pageCount}
+      <span className="text-[13px] text-muted-foreground">
+        Page <span className="num">{page}</span> of <span className="num">{pageCount}</span>
       </span>
       <Button
         variant="outline"
         size="icon"
         onClick={() => goTo(page + 1)}
         disabled={page >= pageCount}
+        aria-label="Next page"
       >
         <ChevronRight className="h-4 w-4" />
       </Button>
@@ -99,7 +101,7 @@ function SortableHeader({ col, sort }: { col: Column<unknown>; sort?: { sortBy: 
   }
 
   return (
-    <Button variant="ghost" size="sm" className="-ml-3 h-8 font-medium" onClick={handleSort}>
+    <Button variant="ghost" size="sm" className="-ml-3 h-7 px-2 text-xs font-medium text-soft hover:text-foreground" onClick={handleSort}>
       {col.label}
       {isActive ? (
         sort?.sortDir === "asc" ? <ArrowUp className="ml-1 h-3.5 w-3.5" /> : <ArrowDown className="ml-1 h-3.5 w-3.5" />
@@ -124,7 +126,7 @@ function DesktopTable<T>({
   sort?: { sortBy: string; sortDir: "asc" | "desc" };
 }) {
   return (
-    <div className="rounded-md border bg-card overflow-x-auto">
+    <div className="overflow-x-auto rounded-xl border border-line bg-card">
       <Table>
         <TableHeader>
           <TableRow>

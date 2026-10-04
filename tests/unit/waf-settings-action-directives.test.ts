@@ -13,6 +13,7 @@ vi.mock('next/cache', () => ({
 }));
 
 vi.mock('@/src/lib/auth', () => ({
+  requirePermission: vi.fn(() => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireAdmin())),
   requireAdmin: vi.fn(async () => ({ user: { id: '1' } })),
 }));
 
@@ -110,7 +111,7 @@ describe('updateWafSettingsAction custom directives', () => {
     const result = await updateWafSettingsAction(null, wafForm(rule));
 
     expect(result.success).toBe(true);
-    expect(saveWafSettingsMock).toHaveBeenCalledWith(expect.objectContaining({ custom_directives: rule }));
+    expect(saveWafSettingsMock).toHaveBeenCalledWith(expect.objectContaining({ custom_directives: rule }), { actorUserId: 1 });
   });
 
   it('checks embedded CRS data-file rules against the submitted CRS setting', async () => {
@@ -137,7 +138,8 @@ describe('updateWafSettingsAction custom directives', () => {
 
     expect(result.success).toBe(true);
     expect(saveWafSettingsMock).toHaveBeenCalledWith(
-      expect.objectContaining({ custom_directives: DROPPED_RULE, load_owasp_crs: true })
+      expect.objectContaining({ custom_directives: DROPPED_RULE, load_owasp_crs: true }),
+      { actorUserId: 1 }
     );
   });
 

@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
 
     // Rate limit password change attempts to prevent brute-forcing current password
     const rateLimitKey = `password-change:${session.user.id}`;
-    const rateCheck = isRateLimited(rateLimitKey);
+    const rateCheck = await isRateLimited(rateLimitKey);
     if (rateCheck.blocked) {
       return NextResponse.json(
         { error: "Too many attempts. Please try again later." },
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
 
       const isValid = await bcrypt.compare(currentPassword, currentHash);
       if (!isValid) {
-        registerFailedAttempt(rateLimitKey);
+        await registerFailedAttempt(rateLimitKey);
         return NextResponse.json(
           { error: "Current password is incorrect" },
           { status: 401 }
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Password verified successfully — reset rate limit counter
-    resetAttempts(rateLimitKey);
+    await resetAttempts(rateLimitKey);
 
     const newPasswordHash = await bcrypt.hash(newPassword, 12);
 

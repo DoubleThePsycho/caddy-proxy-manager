@@ -48,7 +48,7 @@ async function waitForCaddyHealthy(): Promise<void> {
   const maxWait = 90_000;
   console.log('[global-setup-no-ch] Verifying Caddy is healthy...');
   while (Date.now() - start < maxWait) {
-    const result = spawnSync('docker', ['inspect', '--format={{.State.Health.Status}}', 'caddy-proxy-manager-caddy'], {
+    const result = spawnSync('docker', ['inspect', '--format={{.State.Health.Status}}', 'ingressi-caddy'], {
       encoding: 'utf-8',
       cwd: process.cwd(),
     });

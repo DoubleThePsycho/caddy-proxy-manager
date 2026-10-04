@@ -1,14 +1,14 @@
-# Caddy Proxy Manager
+# Ingressi
 
-Web interface for managing [Caddy Server](https://caddyserver.com/) reverse proxies and certificates.
+Reverse proxy and access management for [Caddy](https://caddyserver.com/): a web interface for proxy hosts, certificates, WAF, access control and traffic analytics. Formerly **Caddy Proxy Manager**.
 
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://mit-license.org)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue)](https://www.docker.com/)
 
-[Report Bug](https://github.com/fuomag9/caddy-proxy-manager/issues) • [Request Feature](https://github.com/fuomag9/caddy-proxy-manager/issues)
+[Report Bug](https://github.com/ingres-si/caddy-proxy-manager/issues) • [Request Feature](https://github.com/ingres-si/caddy-proxy-manager/issues)
 
-<img width="100%" alt="Dashboard" src="site/assets/screenshots/dashboard-main.png" />
+<img width="100%" alt="The Ingressi overview: what needs attention, traffic of the last 24 hours, the busiest hosts and recent changes" src=".github/assets/dashboard.png" />
 
 ## Overview
 
@@ -19,7 +19,7 @@ This project provides a web UI for Caddy Server, eliminating the need to manuall
 ## Installation
 
 ```bash
-git clone https://github.com/fuomag9/caddy-proxy-manager.git
+git clone https://github.com/ingres-si/caddy-proxy-manager.git
 cd caddy-proxy-manager
 cp .env.example .env
 # Fill in SESSION_SECRET, ADMIN_PASSWORD and CLICKHOUSE_PASSWORD
@@ -42,10 +42,11 @@ Data persists in Docker volumes (caddy-manager-data, caddy-data, caddy-config, c
 - **Location Rules** - Path-based routing to different upstreams per proxy host (e.g. `/api/*` to one backend, `/ws/*` to another)
 - **Redirect & Rewrite** - Per-host redirect rules (301/302/307/308) and path prefix rewriting
 - **Forward Auth Portal** - Built-in identity provider for protecting proxy hosts without an external IdP. Credential and OAuth login portal, user groups with membership management, per-host access control by user or group, and excluded paths that bypass authentication
-- **WAF** - Web Application Firewall powered by Coraza with optional OWASP Core Rule Set (SQLi, XSS, LFI, RCE). Per-host enable/disable, global and per-host rule suppression, custom SecLang directives, and a searchable event log with severity and blocked/detected classification
-- **Analytics** - Live traffic charts, protocol breakdown, country map, top user agents, and blocked request log with configurable time ranges
+- **WAF** - Web Application Firewall powered by Coraza with optional OWASP Core Rule Set (SQLi, XSS, LFI, RCE). Paranoia level and anomaly thresholds, per-host modes (inherit, off, detection only, blocking), rule exclusions scoped to a host, path or variable, custom SecLang directives, and a searchable event log that explains why each request was blocked. See [documentation/waf.md](documentation/waf.md)
+- **Analytics** - Every request stored in ClickHouse: headline numbers with their change, a chart by outcome, status class or host, filters on any dimension, top lists with a country map, a request log, CSV export and saved views. See [documentation/analytics.md](documentation/analytics.md)
 - **Geo Blocking** - Block or allow traffic by country, continent, ASN, CIDR range, or exact IP per proxy host. Allow rules override block rules. Fail-closed mode, custom response codes/bodies, and trusted proxy support
-- **Access Lists** - Multi-account HTTP basic auth protection (bcrypt-hashed) assignable per proxy host
+- **Rate Limiting** - Per-host and global request limits by path and method, counted per client IP, request header or signed-in user, answering 429 with Retry-After. Hosts inherit, merge or override the global defaults; an allowlist exempts monitoring clients. See [documentation/rate-limiting.md](documentation/rate-limiting.md)
+- **Access Lists** - Ordered allow and deny rules by IP address or CIDR range (IPv4 and IPv6), country, continent or AS number, where the first match decides, plus multi-account HTTP basic auth (bcrypt-hashed), assignable per proxy host. A global Blocked sources list applies to every host before anything else, with expiring entries and a one-call API. See [documentation/access-lists.md](documentation/access-lists.md)
 - **Certificates** - Automatic HTTPS for every proxy host via Caddy ACME (Let's Encrypt / ZeroSSL), manual SSL/TLS import with expiry monitoring, and a built-in CA for issuing and revoking internal client certificates (mTLS)
 - **mTLS** - Mutual TLS per proxy host using built-in CA certificates. Issue, track, and revoke client certificates. Fail-closed revocation (all certs revoked = all connections rejected)
 - **mTLS RBAC** - Role-based access control for mTLS client certificates. Define roles, assign certs to roles, and create path-based access rules per proxy host (e.g. `/admin/*` requires the "ops" role)
@@ -55,6 +56,7 @@ Data persists in Docker volumes (caddy-manager-data, caddy-data, caddy-config, c
 - **Authentik Integration** - Forward-auth SSO per proxy host with configurable header forwarding and protected paths
 - **DNS Controls** - Custom DNS resolvers per host, upstream DNS pinning with IPv4/IPv6/both address family selection
 - **REST API** - Full REST API under `/api/v1/` with Bearer token authentication, covering all resources. Interactive OpenAPI 3.1.0 docs at `/api-docs`
+- **Command Palette** - Ctrl+K / ⌘K searches hosts, certificates, users, pages, settings and documentation and runs common actions, limited to what each user may read; `GET /api/v1/search` returns the same results. See [documentation/command-palette.md](documentation/command-palette.md)
 - **API Tokens** - Create and manage API tokens with optional expiration for programmatic access
 - **Instance Sync** - Master/slave configuration sync for multi-instance deployments. The master pushes proxy hosts, certificates, access lists, and settings to slaves on every change, with secrets sealed to each slave's own key, pinned on first use
 - **Default Response** - Replace Caddy's native behavior for unknown hosts or direct-IP requests with a custom status/body/headers, redirect, or connection abort
@@ -80,13 +82,13 @@ Data persists in Docker volumes (caddy-manager-data, caddy-data, caddy-config, c
 | `ADMIN_PASSWORD` | Admin password (see requirements below) | `admin` (dev only) | **Yes** |
 | `BASE_URL` | Public URL where users access the dashboard.<br/>**Required for OAuth** - must match redirect URI | `http://localhost:3000` | **Yes** (if using OAuth) |
 | `CADDY_API_URL` | Caddy Admin API endpoint | `http://caddy:2019` (prod)<br/>`http://localhost:2019` (dev) | No |
-| `DATABASE_URL` | SQLite database URL | `file:/app/data/caddy-proxy-manager.db` | No |
+| `DATABASE_URL` | The database: a SQLite file, or a `postgres://` URL to run on PostgreSQL (see [PostgreSQL](documentation/postgresql.md)) | `file:/app/data/ingressi.db` | No |
 | `CERTS_DIRECTORY` | Certificate storage directory | `./data/certs` | No |
 | `LOGIN_MAX_ATTEMPTS` | Failed attempts that trigger a block: per client (and per account) for forward-auth portal logins, per user for password changes and OAuth account linking, where starting a link counts every attempt (see [Login rate limits](#login-rate-limits)) | `5` | No |
 | `LOGIN_WINDOW_MS` | Window in which those failures are counted, in milliseconds | `300000` (5 min) | No |
 | `LOGIN_BLOCK_MS` | How long a block lasts, in milliseconds | `900000` (15 min) | No |
 | `FORWARD_AUTH_ALLOWED_PORTS` | Non-standard ports (comma-separated, e.g. `8443`) on which browsers reach forward-auth protected sites | None | No (required for such ports) |
-| `TRUSTED_CLIENT_IP_HEADER` | Header holding the real client IP for the portal login and sync endpoint rate limits (e.g. `cf-connecting-ip` behind a CDN). Leave unset when Caddy is the outermost proxy; set it only if every route to CPM overwrites that header. See [Login rate limits](#login-rate-limits) | None (rightmost `X-Forwarded-For`) | No |
+| `TRUSTED_CLIENT_IP_HEADER` | Header holding the real client IP for the portal login and sync endpoint rate limits (e.g. `cf-connecting-ip` behind a CDN). Leave unset when Caddy is the outermost proxy; set it only if every route to Ingressi overwrites that header. See [Login rate limits](#login-rate-limits) | None (rightmost `X-Forwarded-For`) | No |
 | `OAUTH_ENABLED` | Enable OAuth2/OIDC authentication | `false` | No |
 | `OAUTH_PROVIDER_NAME` | Display name for OAuth provider | `OAuth2` | No |
 | `OAUTH_CLIENT_ID` | OAuth2 client ID | None | No |
@@ -112,11 +114,22 @@ Data persists in Docker volumes (caddy-manager-data, caddy-data, caddy-config, c
 | `INSTANCE_SYNC_RATE_MAX` | Slave only: requests per client address and window to `/api/instances/sync`, counted separately for syncs and key requests | `60` | No |
 | `INSTANCE_SYNC_RATE_WINDOW_MS` | Slave only: window of that limit in milliseconds | `60000` | No |
 | `INSTANCE_SYNC_MAX_BYTES` | Slave only: largest sync payload accepted, in bytes | `10485760` (10 MiB) | No |
+| `INSTANCE_SYNC_MODE` | Slave only: `pull` makes the slave poll its master instead of being pushed to (fleet pull replicas, Enterprise; see `ee/docs/fleet.md`) | `push` | No |
+| `INSTANCE_MASTER_URL` | Pull replica only: the master's base URL (`https`; `http` only with `INSTANCE_SYNC_ALLOW_HTTP`) | None | With `INSTANCE_SYNC_MODE=pull` |
+| `INSTANCE_PULL_TOKEN` | Pull replica only: the credential the master issued for it (shown once) | None | With `INSTANCE_SYNC_MODE=pull` |
+| `INSTANCE_PULL_INTERVAL` | Pull replica only: seconds between polls (`10`–`3600`, with jitter) | `30` | No |
+| `INSTANCE_PULL_APPLY_TIMEOUT` | Master only: seconds a fleet rollout waits for a pull replica to confirm a revision (`60`–`86400`) | `600` | No |
+| `INSTANCE_PULL_RATE_MAX` | Master only: pull replica polls per client address and window (`INSTANCE_PULL_RATE_WINDOW_MS`, default 60000) | `300` | No |
 | `CLICKHOUSE_URL` | ClickHouse HTTP endpoint for analytics | `http://clickhouse:8123` | No |
-| `CLICKHOUSE_USER` | ClickHouse username | `cpm` | No |
+| `CLICKHOUSE_USER` | ClickHouse username | `ingressi` | No |
 | `CLICKHOUSE_PASSWORD` | ClickHouse password (`openssl rand -base64 32`). Required when the `clickhouse` profile is active. | None | No (required if analytics enabled) |
 | `CLICKHOUSE_DB` | ClickHouse database name | `analytics` | No |
 | `CLICKHOUSE_RETENTION_DAYS` | Days analytics events are kept (see [Analytics](#analytics)) | `30` | No |
+| `USAGE_PING_ENABLED` | `true` answers yes to the anonymous [usage ping](#usage-ping) question at start-up, for installs nobody signs in to; never overrides an answer already given | (unset) | No |
+| `USAGE_PING_DISABLED` | `true` turns the anonymous [usage ping](#usage-ping) off entirely and hides its question | `false` | No |
+| `USAGE_PING_URL` | Endpoint of the usage ping (https only) | `https://ping.ingres.si/v1/ping` | No |
+| `LICENSE_AUTO_UPDATE_DISABLED` | `true` forbids automatic license updates: the license server is never contacted and the setting cannot be turned on | `false` | No |
+| `LICENSE_SERVER_URL` | License server for automatic license updates (https only) | `https://license.ingres.si` | No |
 
 With the stock `docker-compose.yml`, the web container only receives the variables listed in the `web` service's `environment`; a value in `.env` for any other variable in this table has no effect until you add it there (for example `INSTANCE_MODE: ${INSTANCE_MODE:-}`; an empty value leaves the mode to the Settings page). Give numeric variables their documented default rather than an empty one, e.g. `LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}`: an empty value is read as 0.
 
@@ -131,6 +144,13 @@ Development mode (`NODE_ENV=development`) allows default `admin`/`admin` credent
 ## Upgrade Notes
 
 Pull the new images and recreate the containers with `docker compose pull && docker compose up -d`. (`docker compose restart` does not re-read `.env`.)
+
+### Upgrading to Ingressi
+
+Caddy Proxy Manager is now Ingressi, and the rename reaches header, cookie, file, image and container names. Old names keep working, so nothing has to be done; [documentation/upgrading-to-ingressi.md](documentation/upgrading-to-ingressi.md) lists every rename. Two things to check:
+
+- **Upstreams behind Ingressi forward auth** receive `X-Ingressi-User`, `X-Ingressi-Email`, `X-Ingressi-Groups` and `X-Ingressi-User-Id`. The `X-CPM-*` headers are still sent with the same values but are deprecated; move upstream configuration to the new names.
+- **Prometheus metrics** label the main Caddy server `server="ingressi"` instead of `server="cpm"`.
 
 ### Upgrading from v1.13.1
 
@@ -169,11 +189,11 @@ These changes also apply when upgrading from an earlier release.
 - **Passwords.** The password policy (12–256 characters, upper- and lowercase, a digit and a special character) now applies to every way of setting a password: admin-created users (dashboard and `POST /api/v1/users`), password changes, and Better Auth self-registration (`AUTH_ALLOW_SELF_REGISTRATION=true`) and reset. Changing or setting a password signs out the user's other dashboard sessions and all their forward-auth sessions. API tokens are kept; revoke them under **Profile → API Tokens** if needed. Adding a first password to an OAuth-only account requires a sign-in within the last 10 minutes. The user can then sign in at `/login` with the **Sign-in username** shown on the Profile page (see the next item).
 - **Sign-in usernames.** The login page signs in by username only, ignoring case; the forward-auth portal signs in the account whose email is the typed name plus `@localhost`. An account without an explicit username uses its own email address (lowercased) as username only when that address is already a valid username, 3–255 characters from `A-Z a-z 0-9 _ . @ -`, and no other account signs in with it or has it as email address. An account created on the **Users** page, through the API or by self-registration (which ignores a requested `username` or `displayUsername`) gets it when it is created; one created by an OAuth sign-in, or any account without a usable username, gets it when its password is set. Otherwise an administrator sets the username under **Users → Edit → Username** or with `"username"` in `PUT /api/v1/users/{id}` (also accepted by `POST /api/v1/users`); until then the account cannot sign in with a password. No other username is ever derived from an email address, and neither startup (apart from applying changed `ADMIN_USERNAME`/`ADMIN_PASSWORD`, which also resets the primary admin's username and email to `ADMIN_USERNAME`) nor profile edits change a stored username. Accounts whose stored username the login page cannot use (older releases could store an email with `+`, or a mixed-case username) need an administrator to set one or, when their email qualifies, a password change after signing in another way (OAuth); their Profile page says which. A username must not be another account's username, email address or portal name, and an email address must not be another account's username or, for a `@localhost` address, have another account's username before the `@`; such a request is refused and changes nothing. A changed `ADMIN_USERNAME` that another account holds is not applied, and the start logs `ADMIN_USERNAME "…" is not applied`. The Profile page shows a working username as **Sign-in username** and `/api/v1/users` responses include it as `username`; tell users whose username differs from their email.
 - **Unlinking OAuth** requires a working username/password sign-in. Users who set a password on an older version must change it once before the **Unlink** button appears.
-- **Better Auth self-service endpoints** that CPM does not use are disabled: `/api/auth/update-user`, `/change-password`, `/change-email`, `/delete-user`, `/unlink-account`, `/update-session`, `/verify-password` and `/is-username-available`. Use the Profile page or `/api/v1/` instead. With `AUTH_ALLOW_OAUTH_REGISTRATION=false`, an OAuth sign-in can no longer create an account even if the client asks for sign-up.
+- **Better Auth self-service endpoints** that Ingressi does not use are disabled: `/api/auth/update-user`, `/change-password`, `/change-email`, `/delete-user`, `/unlink-account`, `/update-session`, `/verify-password` and `/is-username-available`. Use the Profile page or `/api/v1/` instead. With `AUTH_ALLOW_OAUTH_REGISTRATION=false`, an OAuth sign-in can no longer create an account even if the client asks for sign-up.
 - **Deleting a user** also deletes their sessions, API tokens, sign-in methods, pending OAuth links, forward-auth sessions and grants, and group memberships; what they owned or created and their audit log entries are kept without a user (see [User Roles](#user-roles)). Older releases deleted only the user row; on startup, the rows those deletions left behind are removed (logged as `Cleared rows left by deleted user id(s) <ids>`), so a new account that gets a deleted user's id (the primary admin is always id 1) does not inherit their API tokens, sessions or OAuth links. Nothing needs to be done.
 - **Portal login rate limits** no longer trust a client-sent `X-Real-IP`, and now also count failures per account. See [Login rate limits](#login-rate-limits) and `TRUSTED_CLIENT_IP_HEADER`.
 - **Forward-auth header stripping.** Client-supplied identity headers are now removed in every `-`/`_` spelling (`X_CPM_User`, `Remote_User`, …), so upstreams that fold `-` and `_` into one name (CGI/WSGI) cannot read forged ones. Authentik copy headers are now stripped too, on every route that reaches the upstream, excluded and unprotected paths included. `Authorization`, `Proxy-Authorization` and `Cookie` are not stripped before authentication, even when listed in the copy headers (generic forward auth used to strip them): clients' own credentials reach excluded paths, access-list basic auth and the auth server. On protected routes, one listed in the copy headers is replaced by the auth server's value, or removed when the auth server returns none (v1.13.0 and v1.13.1 passed the client's value on; see [Upgrading from v1.13.1](#upgrading-from-v1131)).
-- **Instance sync.** The master no longer follows redirects from a slave, applies `INSTANCE_SYNC_TIMEOUT_MS` to each request (default 60 s; reported as *"Sync timed out"*), and requires the slave's acknowledgement. A login page in front of a slave is reported as *"Slave returned an invalid sync key"*, or *"Sync key request failed with HTTP 302"* when it redirects. `INSTANCE_SLAVES` entries go through the same URL checks as instances added in the UI, and invalid ones are skipped with the warning `Skipping INSTANCE_SLAVES entry <index>: <reason>`. Instance URLs containing `?` or `#` are rejected. Before each sync the master fetches the slave's sync key, so a wrong token or a URL that does not reach CPM now shows as *"Sync key request failed with HTTP 401"* or *"… HTTP 404"*. New slave-side errors are listed under [Instance Sync](#instance-sync).
+- **Instance sync.** The master no longer follows redirects from a slave, applies `INSTANCE_SYNC_TIMEOUT_MS` to each request (default 60 s; reported as *"Sync timed out"*), and requires the slave's acknowledgement. A login page in front of a slave is reported as *"Slave returned an invalid sync key"*, or *"Sync key request failed with HTTP 302"* when it redirects. `INSTANCE_SLAVES` entries go through the same URL checks as instances added in the UI, and invalid ones are skipped with the warning `Skipping INSTANCE_SLAVES entry <index>: <reason>`. Instance URLs containing `?` or `#` are rejected. Before each sync the master fetches the slave's sync key, so a wrong token or a URL that does not reach Ingressi now shows as *"Sync key request failed with HTTP 401"* or *"… HTTP 404"*. New slave-side errors are listed under [Instance Sync](#instance-sync).
 - **Instance sync key pinning.** The master pins each slave's sync key the first time the slave presents one and from then on seals only to that key (see [Sync key pinning](#sync-key-pinning)). A slave that comes back with another key, for example reinstalled with a new `SESSION_SECRET`, fails to sync with *"Slave sync key changed; verify the slave, then pin its new key or reset its key pin"* until its new key is pinned on the master. When rotating a slave's `SESSION_SECRET`, keep the old value in the slave's `SESSION_SECRET_PREVIOUS` until the master has synced to it once (see [Rotating SESSION_SECRET](#rotating-session_secret)). After downgrading a slave to v1.12.0 or earlier, reset its key pin, or its syncs fail with *"Sync key request failed with HTTP 405"*.
 - **DNS provider credentials** that older releases stored in plaintext (saved through `PUT /api/v1/settings/dns-provider`, a Cloudflare token migrated from the legacy `cloudflare` setting, and the legacy `cloudflare` setting itself) are encrypted on startup, which logs `Encrypted N DNS provider credential(s) that were stored in plaintext`. The REST API and the legacy setting now store them encrypted, as the dashboard does.
 - **WAF events.** Credential header values (`Authorization`, `Cookie`, `Set-Cookie`, API-key and token headers, …) and the cookie or credential values that rule messages echo are stored as `[redacted]`. Events stored before the upgrade are not scrubbed; they expire with the analytics retention.
@@ -210,7 +230,7 @@ docker compose up -d
 2. Recreate the web container (`docker compose up -d`). On startup every stored secret, including a slave's synced settings, is re-encrypted with the new `SESSION_SECRET` (logged as `Re-encrypted N stored secret(s) with the current SESSION_SECRET`); `SESSION_SECRET_PREVIOUS` is never used to encrypt.
 3. Remove `SESSION_SECRET_PREVIOUS` after one successful start. On an instance sync slave, wait until its master has synced to it once since the restart, and keep the master's secret while the master runs v1.12.0 or earlier (see below).
 
-A value that no key decrypts is left as stored and logged as `[secret] … cannot be decrypted with SESSION_SECRET or SESSION_SECRET_PREVIOUS`, followed by `N stored secret(s) listed above could not be decrypted…`; re-enter it in the UI, or set `SESSION_SECRET_PREVIOUS` to the secret it was stored with. OAuth sign-in tokens that no key decrypts are cleared instead (`Cleared N stored OAuth sign-in token(s)…`), since CPM does not use them and the next OAuth sign-in stores new ones. Values stored under an old example `SESSION_SECRET` are re-encrypted without any extra configuration. If a CA private key can no longer be decrypted, issuing a client certificate fails with *"The CA private key cannot be decrypted with the current SESSION_SECRET…"*; certificates already issued keep working, because only the CA certificate is needed to validate them.
+A value that no key decrypts is left as stored and logged as `[secret] … cannot be decrypted with SESSION_SECRET or SESSION_SECRET_PREVIOUS`, followed by `N stored secret(s) listed above could not be decrypted…`; re-enter it in the UI, or set `SESSION_SECRET_PREVIOUS` to the secret it was stored with. OAuth sign-in tokens that no key decrypts are cleared instead (`Cleared N stored OAuth sign-in token(s)…`), since Ingressi does not use them and the next OAuth sign-in stores new ones. Values stored under an old example `SESSION_SECRET` are re-encrypted without any extra configuration. If a CA private key can no longer be decrypted, issuing a client certificate fails with *"The CA private key cannot be decrypted with the current SESSION_SECRET…"*; certificates already issued keep working, because only the CA certificate is needed to validate them.
 
 With instance sync, the master and each slave can use their own `SESSION_SECRET` and rotate it independently: the master seals synced secrets (DNS provider credentials, certificate private keys) to the slave's sync key, and the slave stores them encrypted with its own `SESSION_SECRET`. The slave derives its sync key from `SESSION_SECRET`, so the key changes with it; a sync that fetched the key just before the slave restarted fails with HTTP 409, and the next one succeeds. A synced setting the master itself cannot decrypt is sent as stored, and the master logs `Instance sync: setting <path> cannot be decrypted with SESSION_SECRET or SESSION_SECRET_PREVIOUS; sending it as stored` once per value, not on every sync. A master on v1.12.0 or earlier sends DNS provider credentials encrypted with its own `SESSION_SECRET` instead, so while it does, every slave must keep the master's secret as `SESSION_SECRET` or in `SESSION_SECRET_PREVIOUS`, or applying the synced config fails (values encrypted under the old placeholder secret always decrypt). A slave on v1.12.0 or earlier receives them encrypted with the master's current `SESSION_SECRET` from any master, so it must use that same secret until it is upgraded.
 
@@ -222,7 +242,7 @@ If the old secret may have leaked, do not rely on the automatic re-pin: anyone h
 
 ## User Roles
 
-CPM has three roles with increasing privileges:
+Ingressi has three roles with increasing privileges:
 
 | Capability | Viewer | User | Admin |
 |------------|:------:|:----:|:-----:|
@@ -251,7 +271,7 @@ tokens are restricted to the same user-scoped API capabilities as their owner.
 
 Caddy automatically obtains Let's Encrypt certificates for all proxy hosts.
 
-**DNS-01 Challenge** (optional): Configure a DNS provider in **Settings → DNS Providers** for wildcard certificates and environments where ports 80/443 are not public. Supported providers: Cloudflare, Route 53, DigitalOcean, Duck DNS, Hetzner, Vultr, Porkbun, GoDaddy, Namecheap, OVH, IONOS, Linode, Njalla, netcup, Spaceship, deSEC, Dynu, acme-dns, Infomaniak, INWX, ClouDNS, and RFC2136 (BIND/TSIG). Credentials are encrypted at rest with AES-256-GCM. You can override the DNS provider per certificate.
+**DNS-01 Challenge** (optional): Configure a DNS provider in **Settings → Certificates and ACME** (DNS-01 providers) for wildcard certificates and environments where ports 80/443 are not public. Supported providers: Cloudflare, Route 53, DigitalOcean, Duck DNS, Hetzner, Vultr, Porkbun, GoDaddy, Namecheap, OVH, IONOS, Linode, Njalla, netcup, Spaceship, deSEC, Dynu, acme-dns, Infomaniak, INWX, ClouDNS, and RFC2136 (BIND/TSIG). Credentials are encrypted at rest with AES-256-GCM. You can override the DNS provider per certificate.
 
 **Custom Certificates** (optional): Import your own certificates via the Certificates page. Private keys are encrypted at rest with AES-256-GCM, migrated from legacy plaintext storage on startup, and treated as write-only by ordinary API responses and browser payloads.
 
@@ -299,6 +319,8 @@ The databases are stored in the `geoip-data` Docker volume and shared between th
 
 Analytics uses a bundled ClickHouse instance for storing and querying traffic events and WAF events. Data is retained for **30 days** by default via ClickHouse's TTL. Change the window with the `CLICKHOUSE_RETENTION_DAYS` environment variable — on the next startup the existing tables' TTL is migrated to the new value and expired data is purged.
 
+What each request records (country, network, outcome, duration), the filters, saved views and the REST API are described in [documentation/analytics.md](documentation/analytics.md).
+
 ### Enabling analytics (recommended)
 
 Analytics is enabled via the `clickhouse` Docker Compose profile. The default `.env.example` has it on:
@@ -343,13 +365,11 @@ GEOIPUPDATE_LICENSE_KEY=…
 
 The WAF is powered by [Coraza](https://coraza.io/) and integrates the OWASP Core Rule Set.
 
-Enable globally in **WAF → Settings**, then optionally override per proxy host. Two modes:
-- **Block** — requests matching rules are rejected with 403
-- **Detect** — requests are logged but not blocked
+Set it up on the **WAF settings** page: the global mode (off, detection only or blocking), whether it applies to every host, the OWASP CRS paranoia level and anomaly thresholds, and what happens over the threshold (block with 403 or log only). Each proxy host can inherit the global mode, turn the WAF off, or run detection only or blocking on its own.
 
 **OWASP CRS** covers SQLi, XSS, LFI, RCE, and more (enabled by default when WAF is on).
 
-**Rule suppression** — suppress noisy rules globally or per host from the event detail drawer or the Suppressed Rules tab.
+**Rule exclusions** — skip one rule globally or for one host, optionally only for a path or a variable (`ARGS:name`, `REQUEST_HEADERS:name`, …), with a reason. Each WAF event shows why it was blocked (matched rules, anomaly points, score against the threshold) and suggests the narrowest exclusion. See [documentation/waf.md](documentation/waf.md).
 
 **Event log** — credential header values (`Authorization`, `Cookie`, `Set-Cookie`, API-key and token headers, …) and the cookie or credential values that rule messages echo are stored as `[redacted]`.
 
@@ -374,7 +394,7 @@ When one rule of a chain is dropped, the whole chain is dropped. Rules stored be
 
 ## Instance Sync
 
-Run a master instance that pushes configuration to one or more slaves on every change. Set the mode in **Settings → Instance Sync**, or with the variables below in the web container's environment (add them to the `web` service in `docker-compose.yml`; see [Environment Variables](#environment-variables)).
+Run a master instance that pushes configuration to one or more slaves on every change. Set the mode in **Settings → Instance sync**, or with the variables below in the web container's environment (add them to the `web` service in `docker-compose.yml`; see [Environment Variables](#environment-variables)).
 
 ```bash
 # Generate once, then configure the same 64-character value on both sides.
@@ -398,8 +418,8 @@ Synced data: proxy hosts, L4 proxy hosts, certificates, CA and issued client cer
 - Anything that reads request bodies on the way to a slave (a TLS-terminating proxy, CDN or tunnel in front of it, request body logging, or a passive observer of a sync over HTTP) sees these secrets only as ciphertext; the rest of the configuration is not sealed. Each sealed secret is bound to the nonce and to the exact payload it came with, so a captured sync body cannot be replayed or changed (for example to point an acme-dns `server_url` elsewhere) to get its secrets onto a slave, even by someone who also has the sync token.
 - Sealing does not stop anyone holding the sync token from pushing a configuration of their own. The master pins each slave's key (see [Sync key pinning](#sync-key-pinning) below), so after the first sync it refuses a different key an active attacker presents, but the first sync trusts whatever key answers unless the key was pinned beforehand. Over plain HTTP the token is still exposed, so HTTPS is still required.
 - Proxies in front of a slave must pass `GET` as well as `POST` on `/api/instances/sync`, with the `Authorization` header and the query string, and must not cache the `GET` reply (it is sent with `Cache-Control: no-store`). The master sends `GET /api/instances/sync?challenge=<fresh key>`, and the slave uses the challenge for its rotation proofs (below); without it syncs still work, but a rotated slave is not re-pinned automatically. A challenge that is not a usable key gets `400` *"Invalid sync key challenge"*, reported on the master as *"Sync key request failed with HTTP 400"*. Key requests have their own rate limit, with the same limits as syncs (`INSTANCE_SYNC_RATE_MAX` requests per `INSTANCE_SYNC_RATE_WINDOW_MS` per client address, 60 per minute by default), so they do not use up the sync budget.
-- A nonce is kept in the slave process's memory for 10 minutes, so the key request and the sync must reach the same process, as they always do with a single CPM web container.
-- A slave on v1.12.0 or earlier answers the key request with `405`. The master then sends what older masters sent: certificate private keys unsealed and DNS provider credentials encrypted with the master's `SESSION_SECRET`, which that slave needs as its own `SESSION_SECRET`. It logs `Instance sync: slave "<name>" does not publish a sync key (older release)…` once per slave. This applies only to slaves without a pinned key: once a slave has a pin, a `405` fails the sync (see [Sync key pinning](#sync-key-pinning)). A `404` always fails the sync (*"Sync key request failed with HTTP 404"*); it usually means a wrong base URL, or a proxy or virtual host answering instead of CPM.
+- A nonce is kept in the slave process's memory for 10 minutes, so the key request and the sync must reach the same process, as they always do with a single Ingressi web container.
+- A slave on v1.12.0 or earlier answers the key request with `405`. The master then sends what older masters sent: certificate private keys unsealed and DNS provider credentials encrypted with the master's `SESSION_SECRET`, which that slave needs as its own `SESSION_SECRET`. It logs `Instance sync: slave "<name>" does not publish a sync key (older release)…` once per slave. This applies only to slaves without a pinned key: once a slave has a pin, a `405` fails the sync (see [Sync key pinning](#sync-key-pinning)). A `404` always fails the sync (*"Sync key request failed with HTTP 404"*); it usually means a wrong base URL, or a proxy or virtual host answering instead of Ingressi.
 
 A master on v1.12.0 or earlier seals nothing and sends DNS provider credentials encrypted with its own key; see [Rotating SESSION_SECRET](#rotating-session_secret).
 
@@ -413,11 +433,11 @@ Both 409s clear on the next sync. A key reply the master cannot use, a low-order
 
 Use HTTPS slave URLs in production. Set `INSTANCE_SYNC_ALLOW_HTTP=true` only for internal Docker networks; it exposes the sync token to anyone on the path. Slave URLs (from the UI, the API or `INSTANCE_SLAVES`) must not contain credentials, a query string or a fragment; `INSTANCE_SLAVES` entries with an invalid URL are skipped with a warning; entries with a missing name or URL, or a token that breaks the rules above, are skipped without one. The master does not follow redirects, and a request that exceeds `INSTANCE_SYNC_TIMEOUT_MS` (default 60 s) is reported as *"Sync timed out"*; the slave may still finish applying the config.
 
-See the [Environment Variables Reference](https://github.com/fuomag9/caddy-proxy-manager/wiki/Environment-Variables-Reference) for all `INSTANCE_*` options.
+See the [Environment Variables Reference](https://github.com/ingres-si/caddy-proxy-manager/wiki/Environment-Variables-Reference) for all `INSTANCE_*` options.
 
 ### Sync key pinning
 
-The master pins each slave's sync key the first time the slave presents one (trust on first use), with nothing to configure, and from then on seals only to that key. A first pin is logged as `Instance sync: pinned sync key <keyId> of slave "<name>" on first use` and audited as `instance_sync_key_pinned`. **Settings → Instance Sync** on the master shows each slave's pinned key id, when it was pinned (UTC) and how (*first use*, *rotated* or *set by an admin*), and a **Key pin** button to pin or reset it. A slave shows its own key id and full public key on its **Settings → Instance Sync** page, under **Master Connection**, and returns them from `GET /api/v1/instances/sync-key` (admin). The key id is a 64-bit fingerprint, so compare the full public key where it matters.
+The master pins each slave's sync key the first time the slave presents one (trust on first use), with nothing to configure, and from then on seals only to that key. A first pin is logged as `Instance sync: pinned sync key <keyId> of slave "<name>" on first use` and audited as `instance_sync_key_pinned`. **Settings → Instance sync** on the master shows each slave's pinned key id, when it was pinned (UTC) and how (*first use*, *rotated* or *set by an administrator*), and a **Key pin** button to pin or reset it. A slave shows its own key id and full public key on its **Settings → Instance sync** page, under **Master connection**, and returns them from `GET /api/v1/instances/sync-key` (admin). The key id is a 64-bit fingerprint, so compare the full public key where it matters.
 
 - **Where pins are kept.** In the master's database (settings key `instance_sync_key_pins`); they are never synced to slaves and not served by `/api/v1/settings`. A slave is identified by its normalized base URL (lowercase scheme and host, no default port, dot segments resolved, no trailing slashes), and syncs go to exactly that URL + `/api/instances/sync`. Instances and `INSTANCE_SLAVES` entries with the same normalized URL share one pin, and resetting it affects all of them.
 - **A changed key.** When a slave presents a different key without a valid rotation proof, the sync fails before anything is sent, with *"Slave sync key changed; verify the slave, then pin its new key or reset its key pin"*, and the master logs once `Instance sync: slave "<name>" presented sync key <new>, but <pinned> is pinned and the slave sent no valid rotation proof; not syncing…`. If the slave's `SESSION_SECRET` was rotated, set the slave's `SESSION_SECRET_PREVIOUS` to the old value and sync again. Otherwise compare the key id in the log with the slave's own before pinning the slave's new key: a key the slave does not show means something else answered at its address.
@@ -434,7 +454,7 @@ The master pins each slave's sync key the first time the slave presents one (tru
 
 ## Default Response
 
-Configure **Settings → Default Response** to preserve Caddy's native behavior for unmatched HTTP requests (such as an automatic HTTPS redirect or empty response, depending on the generated server config), or replace it with:
+Configure **Settings → General** (Requests for unknown hosts) to preserve Caddy's native behavior for unmatched HTTP requests (such as an automatic HTTPS redirect or empty response, depending on the generated server config), or replace it with:
 
 - a custom HTTP status, body, and response headers (including custom HTML);
 - a redirect; or
@@ -448,7 +468,7 @@ Request placeholders such as `{http.request.uri}` and `{http.request.host}` are 
 
 ## Upstream DNS Pinning
 
-You can enable upstream DNS pinning globally (**Settings → Upstream DNS Pinning**) and override per host (**Proxy Host → Upstream DNS Pinning**).
+You can enable upstream DNS pinning globally (**Settings → Upstream DNS pinning**) and override per host (**Proxy Host → Upstream DNS Pinning**).
 
 When enabled, hostname upstreams are resolved during config save/reload and written to Caddy as concrete IP dials. Address family selection supports:
 - `both` (preferred, resolves AAAA then A with IPv6 preference)
@@ -465,11 +485,11 @@ HTTP upstreams in the same handler are still eligible for pinning.
 
 ## OAuth Authentication
 
-Supports any OIDC-compliant provider (Authentik, Keycloak, Auth0, etc.). Providers can be configured via environment variables or the **Settings → OAuth Providers** UI.
+Supports any OIDC-compliant provider (Authentik, Keycloak, Auth0, etc.). Providers can be configured via environment variables or the **Settings → OAuth providers** UI.
 
 ### Option A: Configure via UI (Recommended)
 
-1. Log in as admin and navigate to **Settings → OAuth Providers**
+1. Log in as admin and navigate to **Settings → OAuth providers**
 2. Click **Add Provider** and fill in the details
 3. Copy the displayed **Callback URL** and add it to your OAuth provider's allowed redirect URIs
 
@@ -493,7 +513,7 @@ The callback URL format is:
 {BASE_URL}/api/auth/callback/{provider-id}
 ```
 
-For environment-configured providers, the provider ID is derived from `OAUTH_PROVIDER_NAME` (lowercased, non-alphanumeric replaced with `-`). The exact callback URL is shown in **Settings → OAuth Providers** after the provider is synced.
+For environment-configured providers, the provider ID is derived from `OAUTH_PROVIDER_NAME` (lowercased, non-alphanumeric replaced with `-`). The exact callback URL is shown in **Settings → OAuth providers** after the provider is synced.
 
 Examples:
 - `https://caddy-manager.example.com/api/auth/callback/authentik` (production, `OAUTH_PROVIDER_NAME=Authentik`)
@@ -501,13 +521,13 @@ Examples:
 
 The `BASE_URL` environment variable must match exactly where users access your dashboard.
 
-> **Upgrading from < 1.0-RC:** The old callback URL (`/api/auth/callback/oauth2`) no longer works. Update your OAuth provider's redirect URI to the new format shown in **Settings → OAuth Providers**.
+> **Upgrading from < 1.0-RC:** The old callback URL (`/api/auth/callback/oauth2`) no longer works. Update your OAuth provider's redirect URI to the new format shown in **Settings → OAuth providers**.
 
 OAuth login appears on the login page alongside credentials.
 
 **Account linking:**
 
-Attaching an OAuth identity to an existing CPM user requires **Auto-link accounts** to be enabled for that provider (**Settings → OAuth Providers**, or `OAUTH_ALLOW_AUTO_LINKING=true` for environment-configured providers). The switch marks the provider as trusted to prove that its identity owns the CPM account carrying the same email address, so leave it off for any IdP where users can register an arbitrary email themselves.
+Attaching an OAuth identity to an existing Ingressi user requires **Auto-link accounts** to be enabled for that provider (**Settings → OAuth providers**, or `OAUTH_ALLOW_AUTO_LINKING=true` for environment-configured providers). The switch marks the provider as trusted to prove that its identity owns the Ingressi account carrying the same email address, so leave it off for any IdP where users can register an arbitrary email themselves.
 
 With it enabled:
 
@@ -520,14 +540,14 @@ With it disabled, both paths are refused and the provider redirects to `/api/aut
 
 ## Forward Auth Portal
 
-CPM includes a built-in forward auth identity provider — no external IdP (Authentik, Authelia, etc.) required.
+Ingressi includes a built-in forward auth identity provider — no external IdP (Authentik, Authelia, etc.) required.
 
 ### How it works
 
 1. Enable **Forward Auth** on a proxy host and choose which users or groups may access it.
-2. Unauthenticated visitors are redirected to the CPM login portal.
-3. After login, CPM issues a session cookie and redirects back to the protected app.
-4. Caddy's `forward_auth` directive validates every subsequent request against CPM.
+2. Unauthenticated visitors are redirected to the Ingressi login portal.
+3. After login, Ingressi issues a session cookie and redirects back to the protected app.
+4. Caddy's `forward_auth` directive validates every subsequent request against Ingressi.
 
 ### Groups
 
@@ -541,10 +561,12 @@ Each forward-auth-protected host has its own access list of allowed users and/or
 
 On each request it lets through, the portal passes the user to the upstream in these headers, and client-sent copies of them are removed:
 
-- `X-CPM-User-Id` — the account's id. It does not change, so it is the one to key users on.
-- `X-CPM-User` — the sign-in username, or the email address for an account without one. CPM keeps it from belonging to two accounts, but an administrator can change it.
-- `X-CPM-Email` — the email address.
-- `X-CPM-Groups` — the user's group names, comma-separated.
+- `X-Ingressi-User-Id` — the account's id. It does not change, so it is the one to key users on.
+- `X-Ingressi-User` — the sign-in username, or the email address for an account without one. Ingressi keeps it from belonging to two accounts, but an administrator can change it.
+- `X-Ingressi-Email` — the email address.
+- `X-Ingressi-Groups` — the user's group names, comma-separated.
+
+The same values are also sent as `X-CPM-User-Id`, `X-CPM-User`, `X-CPM-Email` and `X-CPM-Groups`, the names from before the rename. They are deprecated.
 
 ### Non-standard ports
 
@@ -559,13 +581,17 @@ Portal logins use `LOGIN_MAX_ATTEMPTS`, `LOGIN_WINDOW_MS` and `LOGIN_BLOCK_MS`:
 - One client cannot lock an account, but a few together can: with the defaults each can make about 48 failures per hour (4 per 5-minute window) without being blocked, so e.g. a dual-stack host (IPv4 plus IPv6) or two /64s can reach the account ceiling. This is inherent to a per-account limit.
 - Attempts still being checked count towards every limit; extra concurrent attempts get `429`.
 
-The client address is the rightmost `X-Forwarded-For` entry, which is the real client when clients connect to Caddy directly (Caddy is the outermost proxy in front of CPM). When port 3000 is reached directly, clients control that header and the per-IP limits are only best effort, so expose the portal (`BASE_URL`) through Caddy or another proxy that overwrites `X-Forwarded-For` rather than publishing port 3000 to untrusted networks (`docker-compose.yml` publishes it on all interfaces as `3000:3000`; change that to `127.0.0.1:3000:3000`, or block it in the `DOCKER-USER` chain or an external firewall; ufw and other host INPUT rules do not apply to Docker-published ports). Behind a CDN, the rightmost entry is the CDN edge: set `TRUSTED_CLIENT_IP_HEADER` (e.g. `cf-connecting-ip`), but only if the origin accepts connections from the CDN alone, since clients could otherwise forge the header. Leave it unset when Caddy is the outermost proxy, because Caddy passes `X-Real-IP` and `CF-Connecting-IP` through unchanged. The same client address is used for the rate limit of the slave sync endpoint.
+The client address is the rightmost `X-Forwarded-For` entry, which is the real client when clients connect to Caddy directly (Caddy is the outermost proxy in front of Ingressi). When port 3000 is reached directly, clients control that header and the per-IP limits are only best effort, so expose the portal (`BASE_URL`) through Caddy or another proxy that overwrites `X-Forwarded-For` rather than publishing port 3000 to untrusted networks (`docker-compose.yml` publishes it on all interfaces as `3000:3000`; change that to `127.0.0.1:3000:3000`, or block it in the `DOCKER-USER` chain or an external firewall; ufw and other host INPUT rules do not apply to Docker-published ports). Behind a CDN, the rightmost entry is the CDN edge: set `TRUSTED_CLIENT_IP_HEADER` (e.g. `cf-connecting-ip`), but only if the origin accepts connections from the CDN alone, since clients could otherwise forge the header. Leave it unset when Caddy is the outermost proxy, because Caddy passes `X-Real-IP` and `CF-Connecting-IP` through unchanged. The same client address is used for the rate limit of the slave sync endpoint.
 
 ---
 
+## Usage Ping
+
+Ingressi sends an anonymous usage ping once a day: a random install id, the version, the edition, the instance role, rough counts (ranges such as `6-20`) and which features are in use. Never hostnames, domains, IP addresses, e-mails, names, license ids, configuration or logs; sync slaves never send. It is off until you say yes: the overview page asks administrators once, with both answers offered alike, and nothing is sent before a yes (`USAGE_PING_ENABLED=true` answers yes for installs nobody signs in to). Change the answer at any time in **Settings → Usage ping** (which shows the exact JSON); turning it off also asks for the data already received to be deleted. `USAGE_PING_DISABLED=true` turns it off entirely. [documentation/usage-ping.md](documentation/usage-ping.md) lists every field, how to verify it, and the privacy notice.
+
 ## Roadmap
 
-[Open an issue](https://github.com/fuomag9/caddy-proxy-manager/issues) for feature requests.
+[Open an issue](https://github.com/ingres-si/caddy-proxy-manager/issues) for feature requests.
 
 ---
 
@@ -580,7 +606,7 @@ Contributions welcome:
 5. Open a Pull Request
 
 - Follow the existing code style (TypeScript, Prettier formatting)
-- Add tests for new features when applicable
+- Add tests for new features when applicable. `bun run test:all` runs the typecheck, lint, the PostgreSQL schema check and the unit and integration tests on SQLite and then on PostgreSQL (`TEST_DATABASE_URL`, a disposable server; see `scripts/test-all.sh`). Every test file that uses the database runs on both; `src/lib/db/README.md` explains how
 - Update documentation for user-facing changes
 - Keep commits focused and write clear commit messages
 
@@ -588,14 +614,18 @@ Contributions welcome:
 
 ## Support
 
-- **Issues:** [GitHub Issues](https://github.com/fuomag9/caddy-proxy-manager/issues) for bugs and feature requests
-- **Discussions:** [GitHub Discussions](https://github.com/fuomag9/caddy-proxy-manager/discussions) for questions and ideas
+- **Issues:** [GitHub Issues](https://github.com/ingres-si/caddy-proxy-manager/issues) for bugs and feature requests
+- **Discussions:** [GitHub Discussions](https://github.com/ingres-si/caddy-proxy-manager/discussions) for questions and ideas
 
 ---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Everything under the `ee/` directory is source-available under the Elastic License 2.0 - see [ee/LICENSE](ee/LICENSE). All paid functionality lives there. Everything else in this repository is licensed under the MIT License - see the [LICENSE](LICENSE) file.
+
+Next.js only finds pages and API routes under `app/`, so each paid page or route keeps a file there that only re-exports its implementation from `ee/`. These routing files are MIT and contain no paid functionality. [ee/README.md](ee/README.md#where-paid-code-lives) lists every paid feature, its `ee/` module and the files that route to it.
+
+Caddy is a trademark of its respective owner. Ingressi is an independent project and is not affiliated with or endorsed by the Caddy project.
 
 ---
 
@@ -611,6 +641,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
 
-[⬆ back to top](#caddy-proxy-manager)
+[⬆ back to top](#ingressi)
 
 </div>

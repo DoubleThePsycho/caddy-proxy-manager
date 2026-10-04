@@ -8,7 +8,6 @@
  */
 import { expect, type Download, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { injectFormFields } from './http';
 
 export interface ProxyHostConfig {
   name: string;
@@ -51,108 +50,229 @@ async function openCertificatesTab(page: Page, tabName: RegExp): Promise<void> {
   await page.getByRole('tab', { name: tabName }).click();
 }
 
-async function expandCaRow(page: Page, caName: string): Promise<void> {
-  const row = page.locator('tr').filter({ hasText: caName }).first();
+/** Opens the row menu of a certificate authority on the "Certificate authorities" tab. */
+async function openCaRowMenu(page: Page, caName: string): Promise<void> {
+  const row = page.getByRole('row').filter({ has: page.getByRole('rowheader').filter({ hasText: caName }) }).first();
   await expect(row).toBeVisible({ timeout: 10_000 });
-  await row.locator('button').first().click();
-  await expect(page.getByText(/issued client certificates/i)).toBeVisible({ timeout: 10_000 });
+  await row.getByRole('button', { name: `More actions for ${caName}` }).click();
+}
+
+export type EditorSection = 'Routing' | 'Security' | 'Access' | 'Certificate' | 'Headers' | 'Advanced';
+
+/** Opens one section of the host editor (/proxy-hosts/new, /proxy-hosts/<id>/edit). */
+export async function openEditorSection(page: Page, section: EditorSection): Promise<void> {
+  await page.getByRole('navigation', { name: 'Host settings' }).getByRole('link', { name: new RegExp(`^${section}`) }).click();
+  await expect(page.getByRole('heading', { level: 2, name: section, exact: true })).toBeAttached();
 }
 
 /**
- * Create a proxy host via the browser UI.
- * ssl_forced is always set to false so functional tests can use plain HTTP.
+ * Waits until React has hydrated the host editor: text typed into its fields
+ * before then is reset by hydration (the Name field of a new host lost its
+ * value on fast machines).
  */
-export async function createProxyHost(page: Page, config: ProxyHostConfig): Promise<void> {
-  await page.goto('/proxy-hosts');
-  await page.getByRole('button', { name: /create host/i }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
+async function waitForHostEditor(page: Page): Promise<void> {
+  await expect(page.getByRole('navigation', { name: 'Host settings' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('host-editor-bar')).toHaveAttribute('data-hydrated', 'true', { timeout: 15_000 });
+}
 
-  await page.getByLabel('Name').fill(config.name);
-  await page.getByLabel(/domains/i).fill(config.domain);
+/** Opens the host editor for a new host. */
+export async function openNewHost(page: Page, query = ''): Promise<void> {
+  await page.goto(`/proxy-hosts/new${query}`);
+  await waitForHostEditor(page);
+}
 
-  // Support multiple upstreams separated by newlines.
-  const upstreamList = config.upstream.split('\n').map((u) => u.trim()).filter(Boolean);
-  // Fill the first (always-present) upstream input
-  await page.getByPlaceholder('10.0.0.5:8080').first().fill(upstreamList[0] ?? '');
-  // Add additional upstreams via the "Add Upstream" button
-  for (let i = 1; i < upstreamList.length; i++) {
-    await page.getByRole('button', { name: /add upstream/i }).click();
-    await page.getByPlaceholder('10.0.0.5:8080').nth(i).fill(upstreamList[i]);
+/** Opens the host editor of an existing host. */
+export async function openHostEditor(page: Page, hostId: number, section?: EditorSection): Promise<void> {
+  await page.goto(`/proxy-hosts/${hostId}/edit${section ? `#${section.toLowerCase()}` : ''}`);
+  await waitForHostEditor(page);
+}
+
+/** Adds domains in the Domains card (one per line, or comma separated). */
+export async function addDomains(page: Page, domains: string): Promise<void> {
+  const input = page.getByLabel('Add domains');
+  for (const domain of domains.split(/[\n,]/).map((d) => d.trim()).filter(Boolean)) {
+    await input.fill(domain);
+    await input.press('Enter');
   }
+}
 
-  if (config.certificateName) {
-    const certTrigger = page.getByRole('combobox', { name: /certificate/i });
-    await certTrigger.scrollIntoViewIfNeeded();
-    await certTrigger.click();
-    const certOption = page.getByRole('option', { name: config.certificateName, exact: true });
-    await expect(certOption).toBeVisible({ timeout: 5_000 });
-    await certOption.click();
-  }
-
-  if (config.accessListName) {
-    // shadcn/Radix Select — click trigger to open portal dropdown, wait for option, then click
-    const accessListTrigger = page.getByRole('combobox', { name: /access list/i });
-    await accessListTrigger.scrollIntoViewIfNeeded();
-    await accessListTrigger.click();
-    const option = page.getByRole('option', { name: config.accessListName });
-    await expect(option).toBeVisible({ timeout: 10_000 });
-    await option.click();
-  }
-
-  if (config.mtlsCaNames?.length) {
-    // Enable mTLS — the switch is near the "Mutual TLS (mTLS)" text
-    // Scroll to the mTLS section first, then click the switch in the containing card
-    const mtlsCard = page.locator('input[name="mtlsEnabled"]').locator('..');
-    await mtlsCard.scrollIntoViewIfNeeded();
-    await mtlsCard.getByRole('switch').click();
-
-    await expect(page.getByText(/trusted certificates/i)).toBeVisible({ timeout: 10_000 });
-
-    // Click each CA group header to select all issued certs from that CA
-    for (const caName of config.mtlsCaNames) {
-      const caLabel = page.locator('label').filter({ hasText: caName });
-      await caLabel.scrollIntoViewIfNeeded();
-      await caLabel.click();
+/** Fills the upstream rows of the Upstreams card, adding rows as needed. */
+export async function fillUpstreams(page: Page, upstreams: string): Promise<void> {
+  const list = upstreams.split('\n').map((u) => u.trim()).filter(Boolean);
+  for (let i = 0; i < list.length; i++) {
+    if (i > 0 && (await page.getByPlaceholder('10.0.0.5:8080').count()) <= i) {
+      await page.locator('#upstreams').getByRole('button', { name: 'Add upstream' }).click();
     }
-    // Verify at least one cert was selected (each CA group selects its certs)
-    const certInputs = page.locator('input[name="mtlsCertId"]');
-    await expect(certInputs.first()).toBeAttached({ timeout: 5_000 });
+    await page.getByPlaceholder('10.0.0.5:8080').nth(i).fill(list[i]);
+  }
+}
 
-    if (config.mtlsProtectedPaths?.length) {
-      await page.locator('[name="mtlsProtectedPaths"]').fill(config.mtlsProtectedPaths.join(', '));
-    }
+/** Name, domains and upstreams of a new host (Routing section). */
+export async function fillHostBasics(page: Page, config: { name: string; domain: string; upstream: string }): Promise<void> {
+  await page.getByLabel('Name', { exact: true }).fill(config.name);
+  await addDomains(page, config.domain);
+  await fillUpstreams(page, config.upstream);
+}
 
-    if (config.mtlsExcludedPaths?.length) {
-      await page.locator('[name="mtlsExcludedPaths"]').fill(config.mtlsExcludedPaths.join(', '));
+/** Sets a switch of the editor, named by its label, to `on`. */
+export async function setEditorSwitch(page: Page, name: string | RegExp, on: boolean): Promise<void> {
+  const toggle = page.getByRole('switch', { name });
+  if ((await toggle.getAttribute('aria-checked')) !== String(on)) await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', String(on));
+}
+
+/** Picks the option of a select whose text starts with `text`. */
+export async function selectOptionByText(page: Page, label: string, text: string): Promise<void> {
+  const select = page.getByRole('combobox', { name: label, exact: true });
+  const options = await select.locator('option').allTextContents();
+  const index = options.findIndex((option) => option === text || option.startsWith(`${text} ·`));
+  if (index < 0) throw new Error(`No option "${text}" in ${label}: ${options.join(', ')}`);
+  await select.selectOption({ index });
+}
+
+/**
+ * Saves the host editor: opens the review, waits for the approval check and
+ * confirms. A new host then opens its page; an existing one shows "Saved"
+ * (or the change request, for a protected host).
+ */
+export async function saveHostEditor(page: Page, expectOutcome: 'saved' | 'submitted' = 'saved'): Promise<number | null> {
+  const creating = /\/proxy-hosts\/new/.test(page.url());
+  await page.getByTestId('host-editor-bar').getByRole('button', { name: creating ? 'Create host' : 'Save', exact: true }).click();
+  const review = page.getByRole('region', { name: /^Review / });
+  await expect(review).toBeVisible();
+  const submit = review.getByRole('button', { name: /^(Create host|Save changes|Submit for approval)$/ });
+  await expect(submit).toBeEnabled({ timeout: 15_000 });
+  await submit.click();
+  if (expectOutcome === 'submitted') {
+    await expect(page.getByTestId('host-editor-bar').getByText('Change request submitted for approval')).toBeVisible({ timeout: 15_000 });
+    return null;
+  }
+  if (creating) {
+    await page.waitForURL(/\/proxy-hosts\/\d+(?:[?#].*)?$/, { timeout: 15_000 });
+    return Number(new URL(page.url()).pathname.split('/').pop());
+  }
+  await expect(page.getByTestId('host-editor-bar').getByText('Saved', { exact: true })).toBeVisible({ timeout: 15_000 });
+  return null;
+}
+
+/** The id of the proxy host named `name`, from the REST API. */
+export async function proxyHostIdByName(page: Page, name: string): Promise<number> {
+  const response = await page.request.get('/api/v1/proxy-hosts');
+  expect(response.ok()).toBeTruthy();
+  const hosts = (await response.json()) as Array<{ id: number; name: string }>;
+  const host = hosts.find((candidate) => candidate.name === name);
+  expect(host, `proxy host "${name}"`).toBeDefined();
+  return host!.id;
+}
+
+/**
+ * Opens the host editor for a new host. Named after the create dialog it
+ * replaced, so specs written for either read the same.
+ */
+export async function openCreateHostDialog(page: Page): Promise<void> {
+  await openNewHost(page);
+}
+
+/** Opens the host editor of the proxy host named `name` (it replaced the edit dialog). */
+export async function openEditHostDialog(page: Page, name: string): Promise<void> {
+  await openHostEditor(page, await proxyHostIdByName(page, name));
+}
+
+/**
+ * The list row of the proxy host named `name`, found with the list's search
+ * (the list is paged, so a new host need not be on the first page).
+ */
+export async function findHostRow(page: Page, name: string) {
+  await page.goto(`/proxy-hosts?search=${encodeURIComponent(name)}`);
+  const row = page.locator('tr', { hasText: name });
+  await expect(row).toBeVisible({ timeout: 10_000 });
+  return row;
+}
+
+/** Adds a blocked path in the Access section (which must be open). */
+export async function addBlockedPath(page: Page, rule: { path: string; status: number; body?: string }): Promise<void> {
+  const index = await page.getByLabel(/^Blocked path \d+$/).count();
+  await page.locator('#f-blocks').getByRole('button', { name: 'Add blocked path' }).click();
+  await page.getByLabel(`Blocked path ${index + 1}`, { exact: true }).fill(rule.path);
+  await page.getByLabel(`Status for blocked path ${index + 1}`, { exact: true }).selectOption(String(rule.status));
+  await page.getByLabel(`Body for blocked path ${index + 1}`, { exact: true }).fill(rule.body ?? '');
+}
+
+/** Adds a path that bypasses the blocks, in the Access section (which must be open). */
+export async function addBypassPath(page: Page, path: string): Promise<void> {
+  const index = await page.getByLabel(/^Bypass path \d+$/).count();
+  await page.locator('#f-allows').getByRole('button', { name: 'Add path' }).click();
+  await page.getByLabel(`Bypass path ${index + 1}`, { exact: true }).fill(path);
+}
+
+/** Adds a path rewrite in the Advanced section (which must be open). */
+export async function addPathRewrite(page: Page, rule: { from: string; to: string }): Promise<void> {
+  const index = await page.getByLabel(/^Rewrite \d+ from path$/).count();
+  await page.locator('#f-redirects').getByRole('button', { name: 'Add rewrite' }).click();
+  await page.getByLabel(`Rewrite ${index + 1} from path`, { exact: true }).fill(rule.from);
+  await page.getByLabel(`Rewrite ${index + 1} to path`, { exact: true }).fill(rule.to);
+}
+
+/** Adds a redirect in the Advanced section (which must be open). */
+export async function addRedirect(page: Page, rule: { from: string; to: string; status: 301 | 302 | 307 | 308 }): Promise<void> {
+  const index = await page.getByLabel(/^Redirect \d+ from path$/).count();
+  await page.locator('#f-redirects').getByRole('button', { name: 'Add redirect' }).click();
+  await page.getByLabel(`Redirect ${index + 1} from path`, { exact: true }).fill(rule.from);
+  await page.getByLabel(`Redirect ${index + 1} to`, { exact: true }).fill(rule.to);
+  await page.getByLabel(`Redirect ${index + 1} status`, { exact: true }).selectOption(String(rule.status));
+}
+
+/**
+ * Create a proxy host via the host editor.
+ * "Redirect HTTP to HTTPS" is always turned off so functional tests can use plain HTTP.
+ */
+export async function createProxyHost(page: Page, config: ProxyHostConfig): Promise<number> {
+  await openNewHost(page);
+  await fillHostBasics(page, config);
+
+  await openEditorSection(page, 'Certificate');
+  if (config.certificateName) await selectOptionByText(page, 'Certificate', config.certificateName);
+  await setEditorSwitch(page, 'Redirect HTTP to HTTPS', false);
+
+  if (config.accessListName || config.mtlsCaNames?.length) {
+    await openEditorSection(page, 'Access');
+    if (config.accessListName) await selectOptionByText(page, 'Access list', config.accessListName);
+    if (config.mtlsCaNames?.length) {
+      await setEditorSwitch(page, 'Require client certificates', true);
+      const mtls = page.locator('#f-mtls');
+      await expect(mtls.getByText('Trusted certificates')).toBeVisible({ timeout: 10_000 });
+      // Each CA's group checkbox selects every certificate it issued.
+      for (const caName of config.mtlsCaNames) {
+        await mtls.locator('label').filter({ hasText: caName }).first().click();
+      }
+      if (config.mtlsProtectedPaths?.length) {
+        await page.locator('[name="mtlsProtectedPaths"]').fill(config.mtlsProtectedPaths.join(', '));
+      }
+      if (config.mtlsExcludedPaths?.length) {
+        await page.locator('[name="mtlsExcludedPaths"]').fill(config.mtlsExcludedPaths.join(', '));
+      }
     }
   }
-
-  // Inject hidden fields:
-  //  sslForcedPresent=on  → tells the action the field was in the form
-  //  (sslForced absent)   → parseCheckbox(null) = false → no HTTPS redirect
-  const extraFields: Record<string, string> = { sslForcedPresent: 'on' };
 
   if (config.enableWaf) {
-    Object.assign(extraFields, {
-      wafPresent: 'on',
-      wafEnabled: 'on',
-      wafEngineMode: 'On',    // blocking mode (the host form only accepts On/Off)
-      wafLoadOwaspCrs: config.wafLoadOwaspCrs === false ? '' : 'on',
-      wafMode: config.wafMode ?? 'override',
-      wafCustomDirectives: config.wafCustomDirectives ?? '',
-    });
+    await openEditorSection(page, 'Security');
+    const waf = page.locator('#waf');
+    await waf.getByRole('button', { name: /^Block\b/ }).click();
+    await waf
+      .getByRole('group', { name: 'Rules for this host' })
+      .getByRole('button', { name: (config.wafMode ?? 'override') === 'override' ? 'Override global' : 'Merge with global' })
+      .click();
+    await page.getByRole('checkbox', { name: /Load the OWASP Core Rule Set/ }).setChecked(config.wafLoadOwaspCrs !== false);
+    if (config.wafCustomDirectives) await page.getByLabel(/Custom SecLang directives/).fill(config.wafCustomDirectives);
   }
 
-  await injectFormFields(page, extraFields);
-
-  await page.getByRole('button', { name: /^create$/i }).click();
-  await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole('table').getByText(config.name)).toBeVisible({ timeout: 10_000 });
+  const id = await saveHostEditor(page);
+  return id ?? (await proxyHostIdByName(page, config.name));
 }
 
 export async function importCertificate(page: Page, config: ImportedCertificateConfig): Promise<void> {
-  await openCertificatesTab(page, /^Imported/i);
-  await page.getByRole('button', { name: /import certificate/i }).click();
+  await openCertificatesTab(page, /^Certificates/i);
+  await page.getByRole('button', { name: /^import certificate$/i }).click();
   await expect(page.getByRole('heading', { name: /^import certificate$/i })).toBeVisible();
 
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill(config.name);
@@ -169,20 +289,20 @@ export async function importCertificate(page: Page, config: ImportedCertificateC
 }
 
 export async function generateCaCertificate(page: Page, config: GeneratedCaConfig): Promise<void> {
-  await openCertificatesTab(page, /^CA \/ mTLS/i);
-  await page.getByRole('button', { name: /add ca certificate/i }).click();
-  await expect(page.getByRole('heading', { name: /^add ca certificate$/i })).toBeVisible();
+  await openCertificatesTab(page, /^Certificate authorities/i);
+  await page.getByRole('button', { name: /^add certificate authority$/i }).first().click();
+  await expect(page.getByRole('heading', { name: /^add certificate authority$/i })).toBeVisible();
 
   await page.getByRole('textbox', { name: 'Name', exact: true }).fill(config.name);
   if (config.commonName) {
-    await page.getByRole('textbox', { name: 'Common Name (CN)', exact: true }).fill(config.commonName);
+    await page.getByRole('textbox', { name: 'Common name (CN)', exact: true }).fill(config.commonName);
   }
   if (config.validityDays !== undefined) {
     await page.getByRole('spinbutton', { name: 'Validity', exact: true }).fill(String(config.validityDays));
   }
 
-  await page.getByRole('button', { name: /generate ca certificate/i }).click();
-  await expect(page.getByRole('heading', { name: /^add ca certificate$/i })).not.toBeVisible({ timeout: 10_000 });
+  await page.getByRole('button', { name: /generate certificate authority/i }).click();
+  await expect(page.getByRole('heading', { name: /^add certificate authority$/i })).not.toBeVisible({ timeout: 10_000 });
   await expect(page.locator('table').getByText(config.name).first()).toBeVisible({ timeout: 15_000 });
 }
 
@@ -190,12 +310,12 @@ export async function issueClientCertificate(
   page: Page,
   config: IssuedClientCertificateConfig
 ): Promise<Buffer> {
-  await openCertificatesTab(page, /^CA \/ mTLS/i);
-  await expandCaRow(page, config.caName);
-  await page.getByRole('button', { name: /^issue cert$/i }).click();
+  await openCertificatesTab(page, /^Certificate authorities/i);
+  await openCaRowMenu(page, config.caName);
+  await page.getByRole('menuitem', { name: /^issue client certificate$/i }).click();
   await expect(page.getByRole('dialog', { name: /issue client certificate/i })).toBeVisible();
 
-  await page.getByRole('textbox', { name: 'Common Name (CN)', exact: true }).fill(config.commonName);
+  await page.getByRole('textbox', { name: 'Common name (CN)', exact: true }).fill(config.commonName);
   if (config.validityDays !== undefined) {
     await page.getByRole('spinbutton', { name: 'Validity', exact: true }).fill(String(config.validityDays));
   }
@@ -222,19 +342,22 @@ export async function issueClientCertificate(
 }
 
 export async function revokeIssuedClientCertificate(page: Page, caName: string, commonName: string): Promise<void> {
-  await openCertificatesTab(page, /^CA \/ mTLS/i);
-  await expandCaRow(page, caName);
-  await page.getByRole('button', { name: /^manage$/i }).click();
-  const dialog = page.getByRole('dialog', { name: /issued client certificates/i });
+  await openCertificatesTab(page, /^Client certificates/i);
+  // The client certificate table: one row per certificate, with its CA in "Issued by".
+  const row = page
+    .getByRole('row')
+    .filter({ has: page.getByRole('rowheader', { name: commonName, exact: true }) })
+    .filter({ hasText: caName })
+    .first();
+  await expect(row).toBeVisible({ timeout: 10_000 });
+  await row.getByRole('button', { name: `Revoke ${commonName}`, exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: /revoke client certificate/i });
   await expect(dialog).toBeVisible();
-
-  // Find the cert card containing the common name and click its Revoke button
-  const certCard = dialog.locator('.rounded-lg.border', { hasText: commonName });
-  await expect(certCard).toBeVisible({ timeout: 10_000 });
-  await certCard.getByRole('button', { name: /^revoke$/i }).click();
-  // After revoking, the cert should no longer be visible (hidden by default, only shown with "Show revoked")
-  await expect(certCard.getByRole('button', { name: /^revoke$/i })).not.toBeVisible({ timeout: 15_000 });
-  await page.getByRole('button', { name: /^close$/i }).first().click();
+  await dialog.getByRole('button', { name: /^revoke certificate$/i }).click();
+  await expect(dialog).not.toBeVisible({ timeout: 15_000 });
+  // A revoked certificate stays listed, without its Revoke button.
+  await expect(row.getByText(/^Revoked/)).toBeVisible({ timeout: 15_000 });
+  await expect(row.getByRole('button', { name: `Revoke ${commonName}`, exact: true })).toHaveCount(0);
 }
 
 async function saveDownload(download: Download): Promise<string> {
@@ -252,7 +375,8 @@ export interface AccessListUser {
 
 /**
  * Create an access list with initial users via the browser UI.
- * Opens the "New" dialog, fills in name + seed members, and creates.
+ * Creates the list in the "New access list" dialog, then adds the members in
+ * the editor and saves.
  */
 export async function createAccessList(
   page: Page,
@@ -261,31 +385,23 @@ export async function createAccessList(
 ): Promise<void> {
   await page.goto('/access-lists');
 
-  // Open the create dialog
-  await page.getByRole('button', { name: /^new$/i }).first().click();
+  // Create the list
+  await page.getByRole('button', { name: /new access list/i }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible({ timeout: 5_000 });
-
-  // Fill the name
-  await dialog.getByPlaceholder(/internal.*engineering/i).fill(name);
-
-  // Fill seed members
-  if (users.length > 0) {
-    // Fill the first seed member row
-    await dialog.getByPlaceholder('username').first().fill(users[0].username);
-    await dialog.getByPlaceholder('password').first().fill(users[0].password);
-
-    // Add additional seed member rows
-    for (let i = 1; i < users.length; i++) {
-      await dialog.getByText('+ Add another member').click();
-      await dialog.getByPlaceholder('username').nth(i).fill(users[i].username);
-      await dialog.getByPlaceholder('password').nth(i).fill(users[i].password);
-    }
-  }
-
+  await dialog.getByLabel('Name', { exact: true }).fill(name);
   await dialog.getByRole('button', { name: /create list/i }).click();
-
-  // Wait for the dialog to close and the list to appear in the rail
   await expect(dialog).not.toBeVisible({ timeout: 10_000 });
-  await expect(page.getByRole('heading', { name }).first()).toBeVisible({ timeout: 10_000 });
+
+  // The new list opens in the editor: add the members and save
+  const editor = page.getByTestId('access-list-editor');
+  await expect(editor.getByRole('heading', { name, exact: true })).toBeVisible({ timeout: 10_000 });
+  if (users.length === 0) return;
+  for (const user of users) {
+    await editor.getByLabel('Username', { exact: true }).fill(user.username);
+    await editor.getByLabel('Password', { exact: true }).fill(user.password);
+    await editor.getByRole('button', { name: 'Add member' }).click();
+  }
+  await editor.getByRole('button', { name: 'Save list' }).click();
+  await expect(editor.getByText('Saved · matches the running configuration')).toBeVisible({ timeout: 10_000 });
 }

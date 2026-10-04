@@ -1,5 +1,5 @@
 /**
- * Password policy for CPM accounts. Shared by every path that sets a user
+ * Password policy for Ingressi accounts. Shared by every path that sets a user
  * password (admin creation via dashboard or REST, self-service change, and
  * Better Auth's self-registration and password reset), and matching the
  * production requirements enforced on ADMIN_PASSWORD. Pure, so client

@@ -29,7 +29,7 @@ const DISABLED_SYSTEM_LOGS = [
 function makeClient(): ClickHouseClient {
   return createClient({
     url: 'http://localhost:8123',
-    username: 'cpm',
+    username: 'ingressi',
     password: 'test-clickhouse-password-2026',
     database: 'analytics',
   });

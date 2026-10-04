@@ -5,18 +5,23 @@ on:
     branches:
       - main
       - develop
+      # Long-term-support lines (ee/docs/lts.md), e.g. lts/2.0
+      - 'lts/**'
     tags:
       - 'v*'
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  # The images stay where every install pulls them from: the maintainer's
-  # personal namespace, also after the repository moved to the ingres-si
-  # organization. The repository's GITHUB_TOKEN cannot push there, so they
-  # are pushed with GHCR_PUSH_TOKEN, a classic personal access token of the
-  # maintainer with only the write:packages scope.
-  IMAGE_NAME: fuomag9/caddy-proxy-manager
+  IMAGE_NAME: ${{ github.repository_owner }}/ingressi
+  # Installs from before the rename to Ingressi and the move to the ingres-si
+  # organization (compose files and watchtower) pull the images under their
+  # old names in the maintainer's personal namespace, so every build is
+  # pushed there too.
+  LEGACY_IMAGE_NAME: fuomag9/caddy-proxy-manager
+  # The repository's GITHUB_TOKEN cannot push to a personal namespace, so the
+  # images are pushed with GHCR_PUSH_TOKEN: a classic personal access token of
+  # the maintainer with only the write:packages scope.
   GHCR_PUSH_USER: fuomag9
 
 jobs:
@@ -25,6 +30,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Keyless cosign signing proves the image came from this workflow.
+      id-token: write
 
     strategy:
       matrix:
@@ -42,6 +49,30 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          # Every tag, to tell whether this release is the newest one.
+          fetch-depth: 0
+
+      - name: Decide which moving tags this release gets
+        id: release
+        run: |
+          # A patch release on an LTS line (lts/2.0 after 2.3 shipped) must not
+          # move `latest`, or the major tag, back to an older version. Only the
+          # newest stable release gets `latest`, and only the newest stable
+          # release of its major version gets the major tag. The minor tag
+          # (2.0) always follows its own line.
+          latest=false
+          latest_in_major=false
+          if [[ "${GITHUB_REF}" == refs/tags/v* && "${GITHUB_REF_NAME}" != *-* ]]; then
+            version="${GITHUB_REF_NAME}"
+            major="${version%%.*}"
+            newest="$(git tag -l 'v*' | grep -v -e '-' | sort -V | tail -n 1)"
+            newest_in_major="$(git tag -l "${major}.*" | grep -v -e '-' | sort -V | tail -n 1)"
+            [ "$version" = "$newest" ] && latest=true
+            [ "$version" = "$newest_in_major" ] && latest_in_major=true
+          fi
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "latest_in_major=$latest_in_major" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -66,20 +97,23 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
+            ${{ env.REGISTRY }}/${{ env.LEGACY_IMAGE_NAME }}-${{ matrix.service }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=semver,pattern={{major}},enable=${{ steps.release.outputs.latest_in_major == 'true' }}
             type=match,pattern=v(.*),group=1
             type=sha
             # `latest` must track the newest stable release, not the default
             # branch: the repo's default branch is `develop`, so
             # {{is_default_branch}} fired on every dev push and moved `latest`
-            # to unreleased builds (issue #281). Tag it only on v* tag builds,
-            # excluding pre-release tags (e.g. v1.12.0-rc.1).
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
+            # to unreleased builds (issue #281). Tag it only on the newest
+            # stable v* tag: not on pre-release tags (e.g. v1.12.0-rc.1), and
+            # not on LTS patch releases of an older line.
+            type=raw,value=latest,enable=${{ steps.release.outputs.latest == 'true' }}
 
       - name: Compute app version
         id: app-version
@@ -111,3 +145,17 @@ jobs:
           platforms: linux/amd64,linux/arm64
           sbom: true
           provenance: true
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v4
+
+      - name: Sign the pushed images
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          # Sign each repository the image was pushed to, by digest, so the
+          # signature covers exactly what was built here.
+          for repository in $(echo "$TAGS" | sed 's/:[^:]*$//' | sort -u); do
+            cosign sign --yes "${repository}@${DIGEST}"
+          done

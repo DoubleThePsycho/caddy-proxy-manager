@@ -16,11 +16,7 @@ let db: TestDb;
 // Mock the modules that mtls-roles.ts imports
 vi.mock('../../src/lib/db', async () => {
   // This gets re-evaluated per test via beforeEach
-  return {
-    get default() { return db; },
-    nowIso: () => new Date().toISOString(),
-    toIso: (v: string | null) => v,
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => db);
 });
 vi.mock('../../src/lib/caddy', () => ({ applyCaddyConfig: vi.fn() }));
 vi.mock('../../src/lib/audit', () => ({ logAuditEvent: vi.fn() }));

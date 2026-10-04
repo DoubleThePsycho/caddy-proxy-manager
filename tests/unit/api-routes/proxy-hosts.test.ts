@@ -6,7 +6,11 @@ vi.mock('@/src/lib/models/proxy-hosts', () => ({
   getProxyHost: vi.fn(),
   updateProxyHost: vi.fn(),
   deleteProxyHost: vi.fn(),
+  toApiProxyHost: vi.fn((host: { ingressiForwardAuth?: unknown }) => ({ ...host, cpmForwardAuth: host.ingressiForwardAuth })),
 }));
+
+// No change approval policy covers these hosts (ee/approvals has its own tests).
+vi.mock('@/ee/approvals/requests', () => ({ gateHostChange: vi.fn().mockResolvedValue(null) }));
 
 vi.mock('@/src/lib/api-auth', () => {
   const ApiAuthError = class extends Error {
@@ -14,6 +18,7 @@ vi.mock('@/src/lib/api-auth', () => {
     constructor(msg: string, status: number) { super(msg); this.status = status; this.name = 'ApiAuthError'; }
   };
   return {
+    requireApiPermission: vi.fn((request: unknown) => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireApiAdmin(request))),
     requireApiAdmin: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
     requireApiUser: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
     apiErrorResponse: vi.fn((error: unknown) => {
@@ -62,6 +67,9 @@ const sampleHost = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockRequireApiAdmin.mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' });
+  // PUT and DELETE look the host up first (custom roles: a host outside the
+  // caller's tag scope answers 404 like a missing one).
+  mockGetProxyHost.mockImplementation(async (id: number) => (id === 999 ? null : { ...sampleHost, id, tags: [] }) as any);
 });
 
 describe('GET /api/v1/proxy-hosts', () => {
@@ -135,14 +143,14 @@ describe('PUT /api/v1/proxy-hosts/[id]', () => {
     expect(mockUpdateProxyHost).toHaveBeenCalledWith(1, body, 1);
   });
 
-  it('returns 500 when host not found', async () => {
-    mockUpdateProxyHost.mockRejectedValue(new Error('not found'));
-
+  it('fails without updating when the host does not exist', async () => {
     const response = await PUT(createMockRequest({ method: 'PUT', body: { forward_port: 9090 } }), { params: Promise.resolve({ id: '999' }) });
     const data = await response.json();
 
+    // The real apiErrorResponse answers 404 for "... not found"; this test's mock answers 500.
     expect(response.status).toBe(500);
-    expect(data.error).toBe('not found');
+    expect(data.error).toBe('Proxy host not found');
+    expect(mockUpdateProxyHost).not.toHaveBeenCalled();
   });
 });
 
@@ -158,14 +166,13 @@ describe('DELETE /api/v1/proxy-hosts/[id]', () => {
     expect(mockDeleteProxyHost).toHaveBeenCalledWith(1, 1);
   });
 
-  it('returns 500 when host not found', async () => {
-    mockDeleteProxyHost.mockRejectedValue(new Error('not found'));
-
+  it('fails without deleting when the host does not exist', async () => {
     const response = await DELETE(createMockRequest({ method: 'DELETE' }), { params: Promise.resolve({ id: '999' }) });
     const data = await response.json();
 
     expect(response.status).toBe(500);
-    expect(data.error).toBe('not found');
+    expect(data.error).toBe('Proxy host not found');
+    expect(mockDeleteProxyHost).not.toHaveBeenCalled();
   });
 });
 

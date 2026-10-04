@@ -14,9 +14,9 @@ oauth2:
   skipApprovalScreen: true
 
 staticClients:
-  - id: cpm-test-client
-    secret: cpm-test-secret
-    name: "CPM E2E Test"
+  - id: ingressi-test-client
+    secret: ingressi-test-secret
+    name: "Ingressi E2E Test"
     redirectURIs:
       - "http://localhost:3000/api/auth/callback/dex"
 

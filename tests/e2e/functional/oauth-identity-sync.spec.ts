@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * Regression (#261): OAuth link/unlink did not synchronize the CPM user state.
+ * Regression (#261): OAuth link/unlink did not synchronize the Ingressi user state.
  *
  * Better Auth stores federated identities in the `accounts` table, while the
  * Profile page (and admin user list) read the informational `users.provider` /
@@ -17,7 +17,7 @@ import { test, expect } from '@playwright/test';
  *      account was linked.
  *
  * The hostile IdP is `mock-oauth2-server` (interactiveLogin:false) with three
- * issuers (linker-a/b/c) that all issue identities for the CPM admin email
+ * issuers (linker-a/b/c) that all issue identities for the Ingressi admin email
  * (testadmin@localhost) but with distinct `sub` values, so each test links a
  * fresh identity regardless of cleanup order.
  */
@@ -61,7 +61,7 @@ async function createLinkerProvider(
     data: {
       name,
       type: 'oidc',
-      clientId: 'cpm',
+      clientId: 'ingressi',
       clientSecret: 'secret',
       issuer: `http://mock-oidc:8080/${issuerId}`,
       authorizationUrl: `http://localhost:5557/${issuerId}/authorize`,
@@ -121,7 +121,7 @@ async function oauthSignInAsAdmin(browser: import('@playwright/test').Browser, p
   }
 }
 
-test.describe('OAuth link/unlink synchronizes the CPM user state (#261)', () => {
+test.describe('OAuth link/unlink synchronizes the Ingressi user state (#261)', () => {
   const providerIds: string[] = [];
 
   test.afterEach(async ({ request }) => {

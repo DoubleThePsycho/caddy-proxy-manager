@@ -1,0 +1,127 @@
+# Two dashboard replicas on one PostgreSQL (tests/playwright.replicas.config.ts,
+# specs in tests/e2e/replicas/). Applied on top of docker-compose.yml,
+# tests/docker-compose.test.yml and tests/docker-compose.test.pg.yml.
+#
+# Replica A is the stack's web service (ingressi-web, port 3000), replica B
+# is web-b (ingressi-web-b, port 3010). Both run the same image with the
+# same SESSION_SECRET and BASE_URL, as behind a load balancer; each has its
+# own INGRESSI_NODE_ID. web-c (ingressi-web-c, port 3011) is a third node
+# with a new id, started by the license spec only (profile third-replica).
+#
+# Caddy sends forward-auth verify, sign-in callbacks and the API monetization
+# gate to both replicas (DASHBOARD_UPSTREAMS, src/lib/dashboard-upstreams.ts,
+# the same value on every replica): with two entries it health-checks
+# /api/health on each and retries on the other, so a stopped or refused
+# replica gets nothing.
+#
+# The global setup (tests/global-setup.replicas.ts) starts only the services
+# the replica specs need.
+
+x-replica-environment: &replica-environment
+  NODE_ENV: production
+  SESSION_SECRET: "test-session-secret-32chars!xxxY"
+  CADDY_API_URL: http://caddy:2019
+  BASE_URL: http://localhost:3000
+  NEXTAUTH_URL: http://localhost:3000
+  DATABASE_PATH: /app/data/ingressi.db
+  DATABASE_URL: "postgres://ingressi:test-postgres-password-2026@postgres:5432/ingressi"
+  ADMIN_USERNAME: testadmin
+  ADMIN_PASSWORD: "TestPassword2026!"
+  AUTH_ALLOW_SELF_REGISTRATION: "false"
+  AUTH_ALLOW_OAUTH_REGISTRATION: "false"
+  # The replica specs need no identity provider.
+  OAUTH_ENABLED: "false"
+  # Better Auth's limits stay on: the replicas count sign-in attempts together
+  # (auth_rate_limits). Sign-in keeps its built-in 3 requests per 10 seconds
+  # per client; the general limit is raised so page loads never trip it.
+  AUTH_RATE_LIMIT_ENABLED: "true"
+  AUTH_RATE_LIMIT_MAX: "10000"
+  INSTANCE_SYNC_TIMEOUT_MS: "60000"
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: ingressi
+  CLICKHOUSE_PASSWORD: "test-clickhouse-password-2026"
+  CLICKHOUSE_DB: analytics
+  CLICKHOUSE_RETENTION_DAYS: "30"
+  USAGE_PING_DISABLED: "true"
+  LICENSE_AUTO_UPDATE_DISABLED: "true"
+  DASHBOARD_UPSTREAMS: "web:3000,web-b:3000"
+
+x-replica: &replica
+  image: ghcr.io/ingres-si/ingressi-web:latest
+  restart: "no"
+  group_add:
+    - "10000"
+  volumes:
+    # Shared with replica A and the l4-port-manager, as the L4 ports need
+    # (ee/docs/high-availability.md, "Limits"); the node id comes from
+    # INGRESSI_NODE_ID, not from the volume.
+    - caddy-manager-data:/app/data
+    - geoip-data:/usr/share/GeoIP:ro,z
+    - caddy-logs:/logs
+    - acme-ca:/acme-ca
+  depends_on:
+    postgres:
+      condition: service_healthy
+    caddy:
+      condition: service_healthy
+
+services:
+  web:
+    environment:
+      INGRESSI_NODE_ID: replica-a
+      OAUTH_ENABLED: "false"
+      AUTH_ALLOW_OAUTH_REGISTRATION: "false"
+      AUTH_RATE_LIMIT_ENABLED: "true"
+      AUTH_RATE_LIMIT_MAX: "10000"
+      USAGE_PING_DISABLED: "true"
+      LICENSE_AUTO_UPDATE_DISABLED: "true"
+      DASHBOARD_UPSTREAMS: "web:3000,web-b:3000"
+    # The specs stop and start the replicas; Docker must not bring one back.
+    restart: "no"
+    healthcheck:
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 10s
+
+  web-b:
+    <<: *replica
+    container_name: ingressi-web-b
+    ports:
+      - "3010:3000"
+    environment:
+      <<: *replica-environment
+      INGRESSI_NODE_ID: replica-b
+    networks:
+      caddy-network:
+      postgres-network:
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health',r=>{process.exit(r.statusCode<400?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 10s
+
+  # A third node with an id the cluster has never seen. Without an Enterprise
+  # license it is refused while A and B run, so its health check is the
+  # liveness scope only.
+  web-c:
+    <<: *replica
+    container_name: ingressi-web-c
+    profiles: [third-replica]
+    ports:
+      - "3011:3000"
+    environment:
+      <<: *replica-environment
+      INGRESSI_NODE_ID: replica-c
+    networks:
+      # Not in DASHBOARD_UPSTREAMS: Caddy never sends it a request. (A
+      # container on internal networks only could not publish its port.)
+      caddy-network:
+      postgres-network:
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health?scope=live',r=>{process.exit(r.statusCode<400?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 10s

@@ -48,7 +48,7 @@ test.describe('OAuth — a hostile IdP cannot inject a privileged role', () => {
       data: {
         name: provName,
         type: 'oidc',
-        clientId: 'cpm',
+        clientId: 'ingressi',
         clientSecret: 'secret',
         issuer: 'http://mock-oidc:8080/default',
         authorizationUrl: 'http://localhost:5557/default/authorize',

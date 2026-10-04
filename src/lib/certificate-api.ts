@@ -16,6 +16,8 @@ export type CertificateApiResponse = {
   hasPrivateKey: boolean;
   createdAt: string;
   updatedAt: string;
+  /** The owning organisation (ee/multi-tenancy); left out for the provider level. */
+  organizationId?: number;
 };
 
 export type CertificatePickerOption = Pick<Certificate, "id" | "name">;
@@ -39,6 +41,7 @@ export function toCertificateApiResponse(certificate: Certificate): CertificateA
     hasPrivateKey: Boolean(certificate.privateKeyPem),
     createdAt: certificate.createdAt,
     updatedAt: certificate.updatedAt,
+    ...(typeof certificate.organizationId === "number" ? { organizationId: certificate.organizationId } : {}),
   };
 }
 

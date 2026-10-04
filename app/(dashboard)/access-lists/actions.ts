@@ -1,107 +1,112 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/src/lib/auth";
+import { requirePermission } from "@/src/lib/auth";
+import { ApiClientError } from "@/src/lib/api-errors";
+import { CaddyApplyError } from "@/src/lib/caddy-apply-error";
 import {
-  addAccessListEntry,
+  addBlockedSource,
   createAccessList,
   deleteAccessList,
-  removeAccessListEntry,
-  updateAccessList
+  ensureBlockedSourcesList,
+  removeBlockedSource,
+  saveAccessList,
+  type AccessList,
+  type AccessListInput,
+  type AccessListRule,
+  type AccessListSave,
+  type BlockedSourceInput,
 } from "@/src/lib/models/access-lists";
+import { assertProviderLevel } from "@/ee/multi-tenancy/scope";
+import { dashboardCreateOrganization } from "@/ee/multi-tenancy/view";
 
-export async function createAccessListAction(input: {
-  name: string;
-  description: string | null;
-  users: { username: string; password: string }[];
-}) {
-  const session = await requireAdmin();
-  const userId = Number(session.user.id);
-  const list = await createAccessList(
-    {
-      name: input.name,
-      description: input.description,
-      users: input.users.filter((u) => u.username.trim() && u.password),
-    },
-    userId
-  );
-  revalidatePath("/access-lists");
-  return list;
-}
+// The models answer "not found" for a list of another organisation (ee/multi-tenancy).
 
-export async function updateAccessListAction(
-  id: number,
-  input: { name?: string; description?: string | null }
-) {
-  const session = await requireAdmin();
-  const userId = Number(session.user.id);
-  const list = await updateAccessList(id, input, userId);
-  revalidatePath("/access-lists");
-  return list;
-}
+/** `saved` is true when the change was stored but Caddy did not take the new configuration. */
+export type AccessListActionResult<T> = { ok: true; value: T } | { ok: false; error: string; saved?: boolean };
 
-export async function deleteAccessListAction(id: number) {
-  const session = await requireAdmin();
-  const userId = Number(session.user.id);
-  await deleteAccessList(id, userId);
-  revalidatePath("/access-lists");
-}
+const PROVIDER_ONLY = "The Blocked sources list applies to every organisation; only provider-level users can change it";
 
-export async function addAccessEntryAction(
-  accessListId: number,
-  entry: { username: string; password: string }
-) {
-  const session = await requireAdmin();
-  const userId = Number(session.user.id);
-  const list = await addAccessListEntry(accessListId, entry, userId);
-  revalidatePath("/access-lists");
-  return list;
-}
-
-export async function deleteAccessEntryAction(
-  accessListId: number,
-  entryId: number
-) {
-  const session = await requireAdmin();
-  const userId = Number(session.user.id);
-  const list = await removeAccessListEntry(accessListId, entryId, userId);
-  revalidatePath("/access-lists");
-  return list;
-}
-
-export async function bulkDeleteEntriesAction(
-  accessListId: number,
-  entryIds: number[]
-) {
-  const session = await requireAdmin();
-  const userId = Number(session.user.id);
-  let list;
-  for (const entryId of entryIds) {
-    list = await removeAccessListEntry(accessListId, entryId, userId);
+/** Client-safe failures come back as { ok: false }; anything else is thrown. */
+async function run<T>(operation: () => Promise<T>): Promise<AccessListActionResult<T>> {
+  try {
+    const value = await operation();
+    revalidatePath("/access-lists");
+    return { ok: true, value };
+  } catch (error) {
+    if (error instanceof ApiClientError) return { ok: false, error: error.message };
+    if (error instanceof CaddyApplyError) {
+      revalidatePath("/access-lists");
+      return { ok: false, saved: true, error: `Saved, but Caddy did not take the new configuration: ${error.message}` };
+    }
+    if (error instanceof Error && error.message.toLowerCase().endsWith("not found")) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
   }
-  revalidatePath("/access-lists");
-  return list;
 }
 
-export async function regeneratePasswordAction(
-  accessListId: number,
-  entryId: number,
-  newPassword: string
-) {
-  const session = await requireAdmin();
+export async function createAccessListAction(input: AccessListInput): Promise<AccessListActionResult<AccessList>> {
+  const session = await requirePermission("access_lists:write");
   const userId = Number(session.user.id);
-  // Remove old entry and add new one with same username
-  // We need to get the username first
-  const { removeAccessListEntry: remove, addAccessListEntry: add, getAccessList } = await import(
-    "@/src/lib/models/access-lists"
+  return run(async () =>
+    createAccessList(
+      {
+        ...input,
+        // A provider-level user looking at one organisation creates it there.
+        organizationId: await dashboardCreateOrganization(session.access),
+      },
+      userId
+    )
   );
-  const listBefore = await getAccessList(accessListId);
-  if (!listBefore) throw new Error("Access list not found");
-  const entry = listBefore.entries.find((e) => e.id === entryId);
-  if (!entry) throw new Error("Entry not found");
+}
 
-  await remove(accessListId, entryId, userId);
-  const list = await add(accessListId, { username: entry.username, password: newPassword }, userId);
-  revalidatePath("/access-lists");
-  return list;
+/** The editor's save: settings, every rule in order and member changes, applied once. */
+export async function saveAccessListAction(id: number, input: AccessListSave): Promise<AccessListActionResult<AccessList>> {
+  const session = await requirePermission("access_lists:write");
+  const userId = Number(session.user.id);
+  return run(() => saveAccessList(id, input, userId));
+}
+
+export async function deleteAccessListAction(id: number): Promise<AccessListActionResult<null>> {
+  const session = await requirePermission("access_lists:write");
+  const userId = Number(session.user.id);
+  return run(async () => {
+    await deleteAccessList(id, userId);
+    return null;
+  });
+}
+
+/** Saves the global Blocked sources list (created on first use). */
+export async function saveBlockedSourcesAction(input: AccessListSave): Promise<AccessListActionResult<AccessList>> {
+  const session = await requirePermission("access_lists:write");
+  const userId = Number(session.user.id);
+  return run(async () => {
+    assertProviderLevel(session.access, PROVIDER_ONLY);
+    const list = await ensureBlockedSourcesList(userId);
+    return saveAccessList(list.id, input, userId);
+  });
+}
+
+/**
+ * Blocks an address (or network, country, continent, AS number) on every
+ * host: the Security events page's Block button.
+ */
+export async function blockSourceAction(input: BlockedSourceInput): Promise<AccessListActionResult<AccessListRule>> {
+  const session = await requirePermission("access_lists:write");
+  const userId = Number(session.user.id);
+  return run(async () => {
+    assertProviderLevel(session.access, PROVIDER_ONLY);
+    return (await addBlockedSource(input, userId)).entry;
+  });
+}
+
+export async function unblockSourceAction(entryId: number): Promise<AccessListActionResult<null>> {
+  const session = await requirePermission("access_lists:write");
+  const userId = Number(session.user.id);
+  return run(async () => {
+    assertProviderLevel(session.access, PROVIDER_ONLY);
+    await removeBlockedSource(entryId, userId);
+    return null;
+  });
 }

@@ -1,0 +1,218 @@
+/**
+ * The host editor's server side: its save and review actions
+ * (app/(dashboard)/proxy-hosts/editor-actions.ts), the REST previews
+ * (POST /api/v1/proxy-hosts/preview and /api/v1/proxy-hosts/{id}/preview)
+ * and the edit and new pages' data. Saves go through the same scope checks
+ * and change approval gate as the REST API; previews store nothing.
+ */
+import { beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { createTestDb, type TestDb } from '../helpers/db';
+import * as schema from '../../src/lib/db/schema';
+import { apiRequest, idParams, json } from '../helpers/custom-roles';
+import { installLicense, licenseSigner } from '../helpers/config-fixture';
+import { ADMIN, ALICE, BOB, DAVE, hostRow, insertPolicy, requestRow, seedApprovals, type Hosts, type Tokens } from '../helpers/approvals';
+
+const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb, sessionUserId: 0 }));
+
+vi.mock('../../src/lib/db', async () => (await import('../helpers/db-module')).mockDbModule(() => ctx.db));
+vi.mock('@/src/lib/auth', async (importOriginal) => importOriginal());
+vi.mock('@/src/lib/auth-server', () => ({
+  getAuth: () => ({
+    api: { getSession: async () => ({ user: { id: ctx.sessionUserId }, session: { id: 1, createdAt: new Date() } }) },
+  }),
+  reloadOAuthProviders: async () => {},
+}));
+vi.mock('next/headers', () => ({ headers: async () => new Headers() }));
+vi.mock('next/navigation', () => ({
+  redirect: (url: string) => { throw new Error(`REDIRECT:${url}`); },
+  notFound: () => { throw new Error('NOT_FOUND'); },
+}));
+vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+
+import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
+import { previewProxyHostEditorAction, saveProxyHostEditorAction } from '../../app/(dashboard)/proxy-hosts/editor-actions';
+import { toEditorCertificate } from '../../app/(dashboard)/proxy-hosts/editor-data';
+import EditProxyHostPage from '../../app/(dashboard)/proxy-hosts/[id]/edit/page';
+import NewProxyHostPage from '../../app/(dashboard)/proxy-hosts/new/page';
+import * as createPreviewRoute from '../../app/api/v1/proxy-hosts/preview/route';
+import * as updatePreviewRoute from '../../app/api/v1/proxy-hosts/[id]/preview/route';
+import * as approveRoute from '../../app/api/v1/change-requests/[id]/approve/route';
+import { first } from '@/src/lib/db/ops';
+
+let tokens: Tokens;
+let hosts: Hosts;
+
+beforeEach(async () => {
+  ctx.db = createTestDb();
+  vi.clearAllMocks();
+  setTrustedLicenseKeysForTests(licenseSigner.keys);
+  await installLicense(ctx.db, 'enterprise');
+  ({ tokens, hosts } = await seedApprovals(ctx.db));
+  await insertPolicy(ctx.db, { name: 'Production' });
+});
+
+afterAll(() => setTrustedLicenseKeysForTests(null));
+
+async function changeRequests() {
+  return await ctx.db.select().from(schema.changeRequests);
+}
+
+describe('host editor save', () => {
+  it('creates an unprotected host from the editor payload, with its forward-auth grants', async () => {
+    ctx.sessionUserId = ADMIN;
+    const result = await saveProxyHostEditorAction(null, {
+      host: {
+        name: 'Editor host',
+        domains: ['editor.example.com'],
+        upstreams: ['http://10.0.0.5:8080'],
+        tags: ['dev'],
+        sslForced: false,
+        hstsSubdomains: true,
+        ingressiForwardAuth: { enabled: true, protected_paths: null, excluded_paths: ['/health'] },
+        // Organisations are not chosen in the editor.
+        organizationId: 99,
+      },
+      forwardAuthAccess: { userIds: [BOB], groupIds: [] },
+    });
+    expect(result).toMatchObject({ status: 'saved', message: 'Created Editor host.' });
+    const row = (await first(ctx.db.select().from(schema.proxyHosts).where(eq(schema.proxyHosts.name, 'Editor host')).limit(1)))!;
+    expect(row).toMatchObject({ sslForced: false, hstsSubdomains: true, organizationId: null });
+    expect(result.status === 'saved' && result.hostId).toBe(row.id);
+    expect(await ctx.db.select().from(schema.forwardAuthAccess)).toMatchObject([{ proxyHostId: row.id, userId: BOB }]);
+  });
+
+  it('refuses a new host without a name or domains list', async () => {
+    ctx.sessionUserId = ADMIN;
+    expect(await saveProxyHostEditorAction(null, { host: { domains: ['x.example.com'], upstreams: ['a:1'] } })).toEqual({ status: 'error', message: 'Name is required' });
+    expect(await saveProxyHostEditorAction(null, { host: { name: 'X', domains: 'x.example.com', upstreams: ['a:1'] } })).toEqual({
+      status: 'error',
+      message: 'domains must be a list of strings',
+    });
+    expect(await saveProxyHostEditorAction(null, 'not an object')).toMatchObject({ status: 'error', message: "The change must contain the host's fields" });
+  });
+
+  it('submits a change of a protected host for approval, with the reason', async () => {
+    ctx.sessionUserId = ALICE;
+    const result = await saveProxyHostEditorAction(hosts.prod, { host: { name: 'Renamed' }, note: 'Ticket CHG-7' });
+    expect(result).toMatchObject({ status: 'submitted', requestStatus: 'pending', hostId: hosts.prod, message: expect.stringMatching(/^Submitted for approval as change request #\d+/) });
+    expect((await hostRow(ctx.db, hosts.prod))!.name).toBe('App');
+    const requestId = result.status === 'submitted' ? result.requestId : 0;
+    expect(await requestRow(ctx.db, requestId)).toMatchObject({ note: 'Ticket CHG-7', requestedBy: ALICE });
+    const approved = await json(await approveRoute.POST(apiRequest('POST', '/x', tokens.bob), idParams(requestId)));
+    expect(approved.status).toBe('applied');
+    expect((await hostRow(ctx.db, hosts.prod))!.name).toBe('Renamed');
+  });
+
+  it('applies an emergency change only for users allowed to', async () => {
+    ctx.sessionUserId = ALICE;
+    expect(await saveProxyHostEditorAction(hosts.prod, { host: { name: 'Now' }, emergencyReason: 'Outage INC-1234 needs it' })).toEqual({
+      status: 'error',
+      message: 'Emergency changes need the approvals:emergency permission',
+    });
+    ctx.sessionUserId = ADMIN;
+    const applied = await saveProxyHostEditorAction(hosts.prod, { host: { name: 'Now' }, emergencyReason: 'Outage INC-1234 needs it' });
+    expect(applied).toMatchObject({ status: 'submitted', requestStatus: 'applied' });
+    expect((await hostRow(ctx.db, hosts.prod))!.name).toBe('Now');
+  });
+
+  it('runs the scope checks: custom Caddy JSON is for administrators', async () => {
+    ctx.sessionUserId = ALICE;
+    expect(await saveProxyHostEditorAction(hosts.dev, { host: { customReverseProxyJson: '{"headers":{}}' } })).toEqual({
+      status: 'error',
+      message: 'Only administrators can set custom Caddy JSON on a proxy host',
+    });
+    expect(await saveProxyHostEditorAction(hosts.dev, { host: { name: 'Dev 2' } })).toMatchObject({ status: 'saved', hostId: hosts.dev });
+    expect((await hostRow(ctx.db, hosts.dev))!.name).toBe('Dev 2');
+  });
+
+  it('needs proxy_hosts:write', async () => {
+    ctx.sessionUserId = DAVE;
+    expect(await saveProxyHostEditorAction(hosts.dev, { host: { name: 'Nope' } })).toMatchObject({ status: 'error' });
+    expect(await previewProxyHostEditorAction(hosts.dev, { host: { name: 'Nope' } })).toMatchObject({ status: 'error' });
+    expect((await hostRow(ctx.db, hosts.dev))!.name).toBe('Dev');
+  });
+});
+
+describe('host editor review', () => {
+  it('says which policy applies, what changes and the impact, and stores nothing', async () => {
+    ctx.sessionUserId = ALICE;
+    const result = await previewProxyHostEditorAction(hosts.prod, { host: { name: 'Renamed', domains: ['app.example.com', 'new.example.com'] } });
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.preview.approval).toMatchObject({
+      required: true,
+      policies: [{ name: 'Production' }],
+      requiredApprovals: 1,
+      operations: ['update'],
+      emergencyAllowed: false,
+      window: { restricted: false },
+    });
+    expect(result.preview.changes).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: 'host.name', before: 'App', after: 'Renamed' })])
+    );
+    expect(result.preview.impact.caddy.certificateRequests).toEqual(['new.example.com']);
+    expect(result.preview.impact.lines.map((line) => line.key)).toEqual(['hosts', 'caddy', 'when']);
+    expect(await changeRequests()).toHaveLength(0);
+    expect((await hostRow(ctx.db, hosts.prod))!.name).toBe('App');
+  });
+
+  it('says no approval is needed for an unprotected host', async () => {
+    ctx.sessionUserId = ALICE;
+    const result = await previewProxyHostEditorAction(hosts.dev, { host: { enabled: false } });
+    expect(result).toMatchObject({ status: 'ok', preview: { approval: { required: false, requiredApprovals: 0, operations: ['disable'] } } });
+  });
+
+  it('answers through the REST API for creates and updates', async () => {
+    const created = await createPreviewRoute.POST(
+      apiRequest('POST', '/api/v1/proxy-hosts/preview', tokens.alice, { name: 'Shop', domains: ['shop.example.com'], upstreams: ['http://shop:80'], tags: ['prod'] })
+    );
+    expect(created.status).toBe(200);
+    expect(await json(created)).toMatchObject({ approval: { required: true, operations: ['create'] }, impact: { hosts: [{ name: 'Shop', change: 'create' }] } });
+
+    const updated = await updatePreviewRoute.POST(apiRequest('POST', `/api/v1/proxy-hosts/${hosts.dev}/preview`, tokens.alice, { name: 'Dev 2' }), idParams(hosts.dev));
+    expect(updated.status).toBe(200);
+    expect(await json(updated)).toMatchObject({ approval: { required: false }, changes: [{ path: 'host.name', before: 'Dev', after: 'Dev 2' }] });
+
+    const missing = await updatePreviewRoute.POST(apiRequest('POST', '/api/v1/proxy-hosts/9999/preview', tokens.alice, { name: 'X' }), idParams(9999));
+    expect(missing.status).toBe(404);
+    const reader = await updatePreviewRoute.POST(apiRequest('POST', `/api/v1/proxy-hosts/${hosts.dev}/preview`, tokens.dave, { name: 'X' }), idParams(hosts.dev));
+    expect(reader.status).toBe(403);
+    expect(await changeRequests()).toHaveLength(0);
+  });
+});
+
+describe('host editor pages', () => {
+  it('load the host and the approval context; a missing host is not found', async () => {
+    ctx.sessionUserId = ALICE;
+    const page = (await EditProxyHostPage({ params: Promise.resolve({ id: String(hosts.prod) }) })) as { props: { data: Record<string, any> } };
+    expect(page.props.data).toMatchObject({ mode: 'edit', host: { id: hosts.prod, name: 'App' }, isAdmin: false, canChooseUsers: true });
+    expect(page.props.data.approval.policies).toMatchObject([{ name: 'Production' }]);
+    await expect(EditProxyHostPage({ params: Promise.resolve({ id: '9999' }) })).rejects.toThrow('NOT_FOUND');
+    await expect(EditProxyHostPage({ params: Promise.resolve({ id: 'abc' }) })).rejects.toThrow('NOT_FOUND');
+  });
+
+  it('start a new host from ?domain= and a copy from ?from=', async () => {
+    ctx.sessionUserId = ADMIN;
+    const fresh = (await NewProxyHostPage({ searchParams: Promise.resolve({ domain: 'New.Example.com' }) })) as { props: { data: Record<string, any> } };
+    expect(fresh.props.data).toMatchObject({ mode: 'create', host: null, template: null, initialDomain: 'new.example.com', isAdmin: true });
+    const copy = (await NewProxyHostPage({ searchParams: Promise.resolve({ from: String(hosts.dev), domain: '<script>' }) })) as { props: { data: Record<string, any> } };
+    expect(copy.props.data).toMatchObject({ template: { id: hosts.dev }, initialDomain: null });
+  });
+
+  it('keep certificate keys and PEM out of the editor', () => {
+    const view = toEditorCertificate({
+      id: 3,
+      name: 'Imported',
+      type: 'imported',
+      domainNames: ['example.com'],
+      autoRenew: false,
+      providerOptions: { provider: 'cloudflare', api_token: 'provider-secret-sentinel' },
+      certificatePem: 'not a pem',
+      privateKeyPem: 'private-key-sentinel',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    expect(view).toEqual({ id: 3, name: 'Imported', type: 'imported', domains: ['example.com'], expiresAt: null, issuer: null });
+  });
+});

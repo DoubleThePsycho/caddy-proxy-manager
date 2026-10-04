@@ -1,12 +1,18 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createTestDb, type TestDb } from '../helpers/db';
-import { accessLists, accessListEntries } from '@/src/lib/db/schema';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createTestDb, disableForeignKeys, type TestDb } from '../helpers/db';
+import { accessLists, accessListEntries, accessListRules, proxyHosts } from '@/src/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
 let db: TestDb;
 
-beforeEach(() => {
+vi.mock('@/src/lib/db', async () => (await import('../helpers/db-module')).mockDbModule(() => db));
+
+import { deleteAccessList } from '@/src/lib/models/access-lists';
+
+beforeEach(async () => {
   db = createTestDb();
+  // As in production: SQLite runs with foreign keys off, PostgreSQL has none.
+  await disableForeignKeys(db);
 });
 
 function nowIso() {
@@ -72,18 +78,30 @@ describe('access-lists integration', () => {
     expect(row).toBeUndefined();
   });
 
-  it('deletes a list and cascades to entries', async () => {
+  it('deleting a list deletes its entries and rules and detaches its hosts, without foreign keys', async () => {
     const list = await insertAccessList();
+    const other = await insertAccessList({ name: 'Other' });
     await insertEntry(list.id, { username: 'user1' });
     await insertEntry(list.id, { username: 'user2' });
+    await insertEntry(other.id, { username: 'kept' });
+    const now = nowIso();
+    await db.insert(accessListRules).values({
+      accessListId: list.id, position: 0, action: 'allow', kind: 'ip', matchValues: '["192.0.2.0/24"]', createdAt: now, updatedAt: now,
+    });
+    const [host] = await db.insert(proxyHosts).values({
+      name: 'Host', domains: '["app.example.com"]', upstreams: '["backend:80"]', accessListId: list.id, createdAt: now, updatedAt: now,
+    }).returning();
 
-    await db.delete(accessLists).where(eq(accessLists.id, list.id));
+    await deleteAccessList(list.id, 1);
 
     const listRow = await db.query.accessLists.findFirst({ where: (t, { eq }) => eq(t.id, list.id) });
     expect(listRow).toBeUndefined();
-
-    const entryRows = await db.select().from(accessListEntries).where(eq(accessListEntries.accessListId, list.id));
-    expect(entryRows.length).toBe(0);
+    expect(await db.select().from(accessListEntries).where(eq(accessListEntries.accessListId, list.id))).toHaveLength(0);
+    expect(await db.select().from(accessListRules).where(eq(accessListRules.accessListId, list.id))).toHaveLength(0);
+    const [hostRow] = await db.select({ accessListId: proxyHosts.accessListId }).from(proxyHosts).where(eq(proxyHosts.id, host.id));
+    expect(hostRow.accessListId).toBeNull();
+    // Another list keeps its members.
+    expect(await db.select().from(accessListEntries).where(eq(accessListEntries.accessListId, other.id))).toHaveLength(1);
   });
 
   it('entries for different lists do not mix', async () => {

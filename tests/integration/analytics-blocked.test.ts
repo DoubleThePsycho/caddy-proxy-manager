@@ -1,14 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 
 // Mock dependencies so we can import collectBlockedSignatures and parseLine.
-vi.mock('@/src/lib/db', () => ({
-  default: {
-    select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ get: vi.fn().mockReturnValue(null) }) }) }),
-    insert: vi.fn().mockReturnValue({ values: vi.fn().mockReturnValue({ onConflictDoUpdate: vi.fn().mockReturnValue({ run: vi.fn() }) }) }),
-    delete: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ run: vi.fn() }) }),
-    run: vi.fn(),
-  },
-}));
+vi.mock('@/src/lib/db', async () => {
+  // A real, empty test database: these tests do not look at the parse state.
+  const { createTestDb } = await import('../helpers/db');
+  const db = createTestDb();
+  return (await import('../helpers/db-module')).mockDbModule(() => db);
+});
 vi.mock('maxmind', () => ({ default: { open: vi.fn().mockResolvedValue(null) } }));
 vi.mock('node:fs', () => ({
   existsSync: vi.fn().mockReturnValue(false),

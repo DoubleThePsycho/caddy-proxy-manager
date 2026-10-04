@@ -5,13 +5,8 @@ const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
 vi.mock("../../src/lib/db", async () => {
   const { createTestDb } = await import("../helpers/db");
-  const schemaModule = await import("../../src/lib/db/schema");
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 import {

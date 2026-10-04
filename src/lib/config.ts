@@ -1,3 +1,4 @@
+import { assertValidDashboardUpstreams } from "./dashboard-upstreams";
 import { assertValidInstanceSyncToken } from "./instance-sync-token";
 
 const DEV_SECRET = "dev-secret-change-in-production-12345678901234567890123456789012";
@@ -203,7 +204,7 @@ export const config = {
   caddyApiUrl: process.env.CADDY_API_URL ?? DEFAULT_CADDY_URL,
   // Auto-recovery of the Caddy configuration on drift (restart/recreation).
   // Disable on instances that do not own the targeted Caddy (e.g. auxiliary
-  // CPM instances sharing one Caddy in the e2e stack) — two enabled monitors
+  // Ingressi instances sharing one Caddy in the e2e stack) — two enabled monitors
   // with different databases would endlessly fight over the configuration.
   caddyMonitorEnabled: process.env.CADDY_MONITOR_ENABLED !== "false",
   baseUrl: process.env.BASE_URL ?? "http://localhost:3000",
@@ -273,5 +274,9 @@ export function validateProductionConfig() {
         "INSTANCE_SYNC_TOKEN for slave mode"
       );
     }
+
+    // A mistyped dashboard replica would silently drop out of the Caddy
+    // configuration (src/lib/dashboard-upstreams.ts).
+    assertValidDashboardUpstreams();
   }
 }

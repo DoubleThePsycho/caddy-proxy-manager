@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { createTestDb, type TestDb } from '../helpers/db';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { createTestDb, disableForeignKeys, type TestDb } from '../helpers/db';
 import {
   mtlsRoles,
   mtlsCertificateRoles,
@@ -12,8 +12,18 @@ import { eq } from 'drizzle-orm';
 
 let db: TestDb;
 
-beforeEach(() => {
+vi.mock('@/src/lib/db', async () => (await import('../helpers/db-module')).mockDbModule(() => db));
+
+import { buildRoleCertIdMap, buildRoleFingerprintMap, deleteMtlsRole } from '@/src/lib/models/mtls-roles';
+import { deleteCaCertificate } from '@/src/lib/models/ca-certificates';
+import { deleteProxyHost } from '@/src/lib/models/proxy-hosts';
+
+const ACTOR = 1;
+
+beforeEach(async () => {
   db = createTestDb();
+  // As in production: SQLite runs with foreign keys off, PostgreSQL has none.
+  await disableForeignKeys(db);
 });
 
 function nowIso() {
@@ -137,27 +147,27 @@ describe('mtls_certificate_roles table', () => {
     ).rejects.toThrow();
   });
 
-  it('cascades on role deletion', async () => {
+  it('deleting a role deletes its assignments, without foreign keys', async () => {
     const ca = await insertCaCert();
     const cert = await insertClientCert(ca.id);
     const role = await insertRole();
+    const kept = await insertRole('kept');
     const now = nowIso();
 
-    await db.insert(mtlsCertificateRoles).values({
-      issuedClientCertificateId: cert.id,
-      mtlsRoleId: role.id,
-      createdAt: now,
-    });
+    await db.insert(mtlsCertificateRoles).values([
+      { issuedClientCertificateId: cert.id, mtlsRoleId: role.id, createdAt: now },
+      { issuedClientCertificateId: cert.id, mtlsRoleId: kept.id, createdAt: now },
+    ]);
 
-    await db.delete(mtlsRoles).where(eq(mtlsRoles.id, role.id));
+    await deleteMtlsRole(role.id, ACTOR);
 
     const remaining = await db.select().from(mtlsCertificateRoles);
-    expect(remaining.length).toBe(0);
+    expect(remaining.map((row) => row.mtlsRoleId)).toEqual([kept.id]);
   });
 
-  it('cascades on cert deletion', async () => {
+  it('an assignment whose role is gone trusts nothing in the Caddy role maps', async () => {
     const ca = await insertCaCert();
-    const cert = await insertClientCert(ca.id);
+    const cert = await insertClientCert(ca.id, 'client', 'AA:BB');
     const role = await insertRole();
     const now = nowIso();
 
@@ -166,11 +176,13 @@ describe('mtls_certificate_roles table', () => {
       mtlsRoleId: role.id,
       createdAt: now,
     });
+    expect([...(await buildRoleCertIdMap()).get(role.id) ?? []]).toEqual([cert.id]);
 
-    await db.delete(issuedClientCertificates).where(eq(issuedClientCertificates.id, cert.id));
+    // What an older release left: the role row deleted, its assignment kept.
+    await db.delete(mtlsRoles).where(eq(mtlsRoles.id, role.id));
 
-    const remaining = await db.select().from(mtlsCertificateRoles);
-    expect(remaining.length).toBe(0);
+    expect((await buildRoleCertIdMap()).has(role.id)).toBe(false);
+    expect((await buildRoleFingerprintMap()).has(role.id)).toBe(false);
   });
 });
 
@@ -239,7 +251,7 @@ describe('mtls_access_rules table', () => {
     expect(rule2.proxyHostId).toBe(host2.id);
   });
 
-  it('cascades on proxy host deletion', async () => {
+  it('deleting a proxy host deletes its rules, without foreign keys', async () => {
     const host = await insertProxyHost();
     const now = nowIso();
 
@@ -250,7 +262,7 @@ describe('mtls_access_rules table', () => {
       updatedAt: now,
     });
 
-    await db.delete(proxyHosts).where(eq(proxyHosts.id, host.id));
+    await deleteProxyHost(host.id, ACTOR);
 
     const remaining = await db.select().from(mtlsAccessRules);
     expect(remaining.length).toBe(0);
@@ -345,7 +357,7 @@ describe('mtls_access_rules table', () => {
 // ── Additional schema relationship tests ─────────────────────────────
 
 describe('cross-table relationships', () => {
-  it('cascades CA deletion through issued certs to certificate_roles', async () => {
+  it('deleting a CA deletes its issued certs and their role assignments, without foreign keys', async () => {
     const ca = await insertCaCert();
     const cert = await insertClientCert(ca.id);
     const role = await insertRole();
@@ -357,8 +369,8 @@ describe('cross-table relationships', () => {
       createdAt: now,
     });
 
-    // Delete the CA — should cascade: CA → issued certs → cert_roles
-    await db.delete(caCertificates).where(eq(caCertificates.id, ca.id));
+    // Delete the CA — the model cascades: CA → issued certs → cert_roles
+    await deleteCaCertificate(ca.id, ACTOR);
 
     const remainingCerts = await db.select().from(issuedClientCertificates);
     expect(remainingCerts).toHaveLength(0);
@@ -418,7 +430,7 @@ describe('cross-table relationships', () => {
     });
 
     // Delete the role — the access rule should still exist (JSON array, no FK)
-    await db.delete(mtlsRoles).where(eq(mtlsRoles.id, role.id));
+    await deleteMtlsRole(role.id, ACTOR);
 
     const rules = await db.select().from(mtlsAccessRules);
     expect(rules).toHaveLength(1);

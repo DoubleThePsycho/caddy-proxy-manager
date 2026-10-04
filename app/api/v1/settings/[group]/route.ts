@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAdmin, apiErrorResponse, logUnexpectedApiError } from "@/src/lib/api-auth";
+import { requireApiPermission, apiErrorResponse, logUnexpectedApiError } from "@/src/lib/api-auth";
 import {
   getGeneralSettings, saveGeneralSettings,
   getAcmeSettings, saveAcmeSettings,
@@ -16,6 +16,7 @@ import {
   getErrorPagesSettings, saveErrorPagesSettings,
   getDefaultResponseSettings, saveDefaultResponseSettings,
   getTrustedProxiesSettings, saveTrustedProxiesSettings,
+  getRateLimitSettings, saveRateLimitSettings,
   getSetting, setSetting, clearSetting,
 } from "@/src/lib/settings";
 import { getInstanceMode, setInstanceMode, getSlaveMasterToken, setSlaveMasterToken } from "@/src/lib/instance-sync";
@@ -34,36 +35,56 @@ import {
   validateSettingsGroup,
 } from "@/src/lib/settings-validation";
 import { withSettingsUpdateLock } from "@/src/lib/settings-update-lock";
+import { logAuditEvent } from "@/src/lib/audit";
+import { readGlobalWafExclusionRows, restoreGlobalWafExclusionRows } from "@/src/lib/models/waf-exclusion-mirror";
 
 type SettingsHandler = {
-  get: () => Promise<unknown>;
+  read: () => Promise<unknown>;
   save: (data: never) => Promise<void>;
   storageKey: string;
   applyCaddy?: boolean;
+  /** Audit summary recorded after a successful update. */
+  audit?: string;
 };
 
 const SETTINGS_HANDLERS: Record<string, SettingsHandler> = {
-  general: { get: getGeneralSettings, save: saveGeneralSettings as (data: never) => Promise<void>, storageKey: "general", applyCaddy: true },
-  acme: { get: getAcmeSettings, save: saveAcmeSettings as (data: never) => Promise<void>, storageKey: "acme", applyCaddy: true },
-  cloudflare: { get: getCloudflareSettings, save: saveCloudflareSettings as (data: never) => Promise<void>, storageKey: "cloudflare", applyCaddy: true },
-  authentik: { get: getAuthentikSettings, save: saveAuthentikSettings as (data: never) => Promise<void>, storageKey: "authentik", applyCaddy: true },
-  "forward-auth": { get: getForwardAuthSettings, save: saveForwardAuthSettings as (data: never) => Promise<void>, storageKey: "forward_auth" },
-  metrics: { get: getMetricsSettings, save: saveMetricsSettings as (data: never) => Promise<void>, storageKey: "metrics", applyCaddy: true },
-  logging: { get: getLoggingSettings, save: saveLoggingSettings as (data: never) => Promise<void>, storageKey: "logging", applyCaddy: true },
-  dns: { get: getDnsSettings, save: saveDnsSettings as (data: never) => Promise<void>, storageKey: "dns", applyCaddy: true },
-  "dns-provider": { get: getDnsProviderSettings, save: saveDnsProviderSettings as (data: never) => Promise<void>, storageKey: "dns_provider", applyCaddy: true },
-  "upstream-dns": { get: getUpstreamDnsResolutionSettings, save: saveUpstreamDnsResolutionSettings as (data: never) => Promise<void>, storageKey: "upstream_dns_resolution", applyCaddy: true },
-  geoblock: { get: getGeoBlockSettings, save: saveGeoBlockSettings as (data: never) => Promise<void>, storageKey: "geoblock", applyCaddy: true },
-  waf: { get: getWafSettings, save: saveWafSettings as (data: never) => Promise<void>, storageKey: "waf", applyCaddy: true },
-  "error-pages": { get: getErrorPagesSettings, save: saveErrorPagesSettings as (data: never) => Promise<void>, storageKey: "error_pages", applyCaddy: true },
+  general: { read: getGeneralSettings, save: saveGeneralSettings as (data: never) => Promise<void>, storageKey: "general", applyCaddy: true },
+  acme: { read: getAcmeSettings, save: saveAcmeSettings as (data: never) => Promise<void>, storageKey: "acme", applyCaddy: true },
+  cloudflare: { read: getCloudflareSettings, save: saveCloudflareSettings as (data: never) => Promise<void>, storageKey: "cloudflare", applyCaddy: true },
+  authentik: { read: getAuthentikSettings, save: saveAuthentikSettings as (data: never) => Promise<void>, storageKey: "authentik", applyCaddy: true },
+  "forward-auth": { read: getForwardAuthSettings, save: saveForwardAuthSettings as (data: never) => Promise<void>, storageKey: "forward_auth" },
+  metrics: { read: getMetricsSettings, save: saveMetricsSettings as (data: never) => Promise<void>, storageKey: "metrics", applyCaddy: true },
+  logging: { read: getLoggingSettings, save: saveLoggingSettings as (data: never) => Promise<void>, storageKey: "logging", applyCaddy: true },
+  dns: { read: getDnsSettings, save: saveDnsSettings as (data: never) => Promise<void>, storageKey: "dns", applyCaddy: true },
+  "dns-provider": { read: getDnsProviderSettings, save: saveDnsProviderSettings as (data: never) => Promise<void>, storageKey: "dns_provider", applyCaddy: true },
+  "upstream-dns": { read: getUpstreamDnsResolutionSettings, save: saveUpstreamDnsResolutionSettings as (data: never) => Promise<void>, storageKey: "upstream_dns_resolution", applyCaddy: true },
+  geoblock: { read: getGeoBlockSettings, save: saveGeoBlockSettings as (data: never) => Promise<void>, storageKey: "geoblock", applyCaddy: true },
+  // Saved with the caller as author of exclusion records the legacy excluded_rule_ids list adds (see PUT).
+  waf: { read: getWafSettings, save: saveWafSettings as (data: never) => Promise<void>, storageKey: "waf", applyCaddy: true, audit: "Updated the global WAF settings" },
+  "error-pages": { read: getErrorPagesSettings, save: saveErrorPagesSettings as (data: never) => Promise<void>, storageKey: "error_pages", applyCaddy: true },
   "default-response": {
-    get: async () => (await getDefaultResponseSettings()) ?? { mode: "caddy" },
+    read: async () => (await getDefaultResponseSettings()) ?? { mode: "caddy" },
     save: saveDefaultResponseSettings as (data: never) => Promise<void>,
     storageKey: "default_response",
     applyCaddy: true,
   },
-  "trusted-proxies": { get: getTrustedProxiesSettings, save: saveTrustedProxiesSettings as (data: never) => Promise<void>, storageKey: "trusted_proxies", applyCaddy: true },
+  "trusted-proxies": { read: getTrustedProxiesSettings, save: saveTrustedProxiesSettings as (data: never) => Promise<void>, storageKey: "trusted_proxies", applyCaddy: true },
+  "rate-limit": {
+    read: async () => (await getRateLimitSettings()) ?? { enabled: false, rules: [], allowlist: [] },
+    save: saveRateLimitSettings as (data: never) => Promise<void>,
+    storageKey: "rate_limit",
+    applyCaddy: true,
+    audit: "Updated rate limiting defaults",
+  },
 };
+
+/**
+ * Groups that belong to other permission areas than "settings": the instance
+ * mode and the slave's sync token are instance-sync configuration, and the
+ * global WAF settings belong to the WAF.
+ */
+const INSTANCE_GROUPS = new Set(["instance-mode", "sync-token"]);
+const WAF_GROUPS = new Set(["waf"]);
 
 function unknownKey(input: Record<string, unknown>, allowed: readonly string[]): string | null {
   const allowedKeys = new Set(allowed);
@@ -75,8 +96,14 @@ export async function GET(
   { params }: { params: Promise<{ group: string }> }
 ) {
   try {
-    await requireApiAdmin(request);
     const { group } = await params;
+    if (INSTANCE_GROUPS.has(group)) {
+      await requireApiPermission(request, "instances:read");
+    } else if (WAF_GROUPS.has(group)) {
+      await requireApiPermission(request, "waf:read");
+    } else {
+      await requireApiPermission(request, "settings:read");
+    }
 
     if (group === "instance-mode") {
       const mode = await getInstanceMode();
@@ -93,7 +120,7 @@ export async function GET(
       return NextResponse.json({ error: "Unknown settings group" }, { status: 404 });
     }
 
-    const settings = await handler.get();
+    const settings = await handler.read();
     if (group === "cloudflare" && settings) {
       return NextResponse.json(
         redactLegacyCloudflareSettingsForApi(settings as CloudflareSettings),
@@ -117,8 +144,15 @@ export async function PUT(
   { params }: { params: Promise<{ group: string }> }
 ) {
   try {
-    await requireApiAdmin(request);
     const { group } = await params;
+    let actorUserId: number | null = null;
+    if (INSTANCE_GROUPS.has(group)) {
+      await requireApiPermission(request, "instances:write");
+    } else if (WAF_GROUPS.has(group)) {
+      actorUserId = (await requireApiPermission(request, "waf:write")).userId;
+    } else {
+      actorUserId = (await requireApiPermission(request, "settings:write")).userId;
+    }
     let body: unknown;
     try {
       body = await request.json();
@@ -207,9 +241,13 @@ export async function PUT(
       // Preserve the exact local stored value (including encrypted credentials),
       // rather than the effective or redacted GET representation, for rollback.
       const previousValue = await getSetting<unknown>(handler.storageKey);
+      // The WAF settings' excluded_rule_ids write exclusion records too; a
+      // failed apply restores them with the setting.
+      const previousExclusions = group === "waf" ? await readGlobalWafExclusionRows() : null;
       // Provider credentials are stored encrypted, as the dashboard form does.
       const toSave = group === "dns-provider" ? encryptDnsProviderSettingCredentials(validated) : validated;
-      await handler.save(toSave as never);
+      if (group === "waf") await saveWafSettings(toSave as never, { actorUserId });
+      else await handler.save(toSave as never);
 
       if (handler.applyCaddy) {
         try {
@@ -222,6 +260,7 @@ export async function PUT(
             } else {
               await setSetting(handler.storageKey, previousValue);
             }
+            if (previousExclusions) await restoreGlobalWafExclusionRows(previousExclusions);
           } catch (rollbackError) {
             logUnexpectedApiError("Settings rollback failed", rollbackError);
             return NextResponse.json(
@@ -246,6 +285,9 @@ export async function PUT(
         }
       }
 
+      if (handler.audit) {
+        await logAuditEvent({ userId: actorUserId, action: "update", entityType: "setting", summary: handler.audit, data: toSave });
+      }
       return NextResponse.json({ ok: true });
     });
   } catch (error) {

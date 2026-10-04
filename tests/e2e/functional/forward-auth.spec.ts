@@ -1,12 +1,13 @@
 /**
- * Functional tests: CPM Forward Auth (credential-based login).
+ * Functional tests: Ingressi Forward Auth (credential-based login).
  *
- * Creates a proxy host with CPM forward auth enabled via the REST API, then verifies:
+ * Creates a proxy host with Ingressi forward auth enabled via the REST API, then verifies:
  * - Unauthenticated requests get redirected to the portal with ?rd= param
  * - The portal page shows a login form when ?rd= is present
  * - The portal rejects invalid ?rd= values (non-forward-auth domains)
  * - Successful credential login completes the redirect flow
- * - Authenticated requests (with _cpm_fa cookie) reach the upstream
+ * - Authenticated requests (with the _ingressi_fa cookie, or the pre-rename
+ *   _cpm_fa) reach the upstream
  * - Requests with an invalid session cookie get redirected again
  *
  * Domain: func-fwd-auth.test
@@ -29,7 +30,7 @@ test.describe.serial('Forward Auth', () => {
         domains: [DOMAIN],
         upstreams: ['echo-server:8080'],
         sslForced: false,
-        cpmForwardAuth: { enabled: true },
+        ingressiForwardAuth: { enabled: true },
       },
       headers: { 'Content-Type': 'application/json', 'Origin': BASE_URL },
     });
@@ -142,44 +143,51 @@ test.describe.serial('Forward Auth', () => {
       }
 
       expect(capturedRedirect).toBeTruthy();
-      expect(capturedRedirect).toContain('/.cpm-auth/callback');
+      expect(capturedRedirect).toContain('/.ingressi-auth/callback');
       expect(capturedRedirect).toContain('code=');
       const data = { redirectTo: capturedRedirect! };
 
       // Complete the callback via httpGet (sends to 127.0.0.1:80 with Host header)
       const callbackUrl = new URL(data.redirectTo);
       const callbackRes = await httpGet(DOMAIN, callbackUrl.pathname + callbackUrl.search);
-      // Callback sets _cpm_fa cookie and redirects to the original URL
+      // Callback sets _ingressi_fa cookie and redirects to the original URL
       expect(callbackRes.status).toBe(302);
       const setCookie = String(callbackRes.headers['set-cookie'] ?? '');
-      expect(setCookie).toContain('_cpm_fa=');
+      expect(setCookie).toContain('_ingressi_fa=');
 
       // Extract the session cookie and verify it grants access to the upstream
-      const match = setCookie.match(/_cpm_fa=([^;]+)/);
+      const match = setCookie.match(/_ingressi_fa=([^;]+)/);
       expect(match).toBeTruthy();
       const sessionCookie = match![1];
       const upstreamRes = await httpGet(DOMAIN, '/test-path', {
-        Cookie: `_cpm_fa=${sessionCookie}`,
+        Cookie: `_ingressi_fa=${sessionCookie}`,
       });
       expect(upstreamRes.status).toBe(200);
       expect(upstreamRes.body).toContain(ECHO_BODY);
+
+      // A session cookie under its name from before the rename keeps working.
+      const legacyRes = await httpGet(DOMAIN, '/test-path', {
+        Cookie: `_cpm_fa=${sessionCookie}`,
+      });
+      expect(legacyRes.status).toBe(200);
+      expect(legacyRes.body).toContain(ECHO_BODY);
     } finally {
       await context.close();
     }
   });
 
-  test('request with invalid _cpm_fa cookie gets redirected', async () => {
+  test('request with invalid _ingressi_fa cookie gets redirected', async () => {
     const res = await httpGet(DOMAIN, '/', {
-      Cookie: '_cpm_fa=invalid-token-value',
+      Cookie: '_ingressi_fa=invalid-token-value',
     });
     expect(res.status).toBe(302);
     expect(String(res.headers['location'])).toContain('/portal');
   });
 
-  test('request with forged _cpm_fa cookie gets redirected', async () => {
+  test('request with forged _ingressi_fa cookie gets redirected', async () => {
     const forgedToken = 'a'.repeat(64);
     const res = await httpGet(DOMAIN, '/', {
-      Cookie: `_cpm_fa=${forgedToken}`,
+      Cookie: `_ingressi_fa=${forgedToken}`,
     });
     expect(res.status).toBe(302);
     expect(String(res.headers['location'])).toContain('/portal');

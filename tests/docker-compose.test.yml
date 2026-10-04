@@ -10,8 +10,8 @@ services:
       # OAuth via Dex OIDC provider
       OAUTH_ENABLED: "true"
       OAUTH_PROVIDER_NAME: "Dex"
-      OAUTH_CLIENT_ID: cpm-test-client
-      OAUTH_CLIENT_SECRET: cpm-test-secret
+      OAUTH_CLIENT_ID: ingressi-test-client
+      OAUTH_CLIENT_SECRET: ingressi-test-secret
       OAUTH_ISSUER: http://localhost:5556/dex
       OAUTH_AUTHORIZATION_URL: http://localhost:5556/dex/auth
       OAUTH_TOKEN_URL: http://dex:5556/dex/token
@@ -25,8 +25,8 @@ services:
       AUTH_RATE_LIMIT_ENABLED: "false"
 
   web-registration-enabled:
-    container_name: caddy-proxy-manager-web-registration-enabled
-    image: ghcr.io/fuomag9/caddy-proxy-manager-web:latest
+    container_name: ingressi-web-registration-enabled
+    image: ghcr.io/ingres-si/ingressi-web:latest
     ports:
       - "3001:3000"
     environment:
@@ -36,8 +36,8 @@ services:
       ADMIN_PASSWORD: "TestPassword2026!"
       BASE_URL: http://localhost:3001
       NEXTAUTH_URL: http://localhost:3001
-      DATABASE_PATH: /app/data/caddy-proxy-manager.db
-      DATABASE_URL: file:/app/data/caddy-proxy-manager.db
+      DATABASE_PATH: /app/data/ingressi.db
+      DATABASE_URL: file:/app/data/ingressi.db
       CADDY_API_URL: http://caddy:2019
       # Shares the main E2E Caddy with the primary web instance; only one
       # monitor may auto-heal a shared Caddy or the two instances fight over
@@ -96,6 +96,76 @@ services:
       - ./tests/dex/config.yml:/etc/dex/config.yml:ro
     ports:
       - "5556:5556"
+    networks:
+      - caddy-network
+  # OpenLDAP directory for the LDAP sign-in E2E test (tests/e2e/ldap-sign-in.spec.ts).
+  # Seeded from tests/openldap/bootstrap.ldif: users e2e-admin, e2e-user and
+  # e2e-outsider under ou=people,dc=example,dc=com, groups ingressi-users and
+  # ingressi-admins under ou=groups. The web container reaches it as
+  # openldap:389 (StartTLS) on caddy-network.
+  #
+  # The image's bundled CA expired in January 2026, so openldap-certs makes a
+  # short-lived CA and server certificate for openldap on every fresh stack.
+  openldap-certs:
+    image: osixia/openldap:1.5.0
+    entrypoint: ["sh", "-ec"]
+    command:
+      - |
+        cd /certs
+        if [ -f ldap.crt ] && openssl x509 -in ldap.crt -noout -checkend 86400; then exit 0; fi
+        openssl req -x509 -newkey rsa:2048 -nodes -days 30 -subj "/CN=Ingressi E2E LDAP CA" -keyout ca.key -out ca.crt
+        openssl req -newkey rsa:2048 -nodes -subj "/CN=openldap" -keyout ldap.key -out ldap.csr
+        printf 'subjectAltName=DNS:openldap\nextendedKeyUsage=serverAuth\n' > server.ext
+        openssl x509 -req -in ldap.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 30 -extfile server.ext -out ldap.crt
+        rm -f ldap.csr server.ext ca.srl
+        chmod 644 ca.crt ldap.crt ldap.key
+    volumes:
+      - openldap-certs:/certs
+  openldap:
+    image: osixia/openldap:1.5.0
+    hostname: openldap
+    command: ["--copy-service"]
+    environment:
+      LDAP_ORGANISATION: "Example"
+      LDAP_DOMAIN: "example.com"
+      LDAP_ADMIN_PASSWORD: "ldap-admin-password-2026"
+      LDAP_TLS_VERIFY_CLIENT: "never"
+      LDAP_TLS_CRT_FILENAME: "ldap.crt"
+      LDAP_TLS_KEY_FILENAME: "ldap.key"
+      LDAP_TLS_CA_CRT_FILENAME: "ca.crt"
+    volumes:
+      - ./tests/openldap/bootstrap.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-bootstrap.ldif:ro
+      - openldap-certs:/container/service/slapd/assets/certs
+    depends_on:
+      openldap-certs:
+        condition: service_completed_successfully
+    networks:
+      - caddy-network
+    healthcheck:
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost", "-b", "ou=people,dc=example,dc=com", "-D", "cn=admin,dc=example,dc=com", "-w", "ldap-admin-password-2026", "(uid=e2e-admin)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+  # Keycloak SAML 2.0 identity provider for the SAML sign-in E2E test
+  # (tests/e2e/saml-sign-in.spec.ts). Realm "ingressi-e2e" is imported from
+  # tests/keycloak/realm.json: users e2e-saml-admin (groups ingressi-admins and
+  # ingressi-users), e2e-saml-user (ingressi-users) and e2e-saml-outsider. The
+  # spec registers the SAML client through Keycloak's admin API once it knows
+  # the provider's SP entity ID. Browsers and the test runner reach it at
+  # localhost:8089; the web container never contacts it (IdP metadata is read
+  # once, when the provider is stored). No healthcheck: the spec waits for the
+  # realm itself, so a slow start does not hold up the rest of the stack.
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.5
+    command: ["start-dev", "--import-realm", "--http-port=8080", "--hostname=http://localhost:8089"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: "keycloak-admin-password-2026"
+    volumes:
+      - ./tests/keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+    ports:
+      - "8089:8080"
     networks:
       - caddy-network
   # Hostile mock OIDC provider for the OAuth role-injection (H3) test.
@@ -196,10 +266,10 @@ services:
   # Caddy reaches the test domain via the "acme-e2e.test" alias on the caddy
   # service for HTTP-01 / TLS-ALPN-01 challenge validation.
   step-ca:
-    container_name: caddy-proxy-manager-step-ca
+    container_name: ingressi-step-ca
     image: smallstep/step-ca:0.27.4
     environment:
-      DOCKER_STEPCA_INIT_NAME: "CPM E2E Step-CA"
+      DOCKER_STEPCA_INIT_NAME: "Ingressi E2E Step-CA"
       DOCKER_STEPCA_INIT_DNS_NAMES: "step-ca,localhost"
       DOCKER_STEPCA_INIT_ACME: "true"
       DOCKER_STEPCA_INIT_REMOTE_MANAGEMENT: "false"
@@ -208,22 +278,28 @@ services:
       - step-ca-data:/home/step
     networks:
       - caddy-network
+      # The high-availability storage test issues through Step-CA from caddy-master.
+      - ha-acme-network
 
   # ── Master/slave pair for the settings-sync functional test (issue #192) ──
   # Each instance has its own isolated Caddy admin API. This lets settings updates
   # exercise the production apply/rollback path without replacing the main E2E
   # Caddy configuration or racing the rest of the browser suite.
   caddy-master:
-    container_name: caddy-proxy-manager-caddy-master
-    image: ghcr.io/fuomag9/caddy-proxy-manager-caddy:latest
+    container_name: ingressi-caddy-master
+    image: ghcr.io/ingres-si/ingressi-caddy:latest
     environment:
-      PRIMARY_DOMAIN: master.caddyproxymanager.test
+      PRIMARY_DOMAIN: master.ingressi.test
     volumes:
       - acme-ca-master:/acme-ca:ro
     networks:
       master-caddy-network:
         aliases:
           - caddy
+      ha-storage-network:
+      ha-acme-network:
+        aliases:
+          - ha-storage-e2e.test
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "-O", "/dev/null", "http://localhost:2019/config/"]
       interval: 5s
@@ -232,16 +308,18 @@ services:
       start_period: 10s
 
   caddy-slave:
-    container_name: caddy-proxy-manager-caddy-slave
-    image: ghcr.io/fuomag9/caddy-proxy-manager-caddy:latest
+    container_name: ingressi-caddy-slave
+    image: ghcr.io/ingres-si/ingressi-caddy:latest
     environment:
-      PRIMARY_DOMAIN: slave.caddyproxymanager.test
+      PRIMARY_DOMAIN: slave.ingressi.test
     volumes:
       - acme-ca-slave:/acme-ca:ro
     networks:
       slave-caddy-network:
         aliases:
           - caddy
+      # Valkey only: the slave cannot reach Step-CA (see ha-acme-network).
+      ha-storage-network:
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "-O", "/dev/null", "http://localhost:2019/config/"]
       interval: 5s
@@ -249,9 +327,26 @@ services:
       retries: 12
       start_period: 10s
 
+  # Shared certificate storage for the high-availability test
+  # (tests/e2e/high-availability-storage.spec.ts): caddy-master and
+  # caddy-slave reach it as valkey:6379. No volume: the data lives as long as
+  # the container.
+  valkey:
+    container_name: ingressi-valkey
+    image: valkey/valkey:9.1.2-alpine
+    command: ["valkey-server", "--requirepass", "e2e-valkey-password-2026", "--appendonly", "yes"]
+    networks:
+      - ha-storage-network
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "e2e-valkey-password-2026", "--no-auth-warning", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
   web-master:
-    container_name: caddy-proxy-manager-web-master
-    image: ghcr.io/fuomag9/caddy-proxy-manager-web:latest
+    container_name: ingressi-web-master
+    image: ghcr.io/ingres-si/ingressi-web:latest
     ports:
       - "3002:3000"
     environment:
@@ -261,8 +356,8 @@ services:
       ADMIN_PASSWORD: "TestPassword2026!"
       BASE_URL: http://localhost:3002
       NEXTAUTH_URL: http://localhost:3002
-      DATABASE_PATH: /app/data/caddy-proxy-manager.db
-      DATABASE_URL: file:/app/data/caddy-proxy-manager.db
+      DATABASE_PATH: /app/data/ingressi.db
+      DATABASE_URL: file:/app/data/ingressi.db
       CADDY_API_URL: http://caddy:2019
       OAUTH_ENABLED: "false"
       AUTH_RATE_LIMIT_ENABLED: "false"
@@ -283,6 +378,8 @@ services:
       master-caddy-network:
         aliases:
           - web
+      # Test connection for the shared certificate storage runs from here.
+      ha-storage-network:
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health',r=>{process.exit(r.statusCode<400?0:1)}).on('error',()=>process.exit(1))"]
       interval: 5s
@@ -291,8 +388,8 @@ services:
       start_period: 20s
 
   web-slave:
-    container_name: caddy-proxy-manager-web-slave
-    image: ghcr.io/fuomag9/caddy-proxy-manager-web:latest
+    container_name: ingressi-web-slave
+    image: ghcr.io/ingres-si/ingressi-web:latest
     ports:
       - "3003:3000"
     environment:
@@ -302,8 +399,8 @@ services:
       ADMIN_PASSWORD: "TestPassword2026!"
       BASE_URL: http://localhost:3003
       NEXTAUTH_URL: http://localhost:3003
-      DATABASE_PATH: /app/data/caddy-proxy-manager.db
-      DATABASE_URL: file:/app/data/caddy-proxy-manager.db
+      DATABASE_PATH: /app/data/ingressi.db
+      DATABASE_URL: file:/app/data/ingressi.db
       CADDY_API_URL: http://caddy:2019
       OAUTH_ENABLED: "false"
       AUTH_RATE_LIMIT_ENABLED: "false"
@@ -322,6 +419,7 @@ services:
       slave-caddy-network:
         aliases:
           - web
+      ha-storage-network:
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health',r=>{process.exit(r.statusCode<400?0:1)}).on('error',()=>process.exit(1))"]
       interval: 5s
@@ -339,6 +437,16 @@ networks:
     driver: bridge
     internal: true
   slave-caddy-network:
+    driver: bridge
+    internal: true
+  # Shared certificate storage: both Caddys, both web containers (for the
+  # connection test) and Valkey.
+  ha-storage-network:
+    driver: bridge
+    internal: true
+  # caddy-master and Step-CA only. The slave cannot reach the CA, so a
+  # certificate it serves can only have come from the shared storage.
+  ha-acme-network:
     driver: bridge
     internal: true
 
@@ -371,3 +479,5 @@ volumes:
     name: web-slave-data-test
   authelia-data:
     name: authelia-data-test
+  openldap-certs:
+    name: openldap-certs-test

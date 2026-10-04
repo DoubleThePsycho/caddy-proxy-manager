@@ -1,87 +1,80 @@
 export const dynamic = 'force-dynamic';
 
-import WafEventsClient from "./WafEventsClient";
-import { listWafEvents, countWafEvents, getWafEventStats, getWafRuleMessages } from "@/src/lib/models/waf-events";
-import { getWafSettings } from "@/src/lib/settings";
+import WafSettingsClient, { type WafSettingsPageData } from "./WafSettingsClient";
+import { requirePermission } from "@/src/lib/auth";
+import { can } from "@/src/lib/permissions";
+import { getSettingUpdatedAt, getWafSettings } from "@/src/lib/settings";
 import { listProxyHosts } from "@/src/lib/models/proxy-hosts";
-import { requireAdmin } from "@/src/lib/auth";
+import { countWafExclusionsByScope, listWafExclusions } from "@/src/lib/models/waf-exclusions";
+import {
+  getTopWafRules,
+  getWafDailyCounts,
+  getWafHostCounts,
+  getWafPeriodSummary,
+  getWafRuleMessages,
+} from "@/src/lib/models/waf-events";
 import { listDroppedWafDirectives } from "@/src/lib/caddy-waf";
+import { isAnalyticsEnabled } from "@/src/lib/clickhouse/client";
+import { wafHostView } from "@/src/lib/waf-hosts";
+import { bareRequestHost } from "@/src/lib/waf-suppression";
+import { getVirtualPatchingView } from "@/ee/rule-feed/service";
+import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
 
-const PER_PAGE = 50;
-const RANGE_SECONDS = {
-  '24h': 24 * 60 * 60,
-  '7d': 7 * 24 * 60 * 60,
-  '30d': 30 * 24 * 60 * 60,
-} as const;
+const WEEK_SECONDS = 7 * 24 * 60 * 60;
 
-type RangeKey = keyof typeof RANGE_SECONDS | 'all' | 'custom';
+/** The global WAF settings: mode, Core Rule Set tuning, request bodies, per-host modes, rule exclusions and custom rules. */
+export default async function WafPage() {
+  const { access } = await requirePermission("waf:read");
+  const to = Math.floor(Date.now() / 1000);
+  const from = to - WEEK_SECONDS;
 
-function parseRange(searchParams: { range?: string; from?: string; to?: string }): { range: RangeKey; from?: number; to?: number } {
-  const rangeParam = searchParams.range;
-  if (rangeParam === '24h' || rangeParam === '7d' || rangeParam === '30d') {
-    const to = Math.floor(Date.now() / 1000);
-    const from = to - RANGE_SECONDS[rangeParam];
-    return { range: rangeParam, from, to };
-  }
-
-  if (rangeParam === 'custom') {
-    const from = parseInt(searchParams.from ?? '', 10);
-    const to = parseInt(searchParams.to ?? '', 10);
-    if (Number.isFinite(from) && Number.isFinite(to) && from < to) {
-      return { range: 'custom', from, to };
-    }
-  }
-
-  return { range: 'all' };
-}
-
-interface PageProps {
-  searchParams: Promise<{ page?: string; search?: string; range?: string; from?: string; to?: string }>;
-}
-
-export default async function WafPage({ searchParams }: PageProps) {
-  await requireAdmin();
-  const resolvedSearchParams = await searchParams;
-  const { page: pageParam, search: searchParam } = resolvedSearchParams;
-  const { range, from, to } = parseRange(resolvedSearchParams);
-  const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
-  const search = searchParam?.trim() || undefined;
-  const offset = (page - 1) * PER_PAGE;
-
-  const [events, total, stats, globalWaf, hosts] = await Promise.all([
-    listWafEvents(PER_PAGE, offset, search, from, to),
-    countWafEvents(search, from, to),
-    getWafEventStats(search, from, to),
+  const [settings, savedAt, hosts, exclusions, exclusionCounts, summary, daily, topRules, hostCounts] = await Promise.all([
     getWafSettings(),
+    getSettingUpdatedAt("waf"),
     listProxyHosts(),
+    listWafExclusions(),
+    countWafExclusionsByScope(),
+    getWafPeriodSummary(from, to),
+    getWafDailyCounts(from, to),
+    getTopWafRules(from, to, 10),
+    getWafHostCounts(from, to),
   ]);
+  const ruleMessages = await getWafRuleMessages([...new Set(exclusions.map((exclusion) => exclusion.ruleId))]);
+  const virtualPatches = can(access, "virtual_patches:read")
+    ? {
+        view: await getVirtualPatchingView(),
+        canWrite: can(access, "virtual_patches:write"),
+        editionLabel: EDITION_LABELS[FEATURE_INFO.virtual_patching.edition],
+      }
+    : null;
 
-  const globalExcludedIds = globalWaf?.excluded_rule_ids ?? [];
-  const globalExcludedMessages = await getWafRuleMessages(globalExcludedIds);
-
-  const hostWafMap: Record<string, number[]> = {};
-  for (const host of hosts) {
-    const ids = host.waf?.excluded_rule_ids ?? [];
-    for (const domain of host.domains) {
-      hostWafMap[domain] = ids;
-    }
+  // Events are stored by request host (with any port); count them per proxy host.
+  const hostIdByDomain = new Map<string, number>();
+  for (const host of hosts) for (const domain of host.domains) hostIdByDomain.set(domain.toLowerCase(), host.id);
+  const eventsByHost = new Map<number, { count: number; blocked: number }>();
+  for (const row of hostCounts) {
+    const id = hostIdByDomain.get(bareRequestHost(row.host).toLowerCase());
+    if (id === undefined) continue;
+    const current = eventsByHost.get(id) ?? { count: 0, blocked: 0 };
+    eventsByHost.set(id, { count: current.count + row.count, blocked: current.blocked + row.blocked });
   }
 
-  return (
-    <WafEventsClient
-      events={events}
-      stats={stats}
-      pagination={{ total, page, perPage: PER_PAGE }}
-      initialSearch={search ?? ""}
-      initialRange={range}
-      initialFrom={from ?? null}
-      initialTo={to ?? null}
-      globalExcluded={globalExcludedIds}
-      globalExcludedMessages={globalExcludedMessages}
-      globalWafEnabled={globalWaf?.enabled ?? false}
-      hostWafMap={hostWafMap}
-      globalWaf={globalWaf ?? null}
-      droppedDirectives={listDroppedWafDirectives(globalWaf ?? null, hosts)}
-    />
-  );
+  const data: WafSettingsPageData = {
+    settings,
+    savedAt,
+    canWrite: can(access, "waf:write"),
+    analyticsEnabled: isAnalyticsEnabled(),
+    hosts: hosts
+      .map((host) => ({
+        ...wafHostView(host, settings, exclusionCounts.get(host.id) ?? 0),
+        events: eventsByHost.get(host.id) ?? { count: 0, blocked: 0 },
+      }))
+      .sort((a, b) => b.events.count - a.events.count || a.name.localeCompare(b.name)),
+    exclusions: exclusions.map((exclusion) => ({ ...exclusion, ruleMessage: ruleMessages[exclusion.ruleId] ?? null })),
+    week: { from, to, summary, daily, topRules },
+    droppedDirectives: listDroppedWafDirectives(settings, hosts),
+    virtualPatches,
+  };
+
+  return <WafSettingsClient data={data} />;
 }

@@ -7,22 +7,22 @@
  */
 import { test, expect } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-
-const COMPOSE_ARGS = [
-  'compose',
-  '-f', 'docker-compose.yml',
-  '-f', 'tests/docker-compose.test.yml',
-];
+import { composeArgs, e2eOnPostgres } from '../helpers/e2e-stack';
 
 type ContainerInfo = {
   name: string;
+  service: string;
   state: string;
+  exitCode: number;
   health?: string;
 };
 
+/** Services that do one job at start-up and exit (openldap-certs makes the test LDAP certificates). */
+const ONE_SHOT_SERVICES = new Set(['openldap-certs']);
+
 function getContainers(): ContainerInfo[] {
   const output = execFileSync('docker', [
-    ...COMPOSE_ARGS,
+    ...composeArgs(),
     'ps', '--format', 'json', '-a',
   ], {
     cwd: process.cwd(),
@@ -39,7 +39,9 @@ function getContainers(): ContainerInfo[] {
       const c = JSON.parse(line);
       return {
         name: c.Name ?? c.Service,
+        service: c.Service ?? '',
         state: (c.State ?? '').toLowerCase(),
+        exitCode: Number(c.ExitCode ?? 0),
         health: (c.Health ?? '').toLowerCase() || undefined,
       };
     });
@@ -55,6 +57,10 @@ test.describe('Container health', () => {
   test('all containers are running', () => {
     expect(containers.length).toBeGreaterThan(0);
     for (const c of containers) {
+      if (ONE_SHOT_SERVICES.has(c.service)) {
+        expect(c.exitCode, `One-shot container "${c.name}" failed (exit code ${c.exitCode})`).toBe(0);
+        continue;
+      }
       expect(
         c.state,
         `Container "${c.name}" is not running (state: ${c.state})`
@@ -78,6 +84,13 @@ test.describe('Container health', () => {
     const ch = containers.find((c) => c.name.includes('clickhouse'));
     test.skip(!ch, 'ClickHouse container not started (profile not active — analytics disabled run)');
     expect(ch!.health, `clickhouse container health: ${ch!.health}`).toBe('healthy');
+  });
+
+  test('postgres container is healthy on the PostgreSQL stack', () => {
+    test.skip(!e2eOnPostgres(), 'The dashboard runs on SQLite');
+    const postgres = containers.find((c) => c.service === 'postgres');
+    expect(postgres, 'postgres container not found').toBeTruthy();
+    expect(postgres!.health, `postgres container health: ${postgres!.health}`).toBe('healthy');
   });
 
   test('l4-port-manager container is running (not crash-looping)', () => {

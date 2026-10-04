@@ -13,7 +13,7 @@ const modeOf = (path: string) => statSync(path).mode & 0o777;
 
 describe('restrictDatabaseFileModes', () => {
   it('removes world access from the database and its journal files', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'cpm-db-mode-'));
+    const dir = mkdtempSync(join(tmpdir(), 'ingressi-db-mode-'));
     const dbPath = join(dir, 'test.db');
     fileWithMode(dbPath, 0o644);
     fileWithMode(`${dbPath}-journal`, 0o666);
@@ -25,7 +25,7 @@ describe('restrictDatabaseFileModes', () => {
   });
 
   it('keeps owner and group bits that operators set', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'cpm-db-mode-'));
+    const dir = mkdtempSync(join(tmpdir(), 'ingressi-db-mode-'));
     const dbPath = join(dir, 'test.db');
     fileWithMode(dbPath, 0o640);
     fileWithMode(`${dbPath}-wal`, 0o600);

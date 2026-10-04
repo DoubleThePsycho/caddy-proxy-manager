@@ -1,16 +1,16 @@
 /**
  * Regression (#247): OAuth/OIDC sign-in succeeded but linking the identity to
- * an existing CPM account always failed with `account_not_linked`.
+ * an existing Ingressi account always failed with `account_not_linked`.
  *
  * Two things were missing. Better Auth was never given an `account
- * .accountLinking` configuration, so its default gate refused every link (CPM
+ * .accountLinking` configuration, so its default gate refused every link (Ingressi
  * has no local email-verification flow, so `requireLocalEmailVerified` could
  * never be satisfied), and the per-provider `autoLink` switch was stored but
  * never reached the auth config. These tests lock the wiring in both
  * directions: auto-link providers are trusted, and providers without it stay
  * unable to claim an existing account.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { beforeAll, describe, it, expect, vi } from 'vitest';
 import type { TestDb } from '../helpers/db';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -21,7 +21,7 @@ vi.mock('../../src/lib/db', async () => {
   ctx.db = createTestDb();
 
   const now = '2026-01-01T00:00:00.000Z';
-  ctx.db.insert(schemaModule.oauthProviders).values([
+  await ctx.db.insert(schemaModule.oauthProviders).values([
     {
       id: 'autolink-idp',
       name: 'Auto-link IdP',
@@ -64,18 +64,9 @@ vi.mock('../../src/lib/db', async () => {
       createdAt: now,
       updatedAt: now,
     },
-  ]).run();
+  ]);
 
-  return {
-    default: ctx.db,
-    sqlite: undefined,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null => {
-      if (!value) return null;
-      return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-    },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 // Stub better-auth so `betterAuth(options)` hands back the raw options object;
@@ -89,7 +80,7 @@ vi.mock('better-auth/plugins', () => ({
   username: () => ({}),
 }));
 
-import { getAuth, mapOAuthProvider } from '../../src/lib/auth-server';
+import { getAuth, mapOAuthProvider, reloadOAuthProviders } from '../../src/lib/auth-server';
 import type { OAuthProvider } from '../../src/lib/models/oauth-providers';
 
 const baseProvider: OAuthProvider = {
@@ -161,15 +152,19 @@ describe('mapOAuthProvider — email_verified claim mapping', () => {
 });
 
 describe('better-auth account.accountLinking (wired into the real config)', () => {
-
-  const options = (getAuth() as any).options;
+  let options: any;
+  beforeAll(async () => {
+    // The providers are loaded at start-up (src/lib/startup-caches.ts); here, now.
+    await reloadOAuthProviders();
+    options = (getAuth() as any).options;
+  });
 
   it('enables account linking', () => {
     expect(options.account.accountLinking.enabled).toBe(true);
   });
 
-  it('does not gate on a local emailVerified flag CPM can never set', () => {
-    // CPM has no email-verification flow, so the Better Auth default of `true`
+  it('does not gate on a local emailVerified flag Ingressi can never set', () => {
+    // Ingressi has no email-verification flow, so the Better Auth default of `true`
     // refuses every link regardless of provider trust — the #247 symptom.
     expect(options.account.accountLinking.requireLocalEmailVerified).toBe(false);
   });
@@ -195,7 +190,7 @@ describe('better-auth self-service endpoints', () => {
     '/update-session',
     '/verify-password',
     '/is-username-available',
-  ])('disables %s (CPM routes own these changes)', (path) => {
+  ])('disables %s (Ingressi routes own these changes)', (path) => {
     expect(options.disabledPaths).toContain(path);
   });
 

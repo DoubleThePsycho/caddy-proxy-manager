@@ -53,6 +53,8 @@ export const SYNC_KEY_CHALLENGE_PARAM = "challenge";
 /** The most rotation proofs a slave sends, and a master looks at. */
 const MAX_SYNC_KEY_ROTATION_PROOFS = 8;
 
+// The HKDF info strings below predate the rename to Ingressi and must not
+// change: replicas on other versions derive the same keys from them.
 const KEY_PAIR_INFO = "cpm-instance-sync-x25519:v1";
 // A sealing key and a rotation proof key can come from the same X25519 shared
 // secret and the same salt: a sealed value's ephemeral key, sent back as a
@@ -75,7 +77,7 @@ const NONCE_BYTES = 16;
 const NONCE_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 // Longer than any master's sync request may take (INSTANCE_SYNC_TIMEOUT_MS is
 // at most 5 minutes), so a nonce outlives the sync it was issued for.
-const NONCE_TTL_MS = 10 * 60_000;
+export const SYNC_NONCE_TTL_MS = 10 * 60_000;
 const MAX_OUTSTANDING_NONCES = 100;
 
 export type SyncSealErrorCode =
@@ -240,7 +242,7 @@ export function isSyncNonce(value: unknown): value is string {
 }
 
 /**
- * A fresh nonce for one sync payload, usable once within NONCE_TTL_MS. Only
+ * A fresh nonce for one sync payload, usable once within SYNC_NONCE_TTL_MS. Only
  * the newest MAX_OUTSTANDING_NONCES stay usable, which bounds the memory used.
  */
 export function issueSyncNonce(): string {
@@ -250,7 +252,7 @@ export function issueSyncNonce(): string {
     outstandingNonces.delete(nonce);
   }
   const nonce = randomBytes(NONCE_BYTES).toString("base64url");
-  outstandingNonces.set(nonce, now + NONCE_TTL_MS);
+  outstandingNonces.set(nonce, now + SYNC_NONCE_TTL_MS);
   return nonce;
 }
 
@@ -265,7 +267,10 @@ export function consumeSyncNonce(nonce: string): boolean {
 /**
  * The body of GET /api/instances/sync: this instance's public key and a new
  * nonce. With a master's `challenge` (see createSyncKeyChallenge), also a
- * rotation proof from each key derived from SESSION_SECRET_PREVIOUS:
+ * rotation proof from each key derived from SESSION_SECRET_PREVIOUS (and,
+ * with `proveCurrentKey`, first one from the current key, which proves that
+ * this instance holds the private key of the key it presents; pull replicas
+ * send it with every poll, see ee/fleet/pull-agent.ts):
  *
  *   HMAC-SHA256(HKDF-SHA256(X25519(previous private key, challenge),
  *                           salt = challenge | previous public key,
@@ -277,9 +282,12 @@ export function consumeSyncNonce(nonce: string): boolean {
  * 32 bytes of base64url or, once a proof uses it, is not a usable key (a
  * low-order point gives an all-zero shared secret).
  */
-export function createSyncKeyResponse(challenge?: string | null): SyncPublicKeyResponse {
+export function createSyncKeyResponse(
+  challenge?: string | null,
+  options: { proveCurrentKey?: boolean } = {}
+): SyncPublicKeyResponse {
   const { publicKey, keyId } = currentKeyPair();
-  const proofKeys = challenge === undefined || challenge === null ? [] : rotationProofKeys(challenge);
+  const proofKeys = challenge === undefined || challenge === null ? [] : rotationProofKeys(challenge, options.proveCurrentKey === true);
   const response: SyncPublicKeyResponse = {
     version: SYNC_KEY_VERSION,
     algorithm: SYNC_KEY_ALGORITHM,
@@ -296,17 +304,25 @@ export function createSyncKeyResponse(challenge?: string | null): SyncPublicKeyR
   return response;
 }
 
-/** The HMAC key of a rotation proof from each previous key, for this challenge. */
-function rotationProofKeys(challenge: string): Array<{ keyId: string; key: Buffer }> {
+/**
+ * The HMAC key of a rotation proof from each previous key, for this
+ * challenge; with `includeCurrent`, from the current key first (and one
+ * previous key fewer, so a master never sees more than
+ * MAX_SYNC_KEY_ROTATION_PROOFS).
+ */
+function rotationProofKeys(challenge: string, includeCurrent = false): Array<{ keyId: string; key: Buffer }> {
   if (!BASE64URL_32_BYTES_PATTERN.test(challenge)) throw new SyncSealError("invalid_challenge");
   const challengePublicKey = Buffer.from(challenge, "base64url");
   const challengeKey = importPublicKey(challengePublicKey, "invalid_challenge");
-  return previousKeyPairs().map((previous) => ({
-    keyId: previous.keyId,
+  const keyPairs = includeCurrent
+    ? [currentKeyPair(), ...previousKeyPairs().slice(0, MAX_SYNC_KEY_ROTATION_PROOFS - 1)]
+    : previousKeyPairs();
+  return keyPairs.map((keyPair) => ({
+    keyId: keyPair.keyId,
     key: sharedKey(
-      previous.privateKey,
+      keyPair.privateKey,
       challengeKey,
-      Buffer.concat([challengePublicKey, previous.publicKey]),
+      Buffer.concat([challengePublicKey, keyPair.publicKey]),
       ROTATION_PROOF_INFO,
       "invalid_challenge"
     ),
@@ -315,6 +331,25 @@ function rotationProofKeys(challenge: string): Array<{ keyId: string; key: Buffe
 
 function rotationProof(key: Buffer, currentPublicKey: Buffer, nonce: string): Buffer {
   return createHmac("sha256", key).update(currentPublicKey).update(nonce, "utf8").digest();
+}
+
+/** Whether `value` has the form of a challenge's `value` (32 bytes, base64url). */
+export function isSyncKeyChallengeValue(value: unknown): value is string {
+  return typeof value === "string" && BASE64URL_32_BYTES_PATTERN.test(value);
+}
+
+/**
+ * Whether the presenter of `presented` proved, for this challenge, that it
+ * holds the private key of that very key: the rotation proof construction
+ * with the presented key in the place of the pinned one (see
+ * createSyncKeyResponse's proveCurrentKey).
+ */
+export function verifySyncKeyPossession(
+  challenge: SyncKeyChallenge,
+  presented: SyncSealTarget,
+  proofs: readonly SyncKeyRotationProof[]
+): boolean {
+  return verifySyncKeyRotationProof(challenge, presented, presented, proofs);
 }
 
 /** A fresh challenge for one key request, sent as `?challenge=` + `value`. */

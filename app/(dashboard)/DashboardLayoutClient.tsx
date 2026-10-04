@@ -1,21 +1,30 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  LayoutDashboard, ArrowLeftRight, Cable, KeyRound, ShieldCheck,
-  ShieldOff, BarChart2, History, Settings, LogOut, Menu, Sun, Moon,
-  FileJson2, Users, UserCog,
+  ArrowLeftRight, BadgeCheck, Bell, Building2, ChartColumn, ChevronsUpDown, CircleCheck, ClipboardCheck, Coins,
+  Ellipsis, FileCheck2, FileJson2, History, KeyRound, LayoutGrid, LockKeyhole, LogOut, Menu, Network, Receipt,
+  ScrollText, Search, Server, ShieldAlert, ShieldCheck, SlidersHorizontal, UserRound, Users, type LucideIcon,
 } from "lucide-react";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup,
+  DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { formatAppVersion } from "@/src/lib/app-version";
+import {
+  NAV_ACCOUNT, NAV_FOOTER, currentEntryKey, visibleEntries, visibleNavGroups,
+  type NavBadge, type NavEntryKey, type VisibleNavEntry,
+} from "@/src/lib/navigation";
+import type { NavEnvironment, NavSummary } from "@/src/lib/nav-summary";
+import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
+import { BrandLogo, hasLogo, PoweredBy, SupportLinks } from "@/ee/white-label/ui/BrandParts";
+import { OrganizationBadge, OrganizationSwitcher, type OrganizationSwitcherProps } from "@/ee/multi-tenancy/ui/OrganizationSwitcher";
+import { CommandPaletteProvider, useCommandPalette } from "@/components/command-palette/CommandPalette";
 
 type User = {
   id: string;
@@ -23,179 +32,515 @@ type User = {
   email?: string | null;
   image?: string | null;
   role?: string;
+  /** Permissions the user holds (src/lib/permissions.ts); every one for administrators. */
+  permissions?: readonly string[];
+  /** The built-in admin role. */
+  isAdmin?: boolean;
 };
 
-const NAV_ITEMS = [
-  { href: "/",               label: "Overview",       icon: LayoutDashboard, adminOnly: false },
-  { href: "/proxy-hosts",    label: "Proxy Hosts",    icon: ArrowLeftRight,  adminOnly: true  },
-  { href: "/l4-proxy-hosts", label: "L4 Proxy Hosts", icon: Cable,           adminOnly: true  },
-  { href: "/access-lists",   label: "Access Lists",   icon: KeyRound,        adminOnly: true  },
-  { href: "/groups",          label: "Groups",          icon: Users,           adminOnly: true  },
-  { href: "/users",           label: "Users",           icon: UserCog,         adminOnly: true  },
-  { href: "/certificates",   label: "Certificates",   icon: ShieldCheck,     adminOnly: true  },
-  { href: "/waf",            label: "WAF",            icon: ShieldOff,       adminOnly: true  },
-  { href: "/analytics",      label: "Analytics",      icon: BarChart2,       adminOnly: true  },
-  { href: "/audit-log",      label: "Audit Log",      icon: History,         adminOnly: true  },
-  { href: "/api-docs",       label: "API Docs",       icon: FileJson2,       adminOnly: true  },
-  { href: "/settings",       label: "Settings",       icon: Settings,        adminOnly: true  },
-] as const;
+type Organizations = {
+  /** The organisation an organisation user belongs to (ee/multi-tenancy). */
+  organizationName?: string | null;
+  /** The organisation switcher of a provider-level user. */
+  organizationSwitcher?: OrganizationSwitcherProps | null;
+};
 
-function ThemeToggle() {
-  const { resolvedTheme, setTheme } = useTheme();
+const EMPTY_SUMMARY: NavSummary = { badges: {}, edition: null, environment: null };
+
+const ICONS: Record<NavEntryKey, LucideIcon> = {
+  overview: LayoutGrid,
+  "proxy-hosts": ArrowLeftRight,
+  "l4-hosts": Server,
+  certificates: ShieldCheck,
+  "access-lists": KeyRound,
+  analytics: ChartColumn,
+  security: ShieldAlert,
+  alerts: Bell,
+  "audit-log": ScrollText,
+  users: Users,
+  "sign-in": LockKeyhole,
+  "access-reviews": ClipboardCheck,
+  approvals: CircleCheck,
+  history: History,
+  compliance: FileCheck2,
+  fleet: Network,
+  organizations: Building2,
+  monetization: Coins,
+  usage: Receipt,
+  settings: SlidersHorizontal,
+  license: BadgeCheck,
+  profile: UserRound,
+  "api-docs": FileJson2,
+};
+
+/** The phone's bottom navigation: these entries when the user may open them, then More. */
+const BOTTOM_TABS: { key: NavEntryKey; label: string }[] = [
+  { key: "overview", label: "Overview" },
+  { key: "proxy-hosts", label: "Hosts" },
+  { key: "analytics", label: "Analytics" },
+  { key: "security", label: "Security" },
+];
+
+function initials(name: string): string {
+  const parts = name.trim().split(/[\s._@-]+/).filter(Boolean);
+  const letters = parts.length > 1 ? parts[0][0] + parts[1][0] : name.trim().slice(0, 2);
+  return letters.toUpperCase() || "U";
+}
+
+function NavBadgeView({ badge, plain }: { badge: NavBadge; plain?: boolean }) {
+  if (plain) {
+    return (
+      <span className="shrink-0 text-xs text-soft">
+        <span aria-hidden="true">{badge.text}</span>
+        <span className="sr-only">{badge.label}</span>
+      </span>
+    );
+  }
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-      aria-label="Toggle theme"
+    <span
+      className={cn(
+        "num shrink-0 rounded-full px-1.5 text-[11px] font-semibold leading-[18px]",
+        badge.tone === "warn" ? "bg-warn-tint text-warn" : "bg-raise text-muted-foreground",
+      )}
     >
-      <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-      <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-    </Button>
+      <span aria-hidden="true">{badge.text}</span>
+      <span className="sr-only">{badge.label}</span>
+    </span>
   );
 }
 
-function NavContent({ pathname, user, onNavigate }: {
-  pathname: string;
-  user: User;
+function NavLink({
+  entry,
+  current,
+  badge,
+  plainBadge,
+  onNavigate,
+}: {
+  entry: VisibleNavEntry;
+  current: boolean;
+  badge?: NavBadge | null;
+  plainBadge?: boolean;
   onNavigate?: () => void;
 }) {
-  const router = useRouter();
-  const isAdmin = user.role === "admin";
-  const visibleItems = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin);
+  const Icon = ICONS[entry.key];
+  return (
+    <Link
+      href={entry.href}
+      onClick={onNavigate}
+      // With its pages listed under it, the entry is the current section and a page link is the current page.
+      aria-current={current ? (entry.openPages.length > 1 ? "true" : "page") : undefined}
+      className={cn(
+        "flex h-[34px] items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors max-md:h-11",
+        current
+          ? "bg-brand-tint font-semibold text-foreground"
+          : "font-medium text-muted-foreground hover:bg-raise hover:text-foreground",
+      )}
+    >
+      <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.8} aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+      {badge && <NavBadgeView badge={badge} plain={plainBadge} />}
+    </Link>
+  );
+}
+
+/** The page of `pages` that `pathname` is on: the longest matching path. */
+function currentPage(pathname: string, pages: readonly { href: string }[]): string | null {
+  let best: string | null = null;
+  for (const { href } of pages) {
+    const matches = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+    if (matches && (!best || href.length > best.length)) best = href;
+  }
+  return best;
+}
+
+/**
+ * The pages an entry stands for, under it while it is current (Settings and
+ * Branding, Users and Groups, the sign-in pages), so every page stays one
+ * click away whatever the page itself shows.
+ */
+function SubLinks({ entry, pathname, onNavigate }: { entry: VisibleNavEntry; pathname: string; onNavigate?: () => void }) {
+  if (entry.openPages.length < 2) return null;
+  const active = currentPage(pathname, entry.openPages);
+  return (
+    <ul aria-label={entry.label} className="mb-1 ml-[19px] flex flex-col gap-0.5 border-l border-line pl-2">
+      {entry.openPages.map((page) => (
+        <li key={page.href}>
+          <Link
+            href={page.href}
+            onClick={onNavigate}
+            aria-current={active === page.href ? "page" : undefined}
+            className={cn(
+              "flex h-[30px] items-center rounded-md px-2.5 text-[13px] transition-colors max-md:h-11",
+              active === page.href
+                ? "font-semibold text-foreground"
+                : "text-muted-foreground hover:bg-raise hover:text-foreground",
+            )}
+          >
+            <span className="truncate">{page.label}</span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function BrandRow({ edition }: { edition: string | null }) {
+  const branding = useBranding();
+  return (
+    <div className="flex items-center gap-2.5 px-2 py-1">
+      {hasLogo(branding) ? (
+        <BrandLogo branding={branding} className="h-7 w-auto max-w-[96px] shrink-0" />
+      ) : (
+        <span aria-hidden="true" className="grid h-7 w-7 shrink-0 place-items-center rounded-[7px] bg-primary text-primary-foreground">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <path d="M10 8v12M18 8v12M5 14h10M12 11l3 3-3 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      )}
+      <span className="min-w-0 truncate text-[17px] font-bold tracking-[-0.01em]">{branding.productName}</span>
+      {edition && (
+        <span className="ml-auto shrink-0 rounded-full border border-line2 px-2 text-[11px] font-semibold uppercase leading-[18px] tracking-[0.04em] text-brand">
+          {edition}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function EnvironmentSwitcher({ environment, compact }: { environment: NavEnvironment; compact?: boolean }) {
+  const label = `Environment: ${environment.name}, ${environment.note}. Switch environment`;
+  const dot = <span aria-hidden="true" className={cn("h-2 w-2 shrink-0 rounded-full", environment.tone === "warn" ? "bg-warn" : "bg-ok")} />;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={label}
+        className={cn(
+          "flex items-center gap-2.5 rounded-lg border border-line bg-panel2 text-left transition-colors hover:bg-raise",
+          compact ? "h-11 px-3" : "w-full px-2.5 py-2",
+        )}
+        data-testid="environment-switcher"
+      >
+        {dot}
+        {compact ? (
+          <span className="max-w-[9rem] truncate font-semibold">{environment.name}</span>
+        ) : (
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate font-semibold">{environment.name}</span>
+            <span className="truncate text-xs text-muted-foreground">{environment.note}</span>
+          </span>
+        )}
+        <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-64">
+        <DropdownMenuLabel>{environment.name} · {environment.note}</DropdownMenuLabel>
+        {environment.environments.length > 0 && <DropdownMenuSeparator />}
+        {environment.environments.map((group) => (
+          <DropdownMenuItem key={group.id} asChild>
+            <Link href={`/fleet#environment-${group.id}`}>
+              <span aria-hidden="true" className={cn("h-2 w-2 shrink-0 rounded-full", group.attention > 0 ? "bg-warn" : "bg-ok")} />
+              <span className="min-w-0 flex-1 truncate">{group.name}</span>
+              <span className="num text-xs text-soft">
+                {group.nodes} {group.nodes === 1 ? "node" : "nodes"}
+                {group.attention > 0 ? ` · ${group.attention} need attention` : ""}
+              </span>
+            </Link>
+          </DropdownMenuItem>
+        ))}
+        {(environment.links.fleet || environment.links.sync) && <DropdownMenuSeparator />}
+        {environment.links.fleet && (
+          <DropdownMenuItem asChild>
+            <Link href="/fleet">Open fleet management</Link>
+          </DropdownMenuItem>
+        )}
+        {environment.links.sync && (
+          <DropdownMenuItem asChild>
+            <Link href="/settings?section=sync">{environment.mode === "standalone" ? "Set up instance sync" : "Instance sync settings"}</Link>
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function SearchButton({ onOpen }: { onOpen: () => void }) {
+  const [shortcut, setShortcut] = useState("⌘K");
+  useEffect(() => {
+    if (!/mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent)) setShortcut("Ctrl K");
+  }, []);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex h-9 w-full items-center gap-2 rounded-md border border-line px-2.5 text-left text-muted-foreground transition-colors hover:bg-raise hover:text-foreground max-md:h-11"
+      aria-keyshortcuts="Meta+K Control+K"
+    >
+      <Search className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate">Search or jump to…</span>
+      <kbd className="shrink-0 rounded border border-line2 px-1.5 text-[11px] leading-[18px] text-muted-foreground">{shortcut}</kbd>
+    </button>
+  );
+}
+
+function UserMenu({ user, apiDocs }: { user: User; apiDocs: VisibleNavEntry | null }) {
+  const { theme, setTheme } = useTheme();
+  const logoutForm = useRef<HTMLFormElement>(null);
+  const name = user.name || user.email || "Account";
+  return (
+    <>
+      <form ref={logoutForm} action="/api/auth/logout" method="POST" className="hidden" aria-hidden="true" />
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label={`Your account: ${name}`}
+          className="mt-1.5 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-raise"
+          data-testid="account-menu"
+        >
+          {user.image ? (
+            <img src={user.image} alt="" className="h-[30px] w-[30px] shrink-0 rounded-full object-cover" />
+          ) : (
+            <span aria-hidden="true" className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full bg-raise text-xs font-semibold">
+              {initials(name)}
+            </span>
+          )}
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate font-semibold">{user.name ?? "Administrator"}</span>
+            {user.email && <span className="truncate text-xs text-muted-foreground">{user.email}</span>}
+          </span>
+          <ChevronsUpDown className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="top" align="start" className="w-(--radix-dropdown-menu-trigger-width) min-w-56">
+          <DropdownMenuItem asChild>
+            <Link href="/profile">
+              <UserRound aria-hidden="true" />
+              Profile
+            </Link>
+          </DropdownMenuItem>
+          {apiDocs && (
+            <DropdownMenuItem asChild>
+              <Link href={apiDocs.href}>
+                <FileJson2 aria-hidden="true" />
+                API reference
+              </Link>
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Theme</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={theme ?? "dark"} onValueChange={setTheme}>
+            <DropdownMenuRadioItem value="dark">Dark</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="light">Light</DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="system">Same as the system</DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => logoutForm.current?.requestSubmit()}>
+            <LogOut aria-hidden="true" />
+            Sign out
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="num font-normal" title="Application version">{formatAppVersion()}</DropdownMenuLabel>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
+  );
+}
+
+function NavContent({
+  pathname,
+  user,
+  summary,
+  onNavigate,
+  organizationName,
+  organizationSwitcher,
+}: {
+  pathname: string;
+  user: User;
+  summary: NavSummary;
+  onNavigate?: () => void;
+} & Organizations) {
+  const branding = useBranding();
+  const palette = useCommandPalette();
+  const groups = visibleNavGroups(user, summary.badges);
+  const footer = visibleEntries(user, NAV_FOOTER, summary.badges);
+  const [apiDocs = null] = visibleEntries(user, NAV_ACCOUNT.filter((entry) => entry.key === "api-docs"));
+  const current = currentEntryKey(pathname);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Logo */}
-      <div className="px-4 py-5 flex items-center gap-2">
-        <div className="h-7 w-7 rounded-md bg-primary flex items-center justify-center shrink-0">
-          <span className="text-primary-foreground font-bold text-xs">C</span>
-        </div>
-        <div className="flex flex-col leading-tight min-w-0">
-          <p className="font-semibold text-sm tracking-tight">Caddy Proxy Manager</p>
-          <span className="text-[11px] text-muted-foreground" title="Application version">
-            {formatAppVersion()}
-          </span>
-        </div>
-      </div>
-      <Separator />
+    <div className="flex h-full flex-col gap-3.5 px-3 py-4">
+      <BrandRow edition={summary.edition} />
+      {summary.environment && <EnvironmentSwitcher environment={summary.environment} />}
+      {organizationName && <OrganizationBadge name={organizationName} />}
+      {organizationSwitcher && <OrganizationSwitcher {...organizationSwitcher} />}
+      <SearchButton onOpen={() => { onNavigate?.(); palette.open(); }} />
 
-      {/* Nav items */}
-      <ScrollArea className="flex-1 px-2 py-2">
-        <nav className="flex flex-col gap-0.5">
-          {visibleItems.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href;
-            return (
-              <Button
-                key={href}
-                variant="ghost"
-                className={cn(
-                  "w-full justify-start gap-3 h-9 px-3",
-                  active
-                    ? "bg-primary/10 text-primary font-semibold"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60 font-normal"
-                )}
-                asChild
-                onClick={onNavigate}
-              >
-                <Link href={href}>
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {label}
-                </Link>
-              </Button>
-            );
-          })}
-        </nav>
-      </ScrollArea>
-
-      {/* Footer */}
-      <div className="p-3 space-y-1">
-        <Separator className="mb-2" />
-        <div className="flex items-center justify-between px-1">
-          <Button
-            variant="ghost"
-            className="flex-1 justify-start gap-3 px-2 h-auto py-2 min-w-0"
-            onClick={() => { router.push("/profile"); onNavigate?.(); }}
-          >
-            <Avatar className="h-8 w-8 shrink-0">
-              <AvatarImage src={user.image ?? undefined} alt={user.name ?? "User"} />
-              <AvatarFallback className="text-xs bg-primary text-primary-foreground">
-                {(user.name?.[0] ?? "U").toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex flex-col items-start overflow-hidden min-w-0">
-              <span className="text-sm font-medium truncate w-full">{user.name ?? "Administrator"}</span>
-              <span className="text-xs text-muted-foreground truncate w-full">{user.email}</span>
-            </div>
-          </Button>
-          <div className="flex items-center shrink-0">
-            <ThemeToggle />
-            <form action="/api/auth/logout" method="POST">
-              <Button
-                type="submit"
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                title="Sign Out"
-              >
-                <LogOut className="h-4 w-4" />
-              </Button>
-            </form>
+      <nav aria-label="Main navigation" className="-mx-1 flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-1">
+        {groups.map((group) => (
+          <div key={group.title ?? "start"} role="group" aria-label={group.title ?? undefined} className="flex flex-col gap-0.5">
+            {group.title && (
+              <div aria-hidden="true" className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-soft">{group.title}</div>
+            )}
+            {group.entries.map((entry) => (
+              <Fragment key={entry.key}>
+                <NavLink
+                  entry={entry}
+                  current={current === entry.key}
+                  badge={entry.badge ? summary.badges[entry.badge] : null}
+                  onNavigate={onNavigate}
+                />
+                {current === entry.key && <SubLinks entry={entry} pathname={pathname} onNavigate={onNavigate} />}
+              </Fragment>
+            ))}
           </div>
-        </div>
+        ))}
+      </nav>
+
+      <div className="flex flex-col gap-0.5 border-t border-line pt-3">
+        {footer.map((entry) => (
+          <Fragment key={entry.key}>
+            <NavLink
+              entry={entry}
+              current={current === entry.key}
+              badge={entry.badge ? summary.badges[entry.badge] : null}
+              plainBadge
+              onNavigate={onNavigate}
+            />
+            {current === entry.key && <SubLinks entry={entry} pathname={pathname} onNavigate={onNavigate} />}
+          </Fragment>
+        ))}
+        <UserMenu user={user} apiDocs={apiDocs} />
+        <SupportLinks branding={branding} className="justify-start px-2.5 pt-1" />
+        <PoweredBy branding={branding} className="pt-1" />
       </div>
     </div>
   );
 }
 
-export default function DashboardLayoutClient({ user, children }: { user: User; children: ReactNode }) {
+function BottomNav({ user, summary, pathname, onMore }: { user: User; summary: NavSummary; pathname: string; onMore: () => void }) {
+  const entries = new Map(visibleNavGroups(user, summary.badges).flatMap((group) => group.entries).map((entry) => [entry.key, entry]));
+  const current = currentEntryKey(pathname);
+  const tabs = BOTTOM_TABS.flatMap((tab) => {
+    const entry = entries.get(tab.key);
+    return entry ? [{ ...tab, href: entry.href }] : [];
+  });
+  const onTab = tabs.some((tab) => tab.key === current);
+  const item = (active: boolean) =>
+    cn(
+      "flex min-h-[52px] flex-col items-center justify-center gap-0.5 rounded-lg text-[11px] leading-[14px]",
+      active ? "font-semibold text-foreground" : "font-medium text-muted-foreground",
+    );
+  const pill = (active: boolean) => cn("grid h-7 w-[52px] place-items-center rounded-full", active && "bg-brand-tint");
+  return (
+    <nav
+      aria-label="Main"
+      className="fixed inset-x-0 bottom-0 z-40 grid gap-0.5 border-t border-line bg-panel px-1 pt-1 pb-[calc(4px+env(safe-area-inset-bottom))] md:hidden"
+      style={{ gridTemplateColumns: `repeat(${tabs.length + 1}, minmax(0, 1fr))` }}
+    >
+      {tabs.map((tab) => {
+        const Icon = ICONS[tab.key];
+        const active = current === tab.key;
+        return (
+          <Link key={tab.key} href={tab.href} aria-current={active ? "page" : undefined} className={item(active)}>
+            <span className={pill(active)}>
+              <Icon className="h-[22px] w-[22px]" strokeWidth={1.8} aria-hidden="true" />
+            </span>
+            {tab.label}
+          </Link>
+        );
+      })}
+      <button type="button" onClick={onMore} className={item(!onTab && current !== null)} aria-haspopup="dialog">
+        <span className={pill(!onTab && current !== null)}>
+          <Ellipsis className="h-[22px] w-[22px]" strokeWidth={1.8} aria-hidden="true" />
+        </span>
+        More
+      </button>
+    </nav>
+  );
+}
+
+function currentLabel(pathname: string, user: User, summary: NavSummary): string {
+  const key = currentEntryKey(pathname);
+  if (!key) return "";
+  const all = [
+    ...visibleNavGroups(user, summary.badges).flatMap((group) => group.entries),
+    ...visibleEntries(user, NAV_FOOTER, summary.badges),
+    ...visibleEntries(user, NAV_ACCOUNT),
+  ];
+  return all.find((entry) => entry.key === key)?.label ?? "";
+}
+
+function Shell({
+  user,
+  summary,
+  children,
+  organizationName,
+  organizationSwitcher,
+}: { user: User; summary: NavSummary; children: ReactNode } & Organizations) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
-  const router = useRouter();
+  const branding = useBranding();
+  const title = currentLabel(pathname, user, summary) || branding.productName;
 
   return (
     <div className="flex min-h-screen">
-      {/* Desktop sidebar — fixed, hidden on mobile */}
-      <aside className="hidden md:flex flex-col fixed inset-y-0 left-0 w-64 border-r border-border bg-card z-30">
-        <NavContent pathname={pathname} user={user} />
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-62 flex-col border-r border-line bg-panel md:flex">
+        <NavContent
+          pathname={pathname}
+          user={user}
+          summary={summary}
+          organizationName={organizationName}
+          organizationSwitcher={organizationSwitcher}
+        />
       </aside>
 
-      {/* Mobile top bar */}
-      <header className="md:hidden fixed top-0 inset-x-0 h-12 flex items-center justify-between px-4 border-b border-border bg-card z-40">
-        <Button variant="ghost" size="icon" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
-          <Menu className="h-5 w-5" />
-        </Button>
-        <span className="font-semibold text-sm">Caddy Proxy Manager</span>
-        <div className="flex items-center gap-1">
-          <ThemeToggle />
-          <Button variant="ghost" size="icon" aria-label="Go to profile" onClick={() => router.push("/profile")}>
-            <Avatar className="h-6 w-6">
-              <AvatarImage src={user.image ?? undefined} />
-              <AvatarFallback className="text-[10px] bg-primary text-primary-foreground">
-                {(user.name?.[0] ?? "U").toUpperCase()}
-              </AvatarFallback>
-            </Avatar>
-          </Button>
-        </div>
+      <header className="fixed inset-x-0 top-0 z-40 flex h-14 items-center gap-1 border-b border-line bg-panel px-2 pt-[env(safe-area-inset-top)] md:hidden">
+        <button
+          type="button"
+          aria-label="Open navigation"
+          onClick={() => setMobileOpen(true)}
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-lg transition-colors hover:bg-raise"
+        >
+          <Menu className="h-[22px] w-[22px]" aria-hidden="true" />
+        </button>
+        <span className="min-w-0 flex-1 truncate text-[17px] font-semibold tracking-[-0.01em]" data-testid="mobile-title">
+          {title}
+          <span className="sr-only"> · {branding.productName}</span>
+        </span>
+        {summary.environment && <EnvironmentSwitcher environment={summary.environment} compact />}
       </header>
 
-      {/* Mobile Sheet drawer */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="w-64 sm:max-w-[256px] p-0">
-          <NavContent pathname={pathname} user={user} onNavigate={() => setMobileOpen(false)} />
+        <SheetContent side="left" className="w-[288px] max-w-[85vw] border-r p-0 sm:max-w-[288px]">
+          <SheetTitle className="sr-only">Navigation</SheetTitle>
+          <NavContent
+            pathname={pathname}
+            user={user}
+            summary={summary}
+            onNavigate={() => setMobileOpen(false)}
+            organizationName={organizationName}
+            organizationSwitcher={organizationSwitcher}
+          />
         </SheetContent>
       </Sheet>
 
-      {/* Main content */}
-      <main className="flex-1 md:ml-64 mt-12 md:mt-0 overflow-x-hidden">
-        {pathname === "/settings" || pathname === "/access-lists" ? (
-          children
-        ) : (
-          <div className="max-w-screen-xl mx-auto px-4 md:px-8 py-6">
-            {children}
-          </div>
-        )}
+      {/* overflow-x: clip, not hidden: hidden would make main a scroll container and break position: sticky inside pages. */}
+      <main className="mt-14 min-w-0 flex-1 overflow-x-clip pb-24 md:ml-62 md:mt-0 md:pb-0">
+        <div className="mx-auto max-w-[1600px] px-4 py-4 md:px-8 md:pt-6 md:pb-14">{children}</div>
       </main>
+
+      <BottomNav user={user} summary={summary} pathname={pathname} onMore={() => setMobileOpen(true)} />
     </div>
+  );
+}
+
+export default function DashboardLayoutClient({
+  user,
+  children,
+  summary = EMPTY_SUMMARY,
+  organizationName = null,
+  organizationSwitcher = null,
+}: { user: User; children: ReactNode; summary?: NavSummary } & Organizations) {
+  return (
+    <CommandPaletteProvider userId={user.id}>
+      <Shell user={user} summary={summary} organizationName={organizationName} organizationSwitcher={organizationSwitcher}>
+        {children}
+      </Shell>
+    </CommandPaletteProvider>
   );
 }

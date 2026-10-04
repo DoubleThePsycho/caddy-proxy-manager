@@ -1,0 +1,46 @@
+{
+  "realm": "ingressi-e2e",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": false,
+  "groups": [
+    { "name": "ingressi-admins", "path": "/ingressi-admins" },
+    { "name": "ingressi-users", "path": "/ingressi-users" }
+  ],
+  "users": [
+    {
+      "username": "e2e-saml-admin",
+      "enabled": true,
+      "email": "e2e-saml-admin@example.com",
+      "emailVerified": true,
+      "firstName": "E2E",
+      "lastName": "SAML Admin",
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "E2eSamlAdmin2026!", "temporary": false }],
+      "groups": ["/ingressi-admins", "/ingressi-users"]
+    },
+    {
+      "username": "e2e-saml-user",
+      "enabled": true,
+      "email": "e2e-saml-user@example.com",
+      "emailVerified": true,
+      "firstName": "E2E",
+      "lastName": "SAML User",
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "E2eSamlUser2026!", "temporary": false }],
+      "groups": ["/ingressi-users"]
+    },
+    {
+      "username": "e2e-saml-outsider",
+      "enabled": true,
+      "email": "e2e-saml-outsider@example.com",
+      "emailVerified": true,
+      "firstName": "E2E",
+      "lastName": "SAML Outsider",
+      "requiredActions": [],
+      "credentials": [{ "type": "password", "value": "E2eSamlOutsider2026!", "temporary": false }],
+      "groups": []
+    }
+  ]
+}

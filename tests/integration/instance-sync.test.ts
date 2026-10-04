@@ -29,17 +29,8 @@ const ctx = vi.hoisted(() => {
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null => {
-      if (!value) return null;
-      return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-    },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 // These imports must come AFTER vi.mock to pick up the mocked module.
@@ -668,6 +659,38 @@ describe('syncInstances transport', () => {
     fetchSpy.mockRestore();
   });
 
+  it('runs a sync asked for during a sync after it, with the data of that moment, and skips periodic ticks meanwhile', async () => {
+    await addSlave();
+    const bodies: string[] = [];
+    const replies: Array<(response: Response) => void> = [];
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      if (init?.method !== 'POST') return noKeyEndpoint();
+      bodies.push(String(init.body));
+      return await new Promise<Response>((resolve) => { replies.push(resolve); });
+    });
+
+    const first = syncInstances();
+    await vi.waitFor(() => expect(bodies).toHaveLength(1));
+    // A change committed while the first sync waits on the slave; its syncs (one runs, the other joins it).
+    await ctx.db.insert(schema.l4ProxyHosts).values(makeL4Host({ listenAddress: ':6001' }));
+    const second = syncInstances();
+    const third = syncInstances();
+    expect(await runPeriodicInstanceSync()).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).not.toContain(':6001');
+
+    replies[0](Response.json({ ok: true }));
+    await vi.waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toContain(':6001');
+    replies[1](Response.json({ ok: true }));
+    expect(await first).toMatchObject({ total: 1, success: 1 });
+    expect(await second).toMatchObject({ total: 1, success: 1 });
+    expect(await third).toEqual(await second);
+    expect(bodies).toHaveLength(2);
+    fetchSpy.mockRestore();
+  });
+
   it('releases the periodic guard when a sync throws', async () => {
     process.env.INSTANCE_MODE = 'master';
     process.env.INSTANCE_SLAVES = JSON.stringify([
@@ -709,14 +732,14 @@ describe('getSyncRequestTimeoutMs', () => {
 describe('instance base URL validation', () => {
   it.each([
     ['https://slave.example.com', null],
-    ['http://10.0.0.5:3000/cpm', null],
+    ['http://10.0.0.5:3000/ingressi', null],
     ['file:///etc/passwd', /https/],
     ['ftp://slave.example.com', /https/],
     ['https://user:pass@slave.example.com', /credentials/],
     ['https://slave.example.com/?x=1', /query/],
     ['https://slave.example.com/?', /query/],
     ['https://slave.example.com#', /query/],
-    ['https://slave.example.com/cpm#top', /query/],
+    ['https://slave.example.com/ingressi#top', /query/],
     ['not a url', /valid URL/],
   ])('%s', async (url, expected) => {
     const { instanceBaseUrlValidationError } = await import('../../src/lib/models/instances');

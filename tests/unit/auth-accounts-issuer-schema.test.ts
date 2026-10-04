@@ -1,7 +1,7 @@
 /**
  * Regression #283: Better Auth 1.7.3+ performs runtime schema validation and
  * fails closed on any NOT NULL column it never writes unless that column is
- * nullable or carries a database default. CPM keeps its own NOT NULL
+ * nullable or carries a database default. Ingressi keeps its own NOT NULL
  * `accounts.issuer` column for identity bookkeeping while Better Auth 1.7.4 no
  * longer writes it, so the column must carry a database default — otherwise
  * every login (local and OAuth) dies with SCHEMA_MISMATCH before any insert is
@@ -29,7 +29,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 
-const workDir = mkdtempSync(join(tmpdir(), 'cpm-283-'));
+const workDir = mkdtempSync(join(tmpdir(), 'ingressi-283-'));
 
 // Vitest leaks Vite's import.meta.env into process.env (BASE_URL='/'), which
 // better-auth rejects — pin what production would have.
@@ -163,7 +163,7 @@ async function seedAdmin(db: Awaited<ReturnType<typeof bootApp>>['db'], schema: 
       updatedAt: now,
     })
     .returning();
-  db.insert(schema.accounts).values({
+  await db.insert(schema.accounts).values({
     userId: user.id,
     issuer: CREDENTIAL_ACCOUNT_ISSUER,
     accountId: user.id.toString(),
@@ -171,7 +171,7 @@ async function seedAdmin(db: Awaited<ReturnType<typeof bootApp>>['db'], schema: 
     password: hash,
     createdAt: now,
     updatedAt: now,
-  }).run();
+  });
   return user;
 }
 
@@ -203,7 +203,7 @@ describe('Better Auth schema contract for accounts.issuer (#283)', () => {
     });
     expect(signedUp?.user?.email).toBe('fresh@example.com');
 
-    const [freshAccount] = db
+    const [freshAccount] = await db
       .select()
       .from(schema.accounts)
       .where(
@@ -211,8 +211,7 @@ describe('Better Auth schema contract for accounts.issuer (#283)', () => {
           eq(schema.accounts.providerId, 'credential'),
           eq(schema.accounts.accountId, String(signedUp?.user?.id))
         )
-      )
-      .all();
+      );
     expect(freshAccount?.issuer).toBe('local:credential'); // derived by the hook
 
     const signedIn = await auth.api.signInEmail({

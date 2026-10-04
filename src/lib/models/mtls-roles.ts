@@ -1,4 +1,4 @@
-import db, { nowIso, toIso } from "../db";
+import { appDb, nowIso, toIso } from "../db";
 import { applyCaddyConfig } from "../caddy";
 import { logAuditEvent } from "../audit";
 import {
@@ -6,8 +6,9 @@ import {
   mtlsCertificateRoles,
   issuedClientCertificates,
 } from "../db/schema";
-import { asc, eq, inArray, count, and, isNull } from "drizzle-orm";
+import { eq, inArray, count, and, isNull } from "drizzle-orm";
 import { normalizeFingerprint } from "../caddy-mtls";
+import { asc } from "@/src/lib/db/ops";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -34,7 +35,7 @@ export type MtlsRoleWithCertificates = MtlsRole & {
 type RoleRow = typeof mtlsRoles.$inferSelect;
 
 async function countCertsForRole(roleId: number): Promise<number> {
-  const [row] = await db
+  const [row] = await appDb
     .select({ value: count() })
     .from(mtlsCertificateRoles)
     .where(eq(mtlsCertificateRoles.mtlsRoleId, roleId));
@@ -55,13 +56,13 @@ function toMtlsRole(row: RoleRow, certCount: number): MtlsRole {
 // ── CRUD ─────────────────────────────────────────────────────────────
 
 export async function listMtlsRoles(): Promise<MtlsRole[]> {
-  const rows = await db.query.mtlsRoles.findMany({
-    orderBy: (table) => asc(table.name),
+  const rows = await appDb.query.mtlsRoles.findMany({
+    orderBy: (table) => [asc(table.name), asc(table.id)],
   });
   if (rows.length === 0) return [];
 
   const roleIds = rows.map((r) => r.id);
-  const counts = await db
+  const counts = await appDb
     .select({
       roleId: mtlsCertificateRoles.mtlsRoleId,
       cnt: count(),
@@ -75,15 +76,16 @@ export async function listMtlsRoles(): Promise<MtlsRole[]> {
 }
 
 export async function getMtlsRole(id: number): Promise<MtlsRoleWithCertificates | null> {
-  const row = await db.query.mtlsRoles.findFirst({
+  const row = await appDb.query.mtlsRoles.findFirst({
     where: (table, { eq: cmpEq }) => cmpEq(table.id, id),
   });
   if (!row) return null;
 
-  const assignments = await db
+  const assignments = await appDb
     .select({ certId: mtlsCertificateRoles.issuedClientCertificateId })
     .from(mtlsCertificateRoles)
-    .where(eq(mtlsCertificateRoles.mtlsRoleId, id));
+    .where(eq(mtlsCertificateRoles.mtlsRoleId, id))
+    .orderBy(asc(mtlsCertificateRoles.id));
 
   return {
     ...toMtlsRole(row, assignments.length),
@@ -96,7 +98,7 @@ export async function createMtlsRole(
   actorUserId: number
 ): Promise<MtlsRole> {
   const now = nowIso();
-  const [record] = await db
+  const [record] = await appDb
     .insert(mtlsRoles)
     .values({
       name: input.name.trim(),
@@ -109,7 +111,7 @@ export async function createMtlsRole(
 
   if (!record) throw new Error("Failed to create mTLS role");
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "create",
     entityType: "mtls_role",
@@ -125,13 +127,13 @@ export async function updateMtlsRole(
   input: Partial<MtlsRoleInput>,
   actorUserId: number
 ): Promise<MtlsRole> {
-  const existing = await db.query.mtlsRoles.findFirst({
+  const existing = await appDb.query.mtlsRoles.findFirst({
     where: (table, { eq: cmpEq }) => cmpEq(table.id, id),
   });
   if (!existing) throw new Error("mTLS role not found");
 
   const now = nowIso();
-  await db
+  await appDb
     .update(mtlsRoles)
     .set({
       name: input.name?.trim() ?? existing.name,
@@ -140,7 +142,7 @@ export async function updateMtlsRole(
     })
     .where(eq(mtlsRoles.id, id));
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "update",
     entityType: "mtls_role",
@@ -150,21 +152,30 @@ export async function updateMtlsRole(
 
   await applyCaddyConfig();
   const certCount = await countCertsForRole(id);
-  const updated = await db.query.mtlsRoles.findFirst({
+  const updated = await appDb.query.mtlsRoles.findFirst({
     where: (table, { eq: cmpEq }) => cmpEq(table.id, id),
   });
   return toMtlsRole(updated!, certCount);
 }
 
+/**
+ * Deletes a role and its certificate assignments in one transaction. Foreign
+ * keys are not enforced (SQLite runs with them off, PostgreSQL has none), so
+ * the assignments are deleted here: left behind, they kept the role's
+ * certificates trusted wherever the deleted role's id was still listed.
+ */
 export async function deleteMtlsRole(id: number, actorUserId: number): Promise<void> {
-  const existing = await db.query.mtlsRoles.findFirst({
-    where: (table, { eq: cmpEq }) => cmpEq(table.id, id),
+  const existing = await appDb.transaction(async (tx) => {
+    const existing = await tx.query.mtlsRoles.findFirst({
+      where: (table, { eq: cmpEq }) => cmpEq(table.id, id),
+    });
+    if (!existing) throw new Error("mTLS role not found");
+    await tx.delete(mtlsCertificateRoles).where(eq(mtlsCertificateRoles.mtlsRoleId, id));
+    await tx.delete(mtlsRoles).where(eq(mtlsRoles.id, id));
+    return existing;
   });
-  if (!existing) throw new Error("mTLS role not found");
 
-  await db.delete(mtlsRoles).where(eq(mtlsRoles.id, id));
-
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "delete",
     entityType: "mtls_role",
@@ -182,26 +193,31 @@ export async function assignRoleToCertificate(
   certId: number,
   actorUserId: number
 ): Promise<void> {
-  const role = await db.query.mtlsRoles.findFirst({
-    where: (t, { eq: cmpEq }) => cmpEq(t.id, roleId),
-  });
-  if (!role) throw new Error("mTLS role not found");
-
-  const cert = await db.query.issuedClientCertificates.findFirst({
-    where: (t, { eq: cmpEq }) => cmpEq(t.id, certId),
-  });
-  if (!cert) throw new Error("Issued client certificate not found");
-
   const now = nowIso();
-  await db
-    .insert(mtlsCertificateRoles)
-    .values({
-      issuedClientCertificateId: certId,
-      mtlsRoleId: roleId,
-      createdAt: now,
+  // The role and the certificate are read in the transaction that inserts the
+  // assignment, so neither can be deleted in between.
+  const { role, cert } = await appDb.transaction(async (tx) => {
+    const role = await tx.query.mtlsRoles.findFirst({
+      where: (t, { eq: cmpEq }) => cmpEq(t.id, roleId),
     });
+    if (!role) throw new Error("mTLS role not found");
 
-  logAuditEvent({
+    const cert = await tx.query.issuedClientCertificates.findFirst({
+      where: (t, { eq: cmpEq }) => cmpEq(t.id, certId),
+    });
+    if (!cert) throw new Error("Issued client certificate not found");
+
+    await tx
+      .insert(mtlsCertificateRoles)
+      .values({
+        issuedClientCertificateId: certId,
+        mtlsRoleId: roleId,
+        createdAt: now,
+      });
+    return { role, cert };
+  });
+
+  await logAuditEvent({
     userId: actorUserId,
     action: "assign",
     entityType: "mtls_certificate_role",
@@ -218,12 +234,12 @@ export async function removeRoleFromCertificate(
   certId: number,
   actorUserId: number
 ): Promise<void> {
-  const role = await db.query.mtlsRoles.findFirst({
+  const role = await appDb.query.mtlsRoles.findFirst({
     where: (t, { eq: cmpEq }) => cmpEq(t.id, roleId),
   });
   if (!role) throw new Error("mTLS role not found");
 
-  await db
+  await appDb
     .delete(mtlsCertificateRoles)
     .where(
       and(
@@ -232,7 +248,7 @@ export async function removeRoleFromCertificate(
       )
     );
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "unassign",
     entityType: "mtls_certificate_role",
@@ -245,7 +261,7 @@ export async function removeRoleFromCertificate(
 }
 
 export async function getCertificateRoles(certId: number): Promise<MtlsRole[]> {
-  const assignments = await db
+  const assignments = await appDb
     .select({ roleId: mtlsCertificateRoles.mtlsRoleId })
     .from(mtlsCertificateRoles)
     .where(eq(mtlsCertificateRoles.issuedClientCertificateId, certId));
@@ -253,26 +269,29 @@ export async function getCertificateRoles(certId: number): Promise<MtlsRole[]> {
   if (assignments.length === 0) return [];
 
   const roleIds = assignments.map((a) => a.roleId);
-  const rows = await db
+  const rows = await appDb
     .select()
     .from(mtlsRoles)
     .where(inArray(mtlsRoles.id, roleIds))
-    .orderBy(asc(mtlsRoles.name));
+    .orderBy(asc(mtlsRoles.name), asc(mtlsRoles.id));
 
   return rows.map((r) => toMtlsRole(r, 0));
 }
 
 /**
  * Builds a map of roleId → Set<normalizedFingerprint> for all active (non-revoked) certs.
- * Used during Caddy config generation.
+ * Used during Caddy config generation. Only roles that exist count: an
+ * assignment left behind by a deleted role (foreign keys are not enforced)
+ * must not keep its certificates trusted where the role's id is still listed.
  */
 export async function buildRoleFingerprintMap(): Promise<Map<number, Set<string>>> {
-  const rows = await db
+  const rows = await appDb
     .select({
       roleId: mtlsCertificateRoles.mtlsRoleId,
       fingerprint: issuedClientCertificates.fingerprintSha256,
     })
     .from(mtlsCertificateRoles)
+    .innerJoin(mtlsRoles, eq(mtlsCertificateRoles.mtlsRoleId, mtlsRoles.id))
     .innerJoin(
       issuedClientCertificates,
       eq(mtlsCertificateRoles.issuedClientCertificateId, issuedClientCertificates.id)
@@ -296,7 +315,7 @@ export async function buildRoleFingerprintMap(): Promise<Map<number, Set<string>
  * Used during Caddy config generation for direct cert overrides.
  */
 export async function buildCertFingerprintMap(): Promise<Map<number, string>> {
-  const rows = await db
+  const rows = await appDb
     .select({
       id: issuedClientCertificates.id,
       fingerprint: issuedClientCertificates.fingerprintSha256,
@@ -314,14 +333,16 @@ export async function buildCertFingerprintMap(): Promise<Map<number, string>> {
 /**
  * Builds a map of roleId → Set<certId> for all active (non-revoked) certs.
  * Used during Caddy config generation to resolve trusted_role_ids → cert IDs.
+ * Only roles that exist count (see buildRoleFingerprintMap).
  */
 export async function buildRoleCertIdMap(): Promise<Map<number, Set<number>>> {
-  const rows = await db
+  const rows = await appDb
     .select({
       roleId: mtlsCertificateRoles.mtlsRoleId,
       certId: mtlsCertificateRoles.issuedClientCertificateId,
     })
     .from(mtlsCertificateRoles)
+    .innerJoin(mtlsRoles, eq(mtlsCertificateRoles.mtlsRoleId, mtlsRoles.id))
     .innerJoin(
       issuedClientCertificates,
       eq(mtlsCertificateRoles.issuedClientCertificateId, issuedClientCertificates.id)

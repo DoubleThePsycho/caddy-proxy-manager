@@ -8,15 +8,8 @@ const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null =>
-      value ? new Date(value).toISOString() : null,
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 import * as schema from '../../src/lib/db/schema';
@@ -39,7 +32,7 @@ const KEY_B = Buffer.alloc(32, 0x0b);
 const UNREADABLE = { keyId: '', publicKey: '', source: 'unreadable' };
 
 async function storedRow() {
-  return (await ctx.db.select().from(schema.settings).all()).find((row) => row.key === SYNC_KEY_PINS_SETTING);
+  return (await ctx.db.select().from(schema.settings)).find((row) => row.key === SYNC_KEY_PINS_SETTING);
 }
 
 beforeEach(async () => {
@@ -53,13 +46,13 @@ describe('syncKeyPinIdentity', () => {
     [' HTTPS://Replica.Example.COM:443/ ', 'https://replica.example.com'],
     ['http://replica.example.com:80', 'http://replica.example.com'],
     ['https://replica.example.com:8443/', 'https://replica.example.com:8443'],
-    ['https://replica.example.com/cpm/', 'https://replica.example.com/cpm'],
-    ['https://replica.example.com/CPM', 'https://replica.example.com/CPM'],
+    ['https://replica.example.com/ingressi/', 'https://replica.example.com/ingressi'],
+    ['https://replica.example.com/INGRESSI', 'https://replica.example.com/INGRESSI'],
     ['https://replica.example.com//', 'https://replica.example.com'],
-    ['https://replica.example.com/cpm//', 'https://replica.example.com/cpm'],
-    ['https://replica.example.com/cpm\\', 'https://replica.example.com/cpm'],
-    ['https://replica.example.com/a/./b/../cpm/', 'https://replica.example.com/a/cpm'],
-    ['https://replica.example.com/%2e%2e/cpm', 'https://replica.example.com/cpm'],
+    ['https://replica.example.com/ingressi//', 'https://replica.example.com/ingressi'],
+    ['https://replica.example.com/ingressi\\', 'https://replica.example.com/ingressi'],
+    ['https://replica.example.com/a/./b/../ingressi/', 'https://replica.example.com/a/ingressi'],
+    ['https://replica.example.com/%2e%2e/ingressi', 'https://replica.example.com/ingressi'],
   ])('identifies %j as %j', (baseUrl, identity) => {
     expect(syncKeyPinIdentity(baseUrl)).toBe(identity);
   });
@@ -67,8 +60,8 @@ describe('syncKeyPinIdentity', () => {
   it('identifies an identity as itself, so a listed pin URL finds its pin', () => {
     for (const baseUrl of [
       'https://replica.example.com//',
-      'HTTPS://Replica.Example.com:443/cpm//',
-      'https://replica.example.com/cpm\\',
+      'HTTPS://Replica.Example.com:443/ingressi//',
+      'https://replica.example.com/ingressi\\',
       'http://[::1]:8080/a b/',
       'not a url//',
     ]) {
@@ -83,7 +76,7 @@ describe('syncKeyPinIdentity', () => {
       'http://replica.example.com',
       'https://replica.example.com:8443',
       'https://replica-2.example.com',
-      'https://replica.example.com/cpm',
+      'https://replica.example.com/ingressi',
     ].map(syncKeyPinIdentity);
     expect(new Set(identities).size).toBe(identities.length);
   });
@@ -150,13 +143,13 @@ describe('sync key pin store', () => {
     expect(await storedRow()).toBeUndefined();
   });
 
-  it('updates a pin only when asked, returning the result', () => {
+  it('updates a pin only when asked, returning the result', async () => {
     const seen: unknown[] = [];
-    expect(updateSyncKeyPin('https://replica.example.com', (current) => {
+    expect(await updateSyncKeyPin('https://replica.example.com', async (current) => {
       seen.push(current);
       return { result: 'pinned', pin: { publicKey: KEY_A, source: 'first-use' } };
     })).toBe('pinned');
-    expect(updateSyncKeyPin('https://replica.example.com', (current) => {
+    expect(await updateSyncKeyPin('https://replica.example.com', async (current) => {
       seen.push(current);
       return { result: 'kept' };
     })).toBe('kept');
@@ -217,13 +210,13 @@ describe('sync key pin store', () => {
     const pin = await setSyncKeyPin('https://replica.example.com', { publicKey: KEY_A, source: 'first-use' });
     const asked: string[] = [];
 
-    expect(await takeSyncKeyPin('https://replica.example.com/', (identity) => (asked.push(identity), true))).toBeNull();
+    expect(await takeSyncKeyPin('https://replica.example.com/', async (identity) => (asked.push(identity), true))).toBeNull();
     expect(await getSyncKeyPin('https://replica.example.com')).toEqual(pin);
-    expect(await takeSyncKeyPin('https://replica.example.com/', (identity) => (asked.push(identity), false))).toEqual(pin);
+    expect(await takeSyncKeyPin('https://replica.example.com/', async (identity) => (asked.push(identity), false))).toEqual(pin);
     expect(await getSyncKeyPin('https://replica.example.com')).toBeNull();
 
     expect(asked).toEqual(['https://replica.example.com', 'https://replica.example.com']);
     // Nothing to take: `keep` is not asked.
-    expect(await takeSyncKeyPin('https://replica.example.com', () => { throw new Error('not asked'); })).toBeNull();
+    expect(await takeSyncKeyPin('https://replica.example.com', async () => { throw new Error('not asked'); })).toBeNull();
   });
 });

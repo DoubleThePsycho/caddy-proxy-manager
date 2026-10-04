@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAdmin, apiErrorResponse } from "@/src/lib/api-auth";
+import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { listOAuthProviders, createOAuthProvider } from "@/src/lib/models/oauth-providers";
 import { oauthCallbackUrl, toOAuthProviderView, type OAuthProviderView } from "@/src/lib/oauth-provider-view";
 import { createAuditEvent } from "@/src/lib/models/audit";
-import { invalidateProviderCache } from "@/src/lib/auth-server";
+import { reloadOAuthProviders } from "@/src/lib/auth-server";
 import { config } from "@/src/lib/config";
 
 const PRIVATE_RESPONSE_HEADERS = { "Cache-Control": "no-store" };
@@ -20,7 +20,7 @@ function redactClientId(provider: OAuthProviderView) {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiAdmin(request);
+    await requireApiPermission(request, "sso:read");
     const providers = await listOAuthProviders();
     return NextResponse.json(providers.map(redactClientId), {
       headers: PRIVATE_RESPONSE_HEADERS,
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId } = await requireApiPermission(request, "sso:write");
     const body = await request.json();
 
     if (!body.name || typeof body.name !== "string") {
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
       source: "ui",
     });
 
-    invalidateProviderCache();
+    await reloadOAuthProviders();
 
     await createAuditEvent({
       userId,

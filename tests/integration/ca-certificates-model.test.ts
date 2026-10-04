@@ -23,11 +23,7 @@ import { ApiClientError, ApiConflictError } from '../../src/lib/api-errors';
 
 let db: TestDb;
 
-vi.mock('../../src/lib/db', async () => ({
-  get default() { return db; },
-  nowIso: () => new Date().toISOString(),
-  toIso: (v: string | null) => v,
-}));
+vi.mock('../../src/lib/db', async () => (await import('../helpers/db-module')).mockDbModule(() => db));
 vi.mock('../../src/lib/caddy', () => ({ applyCaddyConfig: vi.fn() }));
 vi.mock('../../src/lib/audit', () => ({ logAuditEvent: vi.fn() }));
 

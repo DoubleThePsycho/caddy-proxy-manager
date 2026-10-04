@@ -13,7 +13,8 @@
  * Domain: func-redirects-adv.test
  */
 import { test, expect } from '@playwright/test';
-import { httpGet, injectFormFields, waitForRoute } from '../../helpers/http';
+import { openCreateHostDialog, addRedirect, fillHostBasics, openEditorSection, saveHostEditor, setEditorSwitch } from '../../helpers/proxy-api';
+import { httpGet, waitForRoute } from '../../helpers/http';
 
 const DOMAIN = 'func-redirects-adv.test';
 
@@ -33,17 +34,11 @@ function location(res: Awaited<ReturnType<typeof httpGet>>): string {
 
 test.describe.serial('Redirect Rules – full URLs, cross-domain, wildcards', () => {
   test('setup: create proxy host with advanced redirect rules', async ({ page }) => {
-    await page.goto('/proxy-hosts');
-    await page.getByRole('button', { name: /create host/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    await openCreateHostDialog(page);
+    await fillHostBasics(page, { name: 'Functional Advanced Redirects Test', domain: DOMAIN, upstream: 'echo-server:8080' });
 
-    await page.getByLabel('Name').fill('Functional Advanced Redirects Test');
-    await page.getByLabel(/domains/i).fill(DOMAIN);
-    await page.getByPlaceholder('10.0.0.5:8080').first().fill('echo-server:8080');
-
-    await injectFormFields(page, {
-      sslForcedPresent: 'on',
-      redirectsJson: JSON.stringify([
+    await openEditorSection(page, 'Advanced');
+    const rules: Array<{ from: string; to: string; status: 301 | 302 | 307 | 308 }> = [
         // ── full absolute URL destinations ──────────────────────────────────
         // Exact path → full URL on a completely different host (301)
         { from: '/old-page',          to: 'https://new-site.example.com/page',  status: 301 },
@@ -63,12 +58,12 @@ test.describe.serial('Redirect Rules – full URLs, cross-domain, wildcards', ()
         // ── wildcard "from" → full URL destination ──────────────────────────
         // /moved/* → absolute URL on another domain (308)
         { from: '/moved/*',           to: 'https://archive.example.com/',        status: 308 },
-      ]),
-    });
+      ];
+    for (const rule of rules) await addRedirect(page, rule);
 
-    await page.getByRole('button', { name: /^create$/i }).click();
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('table').getByText('Functional Advanced Redirects Test')).toBeVisible({ timeout: 10_000 });
+    await openEditorSection(page, 'Certificate');
+    await setEditorSwitch(page, 'Redirect HTTP to HTTPS', false);
+    await saveHostEditor(page);
 
     await waitForRoute(DOMAIN);
   });

@@ -6,8 +6,13 @@ vi.mock('@/src/lib/models/user', () => ({
   getUserById: vi.fn(),
   updateUserAccount: vi.fn(),
   updateUserRole: vi.fn(),
+  setUserRoleAssignment: vi.fn(),
   updateUserStatus: vi.fn(),
   deleteUser: vi.fn(),
+}));
+
+vi.mock('@/ee/sso/enforcement-store', () => ({
+  assertBreakGlassAdminRemains: vi.fn(),
 }));
 
 vi.mock('@/src/lib/api-auth', () => {
@@ -16,8 +21,14 @@ vi.mock('@/src/lib/api-auth', () => {
     constructor(msg: string, status: number) { super(msg); this.status = status; this.name = 'ApiAuthError'; }
   };
   return {
+    requireApiPermission: vi.fn((request: unknown) => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireApiAdmin(request))),
     requireApiAdmin: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
     requireApiUser: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
+    // The built-in role's access, as the real getApiAccess builds it.
+    getApiAccess: vi.fn((result: { userId: number; role: string }) => ({
+      userId: result.userId, role: result.role, isAdmin: result.role === 'admin', customRole: null,
+      permissions: new Set(), scopeTags: [], organizationId: null,
+    })),
     apiErrorResponse: vi.fn((error: unknown) => {
       const { NextResponse: NR } = require('next/server');
       if (error instanceof ApiAuthError) {

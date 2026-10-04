@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAdmin, apiErrorResponse } from "@/src/lib/api-auth";
-import { getGroup, updateGroup, deleteGroup } from "@/src/lib/models/groups";
+import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
+import { updateGroup, deleteGroup } from "@/src/lib/models/groups";
+import { findGroupInScope, getGroupInScope } from "@/src/lib/access-scope";
+import { routeRowId } from "@/src/lib/row-ids";
 
 type Params = { params: Promise<{ id: string }> };
 
 export async function GET(request: NextRequest, { params }: Params) {
   try {
-    await requireApiAdmin(request);
+    const { access } = await requireApiPermission(request, "groups:read");
     const { id } = await params;
-    const group = await getGroup(Number(id));
+    // 404 for a group of another organisation, as for a missing one.
+    const group = await findGroupInScope(access, routeRowId(id, "Group not found"));
     if (!group) {
       return NextResponse.json({ error: "Group not found" }, { status: 404 });
     }
@@ -20,10 +23,11 @@ export async function GET(request: NextRequest, { params }: Params) {
 
 export async function PATCH(request: NextRequest, { params }: Params) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId, access } = await requireApiPermission(request, "groups:write");
     const { id } = await params;
+    const existing = await getGroupInScope(access, routeRowId(id));
     const body = await request.json();
-    const group = await updateGroup(Number(id), body, userId);
+    const group = await updateGroup(existing.id, body, userId);
     return NextResponse.json(group);
   } catch (error) {
     return apiErrorResponse(error);
@@ -32,9 +36,10 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId, access } = await requireApiPermission(request, "groups:write");
     const { id } = await params;
-    await deleteGroup(Number(id), userId);
+    const existing = await getGroupInScope(access, routeRowId(id));
+    await deleteGroup(existing.id, userId);
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return apiErrorResponse(error);

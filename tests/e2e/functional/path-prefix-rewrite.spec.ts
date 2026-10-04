@@ -9,28 +9,25 @@
  * Domain: func-rewrite.test
  */
 import { test, expect } from '@playwright/test';
-import { httpGet, injectFormFields, waitForRoute } from '../../helpers/http';
+import { openCreateHostDialog, fillHostBasics, openEditorSection, saveHostEditor, setEditorSwitch } from '../../helpers/proxy-api';
+import { httpGet, waitForRoute } from '../../helpers/http';
 
 const DOMAIN = 'func-rewrite.test';
 
 test.describe.serial('Path Prefix Rewrite', () => {
   test('setup: create proxy host with path prefix rewrite', async ({ page }) => {
-    await page.goto('/proxy-hosts');
-    await page.getByRole('button', { name: /create host/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-
-    await page.getByLabel('Name').fill('Functional Path Prefix Rewrite Test');
-    await page.getByLabel(/domains/i).fill(DOMAIN);
     // whoami-server listens on port 80 by default
-    await page.getByPlaceholder('10.0.0.5:8080').first().fill('whoami-server:80');
+    await openCreateHostDialog(page);
+    await fillHostBasics(page, { name: 'Functional Path Prefix Rewrite Test', domain: DOMAIN, upstream: 'whoami-server:80' });
 
-    // Fill in the path prefix rewrite field
-    await page.getByLabel('Path Prefix Rewrite').fill('/api');
+    // The path prefix rewrite field (Advanced section)
+    await openEditorSection(page, 'Advanced');
+    await page.getByLabel('Path prefix for the upstream').fill('/api');
 
-    await injectFormFields(page, { sslForcedPresent: 'on' });
-    await page.getByRole('button', { name: /^create$/i }).click();
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('table').getByText('Functional Path Prefix Rewrite Test')).toBeVisible({ timeout: 10_000 });
+    // Plain HTTP for the test requests.
+    await openEditorSection(page, 'Certificate');
+    await setEditorSwitch(page, 'Redirect HTTP to HTTPS', false);
+    await saveHostEditor(page);
 
     await waitForRoute(DOMAIN);
   });

@@ -1,11 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@/src/lib/models/api-tokens', () => ({
-  createApiToken: vi.fn(),
-  listApiTokens: vi.fn(),
-  listAllApiTokens: vi.fn(),
-  deleteApiToken: vi.fn(),
-}));
+vi.mock('@/src/lib/models/api-tokens', async (importOriginal) => {
+  const original = await importOriginal<typeof import('@/src/lib/models/api-tokens')>();
+  return {
+    TOKEN_EXPIRY_PRESETS: original.TOKEN_EXPIRY_PRESETS,
+    isTokenExpiryPreset: original.isTokenExpiryPreset,
+    expiryFromPreset: original.expiryFromPreset,
+    createApiToken: vi.fn(),
+    listApiTokens: vi.fn(),
+    listAllApiTokens: vi.fn(),
+    deleteApiToken: vi.fn(),
+    getApiTokenSummary: vi.fn().mockResolvedValue({ name: 'Token', createdBy: 1 }),
+  };
+});
 
 vi.mock('@/src/lib/api-auth', () => {
   const ApiAuthError = class extends Error {
@@ -13,8 +20,10 @@ vi.mock('@/src/lib/api-auth', () => {
     constructor(msg: string, status: number) { super(msg); this.status = status; this.name = 'ApiAuthError'; }
   };
   return {
+    requireApiPermission: vi.fn((request: unknown) => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireApiAdmin(request))),
     requireApiAdmin: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
     requireApiUser: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
+    getApiAccess: vi.fn((result: { role: string }) => ({ isAdmin: result.role === 'admin' })),
     apiErrorResponse: vi.fn((error: unknown) => {
       const { NextResponse: NR } = require('next/server');
       if (error instanceof ApiAuthError) {
@@ -208,5 +217,34 @@ describe('DELETE /api/v1/tokens/[id]', () => {
 
     expect(response.status).toBe(401);
     expect(data.error).toBe('Unauthorized');
+  });
+});
+
+describe('POST /api/v1/tokens with scopes and expiry presets', () => {
+  it('passes scopes to the model, which checks them against the role', async () => {
+    mockCreateApiToken.mockResolvedValue({ token: { id: 20, name: 'Terraform', scopes: ['proxy_hosts:write'] }, rawToken: 'raw' } as any);
+    const response = await POST(createMockRequest({ method: 'POST', body: { name: 'Terraform', scopes: ['proxy_hosts:write'] } }));
+    expect(response.status).toBe(201);
+    expect(mockCreateApiToken).toHaveBeenCalledWith('Terraform', 1, undefined, { scopes: ['proxy_hosts:write'] });
+  });
+
+  it('turns expiresIn into a date and "never" into no expiry', async () => {
+    mockCreateApiToken.mockResolvedValue({ token: { id: 21, name: 'CI' }, rawToken: 'raw' } as any);
+    const before = Date.now();
+    await POST(createMockRequest({ method: 'POST', body: { name: 'CI', expiresIn: '90d' } }));
+    const expiresAt = new Date(mockCreateApiToken.mock.calls[0][2] as string).getTime();
+    expect(expiresAt - before).toBeGreaterThanOrEqual(90 * 86_400_000 - 1000);
+    expect(expiresAt - before).toBeLessThanOrEqual(90 * 86_400_000 + 5000);
+
+    await POST(createMockRequest({ method: 'POST', body: { name: 'CI', expiresIn: 'never' } }));
+    expect(mockCreateApiToken.mock.calls[1][2]).toBeUndefined();
+  });
+
+  it('refuses an unknown preset and both expiry fields at once', async () => {
+    const unknown = await POST(createMockRequest({ method: 'POST', body: { name: 'CI', expiresIn: '7d' } }));
+    expect(unknown.status).toBe(400);
+    const both = await POST(createMockRequest({ method: 'POST', body: { name: 'CI', expiresIn: '30d', expires_at: '2030-01-01T00:00:00Z' } }));
+    expect(both.status).toBe(400);
+    expect(mockCreateApiToken).not.toHaveBeenCalled();
   });
 });

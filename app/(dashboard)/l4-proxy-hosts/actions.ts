@@ -1,7 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/src/lib/auth";
+import { requirePermission } from "@/src/lib/auth";
+import {
+  assertL4WriteAllowed,
+  assertListenPortFreeOutsideScope,
+  getL4ProxyHostInScope,
+  tagsForWrite,
+} from "@/src/lib/access-scope";
 import { actionError, actionSuccess, INITIAL_ACTION_STATE, type ActionState } from "@/src/lib/actions";
 import {
   createL4ProxyHost,
@@ -19,6 +25,14 @@ import {
   type L4GeoBlockMode,
 } from "@/src/lib/models/l4-proxy-hosts";
 import { parseCheckbox, parseCsv, parseUpstreams, parseOptionalText, parseOptionalNumber } from "@/src/lib/form-parse";
+import { gateHostChange, type GateOutcome } from "@/ee/approvals/requests";
+
+/** The dialog's answer when a change approval policy turned the change into a change request. */
+function changeRequestState(gate: GateOutcome): ActionState {
+  revalidatePath("/l4-proxy-hosts");
+  revalidatePath("/approvals");
+  return { status: "success", message: gate.message, changeRequest: { id: gate.request.id, status: gate.request.status } };
+}
 
 const VALID_PROTOCOLS: L4Protocol[] = ["tcp", "udp"];
 const VALID_MATCHER_TYPES: L4MatcherType[] = ["none", "tls_sni", "http_host", "proxy_protocol"];
@@ -164,7 +178,7 @@ export async function createL4ProxyHostAction(
 ): Promise<ActionState> {
   void _prevState;
   try {
-    const session = await requireAdmin();
+    const session = await requirePermission("l4_proxy_hosts:write");
     const userId = Number(session.user.id);
 
     const matcherType = parseMatcherType(formData);
@@ -189,6 +203,19 @@ export async function createL4ProxyHostAction(
       ...parseL4GeoBlockConfig(formData),
     };
 
+    // A tag scope limits the tags (one of the role's is required) and the ports.
+    const tags = tagsForWrite(session.access, "l4_proxy_hosts", formData.has("tags") ? String(formData.get("tags") ?? "") : undefined, null);
+    if (tags !== undefined) input.tags = tags;
+    assertL4WriteAllowed(session.access, input);
+    await assertListenPortFreeOutsideScope(session.access, input.protocol, input.listenAddress, null);
+    // A host a change approval policy protects: submit a change request (or apply it as an emergency change).
+    const gate = await gateHostChange({
+      access: session.access,
+      change: { targetType: "l4_proxy_host", kind: "create", target: null, input: { host: input } },
+      note: formData.get("changeNote"),
+      emergencyReason: formData.get("emergencyReason"),
+    });
+    if (gate) return changeRequestState(gate);
     await createL4ProxyHost(input, userId);
     revalidatePath("/l4-proxy-hosts");
     return actionSuccess("L4 proxy host created and queued for Caddy reload.");
@@ -205,8 +232,10 @@ export async function updateL4ProxyHostAction(
 ): Promise<ActionState> {
   void _prevState;
   try {
-    const session = await requireAdmin();
+    const session = await requirePermission("l4_proxy_hosts:write");
     const userId = Number(session.user.id);
+    // 404 for a host outside the role's tag scope, as for a missing one.
+    const existing = await getL4ProxyHostInScope(session.access, id);
 
     const matcherType = parseMatcherType(formData);
     const matcherValue = (matcherType === "tls_sni" || matcherType === "http_host")
@@ -230,7 +259,23 @@ export async function updateL4ProxyHostAction(
       ...parseL4GeoBlockConfig(formData),
     };
 
-    await updateL4ProxyHost(id, input, userId);
+    const tags = tagsForWrite(session.access, "l4_proxy_hosts", formData.has("tags") ? String(formData.get("tags") ?? "") : undefined, existing.tags);
+    if (tags !== undefined) input.tags = tags;
+    assertL4WriteAllowed(session.access, input);
+    await assertListenPortFreeOutsideScope(
+      session.access,
+      input.protocol ?? existing.protocol,
+      input.listenAddress ?? existing.listenAddress,
+      existing.id
+    );
+    const gate = await gateHostChange({
+      access: session.access,
+      change: { targetType: "l4_proxy_host", kind: "update", target: existing, input: { host: input } },
+      note: formData.get("changeNote"),
+      emergencyReason: formData.get("emergencyReason"),
+    });
+    if (gate) return changeRequestState(gate);
+    await updateL4ProxyHost(existing.id, input, userId);
     revalidatePath("/l4-proxy-hosts");
     return actionSuccess("L4 proxy host updated.");
   } catch (error) {
@@ -241,13 +286,22 @@ export async function updateL4ProxyHostAction(
 
 export async function deleteL4ProxyHostAction(
   id: number,
-  _prevState: ActionState = INITIAL_ACTION_STATE
+  _prevState: ActionState = INITIAL_ACTION_STATE,
+  formData?: FormData
 ): Promise<ActionState> {
   void _prevState;
   try {
-    const session = await requireAdmin();
+    const session = await requirePermission("l4_proxy_hosts:write");
     const userId = Number(session.user.id);
-    await deleteL4ProxyHost(id, userId);
+    const existing = await getL4ProxyHostInScope(session.access, id);
+    const gate = await gateHostChange({
+      access: session.access,
+      change: { targetType: "l4_proxy_host", kind: "delete", target: existing, input: {} },
+      note: formData?.get("changeNote"),
+      emergencyReason: formData?.get("emergencyReason"),
+    });
+    if (gate) return changeRequestState(gate);
+    await deleteL4ProxyHost(existing.id, userId);
     revalidatePath("/l4-proxy-hosts");
     return actionSuccess("L4 proxy host deleted.");
   } catch (error) {
@@ -261,9 +315,15 @@ export async function toggleL4ProxyHostAction(
   enabled: boolean
 ): Promise<ActionState> {
   try {
-    const session = await requireAdmin();
+    const session = await requirePermission("l4_proxy_hosts:write");
     const userId = Number(session.user.id);
-    await updateL4ProxyHost(id, { enabled }, userId);
+    const existing = await getL4ProxyHostInScope(session.access, id);
+    const gate = await gateHostChange({
+      access: session.access,
+      change: { targetType: "l4_proxy_host", kind: "update", target: existing, input: { host: { enabled } } },
+    });
+    if (gate) return changeRequestState(gate);
+    await updateL4ProxyHost(existing.id, { enabled }, userId);
     revalidatePath("/l4-proxy-hosts");
     return actionSuccess(`L4 proxy host ${enabled ? "enabled" : "disabled"}.`);
   } catch (error) {

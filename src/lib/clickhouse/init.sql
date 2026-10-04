@@ -17,7 +17,14 @@ CREATE TABLE IF NOT EXISTS traffic_events (
     proto        LowCardinality(String) DEFAULT '' CODEC(ZSTD(3)),
     bytes_sent   UInt64            DEFAULT 0 CODEC(Delta, ZSTD),
     user_agent   String            DEFAULT '' CODEC(ZSTD(3)),
-    is_blocked   Bool              DEFAULT false
+    is_blocked   Bool              DEFAULT false,
+    is_rate_limited Bool           DEFAULT false,
+    asn          UInt32            DEFAULT 0,
+    as_org       LowCardinality(String) DEFAULT '',
+    outcome      LowCardinality(String) DEFAULT '',
+    duration_ms  UInt32            DEFAULT 0,
+    ua_family    String            DEFAULT '' CODEC(ZSTD(3)),
+    waf_rule_id  UInt32            DEFAULT 0
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(ts)
 ORDER BY (host, ts)
@@ -35,7 +42,8 @@ CREATE TABLE IF NOT EXISTS waf_events (
     rule_message Nullable(String)  CODEC(ZSTD(3)),
     severity     LowCardinality(Nullable(String)),
     raw_data     Nullable(String)  CODEC(ZSTD(3)),
-    blocked      Bool              DEFAULT true
+    blocked      Bool              DEFAULT true,
+    tx_id        String            DEFAULT JSONExtractString(ifNull(raw_data, ''), 'transaction', 'id') CODEC(ZSTD(3))
 ) ENGINE = MergeTree()
 PARTITION BY toYYYYMM(ts)
 ORDER BY (host, ts)

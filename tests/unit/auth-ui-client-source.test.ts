@@ -3,11 +3,15 @@
  * the component source rather than rendering it, to avoid a jsdom setup.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const loginClient = readFileSync(resolve(__dirname, '../../app/(auth)/login/LoginClient.tsx'), 'utf-8');
-const usersClient = readFileSync(resolve(__dirname, '../../app/(dashboard)/users/UsersClient.tsx'), 'utf-8');
+const usersDir = resolve(__dirname, '../../app/(dashboard)/users');
+const createUserDialog = readFileSync(resolve(usersDir, 'CreateUserDialog.tsx'), 'utf-8');
+const usersSources = readdirSync(usersDir)
+  .filter((file) => file.endsWith('.tsx'))
+  .map((file) => [file, readFileSync(resolve(usersDir, file), 'utf-8')] as const);
 
 describe('login page', () => {
   it('replaces /login in the history with a full load of the dashboard', () => {
@@ -20,19 +24,23 @@ describe('login page', () => {
 
 describe('users page', () => {
   it('shows the create-user error instead of letting the action throw', () => {
-    expect(usersClient).toMatch(/runUserAction\(\(\) => createUserAction\(formData\)/);
-    expect(usersClient).toContain('{createError && (');
+    expect(createUserDialog).toMatch(/runUserAction\(\(\) => createUserAction\(formData\)/);
+    expect(createUserDialog).toContain('{createError && (');
   });
 
   it('checks the password policy before submitting', () => {
-    expect(usersClient).toContain('passwordPolicyMessage(');
+    expect(createUserDialog).toContain('passwordPolicyMessage(');
   });
 
   it('does not use form actions, which reset the fields on failure', () => {
-    expect(usersClient).not.toMatch(/<form[^>]*\baction=\{/);
+    for (const [file, source] of usersSources) {
+      expect(source, file).not.toMatch(/<form[^>]*\baction=\{/);
+    }
   });
 
   it('never awaits a user action without handling its result', () => {
-    expect(usersClient).not.toMatch(/^\s*await (create|update|delete)User\w*Action\(/m);
+    for (const [file, source] of usersSources) {
+      expect(source, file).not.toMatch(/^\s*await (create|update|delete|reset)User\w*Action\(/m);
+    }
   });
 });

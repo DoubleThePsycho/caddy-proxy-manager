@@ -1,7 +1,7 @@
 /**
  * Rules for the username the login page signs in with. Better Auth's username
- * plugin applies them on sign-in; CPM applies them when it stores a username,
- * so it never records one that the login page would refuse. CPM never makes a
+ * plugin applies them on sign-in; Ingressi applies them when it stores a username,
+ * so it never records one that the login page would refuse. Ingressi never makes a
  * username up: an account either gets its own email address as it is (see
  * ownEmailUsername in sign-in-names.ts, which also keeps a name from reaching
  * two accounts) or one an administrator sets.

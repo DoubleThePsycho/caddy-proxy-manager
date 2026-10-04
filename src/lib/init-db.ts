@@ -1,11 +1,15 @@
 import bcrypt from "bcryptjs";
-import db, { nowIso } from "./db";
+import { appDb, nowIso } from "./db";
 import { config, DEFAULT_ADMIN_PASSWORD, DISALLOWED_ADMIN_PASSWORDS } from "./config";
 import { users, accounts, settings } from "./db/schema";
 import { and, eq } from "drizzle-orm";
 import { CREDENTIAL_ACCOUNT_ISSUER } from "./account-issuer";
 import { changeUserPassword, deleteOrphanedUserReferences } from "./models/user";
 import { isSignInNameTaken, signInEmailConflict } from "./sign-in-names";
+import { readSsoEnforcement } from "@/ee/sso/enforcement-store";
+import { resetUserMfa } from "./mfa";
+import { logAuditEvent } from "./audit";
+import { first, resyncIdentity } from "@/src/lib/db/ops";
 
 const BCRYPT_COST = 12;
 
@@ -22,7 +26,7 @@ type AdminEnvMarker = { v: 2; username: string; passwordHash: string };
 
 /** The stored marker, or null when the row is missing or holds anything else. */
 async function getAdminEnvMarker(): Promise<AdminEnvMarker | null> {
-  const row = await db.select().from(settings).where(eq(settings.key, ADMIN_ENV_MARKER_KEY)).get();
+  const row = await first(appDb.select().from(settings).where(eq(settings.key, ADMIN_ENV_MARKER_KEY)).limit(1));
   if (!row) return null;
   try {
     const value = JSON.parse(row.value) as Partial<AdminEnvMarker> | null;
@@ -42,7 +46,7 @@ async function storeAdminEnvMarker(passwordHash: string): Promise<void> {
   const now = nowIso();
   const marker: AdminEnvMarker = { v: 2, username: config.adminUsername, passwordHash };
   const value = JSON.stringify(marker);
-  await db
+  await appDb
     .insert(settings)
     .values({ key: ADMIN_ENV_MARKER_KEY, value, updatedAt: now })
     .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: now } });
@@ -70,14 +74,57 @@ async function isKnownPublicPassword(hash: string): Promise<boolean> {
  * email address (see sign-in-names.ts), or one name would reach two accounts.
  * Nothing is written then, and the next start tries again.
  */
-function assertAdminIdentityAvailable(adminId: number, identity: { username: string; email: string }): void {
-  if (isSignInNameTaken(db, adminId, identity.username) || signInEmailConflict(db, adminId, identity.email)) {
+async function assertAdminIdentityAvailable(adminId: number, identity: { username: string; email: string }): Promise<void> {
+  if (await isSignInNameTaken(appDb, adminId, identity.username) || await signInEmailConflict(appDb, adminId, identity.email)) {
     throw new Error(
       `ADMIN_USERNAME ${JSON.stringify(config.adminUsername)} is not applied: another account already signs in with it ` +
       "or has it as its email address. Give that account a different username or email address on the Users page, " +
       "or choose another ADMIN_USERNAME."
     );
   }
+}
+
+/**
+ * Enforced SSO (ee/sso) also applies to the primary admin: applying
+ * ADMIN_USERNAME/ADMIN_PASSWORD resets the password but is no way around
+ * enforcement, or every install would keep a password sign-in that the
+ * break-glass list does not show. The env reset restores password sign-in
+ * only when the primary admin is a break-glass account; say so when it is not.
+ */
+async function warnWhenSsoEnforcementBlocksAdmin(adminId: number): Promise<void> {
+  try {
+    const enforcement = await readSsoEnforcement(appDb);
+    if (!enforcement.enabled || enforcement.breakGlassUserIds.includes(adminId)) return;
+    console.warn(
+      `Enforced SSO is on and ${config.adminUsername} is not a break-glass account, so ADMIN_PASSWORD does not let it ` +
+      "sign in with a password. Sign in through the identity provider or with a break-glass account, or turn " +
+      "enforcement off as described in ee/docs/sso-enforcement.md."
+    );
+  } catch {
+    // Informational only.
+  }
+}
+
+/**
+ * Changed ADMIN_USERNAME/ADMIN_PASSWORD are the documented account recovery,
+ * so they also turn off the primary admin's multi-factor authentication: an
+ * operator who lost the admin's authenticator and backup codes can get back
+ * in with the new password and set MFA up again. Whoever can change the
+ * environment of the web container already controls the installation.
+ */
+async function clearAdminMfaForRecovery(adminId: number): Promise<void> {
+  if (!await resetUserMfa(adminId)) return;
+  console.log(
+    `Turned off multi-factor authentication for ${config.adminUsername} because the environment credentials ` +
+    "changed (account recovery). Set it up again from Profile."
+  );
+  await logAuditEvent({
+    userId: null,
+    action: "mfa_reset",
+    entityType: "user",
+    entityId: adminId,
+    summary: "Reset multi-factor authentication of the primary admin: ADMIN_USERNAME/ADMIN_PASSWORD changed",
+  });
 }
 
 /**
@@ -101,7 +148,7 @@ export async function ensureAdminUser(): Promise<void> {
   }
 
   // Check if admin user already exists
-  const existingUser = await db.query.users.findFirst({
+  const existingUser = await appDb.query.users.findFirst({
     where: (table, { eq }) => eq(table.id, adminId)
   });
 
@@ -139,7 +186,7 @@ export async function ensureAdminUser(): Promise<void> {
     };
     const appliesIdentity = applyEnvCredentials || (!marker && existingUser.username !== identity.username);
     if (appliesIdentity && (existingUser.username !== identity.username || existingUser.email !== identity.email)) {
-      assertAdminIdentityAvailable(adminId, identity);
+      await assertAdminIdentityAvailable(adminId, identity);
     }
     if (applyEnvCredentials) {
       const passwordChanged = !(await envPasswordIsStored());
@@ -156,7 +203,7 @@ export async function ensureAdminUser(): Promise<void> {
       // they also make the primary admin active again. Re-applying unchanged
       // ones (the first start without a marker) leaves the status alone.
       const envChanged = marker !== null || passwordChanged || existingUser.username !== identity.username;
-      await db
+      await appDb
         .update(users)
         .set({
           ...identity,
@@ -167,14 +214,16 @@ export async function ensureAdminUser(): Promise<void> {
         .where(eq(users.id, adminId));
       // Ensure credential account row exists for Better Auth
       await ensureCredentialAccount(adminId, passwordHash);
+      if (envChanged) await clearAdminMfaForRecovery(adminId);
       await storeAdminEnvMarker(passwordHash);
       console.log(`Applied admin credentials from environment: ${config.adminUsername}`);
+      await warnWhenSsoEnforcementBlocksAdmin(adminId);
     } else {
       // Keep the stored password and role.
       if (!marker && existingUser.username !== identity.username) {
         // Without a marker, ADMIN_USERNAME was applied on every start, so a
         // changed one is applied even though the password is kept.
-        await db
+        await appDb
           .update(users)
           .set({ ...identity, updatedAt: nowIso() })
           .where(eq(users.id, adminId));
@@ -193,34 +242,42 @@ export async function ensureAdminUser(): Promise<void> {
   }
 
   const username = config.adminUsername.toLowerCase();
-  assertAdminIdentityAvailable(adminId, { username, email: adminEmail });
 
-  // Hash the admin password for secure storage
+  // Hash the admin password for secure storage (before the transaction:
+  // only database work runs inside one).
   const passwordHash = await bcrypt.hash(config.adminPassword, BCRYPT_COST);
 
-  // Create admin user with hashed password
-  const now = nowIso();
-  await db.insert(users).values({
-    id: adminId,
-    email: adminEmail,
-    name: config.adminUsername,
-    passwordHash,
-    role: "admin",
-    provider,
-    subject,
-    username,
-    displayUsername: config.adminUsername,
-    avatarUrl: null,
-    status: "active",
-    createdAt: now,
-    updatedAt: now
+  // Check the names and create the admin, its credential account and the
+  // marker in one transaction: nothing is half-created, and a second process
+  // starting at the same time finds the admin there.
+  const created = await appDb.transaction(async (tx) => {
+    if (await first(tx.select({ id: users.id }).from(users).where(eq(users.id, adminId)).limit(1))) return false;
+    await assertAdminIdentityAvailable(adminId, { username, email: adminEmail });
+    const now = nowIso();
+    await tx.insert(users).values({
+      id: adminId,
+      email: adminEmail,
+      name: config.adminUsername,
+      passwordHash,
+      role: "admin",
+      provider,
+      subject,
+      username,
+      displayUsername: config.adminUsername,
+      avatarUrl: null,
+      status: "active",
+      createdAt: now,
+      updatedAt: now
+    });
+    // The id was given: on PostgreSQL the next generated user id must follow it.
+    await resyncIdentity(users, tx);
+    // Ensure credential account row exists for Better Auth
+    await ensureCredentialAccount(adminId, passwordHash);
+    await storeAdminEnvMarker(passwordHash);
+    return true;
   });
 
-  console.log(`Created admin user: ${config.adminUsername}`);
-
-  // Ensure credential account row exists for Better Auth
-  await ensureCredentialAccount(adminId, passwordHash);
-  await storeAdminEnvMarker(passwordHash);
+  if (created) console.log(`Created admin user: ${config.adminUsername}`);
 }
 
 /**
@@ -233,23 +290,23 @@ async function ensureCredentialAccount(
   { overwrite = true }: { overwrite?: boolean } = {}
 ): Promise<void> {
   const now = nowIso();
-  const existing = await db.select().from(accounts).where(
+  const existing = await first(appDb.select().from(accounts).where(
     and(
       eq(accounts.userId, userId),
       eq(accounts.providerId, "credential"),
       eq(accounts.issuer, CREDENTIAL_ACCOUNT_ISSUER)
     )
-  ).get();
+  ).limit(1));
 
   if (existing) {
     if (!overwrite) return;
     // Update password hash if changed
-    await db.update(accounts).set({
+    await appDb.update(accounts).set({
       password: passwordHash,
       updatedAt: now,
     }).where(eq(accounts.id, existing.id));
   } else {
-    await db.insert(accounts).values({
+    await appDb.insert(accounts).values({
       userId,
       issuer: CREDENTIAL_ACCOUNT_ISSUER,
       accountId: userId.toString(),

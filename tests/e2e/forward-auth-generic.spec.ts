@@ -2,18 +2,19 @@
  * E2E: Generic Forward Auth (Authelia etc.) — issue #188.
  *
  * Covers the UI and persistence path:
- *  - The "Forward Auth Defaults" settings section saves provider/upstream/endpoint
- *  - The create dialog is prefilled from those defaults when the section is enabled
- *  - A host created through the dialog persists the split browser/API settings
+ *  - The "Generic forward auth" card of Settings → Forward auth defaults saves provider/upstream/endpoint
+ *  - The host editor is prefilled from those defaults when the provider is chosen
+ *  - A host created in the editor persists the split browser/API settings
  *    (apiSplit, bypass headers) and they survive an edit round-trip
  */
 import { test, expect } from '@playwright/test';
+import { openCreateHostDialog, fillHostBasics, openEditorSection, openHostEditor, proxyHostIdByName, saveHostEditor, setEditorSwitch } from '../helpers/proxy-api';
 
 const API_PROXY_HOSTS = 'http://localhost:3000/api/v1/proxy-hosts';
 const API_FORWARD_AUTH_SETTINGS = 'http://localhost:3000/api/v1/settings/forward-auth';
 
 test.describe('Generic Forward Auth UI', () => {
-  test('forward auth defaults can be saved in settings and prefill the create dialog', async ({ page }) => {
+  test('forward auth defaults can be saved in settings and prefill the host editor', async ({ page }) => {
     const origin = new URL(page.url()).origin;
     const defaultSettings = {
       provider: 'authelia',
@@ -24,34 +25,26 @@ test.describe('Generic Forward Auth UI', () => {
     const originalSettings = await (await page.request.get(API_FORWARD_AUTH_SETTINGS)).json() as Record<string, unknown>;
 
     try {
-      await page.goto('/settings');
-      const sidebar = page.locator('aside[aria-label="Settings navigation"]');
-      const navBtn = sidebar.getByRole('button', { name: 'Forward Auth Defaults', exact: true });
-      await expect(navBtn).toBeVisible({ timeout: 10_000 });
-      await navBtn.click();
+      await page.goto('/settings?section=forward-auth');
+      const generic = page.locator('section[data-settings-group="forward-auth"]').locator('#settings-generic-forward-auth');
+      await expect(generic).toBeVisible({ timeout: 10_000 });
 
-      await page.locator('select[name="provider"]').selectOption('authelia');
-      await page.locator('input[name="authUpstream"]').fill(defaultSettings.authUpstream);
-      await page.locator('input[name="authEndpoint"]').fill(defaultSettings.authEndpoint);
-      await page.getByRole('button', { name: /save forward auth defaults/i }).click();
+      await generic.getByRole('group', { name: 'Provider preset' }).getByRole('button', { name: 'Authelia' }).click();
+      await generic.locator('input[name="authUpstream"]').fill(defaultSettings.authUpstream);
+      await generic.locator('input[name="authEndpoint"]').fill(defaultSettings.authEndpoint);
+      await page.getByTestId('settings-save-bar').getByRole('button', { name: 'Save changes' }).click();
       await expect(page.getByText(/forward auth defaults saved successfully/i)).toBeVisible({ timeout: 10_000 });
 
       const saved = await (await page.request.get(API_FORWARD_AUTH_SETTINGS)).json();
       expect(saved).toEqual(defaultSettings);
 
-      // Create dialog prefilled from the saved defaults.
-      await page.goto('/proxy-hosts');
-      await page.getByRole('button', { name: /create host/i }).click();
-      await expect(page.getByRole('dialog')).toBeVisible();
+      // The host editor is prefilled from the saved defaults.
+      await openCreateHostDialog(page);
+      await openEditorSection(page, 'Access');
+      await page.getByRole('group', { name: 'Provider', exact: true }).getByRole('button', { name: 'Authelia or custom' }).click();
 
-      const dialog = page.getByRole('dialog');
-      const faSection = dialog.locator('div:has(> input[name="forwardAuthPresent"])');
-      const faSwitch = faSection.getByRole('switch').first();
-      await faSwitch.click();
-      await expect(faSwitch).toHaveAttribute('data-state', 'checked');
-
-      await expect(dialog.locator('input[name="forwardAuthUpstream"]')).toHaveValue(defaultSettings.authUpstream);
-      await expect(dialog.locator('input[name="forwardAuthEndpoint"]')).toHaveValue(defaultSettings.authEndpoint);
+      await expect(page.locator('input[name="forwardAuthUpstream"]')).toHaveValue(defaultSettings.authUpstream);
+      await expect(page.locator('input[name="forwardAuthEndpoint"]')).toHaveValue(defaultSettings.authEndpoint);
     } finally {
       if (originalSettings && Object.keys(originalSettings).length > 0) {
         await page.request.put(API_FORWARD_AUTH_SETTINGS, {
@@ -68,31 +61,18 @@ test.describe('Generic Forward Auth UI', () => {
     const domain = 'generic-fa-ui.local';
 
     try {
-      await page.goto('/proxy-hosts');
-      await page.getByRole('button', { name: /create host/i }).click();
-      await expect(page.getByRole('dialog')).toBeVisible();
+      await openCreateHostDialog(page);
+      await fillHostBasics(page, { name: hostName, domain, upstream: 'localhost:9988' });
 
-      const dialog = page.getByRole('dialog');
-      await dialog.locator('input[name="name"]').fill(hostName);
-      await dialog.locator('textarea[name="domains"]').fill(domain);
-      await dialog.locator('input[placeholder="10.0.0.5:8080"]').fill('localhost:9988');
-
-      const faSection = dialog.locator('div:has(> input[name="forwardAuthPresent"])');
-      const faSwitch = faSection.getByRole('switch').first();
-      await faSwitch.click();
-      await expect(faSwitch).toHaveAttribute('data-state', 'checked');
-
-      await dialog.locator('input[name="forwardAuthUpstream"]').fill('http://authelia:9091');
-      await dialog.locator('input[name="forwardAuthEndpoint"]').fill('/api/authz/forward-auth');
+      await openEditorSection(page, 'Access');
+      await page.getByRole('group', { name: 'Provider', exact: true }).getByRole('button', { name: 'Authelia or custom' }).click();
+      await page.locator('input[name="forwardAuthUpstream"]').fill('http://authelia:9091');
+      await page.locator('input[name="forwardAuthEndpoint"]').fill('/api/authz/forward-auth');
       // Enable the API split (401 for non-browser clients).
-      const apiSplitSwitch = dialog.locator('#forwardAuthApiSplitToggle');
-      await apiSplitSwitch.click();
-      await expect(apiSplitSwitch).toHaveAttribute('data-state', 'checked');
-      await dialog.locator('input[name="forwardAuthApiBypassHeaders"]').fill('X-Api-Key, Authorization');
+      await setEditorSwitch(page, '401 for API clients', true);
+      await page.locator('input[name="forwardAuthApiBypassHeaders"]').fill('X-Api-Key, Authorization');
 
-      await page.getByRole('button', { name: /^create$/i }).click();
-      await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 10_000 });
-      await expect(page.getByRole('table').getByText(hostName)).toBeVisible({ timeout: 10_000 });
+      await saveHostEditor(page);
 
       // Verify persisted state via the API.
       const listResp = await page.request.get(API_PROXY_HOSTS);
@@ -110,21 +90,13 @@ test.describe('Generic Forward Auth UI', () => {
       expect(created!.forwardAuth!.copyHeaders).toContain('Remote-User');
 
       // Edit round-trip: disable the split, verify the change persists.
-      const createdId = created!.id;
-      const row = page.locator('tr', { hasText: hostName });
-      await row.getByRole('button', { name: /open menu/i }).click();
-      await page.getByRole('menuitem', { name: 'Edit' }).click();
-      const editDialog = page.getByRole('dialog');
-      await expect(editDialog).toBeVisible();
-
-      await expect(editDialog.locator('input[name="forwardAuthUpstream"]')).toHaveValue('http://authelia:9091');
-      const editSplitSwitch = editDialog.locator('#forwardAuthApiSplitToggle');
-      await expect(editSplitSwitch).toHaveAttribute('data-state', 'checked');
-      await editSplitSwitch.click();
-      await expect(editSplitSwitch).toHaveAttribute('data-state', 'unchecked');
-
-      await page.getByRole('button', { name: /save changes/i }).click();
-      await expect(editDialog).not.toBeVisible({ timeout: 10_000 });
+      const createdId = await proxyHostIdByName(page, hostName);
+      expect(createdId).toBe(created!.id);
+      await openHostEditor(page, createdId, 'Access');
+      await expect(page.locator('input[name="forwardAuthUpstream"]')).toHaveValue('http://authelia:9091');
+      await expect(page.getByRole('switch', { name: '401 for API clients' })).toHaveAttribute('aria-checked', 'true');
+      await setEditorSwitch(page, '401 for API clients', false);
+      await saveHostEditor(page);
 
       const getResp = await page.request.get(`${API_PROXY_HOSTS}/${createdId}`);
       const updated = await getResp.json() as { forwardAuth: { apiSplit: boolean } | null };

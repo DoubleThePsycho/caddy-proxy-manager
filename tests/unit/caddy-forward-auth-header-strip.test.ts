@@ -1,6 +1,7 @@
 /**
- * Regression: the generated Caddy config for CPM forward-auth hosts must STRIP
- * client-supplied X-CPM-* identity headers from the inbound request on EVERY
+ * Regression: the generated Caddy config for Ingressi forward-auth hosts must STRIP
+ * client-supplied X-Ingressi-* identity headers (and their legacy X-CPM-*
+ * names) from the inbound request on EVERY
  * route that proxies to the upstream — protected, unprotected catch-all,
  * excluded, and location routes alike.
  *
@@ -8,7 +9,7 @@
  * apps: on unprotected/excluded paths the forged headers pass straight through
  * (no verify runs), and on authenticated routes the copy step only overwrites a
  * header when the verify response is non-empty (a user in no group returns an
- * empty X-CPM-Groups, which would otherwise leave the client's forged value
+ * empty X-Ingressi-Groups, which would otherwise leave the client's forged value
  * intact). See SECURITY-AUDIT H1.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -18,18 +19,8 @@ const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    sqlite: undefined,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null => {
-      if (!value) return null;
-      return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-    },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 // Keep the real buildCaddyDocument (pure config builder) but stub the network
@@ -45,7 +36,10 @@ import { createProxyHost } from '../../src/lib/models/proxy-hosts';
 import { buildCaddyDocument } from '../../src/lib/caddy';
 import * as schema from '../../src/lib/db/schema';
 
-const CPM_HEADERS = ['X-CPM-User', 'X-CPM-Email', 'X-CPM-Groups', 'X-CPM-User-Id'];
+const IDENTITY_HEADERS = ['X-Ingressi-User', 'X-Ingressi-Email', 'X-Ingressi-Groups', 'X-Ingressi-User-Id'];
+// Pre-rename names, still sent to upstreams and stripped from clients.
+const LEGACY_IDENTITY_HEADERS = ['X-CPM-User', 'X-CPM-Email', 'X-CPM-Groups', 'X-CPM-User-Id'];
+const ALL_IDENTITY_HEADERS = [...IDENTITY_HEADERS, ...LEGACY_IDENTITY_HEADERS];
 const UPSTREAM = '10.0.0.5:8080';
 
 /** Recursively collect every `handle` array anywhere in the config document. */
@@ -67,12 +61,12 @@ function isUpstreamProxy(h: unknown): boolean {
   return ups.some((u) => u.dial === UPSTREAM);
 }
 
-function isCpmStrip(h: unknown): boolean {
+function isIdentityStrip(h: unknown): boolean {
   const handler = h as Record<string, unknown>;
   if (handler?.handler !== 'headers') return false;
   const del = (handler.request as { delete?: string[] } | undefined)?.delete;
   if (!Array.isArray(del)) return false;
-  return CPM_HEADERS.every((name) => del.includes(name));
+  return ALL_IDENTITY_HEADERS.every((name) => del.includes(name));
 }
 
 beforeEach(async () => {
@@ -91,14 +85,14 @@ beforeEach(async () => {
   });
 });
 
-describe('CPM forward-auth inbound X-CPM-* header stripping', () => {
-  it('strips X-CPM-* before the upstream on a full-site protected host', async () => {
+describe('Ingressi forward-auth inbound identity header stripping', () => {
+  it('strips the identity headers before the upstream on a full-site protected host', async () => {
     await createProxyHost(
       {
         name: 'fa-fullsite',
         domains: ['app.example.com'],
         upstreams: [UPSTREAM],
-        cpmForwardAuth: { enabled: true },
+        ingressiForwardAuth: { enabled: true },
       },
       1
     );
@@ -109,20 +103,20 @@ describe('CPM forward-auth inbound X-CPM-* header stripping', () => {
 
     expect(upstreamRoutes.length).toBeGreaterThan(0);
     for (const arr of upstreamRoutes) {
-      const stripIdx = arr.findIndex(isCpmStrip);
+      const stripIdx = arr.findIndex(isIdentityStrip);
       const proxyIdx = arr.findIndex(isUpstreamProxy);
       expect(stripIdx).toBeGreaterThanOrEqual(0); // strip handler present
       expect(stripIdx).toBeLessThan(proxyIdx); // ...and before the upstream proxy
     }
   });
 
-  it('strips X-CPM-* on UNPROTECTED excluded paths (no verify runs there)', async () => {
+  it('strips the identity headers on UNPROTECTED excluded paths (no verify runs there)', async () => {
     await createProxyHost(
       {
         name: 'fa-excluded',
         domains: ['app2.example.com'],
         upstreams: [UPSTREAM],
-        cpmForwardAuth: { enabled: true, excluded_paths: ['/public/*'] },
+        ingressiForwardAuth: { enabled: true, excluded_paths: ['/public/*'] },
       },
       1
     );
@@ -143,10 +137,10 @@ describe('CPM forward-auth inbound X-CPM-* header stripping', () => {
     );
 
     expect(excludedRoute).toBeDefined();
-    expect(excludedRoute!.some(isCpmStrip)).toBe(true);
+    expect(excludedRoute!.some(isIdentityStrip)).toBe(true);
   });
 
-  it('does not leak X-CPM-* stripping into a plain (non-forward-auth) host', async () => {
+  it('does not leak identity-header stripping into a plain (non-forward-auth) host', async () => {
     await createProxyHost(
       { name: 'plain', domains: ['plain.example.com'], upstreams: [UPSTREAM] },
       1
@@ -157,9 +151,9 @@ describe('CPM forward-auth inbound X-CPM-* header stripping', () => {
     const upstreamRoutes = handleArrays.filter((arr) => arr.some(isUpstreamProxy));
 
     expect(upstreamRoutes.length).toBeGreaterThan(0);
-    // Plain hosts never deal in X-CPM-* headers, so no strip handler is emitted.
+    // Plain hosts never deal in the identity headers, so no strip handler is emitted.
     for (const arr of upstreamRoutes) {
-      expect(arr.some(isCpmStrip)).toBe(false);
+      expect(arr.some(isIdentityStrip)).toBe(false);
     }
   });
 });
@@ -463,15 +457,27 @@ describe('credential copy headers the auth server does not return', () => {
 });
 
 describe('identity-header strip covers underscore spellings', () => {
-  it('deletes the underscore form of every CPM identity header', async () => {
+  it('deletes the underscore form of every Ingressi identity header', async () => {
     await createProxyHost(
-      { name: 'cpm-us', domains: ['cpm-us.example.com'], upstreams: [UPSTREAM], cpmForwardAuth: { enabled: true } },
+      { name: 'ingressi-us', domains: ['ingressi-us.example.com'], upstreams: [UPSTREAM], ingressiForwardAuth: { enabled: true } },
       1
     );
     const lists = stripListsBeforeUpstream(await buildCaddyDocument());
     expect(lists.length).toBeGreaterThan(0);
     for (const del of lists) {
-      expect(del).toEqual(expect.arrayContaining([...CPM_HEADERS, 'X_CPM_User', 'X_CPM_Email', 'X_CPM_Groups', 'X_CPM_User_Id']));
+      expect(del).toEqual(
+        expect.arrayContaining([
+          ...ALL_IDENTITY_HEADERS,
+          'X_Ingressi_User',
+          'X_Ingressi_Email',
+          'X_Ingressi_Groups',
+          'X_Ingressi_User_Id',
+          'X_CPM_User',
+          'X_CPM_Email',
+          'X_CPM_Groups',
+          'X_CPM_User_Id',
+        ])
+      );
     }
   });
 
@@ -544,12 +550,15 @@ function expectAllSeparatorMixesDeleted(doc: unknown, headers: string[], example
 }
 
 describe('identity-header strip covers mixed separator spellings', () => {
-  it('deletes every "-"/"_" mix of the CPM identity headers', async () => {
+  it('deletes every "-"/"_" mix of the Ingressi identity headers', async () => {
     await createProxyHost(
-      { name: 'cpm-mix', domains: ['cpm-mix.example.com'], upstreams: [UPSTREAM], cpmForwardAuth: { enabled: true } },
+      { name: 'ingressi-mix', domains: ['ingressi-mix.example.com'], upstreams: [UPSTREAM], ingressiForwardAuth: { enabled: true } },
       1
     );
-    expectAllSeparatorMixesDeleted(await buildCaddyDocument(), CPM_HEADERS, [
+    expectAllSeparatorMixesDeleted(await buildCaddyDocument(), ALL_IDENTITY_HEADERS, [
+      'X-Ingressi_User',
+      'X-Ingressi-User_Id',
+      'x_ingressi-user_id',
       'X-CPM_User',
       'X-Cpm-User_Id',
       'x_cpm-user_id',
@@ -645,7 +654,7 @@ describe('identity-header strip covers mixed separator spellings', () => {
 describe('forward-auth copy step placeholders', () => {
   it('reads auth response headers under their canonical names', async () => {
     await createProxyHost(
-      { name: 'cpm-canon', domains: ['cpm-canon.example.com'], upstreams: [UPSTREAM], cpmForwardAuth: { enabled: true } },
+      { name: 'ingressi-canon', domains: ['ingressi-canon.example.com'], upstreams: [UPSTREAM], ingressiForwardAuth: { enabled: true } },
       1
     );
     await createProxyHost(
@@ -664,6 +673,10 @@ describe('forward-auth copy step placeholders', () => {
     // Caddy registers {http.reverse_proxy.header.*} under Go's canonical
     // header key, and the lookup is case-sensitive.
     for (const [name, canonical] of [
+      ['X-Ingressi-User', 'X-Ingressi-User'],
+      ['X-Ingressi-Email', 'X-Ingressi-Email'],
+      ['X-Ingressi-Groups', 'X-Ingressi-Groups'],
+      ['X-Ingressi-User-Id', 'X-Ingressi-User-Id'],
       ['X-CPM-User', 'X-Cpm-User'],
       ['X-CPM-Email', 'X-Cpm-Email'],
       ['X-CPM-Groups', 'X-Cpm-Groups'],
@@ -678,10 +691,10 @@ describe('forward-auth copy step placeholders', () => {
   });
 });
 
-describe('CPM forward-auth portal redirect', () => {
+describe('Ingressi forward-auth portal redirect', () => {
   it('takes the encoded target from the verify response and escapes the URI itself otherwise', async () => {
     await createProxyHost(
-      { name: 'cpm-portal', domains: ['cpm-portal.example.com'], upstreams: [UPSTREAM], cpmForwardAuth: { enabled: true } },
+      { name: 'ingressi-portal', domains: ['ingressi-portal.example.com'], upstreams: [UPSTREAM], ingressiForwardAuth: { enabled: true } },
       1
     );
     const doc = await buildCaddyDocument();
@@ -698,9 +711,9 @@ describe('CPM forward-auth portal redirect', () => {
 
     expect(routes).toHaveLength(2);
     expect(routes[0].match).toEqual([
-      { not: [{ vars: { '{http.reverse_proxy.header.X-Cpm-Portal-Target}': [''] } }] },
+      { not: [{ vars: { '{http.reverse_proxy.header.X-Ingressi-Portal-Target}': [''] } }] },
     ]);
-    expect(location(routes[0])).toMatch(/\/portal\?rd=\{http\.reverse_proxy\.header\.X-Cpm-Portal-Target\}$/);
+    expect(location(routes[0])).toMatch(/\/portal\?rd=\{http\.reverse_proxy\.header\.X-Ingressi-Portal-Target\}$/);
     expect(routes[1].match).toBeUndefined();
     expect(location(routes[1])).toMatch(
       /\/portal\?rd=\{http\.request\.scheme\}:\/\/\{http\.request\.hostport\}\{http\.request\.uri_escaped\}$/

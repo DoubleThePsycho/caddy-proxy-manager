@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiUser, apiErrorResponse } from "@/src/lib/api-auth";
-import { createApiToken, listApiTokens, listAllApiTokens } from "@/src/lib/models/api-tokens";
+import { requireApiUser, apiErrorResponse, getApiAccess } from "@/src/lib/api-auth";
+import {
+  createApiToken,
+  expiryFromPreset,
+  isTokenExpiryPreset,
+  listApiTokens,
+  listAllApiTokens,
+  TOKEN_EXPIRY_PRESETS,
+} from "@/src/lib/models/api-tokens";
+import { logAuditEvent } from "@/src/lib/audit";
 
 export async function GET(request: NextRequest) {
   try {
-    const { userId, role } = await requireApiUser(request);
-    const tokens = role === "admin" ? await listAllApiTokens() : await listApiTokens(userId);
+    // A token with scopes is refused: they do not cover the owner's tokens.
+    const auth = await requireApiUser(request);
+    // Every user's tokens for administrators only, whatever a custom role holds.
+    const tokens = (await getApiAccess(auth)).isAdmin ? await listAllApiTokens() : await listApiTokens(auth.userId);
     return NextResponse.json(tokens);
   } catch (error) {
     return apiErrorResponse(error);
@@ -36,19 +46,27 @@ export async function POST(request: NextRequest) {
     if (body.expires_at !== undefined && body.expires_at !== null && typeof body.expires_at !== "string") {
       return NextResponse.json({ error: "expires_at must be a string (ISO 8601 date)" }, { status: 400 });
     }
-
-    let result;
-    try {
-      result = await createApiToken(body.name, userId, body.expires_at ?? undefined);
-    } catch (e) {
-      if (e instanceof Error && (
-        e.message.includes("expires_at") || e.message.includes("ISO 8601") ||
-        e.message.includes("characters or fewer") || e.message.includes("Maximum of")
-      )) {
-        return NextResponse.json({ error: e.message }, { status: 400 });
-      }
-      throw e;
+    // A preset instead of a date: 30, 90 or 365 days from now, or never.
+    if (body.expiresIn !== undefined && body.expiresIn !== null && !isTokenExpiryPreset(body.expiresIn)) {
+      return NextResponse.json({ error: `expiresIn must be one of ${TOKEN_EXPIRY_PRESETS.join(", ")}` }, { status: 400 });
     }
+    if (body.expiresIn != null && body.expires_at != null) {
+      return NextResponse.json({ error: "Give expires_at or expiresIn, not both" }, { status: 400 });
+    }
+    const expiresAt = body.expiresIn != null ? expiryFromPreset(body.expiresIn) ?? undefined : body.expires_at ?? undefined;
+
+    // Scopes are checked against what the caller's role holds now (400 otherwise).
+    const result = body.scopes === undefined
+      ? await createApiToken(body.name, userId, expiresAt)
+      : await createApiToken(body.name, userId, expiresAt, { scopes: body.scopes });
+    await logAuditEvent({
+      userId,
+      action: "api_token_created",
+      entityType: "api_token",
+      entityId: result.token.id,
+      summary: `Created API token "${result.token.name}"`,
+      data: { scopes: result.token.scopes ?? null, expiresAt: result.token.expiresAt ?? null },
+    });
     return NextResponse.json({ token: result.token, raw_token: result.rawToken }, { status: 201 });
   } catch (error) {
     return apiErrorResponse(error);

@@ -7,7 +7,6 @@
 import http from 'node:http';
 import net from 'node:net';
 import crypto from 'node:crypto';
-import type { Page } from '@playwright/test';
 
 export interface HttpResponse {
   status: number;
@@ -197,24 +196,4 @@ export function wsHandshake(
       reject(err);
     });
   });
-}
-
-/** Inject hidden form fields into #create-host-form before submitting. */
-export async function injectFormFields(page: Page, fields: Record<string, string>): Promise<void> {
-  await page.evaluate((f) => {
-    const form = document.getElementById('create-host-form');
-    if (!form) throw new Error('create-host-form not found');
-    for (const [name, value] of Object.entries(f)) {
-      const existing = form.querySelector<HTMLInputElement>(`input[name="${name}"]`);
-      if (existing) {
-        existing.value = value;
-      } else {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = name;
-        input.value = value;
-        form.appendChild(input);
-      }
-    }
-  }, fields);
 }

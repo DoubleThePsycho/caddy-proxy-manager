@@ -10,16 +10,10 @@
  * 4. Bearer credentials cannot mint replacement API tokens, even for admins
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
+import { createApiTokenFor, ensureLocalUser } from '../helpers/e2e-sql';
 
 const BASE = 'http://localhost:3000/api/v1';
 const ORIGIN = 'http://localhost:3000';
-
-const COMPOSE_ARGS = [
-  'compose',
-  '-f', 'docker-compose.yml',
-  '-f', 'tests/docker-compose.test.yml',
-];
 
 // ── Endpoint definitions ────────────────────────────────────────────────
 
@@ -40,6 +34,8 @@ const ENDPOINTS: Endpoint[] = [
   { method: 'GET', path: '/proxy-hosts/999', auth: 'admin' },
   { method: 'PUT', path: '/proxy-hosts/999', auth: 'admin', body: { name: 'x' } },
   { method: 'DELETE', path: '/proxy-hosts/999', auth: 'admin' },
+  { method: 'POST', path: '/proxy-hosts/preview', auth: 'admin', body: { name: 'x', domains: ['x.test'], upstreams: ['127.0.0.1:80'] } },
+  { method: 'POST', path: '/proxy-hosts/999/preview', auth: 'admin', body: { name: 'x' } },
   { method: 'GET', path: '/proxy-hosts/999/forward-auth-access', auth: 'admin' },
   { method: 'PUT', path: '/proxy-hosts/999/forward-auth-access', auth: 'admin', body: { userIds: [], groupIds: [] } },
   { method: 'GET', path: '/proxy-hosts/999/mtls-access-rules', auth: 'admin' },
@@ -84,6 +80,20 @@ const ENDPOINTS: Endpoint[] = [
   { method: 'DELETE', path: '/access-lists/999', auth: 'admin' },
   { method: 'POST', path: '/access-lists/999/entries', auth: 'admin', body: { username: 'x', password: 'x' } },
   { method: 'DELETE', path: '/access-lists/999/entries/999', auth: 'admin' },
+  { method: 'GET', path: '/access-lists/999/rules', auth: 'admin' },
+  { method: 'POST', path: '/access-lists/999/rules', auth: 'admin', body: { action: 'deny', kind: 'ip', values: ['192.0.2.1'] } },
+  { method: 'PUT', path: '/access-lists/999/rules', auth: 'admin', body: { rules: [] } },
+  { method: 'GET', path: '/access-lists/999/rules/999', auth: 'admin' },
+  { method: 'PUT', path: '/access-lists/999/rules/999', auth: 'admin', body: { action: 'deny', kind: 'ip', values: ['192.0.2.1'] } },
+  { method: 'DELETE', path: '/access-lists/999/rules/999', auth: 'admin' },
+  { method: 'POST', path: '/access-lists/999/rules/reorder', auth: 'admin', body: { ruleIds: [] } },
+  { method: 'GET', path: '/access-lists/stats', auth: 'admin' },
+  { method: 'GET', path: '/access-lists/blocked-sources', auth: 'admin' },
+  // Invalid bodies: an admin gets 400, and nothing is blocked on the shared stack.
+  { method: 'PUT', path: '/access-lists/blocked-sources', auth: 'admin', body: { denyStatus: 1 } },
+  { method: 'GET', path: '/access-lists/blocked-sources/entries', auth: 'admin' },
+  { method: 'POST', path: '/access-lists/blocked-sources/entries', auth: 'admin', body: { address: 'not-an-address' } },
+  { method: 'DELETE', path: '/access-lists/blocked-sources/entries/999', auth: 'admin' },
 
   // mtls-roles
   { method: 'GET', path: '/mtls-roles', auth: 'admin' },
@@ -157,37 +167,7 @@ const ENDPOINTS: Endpoint[] = [
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 function ensureTestUser(username: string, password: string, role: string) {
-  const script = `
-    import { Database } from "bun:sqlite";
-    const db = new Database("./data/caddy-proxy-manager.db");
-    const email = "${username}@localhost";
-    const hash = await Bun.password.hash("${password}", { algorithm: "bcrypt", cost: 12 });
-    const now = new Date().toISOString();
-    const existing = db.query("SELECT id FROM users WHERE email = ?").get(email);
-    if (existing) {
-      db.run("UPDATE users SET passwordHash = ?, role = ?, status = 'active', updatedAt = ? WHERE email = ?",
-        [hash, "${role}", now, email]);
-      const acc = db.query("SELECT id FROM accounts WHERE userId = ? AND providerId = 'credential'").get(existing.id);
-      if (acc) {
-        db.run("UPDATE accounts SET password = ?, updatedAt = ? WHERE id = ?", [hash, now, acc.id]);
-      } else {
-        db.run("INSERT INTO accounts (userId, issuer, accountId, providerId, password, createdAt, updatedAt) VALUES (?, 'local:credential', ?, 'credential', ?, ?, ?)",
-          [existing.id, String(existing.id), hash, now, now]);
-      }
-    } else {
-      db.run(
-        "INSERT INTO users (email, name, passwordHash, role, provider, subject, username, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, 'credentials', ?, ?, 'active', ?, ?)",
-        [email, "${username}", hash, "${role}", "${username}", "${username}", now, now]
-      );
-      const user = db.query("SELECT id FROM users WHERE email = ?").get(email);
-      db.run("INSERT INTO accounts (userId, issuer, accountId, providerId, password, createdAt, updatedAt) VALUES (?, 'local:credential', ?, 'credential', ?, ?, ?)",
-        [user.id, String(user.id), hash, now, now]);
-    }
-  `;
-  execFileSync('docker', [...COMPOSE_ARGS, 'exec', '-T', 'web', 'bun', '-e', script], {
-    cwd: process.cwd(),
-    stdio: 'pipe',
-  });
+  ensureLocalUser({ username, password, role });
 }
 
 /**
@@ -195,24 +175,7 @@ function ensureTestUser(username: string, password: string, role: string) {
  * Returns the raw token string (not hashed).
  */
 function createApiToken(username: string): string {
-  const token = `test-api-token-${username}-${Date.now()}`;
-  const script = `
-    import { Database } from "bun:sqlite";
-    import { createHash } from "crypto";
-    const db = new Database("./data/caddy-proxy-manager.db");
-    const email = "${username}@localhost";
-    const user = db.query("SELECT id FROM users WHERE email = ?").get(email);
-    if (!user) { console.error("User not found: ${username}"); process.exit(1); }
-    const hash = createHash("sha256").update("${token}").digest("hex");
-    const now = new Date().toISOString();
-    db.run("INSERT INTO api_tokens (name, tokenHash, createdBy, createdAt) VALUES (?, ?, ?, ?)",
-      ["e2e-security-test", hash, user.id, now]);
-  `;
-  execFileSync('docker', [...COMPOSE_ARGS, 'exec', '-T', 'web', 'bun', '-e', script], {
-    cwd: process.cwd(),
-    stdio: 'pipe',
-  });
-  return token;
+  return createApiTokenFor(`${username}@localhost`, `test-api-token-${username}`);
 }
 
 async function apiRequest(

@@ -3,6 +3,10 @@
 import SwaggerUI from "swagger-ui-react";
 import "swagger-ui-react/swagger-ui.css";
 import "./swagger-ui-overrides.css";
+import { ensureOpenApi31Refractors } from "./apidom-refractors";
+
+// Before Swagger UI reads our OpenAPI 3.1 document (see apidom-refractors.ts).
+ensureOpenApi31Refractors();
 
 /**
  * API documentation is bundled with the application. Keeping executable assets
@@ -10,12 +14,8 @@ import "./swagger-ui-overrides.css";
  */
 export default function ApiDocsClient() {
   return (
-    <div className="w-full min-h-[600px] -mx-4 md:-mx-8 -my-6 px-4 md:px-8 py-6">
-      <SwaggerUI
-        url="/api/v1/openapi.json"
-        deepLinking
-        defaultModelsExpandDepth={1}
-      />
-    </div>
+    <section aria-label="Endpoints" className="api-docs min-h-[600px] min-w-0 overflow-x-auto rounded-2xl border border-line bg-panel py-2">
+      <SwaggerUI url="/api/v1/openapi.json" deepLinking defaultModelsExpandDepth={1} />
+    </section>
   );
 }

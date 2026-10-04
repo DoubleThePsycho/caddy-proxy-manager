@@ -8,12 +8,16 @@ vi.mock('@/src/lib/models/l4-proxy-hosts', () => ({
   deleteL4ProxyHost: vi.fn(),
 }));
 
+// No change approval policy covers these hosts (ee/approvals has its own tests).
+vi.mock('@/ee/approvals/requests', () => ({ gateHostChange: vi.fn().mockResolvedValue(null) }));
+
 vi.mock('@/src/lib/api-auth', () => {
   const ApiAuthError = class extends Error {
     status: number;
     constructor(msg: string, status: number) { super(msg); this.status = status; this.name = 'ApiAuthError'; }
   };
   return {
+    requireApiPermission: vi.fn((request: unknown) => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireApiAdmin(request))),
     requireApiAdmin: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
     requireApiUser: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
     apiErrorResponse: vi.fn((error: unknown) => {
@@ -62,6 +66,9 @@ const sampleHost = {
 beforeEach(() => {
   vi.clearAllMocks();
   mockRequireApiAdmin.mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' });
+  // PUT and DELETE look the host up first (custom roles: a host outside the
+  // caller's tag scope answers 404 like a missing one).
+  mockGet.mockImplementation(async (id: number) => (id === 999 ? null : { ...sampleHost, id, tags: [] }) as any);
 });
 
 describe('GET /api/v1/l4-proxy-hosts', () => {
@@ -133,14 +140,14 @@ describe('PUT /api/v1/l4-proxy-hosts/[id]', () => {
     expect(mockUpdate).toHaveBeenCalledWith(1, body, 1);
   });
 
-  it('returns 500 when host not found', async () => {
-    mockUpdate.mockRejectedValue(new Error('not found'));
-
+  it('fails without updating when the host does not exist', async () => {
     const response = await PUT(createMockRequest({ method: 'PUT', body: { listen_port: 4444 } }), { params: Promise.resolve({ id: '999' }) });
     const data = await response.json();
 
+    // The real apiErrorResponse answers 404 for "... not found"; this test's mock answers 500.
     expect(response.status).toBe(500);
-    expect(data.error).toBe('not found');
+    expect(data.error).toBe('L4 proxy host not found');
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 });
 
@@ -156,14 +163,13 @@ describe('DELETE /api/v1/l4-proxy-hosts/[id]', () => {
     expect(mockDelete).toHaveBeenCalledWith(1, 1);
   });
 
-  it('returns 500 when host not found', async () => {
-    mockDelete.mockRejectedValue(new Error('not found'));
-
+  it('fails without deleting when the host does not exist', async () => {
     const response = await DELETE(createMockRequest({ method: 'DELETE' }), { params: Promise.resolve({ id: '999' }) });
     const data = await response.json();
 
     expect(response.status).toBe(500);
-    expect(data.error).toBe('not found');
+    expect(data.error).toBe('L4 proxy host not found');
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 });
 

@@ -14,7 +14,8 @@
 # Environment variables:
 #   DATA_DIR              - Path to shared data volume (default: /data)
 #   COMPOSE_DIR           - Path to compose files (default: /compose)
-#   CADDY_CONTAINER_NAME  - Caddy container name for project auto-detection (default: caddy-proxy-manager-caddy)
+#   CADDY_CONTAINER_NAME  - Caddy container name for project auto-detection (default: ingressi-caddy,
+#                           then the pre-rename caddy-proxy-manager-caddy)
 #   COMPOSE_PROJECT_NAME  - Override compose project name (auto-detected from caddy container labels if unset)
 #   COMPOSE_HOST_DIR      - Only for non-standard bind-mount deployments: host
 #                           path passed as --project-directory so relative
@@ -30,7 +31,9 @@ set -e
 DATA_DIR="${DATA_DIR:-/data}"
 COMPOSE_DIR="${COMPOSE_DIR:-/compose}"
 POLL_INTERVAL="${POLL_INTERVAL:-2}"
-CADDY_CONTAINER_NAME="${CADDY_CONTAINER_NAME:-caddy-proxy-manager-caddy}"
+CADDY_CONTAINER_NAME="${CADDY_CONTAINER_NAME:-ingressi-caddy}"
+# Container name of caddy in compose files from before the rename to Ingressi.
+LEGACY_CADDY_CONTAINER_NAME="caddy-proxy-manager-caddy"
 
 TRIGGER_FILE="$DATA_DIR/l4-ports.trigger"
 STATUS_FILE="$DATA_DIR/l4-ports.status"
@@ -56,6 +59,18 @@ write_status() {
 STATUSEOF
 }
 
+# The caddy container's name: CADDY_CONTAINER_NAME, or the pre-rename name when
+# only that container exists (compose files from before the rename).
+caddy_container() {
+  if docker inspect "$CADDY_CONTAINER_NAME" >/dev/null 2>&1; then
+    echo "$CADDY_CONTAINER_NAME"
+  elif docker inspect "$LEGACY_CADDY_CONTAINER_NAME" >/dev/null 2>&1; then
+    echo "$LEGACY_CADDY_CONTAINER_NAME"
+  else
+    echo "$CADDY_CONTAINER_NAME"
+  fi
+}
+
 # Auto-detect the Docker Compose project name from the running caddy container's labels.
 # This ensures we operate on the correct project regardless of where compose files are mounted.
 detect_project_name() {
@@ -63,10 +78,11 @@ detect_project_name() {
     echo "$COMPOSE_PROJECT_NAME"
     return
   fi
-  detected=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$CADDY_CONTAINER_NAME" 2>/dev/null || echo "")
+  detected=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$(caddy_container)" 2>/dev/null || echo "")
   if [ -n "$detected" ]; then
     echo "$detected"
   else
+    # The directory the repository is cloned into by default.
     echo "caddy-proxy-manager"
   fi
 }
@@ -141,7 +157,7 @@ do_apply() {
     HEALTH_WAITED=0
     HEALTH="unknown"
     while [ "$HEALTH_WAITED" -lt "$HEALTH_TIMEOUT" ]; do
-      HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$CADDY_CONTAINER_NAME" 2>/dev/null || echo "unknown")
+      HEALTH=$(docker inspect --format='{{.State.Health.Status}}' "$(caddy_container)" 2>/dev/null || echo "unknown")
       if [ "$HEALTH" = "healthy" ]; then
         break
       fi

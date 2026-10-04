@@ -13,6 +13,7 @@ vi.mock('@/src/lib/api-auth', () => {
     constructor(msg: string, status: number) { super(msg); this.status = status; this.name = 'ApiAuthError'; }
   };
   return {
+    requireApiPermission: vi.fn((request: unknown) => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireApiAdmin(request))),
     requireApiAdmin: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
     requireApiUser: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
     apiErrorResponse: vi.fn((error: unknown) => {

@@ -14,44 +14,35 @@
  *     sees the rewritten path.
  *   - Unmatched paths are proxied normally.
  *
- * The pathBlocksJson / pathRewritesJson hidden fields are injected directly
- * (same pattern as redirects.spec.ts) so the test doesn't have to drive the
- * dynamic dialog rows.
+ * The rules are entered in the host editor: blocked paths in the Access
+ * section, rewrites in the Advanced section.
  *
  * Domain: func-path-rules.test
  */
 import { test, expect } from '@playwright/test';
-import { httpGet, injectFormFields, waitForRoute } from '../../helpers/http';
+import { openCreateHostDialog, addBlockedPath, addBypassPath, addPathRewrite, fillHostBasics, openEditorSection, saveHostEditor, setEditorSwitch } from '../../helpers/proxy-api';
+import { httpGet, waitForRoute } from '../../helpers/http';
 
 const DOMAIN = 'func-path-rules.test';
 
 test.describe.serial('Path Blocks and Path Rewrites', () => {
   test('setup: create proxy host with path blocks and rewrites', async ({ page }) => {
-    await page.goto('/proxy-hosts');
-    await page.getByRole('button', { name: /create host/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-
-    await page.getByLabel('Name').fill('Functional Path Blocks/Rewrites Test');
-    await page.getByLabel(/domains/i).fill(DOMAIN);
     // whoami-server echoes the full request line, letting us assert the
     // rewritten URI is what the upstream received.
-    await page.getByPlaceholder('10.0.0.5:8080').first().fill('whoami-server:80');
+    await openCreateHostDialog(page);
+    await fillHostBasics(page, { name: 'Functional Path Blocks/Rewrites Test', domain: DOMAIN, upstream: 'whoami-server:80' });
 
-    await injectFormFields(page, {
-      sslForcedPresent: 'on',
-      pathBlocksJson: JSON.stringify([
-        { path: '/dns-query', status: 403, body: 'Forbidden' },
-        { path: '/admin/*',   status: 404 },
-      ]),
-      pathRewritesJson: JSON.stringify([
-        { from: '/secretpath', to: '/dns-query' },
-        { from: '/oldapi',     to: '/v2/api' },
-      ]),
-    });
+    await openEditorSection(page, 'Access');
+    await addBlockedPath(page, { path: '/dns-query', status: 403, body: 'Forbidden' });
+    await addBlockedPath(page, { path: '/admin/*', status: 404 });
 
-    await page.getByRole('button', { name: /^create$/i }).click();
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('table').getByText('Functional Path Blocks/Rewrites Test')).toBeVisible({ timeout: 10_000 });
+    await openEditorSection(page, 'Advanced');
+    await addPathRewrite(page, { from: '/secretpath', to: '/dns-query' });
+    await addPathRewrite(page, { from: '/oldapi', to: '/v2/api' });
+
+    await openEditorSection(page, 'Certificate');
+    await setEditorSwitch(page, 'Redirect HTTP to HTTPS', false);
+    await saveHostEditor(page);
 
     await waitForRoute(DOMAIN);
   });
@@ -107,28 +98,17 @@ const ALLOW_DOMAIN = 'func-path-allows.test';
 
 test.describe.serial('Path Allows override Path Blocks', () => {
   test('setup: create host that blocks /* but allows /secret and /public/*', async ({ page }) => {
-    await page.goto('/proxy-hosts');
-    await page.getByRole('button', { name: /create host/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    await openCreateHostDialog(page);
+    await fillHostBasics(page, { name: 'Functional Path Allows Test', domain: ALLOW_DOMAIN, upstream: 'whoami-server:80' });
 
-    await page.getByLabel('Name').fill('Functional Path Allows Test');
-    await page.getByLabel(/domains/i).fill(ALLOW_DOMAIN);
-    await page.getByPlaceholder('10.0.0.5:8080').first().fill('whoami-server:80');
+    await openEditorSection(page, 'Access');
+    await addBypassPath(page, '/secret');
+    await addBypassPath(page, '/public/*');
+    await addBlockedPath(page, { path: '/*', status: 403, body: 'Blocked' });
 
-    await injectFormFields(page, {
-      sslForcedPresent: 'on',
-      pathAllowsJson: JSON.stringify([
-        { path: '/secret' },
-        { path: '/public/*' },
-      ]),
-      pathBlocksJson: JSON.stringify([
-        { path: '/*', status: 403, body: 'Blocked' },
-      ]),
-    });
-
-    await page.getByRole('button', { name: /^create$/i }).click();
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('table').getByText('Functional Path Allows Test')).toBeVisible({ timeout: 10_000 });
+    await openEditorSection(page, 'Certificate');
+    await setEditorSwitch(page, 'Redirect HTTP to HTTPS', false);
+    await saveHostEditor(page);
 
     await waitForRoute(ALLOW_DOMAIN);
   });

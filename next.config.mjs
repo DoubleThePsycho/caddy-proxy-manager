@@ -54,7 +54,9 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: APP_VERSION,
   },
-  serverExternalPackages: isBun ? ['bun:sqlite'] : ['better-sqlite3'],
+  // pg (PostgreSQL, src/lib/db/postgres.ts) is loaded from node_modules at
+  // run time rather than bundled, like the SQLite drivers.
+  serverExternalPackages: isBun ? ['bun:sqlite', 'pg'] : ['better-sqlite3', 'pg'],
   ...(!isBun && {
     turbopack: {
       resolveAlias: {
@@ -71,6 +73,24 @@ const nextConfig = {
   },
   output: 'standalone',
   poweredByHeader: false,
+  // The proxy host form became a page: the old deep links /proxy-hosts?create=1
+  // (with an optional &domain=, which is passed along) and ?edit=<id> open it.
+  async redirects() {
+    return [
+      {
+        source: '/proxy-hosts',
+        has: [{ type: 'query', key: 'create', value: '1' }],
+        destination: '/proxy-hosts/new',
+        permanent: false,
+      },
+      {
+        source: '/proxy-hosts',
+        has: [{ type: 'query', key: 'edit', value: '(?<id>\\d{1,15})' }],
+        destination: '/proxy-hosts/:id/edit',
+        permanent: false,
+      },
+    ];
+  },
   // Security headers (CSP, etc.) are set per-request in proxy.ts middleware
   // with a unique nonce, so they are NOT defined here as static headers.
 };

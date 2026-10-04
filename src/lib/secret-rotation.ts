@@ -1,9 +1,26 @@
-import { eq } from "drizzle-orm";
-import db from "./db";
-import { accounts, caCertificates, certificates, instances, oauthProviders, settings } from "./db/schema";
+import { and, eq } from "drizzle-orm";
+import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import { appDb } from "./db";
+import {
+  accounts,
+  alertChannels,
+  auditSinks,
+  backupDestinations,
+  caCertificates,
+  certificates,
+  fleetPullReplicas,
+  instances,
+  ldapDirectories,
+  oauthProviders,
+  samlProviders,
+  settings,
+  twoFactors,
+} from "./db/schema";
 import { ENCRYPTED_SECRET_PREFIX, isEncryptedSecret, reencryptSecret } from "./secret";
+import { config, DISALLOWED_SESSION_SECRETS } from "./config";
 import { encryptDnsProviderSettingCredentials } from "./dns-providers";
 import { encryptCloudflareSettingToken } from "./settings";
+import { encryptCertificateStorageSecrets } from "@/ee/high-availability/settings";
 
 /**
  * Settings rows with this prefix hold a master's values on a slave. The slave
@@ -21,6 +38,8 @@ const PLAINTEXT_CREDENTIAL_SETTINGS: Array<[string, (value: unknown) => unknown]
   [`${SYNCED_SETTINGS_PREFIX}dns_provider`, encryptDnsProviderSettingCredentials],
   ["cloudflare", encryptCloudflareSettingToken],
   [`${SYNCED_SETTINGS_PREFIX}cloudflare`, encryptCloudflareSettingToken],
+  ["certificate_storage", encryptCertificateStorageSecrets],
+  [`${SYNCED_SETTINGS_PREFIX}certificate_storage`, encryptCertificateStorageSecrets],
 ];
 
 export type SecretRotationResult = {
@@ -34,7 +53,7 @@ export type SecretRotationResult = {
   /** Stored values that no known key decrypts; they are left unchanged. */
   failed: number;
   /**
-   * OAuth account tokens that no known key decrypts, set to NULL. CPM never
+   * OAuth account tokens that no known key decrypts, set to NULL. Ingressi never
    * reads them, and the user's next OAuth sign-in stores new ones.
    */
   clearedOAuthTokens: number;
@@ -143,50 +162,113 @@ async function rotateColumns<Row extends { id: number | string }>(
 export async function reencryptStoredSecrets(): Promise<SecretRotationResult> {
   const counts: Counts = { reencrypted: 0, encryptedPlaintext: 0, failed: 0, clearedOAuthTokens: 0 };
 
-  // Written on every OAuth sign-in and never read by CPM, so a token no key
+  // Written on every OAuth sign-in and never read by Ingressi, so a token no key
   // decrypts is dropped instead of reported.
   await rotateColumns(
     "OAuth account",
-    await db
+    await appDb
       .select({ id: accounts.id, accessToken: accounts.accessToken, refreshToken: accounts.refreshToken, idToken: accounts.idToken })
       .from(accounts),
     ["accessToken", "refreshToken", "idToken"],
-    (id, updates) => db.update(accounts).set(updates).where(eq(accounts.id, id)),
+    (id, updates) => appDb.update(accounts).set(updates).where(eq(accounts.id, id)),
     counts,
     "clear"
   );
 
   await rotateColumns(
     "OAuth provider",
-    await db
+    await appDb
       .select({ id: oauthProviders.id, clientId: oauthProviders.clientId, clientSecret: oauthProviders.clientSecret })
       .from(oauthProviders),
     ["clientId", "clientSecret"],
-    (id, updates) => db.update(oauthProviders).set(updates).where(eq(oauthProviders.id, id)),
+    (id, updates) => appDb.update(oauthProviders).set(updates).where(eq(oauthProviders.id, id)),
     counts
   );
 
   await rotateColumns(
     "certificate",
-    await db.select({ id: certificates.id, privateKeyPem: certificates.privateKeyPem }).from(certificates),
+    await appDb.select({ id: certificates.id, privateKeyPem: certificates.privateKeyPem }).from(certificates),
     ["privateKeyPem"],
-    (id, updates) => db.update(certificates).set(updates).where(eq(certificates.id, id)),
+    (id, updates) => appDb.update(certificates).set(updates).where(eq(certificates.id, id)),
     counts
   );
 
   await rotateColumns(
     "CA certificate",
-    await db.select({ id: caCertificates.id, privateKeyPem: caCertificates.privateKeyPem }).from(caCertificates),
+    await appDb.select({ id: caCertificates.id, privateKeyPem: caCertificates.privateKeyPem }).from(caCertificates),
     ["privateKeyPem"],
-    (id, updates) => db.update(caCertificates).set(updates).where(eq(caCertificates.id, id)),
+    (id, updates) => appDb.update(caCertificates).set(updates).where(eq(caCertificates.id, id)),
     counts
   );
 
   await rotateColumns(
     "instance",
-    await db.select({ id: instances.id, apiToken: instances.apiToken }).from(instances),
+    await appDb.select({ id: instances.id, apiToken: instances.apiToken }).from(instances),
     ["apiToken"],
-    (id, updates) => db.update(instances).set(updates).where(eq(instances.id, id)),
+    (id, updates) => appDb.update(instances).set(updates).where(eq(instances.id, id)),
+    counts
+  );
+
+  // The token a pull replica's fingerprints are keyed with (ee/fleet); the
+  // credential itself is only stored as a hash.
+  await rotateColumns(
+    "pull replica",
+    await appDb.select({ id: fleetPullReplicas.instanceId, fingerprintToken: fleetPullReplicas.fingerprintToken }).from(fleetPullReplicas),
+    ["fingerprintToken"],
+    (id, updates) => appDb.update(fleetPullReplicas).set(updates).where(eq(fleetPullReplicas.instanceId, id)),
+    counts
+  );
+
+  await rotateColumns(
+    "audit sink",
+    await appDb.select({ id: auditSinks.id, secret: auditSinks.secret }).from(auditSinks),
+    ["secret"],
+    (id, updates) => appDb.update(auditSinks).set(updates).where(eq(auditSinks.id, id)),
+    counts
+  );
+
+  // Dashboard MFA: the unused backup codes (encryptSecret), then the TOTP
+  // secrets, which Better Auth encrypts itself.
+  await rotateColumns(
+    "MFA enrolment",
+    await appDb.select({ id: twoFactors.id, backupCodes: twoFactors.backupCodes }).from(twoFactors),
+    ["backupCodes"],
+    (id, updates) => appDb.update(twoFactors).set(updates).where(eq(twoFactors.id, id)),
+    counts
+  );
+  await rotateTwoFactorSecrets(counts);
+
+  await rotateColumns(
+    "alert channel",
+    await appDb.select({ id: alertChannels.id, secrets: alertChannels.secrets }).from(alertChannels),
+    ["secrets"],
+    (id, updates) => appDb.update(alertChannels).set(updates).where(eq(alertChannels.id, id)),
+    counts
+  );
+
+  await rotateColumns(
+    "backup destination",
+    await appDb
+      .select({ id: backupDestinations.id, secretAccessKey: backupDestinations.secretAccessKey, passphrase: backupDestinations.passphrase })
+      .from(backupDestinations),
+    ["secretAccessKey", "passphrase"],
+    (id, updates) => appDb.update(backupDestinations).set(updates).where(eq(backupDestinations.id, id)),
+    counts
+  );
+
+  await rotateColumns(
+    "LDAP directory",
+    await appDb.select({ id: ldapDirectories.id, bindPassword: ldapDirectories.bindPassword }).from(ldapDirectories),
+    ["bindPassword"],
+    (id, updates) => appDb.update(ldapDirectories).set(updates).where(eq(ldapDirectories.id, id)),
+    counts
+  );
+
+  await rotateColumns(
+    "SAML provider",
+    await appDb.select({ id: samlProviders.id, spPrivateKey: samlProviders.spPrivateKey }).from(samlProviders),
+    ["spPrivateKey"],
+    (id, updates) => appDb.update(samlProviders).set(updates).where(eq(samlProviders.id, id)),
     counts
   );
 
@@ -194,7 +276,7 @@ export async function reencryptStoredSecrets(): Promise<SecretRotationResult> {
   // encrypted strings anywhere inside their JSON values. A synced value that
   // no key here decrypts was sent by a master older than this release,
   // encrypted with the master's own SESSION_SECRET; it is left as sent.
-  const settingRows = await db.select({ key: settings.key, value: settings.value }).from(settings);
+  const settingRows = await appDb.select({ key: settings.key, value: settings.value }).from(settings);
   for (const row of settingRows) {
     if (!row.value.includes(ENCRYPTED_SECRET_PREFIX)) continue;
     let parsed: unknown;
@@ -208,11 +290,13 @@ export async function reencryptStoredSecrets(): Promise<SecretRotationResult> {
     const next = rotateNested(parsed, `setting "${row.key}"`, counts, policy, pending);
     if (pending.count === 0) continue;
     try {
-      await db
+      // Only over the value read: a setting saved meanwhile is left to the next start.
+      const written = await appDb
         .update(settings)
         .set({ value: JSON.stringify(next) })
-        .where(eq(settings.key, row.key));
-      counts.reencrypted += pending.count;
+        .where(and(eq(settings.key, row.key), eq(settings.value, row.value)))
+        .returning({ key: settings.key });
+      if (written.length > 0) counts.reencrypted += pending.count;
     } catch (error) {
       counts.failed += pending.count;
       console.warn(`[secret] Failed to store re-encrypted setting "${row.key}":`, error);
@@ -222,6 +306,62 @@ export async function reencryptStoredSecrets(): Promise<SecretRotationResult> {
   await encryptPlaintextDnsProviderCredentials(counts);
 
   return counts;
+}
+
+/** The secrets that may still decrypt stored values but never encrypt new ones (see secret.ts). */
+function previousSessionSecrets(): string[] {
+  const secrets = new Set([...config.previousSessionSecrets, ...DISALLOWED_SESSION_SECRETS]);
+  secrets.delete(config.sessionSecret);
+  return [...secrets];
+}
+
+async function betterAuthDecrypt(key: string, data: string): Promise<string | null> {
+  try {
+    return await symmetricDecrypt({ key, data });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Better Auth's two-factor plugin encrypts each TOTP secret
+ * (two_factors.secret) with its own scheme, keyed by its `secret` option,
+ * which is SESSION_SECRET. Re-encrypt the ones only a previous secret opens,
+ * so a rotation does not lock users out of their second factor. A secret no
+ * key opens is reported; resetting that user's MFA fixes it.
+ */
+async function rotateTwoFactorSecrets(counts: Counts): Promise<void> {
+  const rows = await appDb.select({ id: twoFactors.id, userId: twoFactors.userId, secret: twoFactors.secret }).from(twoFactors);
+  if (rows.length === 0) return;
+  const current = config.sessionSecret;
+  const previous = previousSessionSecrets();
+  for (const row of rows) {
+    if (await betterAuthDecrypt(current, row.secret) !== null) continue;
+    let plaintext: string | null = null;
+    for (const secret of previous) {
+      plaintext = await betterAuthDecrypt(secret, row.secret);
+      if (plaintext !== null) break;
+    }
+    if (plaintext === null) {
+      counts.failed += 1;
+      console.warn(
+        `[secret] The MFA authenticator secret of user ${row.userId} cannot be decrypted with SESSION_SECRET or ` +
+        "SESSION_SECRET_PREVIOUS; set SESSION_SECRET_PREVIOUS to the secret it was stored with, or reset the user's MFA " +
+        "on the Users page (the user can still sign in with a backup code)."
+      );
+      continue;
+    }
+    try {
+      await appDb
+        .update(twoFactors)
+        .set({ secret: await symmetricEncrypt({ key: current, data: plaintext }) })
+        .where(eq(twoFactors.id, row.id));
+      counts.reencrypted += 1;
+    } catch (error) {
+      counts.failed += 1;
+      console.warn(`[secret] Failed to store the re-encrypted MFA secret of user ${row.userId}:`, error);
+    }
+  }
 }
 
 function countEncryptedStrings(value: unknown): number {
@@ -236,7 +376,7 @@ function countEncryptedStrings(value: unknown): number {
 /** Encrypt DNS provider and legacy Cloudflare credentials stored in plaintext. */
 async function encryptPlaintextDnsProviderCredentials(counts: Counts): Promise<void> {
   for (const [key, encryptCredentials] of PLAINTEXT_CREDENTIAL_SETTINGS) {
-    const [row] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, key));
+    const [row] = await appDb.select({ value: settings.value }).from(settings).where(eq(settings.key, key));
     if (!row) continue;
     let parsed: unknown;
     try {
@@ -248,8 +388,13 @@ async function encryptPlaintextDnsProviderCredentials(counts: Counts): Promise<v
     const encrypted = countEncryptedStrings(next) - countEncryptedStrings(parsed);
     if (encrypted === 0) continue;
     try {
-      await db.update(settings).set({ value: JSON.stringify(next) }).where(eq(settings.key, key));
-      counts.encryptedPlaintext += encrypted;
+      // Only over the value read: a setting saved meanwhile is left to the next start.
+      const written = await appDb
+        .update(settings)
+        .set({ value: JSON.stringify(next) })
+        .where(and(eq(settings.key, key), eq(settings.value, row.value)))
+        .returning({ key: settings.key });
+      if (written.length > 0) counts.encryptedPlaintext += encrypted;
     } catch (error) {
       console.warn(`[secret] Failed to store encrypted setting "${key}":`, error);
     }

@@ -2,8 +2,8 @@
 
 import { useState, useCallback } from "react";
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,9 +13,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { SectionCard } from "@/components/ui/SectionCard";
+import { StatusDot } from "@/components/ui/StatusDot";
 import { Switch } from "@/components/ui/switch";
 import {
   oauthCallbackUrl,
@@ -190,7 +193,7 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
   }
 
   function copyToClipboard(text: string, providerId: string) {
-    navigator.clipboard.writeText(text).then(() => {
+    void navigator.clipboard.writeText(text).then(() => {
       setCopiedId(providerId);
       setTimeout(() => setCopiedId(null), 2000);
     });
@@ -201,108 +204,106 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      {providers.length === 0 && (
-        <Alert className="border-blue-500/30 bg-blue-500/5 text-blue-700 dark:text-blue-400 [&>svg]:text-blue-500">
-          <AlertDescription>
-            No OAuth providers configured. Add a provider to enable single sign-on.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {providers.map((provider) => (
-        <div
-          key={provider.id}
-          className="flex flex-col gap-2 rounded-md border px-4 py-3"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold">{provider.name}</p>
-              <Badge variant="muted">{provider.type.toUpperCase()}</Badge>
-              <Badge variant={provider.source === "env" ? "info" : "secondary"}>
-                {provider.source === "env" ? "ENV" : "UI"}
-              </Badge>
-              {!provider.enabled && (
-                <Badge variant="warning">Disabled</Badge>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor={`toggle-${provider.id}`} className="text-xs text-muted-foreground">
-                  Enabled
-                </Label>
-                <Switch
-                  id={`toggle-${provider.id}`}
-                  checked={provider.enabled}
-                  onCheckedChange={() => handleToggleEnabled(provider)}
-                />
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openEditDialog(provider)}
-                disabled={provider.source === "env"}
-                title={provider.source === "env" ? "Environment-sourced providers cannot be edited" : "Edit provider"}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-              {deleteConfirmId === provider.id ? (
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleDelete(provider.id)}
-                  >
-                    Confirm
-                  </Button>
+    <SectionCard
+      title="Providers"
+      count={providers.length}
+      description="Dashboard sign-in through an OpenID Connect or OAuth provider. SAML and LDAP are under Sign-in and directories."
+      headingLevel={3}
+      actions={
+        <Button type="button" variant="outline" size="sm" onClick={openAddDialog}>
+          <Plus /> Add provider
+        </Button>
+      }
+    >
+      {providers.length === 0 ? (
+        <EmptyState
+          compact
+          headingLevel={4}
+          title="No OAuth provider yet"
+          description="Add a provider to let people sign in to the dashboard with it."
+        />
+      ) : (
+        <ul className="m-0 list-none divide-y divide-line p-0">
+          {providers.map((provider) => (
+            <li key={provider.id} data-testid="oauth-provider" className="flex flex-col gap-2 px-5 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusDot tone={provider.enabled ? "ok" : "off"} srLabel={provider.enabled ? "Enabled" : "Disabled"} />
+                  <p className="m-0 font-semibold">{provider.name}</p>
+                  <Badge variant="muted">{provider.type.toUpperCase()}</Badge>
+                  <Badge variant={provider.source === "env" ? "info" : "secondary"}>
+                    {provider.source === "env" ? "ENV" : "UI"}
+                  </Badge>
+                  {!provider.enabled && <Badge variant="warning">Disabled</Badge>}
+                  {provider.autoLink && <span className="text-xs text-soft">Links accounts automatically</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor={`toggle-${provider.id}`} className="text-xs text-muted-foreground">
+                      Enabled
+                    </Label>
+                    <Switch
+                      id={`toggle-${provider.id}`}
+                      checked={provider.enabled}
+                      onCheckedChange={() => handleToggleEnabled(provider)}
+                    />
+                  </div>
                   <Button
                     variant="outline"
-                    size="sm"
-                    onClick={() => setDeleteConfirmId(null)}
+                    size="icon-sm"
+                    onClick={() => openEditDialog(provider)}
+                    disabled={provider.source === "env"}
+                    aria-label={`Edit ${provider.name}`}
+                    title={provider.source === "env" ? "Environment-sourced providers cannot be edited" : "Edit provider"}
                   >
-                    Cancel
+                    <Pencil />
                   </Button>
+                  {deleteConfirmId === provider.id ? (
+                    <div className="flex items-center gap-1">
+                      <Button variant="danger" size="sm" onClick={() => handleDelete(provider.id)}>
+                        Confirm
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setDeleteConfirmId(null)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      variant="danger"
+                      size="icon-sm"
+                      onClick={() => setDeleteConfirmId(provider.id)}
+                      disabled={provider.source === "env"}
+                      aria-label={`Delete ${provider.name}`}
+                      title={provider.source === "env" ? "Environment-sourced providers cannot be deleted" : "Delete provider"}
+                    >
+                      <Trash2 />
+                    </Button>
+                  )}
                 </div>
-              ) : (
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-soft">Callback URL</span>
+                <code className="num text-xs text-muted-foreground break-all">{callbackUrl(provider.id)}</code>
                 <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-destructive border-destructive/50"
-                  onClick={() => setDeleteConfirmId(provider.id)}
-                  disabled={provider.source === "env"}
-                  title={provider.source === "env" ? "Environment-sourced providers cannot be deleted" : "Delete provider"}
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-6 w-6 shrink-0"
+                  onClick={() => copyToClipboard(callbackUrl(provider.id), provider.id)}
+                  aria-label="Copy callback URL"
+                  title="Copy callback URL"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Copy className="!size-3" />
                 </Button>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <code className="text-xs font-mono text-muted-foreground break-all">
-              {callbackUrl(provider.id)}
-            </code>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 shrink-0"
-              onClick={() => copyToClipboard(callbackUrl(provider.id), provider.id)}
-              title="Copy callback URL"
-            >
-              <Copy className="h-3 w-3" />
-            </Button>
-            {copiedId === provider.id && (
-              <span className="text-xs text-emerald-600">Copied!</span>
-            )}
-          </div>
-        </div>
-      ))}
-
-      <div className="flex justify-end">
-        <Button size="sm" onClick={openAddDialog}>
-          <Plus className="h-4 w-4 mr-1" />
-          Add Provider
-        </Button>
-      </div>
+                {copiedId === provider.id && (
+                  <span role="status" className="text-xs text-ok">
+                    Copied
+                  </span>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* Add / Edit Dialog */}
       <Dialog
@@ -315,19 +316,19 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingProvider ? "Edit OAuth Provider" : "Add OAuth Provider"}
+              {editingProvider ? "Edit OAuth provider" : "Add an OAuth provider"}
             </DialogTitle>
             <DialogDescription>
               {editingProvider
-                ? "Update the OAuth provider configuration."
-                : "Configure a new OAuth or OIDC provider for single sign-on."}
+                ? "Change how this provider signs people in."
+                : "An OpenID Connect or OAuth provider people can sign in to the dashboard with."}
             </DialogDescription>
           </DialogHeader>
 
           {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
+            <Banner tone="bad" live>
+              {error}
+            </Banner>
           )}
 
           <div className="flex flex-col gap-3">
@@ -338,7 +339,7 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
                 value={form.name}
                 onChange={(e) => updateField("name", e.target.value)}
                 placeholder="e.g. Google, Keycloak"
-                className="h-8 text-sm"
+                
               />
             </div>
 
@@ -348,7 +349,7 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
                 value={form.type}
                 onValueChange={(v) => updateField("type", v)}
               >
-                <SelectTrigger id="oauth-type" className="h-8 text-sm">
+                <SelectTrigger id="oauth-type" >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -364,14 +365,14 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
                 id="oauth-client-id"
                 value={form.clientId}
                 onChange={(e) => updateField("clientId", e.target.value)}
-                className="h-8 text-sm font-mono"
+                className="num"
               />
             </div>
 
             {editingProvider?.hasClientSecret && !rotateClientSecret ? (
-              <div className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2">
                 <div>
-                  <Label>Client Secret</Label>
+                  <Label>Client secret</Label>
                   <p className="text-xs text-muted-foreground">
                     A secret is configured. Its existing value cannot be viewed.
                   </p>
@@ -382,14 +383,14 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
                   size="sm"
                   onClick={() => setRotateClientSecret(true)}
                 >
-                  Rotate Secret
+                  Rotate secret
                 </Button>
               </div>
             ) : (
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <Label htmlFor="oauth-client-secret">
-                    {editingProvider ? "New Client Secret *" : "Client Secret *"}
+                    {editingProvider ? "New client secret *" : "Client secret *"}
                   </Label>
                   {editingProvider?.hasClientSecret && (
                     <Button
@@ -401,7 +402,7 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
                         updateField("clientSecret", "");
                       }}
                     >
-                      Keep Existing
+                      Keep existing
                     </Button>
                   )}
                 </div>
@@ -411,7 +412,7 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
                   autoComplete="new-password"
                   value={form.clientSecret}
                   onChange={(e) => updateField("clientSecret", e.target.value)}
-                  className="h-8 text-sm"
+                  
                 />
                 {editingProvider && (
                   <p className="text-xs text-muted-foreground">
@@ -428,7 +429,7 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
                 value={form.issuer}
                 onChange={(e) => updateField("issuer", e.target.value)}
                 placeholder="https://accounts.google.com"
-                className="h-8 text-sm font-mono"
+                className="num"
               />
               <p className="text-xs text-muted-foreground">
                 For OIDC providers, the issuer URL enables automatic discovery of endpoints.
@@ -442,7 +443,7 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
                 value={form.authorizationUrl}
                 onChange={(e) => updateField("authorizationUrl", e.target.value)}
                 placeholder="Override discovered endpoint"
-                className="h-8 text-sm font-mono"
+                className="num"
               />
             </div>
 
@@ -453,7 +454,7 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
                 value={form.tokenUrl}
                 onChange={(e) => updateField("tokenUrl", e.target.value)}
                 placeholder="Override discovered endpoint"
-                className="h-8 text-sm font-mono"
+                className="num"
               />
             </div>
 
@@ -464,7 +465,7 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
                 value={form.userinfoUrl}
                 onChange={(e) => updateField("userinfoUrl", e.target.value)}
                 placeholder="Override discovered endpoint"
-                className="h-8 text-sm font-mono"
+                className="num"
               />
             </div>
 
@@ -475,7 +476,7 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
                 value={form.scopes}
                 onChange={(e) => updateField("scopes", e.target.value)}
                 placeholder="openid email profile"
-                className="h-8 text-sm font-mono"
+                className="num"
               />
             </div>
 
@@ -499,7 +500,7 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
               <div className="flex flex-col gap-1.5 pt-1">
                 <Label className="text-xs text-muted-foreground">Callback URL</Label>
                 <div className="flex items-center gap-2">
-                  <code className="text-xs font-mono text-muted-foreground break-all">
+                  <code className="num text-xs text-muted-foreground break-all">
                     {callbackUrl(editingProvider.id)}
                   </code>
                   <Button
@@ -521,11 +522,11 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
               Cancel
             </Button>
             <Button onClick={handleSave} disabled={saving}>
-              {saving ? "Saving..." : editingProvider ? "Update Provider" : "Create Provider"}
+              {saving ? "Saving…" : editingProvider ? "Update provider" : "Create provider"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </SectionCard>
   );
 }

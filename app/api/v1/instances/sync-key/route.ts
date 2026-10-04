@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAdmin, apiErrorResponse } from "@/src/lib/api-auth";
+import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { getSyncPublicKey } from "@/src/lib/sync-crypto";
 
 /**
@@ -8,7 +8,7 @@ import { getSyncPublicKey } from "@/src/lib/sync-crypto";
  */
 export async function GET(request: NextRequest) {
   try {
-    await requireApiAdmin(request);
+    await requireApiPermission(request, "instances:read");
     const { keyId, publicKey } = getSyncPublicKey();
     return NextResponse.json({ keyId, publicKey: publicKey.toString("base64") });
   } catch (error) {

@@ -30,6 +30,20 @@ import {
 } from "@/components/ui/accordion";
 import { cn } from "@/lib/utils";
 import { Globe, Layers, MapPin, Pin } from "lucide-react";
+import { HostTagsField } from "@/components/hosts/HostTags";
+import { toast } from "sonner";
+import type { ActionState } from "@/lib/actions";
+import { ProtectedChangeNotice } from "@/ee/approvals/ui/ProtectedChangeNotice";
+import type { HostApprovalContext } from "@/ee/approvals/types";
+
+/** A clear toast when a change approval policy turned the change into a change request (ee/approvals). */
+function useChangeRequestToast(state: ActionState) {
+  useEffect(() => {
+    if (state.status !== "success" || !state.changeRequest) return;
+    if (state.changeRequest.status === "applied") toast.success(state.message ?? "Emergency change applied.");
+    else toast.info(state.message ?? "Submitted for approval.", { duration: 10000 });
+  }, [state]);
+}
 
 /**
  * Schedule onClose after a successful action exactly once. Without the ref
@@ -75,11 +89,17 @@ function L4HostForm({
   formAction,
   state,
   initialData,
+  scopeTags,
+  isNew = false,
+  approval = null,
 }: {
   formId: string;
   formAction: (formData: FormData) => void;
   state: { status: string; message?: string };
   initialData?: L4ProxyHost | null;
+  scopeTags?: readonly string[];
+  isNew?: boolean;
+  approval?: HostApprovalContext | null;
 }) {
   const [enabled, setEnabled] = useState(initialData?.enabled ?? true);
   const [protocol, setProtocol] = useState(initialData?.protocol ?? "tcp");
@@ -108,6 +128,12 @@ function L4HostForm({
           <AlertDescription>{state.message}</AlertDescription>
         </Alert>
       )}
+      <ProtectedChangeNotice
+        approval={approval}
+        targetType="l4_proxy_host"
+        tags={initialData?.tags ?? (isNew ? (scopeTags ?? []).slice(0, 1) : [])}
+        operations={isNew ? ["create"] : ["update"]}
+      />
 
       <input type="hidden" name="enabledPresent" value="1" />
       <input type="hidden" name="enabled" value={enabled ? "on" : ""} />
@@ -142,6 +168,8 @@ function L4HostForm({
           required
         />
       </FormField>
+
+      <HostTagsField defaultTags={initialData?.tags} scopeTags={scopeTags} isNew={isNew} />
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="protocol">Protocol</Label>
@@ -293,7 +321,7 @@ function L4HostForm({
         <AccordionItem value="load-balancer" className="border-b-0">
           <AccordionTrigger className="text-sm font-medium hover:no-underline">
             <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded border border-cyan-500/30 bg-cyan-500/10 text-cyan-500">
+              <div className="flex h-6 w-6 items-center justify-center rounded-md border border-line2 bg-raise text-muted-foreground">
                 <Layers className="h-3.5 w-3.5" />
               </div>
               Load Balancer
@@ -473,7 +501,7 @@ function L4HostForm({
         <AccordionItem value="dns-resolver" className="border-b-0">
           <AccordionTrigger className="text-sm font-medium hover:no-underline">
             <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-500">
+              <div className="flex h-6 w-6 items-center justify-center rounded-md border border-line2 bg-raise text-muted-foreground">
                 <Globe className="h-3.5 w-3.5" />
               </div>
               Custom DNS Resolvers
@@ -544,7 +572,7 @@ function L4HostForm({
         <AccordionItem value="geoblock" className="border-b-0">
           <AccordionTrigger className="text-sm font-medium hover:no-underline">
             <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded border border-rose-500/30 bg-rose-500/10 text-rose-500">
+              <div className="flex h-6 w-6 items-center justify-center rounded-md border border-line2 bg-raise text-muted-foreground">
                 <MapPin className="h-3.5 w-3.5" />
               </div>
               Geo Blocking
@@ -722,7 +750,7 @@ function L4HostForm({
         <AccordionItem value="upstream-dns" className="border-b-0">
           <AccordionTrigger className="text-sm font-medium hover:no-underline">
             <div className="flex items-center gap-2">
-              <div className="flex h-6 w-6 items-center justify-center rounded border border-violet-500/30 bg-violet-500/10 text-violet-500">
+              <div className="flex h-6 w-6 items-center justify-center rounded-md border border-line2 bg-raise text-muted-foreground">
                 <Pin className="h-3.5 w-3.5" />
               </div>
               Upstream DNS Pinning
@@ -800,10 +828,15 @@ export function CreateL4HostDialog({
   open,
   onClose,
   initialData,
+  scopeTags,
+  approval = null,
 }: {
   open: boolean;
   onClose: () => void;
   initialData?: L4ProxyHost | null;
+  scopeTags?: readonly string[];
+  /** Change approval policies (ee/approvals), to say before saving that the host is protected. */
+  approval?: HostApprovalContext | null;
 }) {
   const [state, formAction] = useActionState(
     createL4ProxyHostAction,
@@ -811,6 +844,7 @@ export function CreateL4HostDialog({
   );
 
   useCloseOnSuccess(state, onClose);
+  useChangeRequestToast(state);
 
   return (
     <AppDialog
@@ -832,6 +866,9 @@ export function CreateL4HostDialog({
         initialData={
           initialData ? { ...initialData, name: `${initialData.name} (Copy)` } : null
         }
+        scopeTags={scopeTags}
+        isNew
+        approval={approval}
       />
     </AppDialog>
   );
@@ -841,10 +878,15 @@ export function EditL4HostDialog({
   open,
   host,
   onClose,
+  scopeTags,
+  approval = null,
 }: {
   open: boolean;
   host: L4ProxyHost;
   onClose: () => void;
+  scopeTags?: readonly string[];
+  /** Change approval policies (ee/approvals), to say before saving that the host is protected. */
+  approval?: HostApprovalContext | null;
 }) {
   const [state, formAction] = useActionState(
     updateL4ProxyHostAction.bind(null, host.id),
@@ -852,6 +894,7 @@ export function EditL4HostDialog({
   );
 
   useCloseOnSuccess(state, onClose);
+  useChangeRequestToast(state);
 
   return (
     <AppDialog
@@ -871,6 +914,8 @@ export function EditL4HostDialog({
         formAction={formAction}
         state={state}
         initialData={host}
+        scopeTags={scopeTags}
+        approval={approval}
       />
     </AppDialog>
   );
@@ -880,10 +925,13 @@ export function DeleteL4HostDialog({
   open,
   host,
   onClose,
+  approval = null,
 }: {
   open: boolean;
   host: L4ProxyHost;
   onClose: () => void;
+  /** Change approval policies (ee/approvals), to say before deleting that the host is protected. */
+  approval?: HostApprovalContext | null;
 }) {
   const [state, formAction] = useActionState(
     deleteL4ProxyHostAction.bind(null, host.id),
@@ -891,6 +939,7 @@ export function DeleteL4HostDialog({
   );
 
   useCloseOnSuccess(state, onClose);
+  useChangeRequestToast(state);
 
   return (
     <AppDialog
@@ -940,6 +989,7 @@ export function DeleteL4HostDialog({
         <p className="text-sm text-destructive font-medium">
           This action cannot be undone.
         </p>
+        <ProtectedChangeNotice approval={approval} targetType="l4_proxy_host" tags={host.tags} operations={["delete"]} />
       </form>
     </AppDialog>
   );

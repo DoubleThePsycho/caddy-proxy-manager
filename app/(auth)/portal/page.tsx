@@ -13,7 +13,7 @@ interface PortalPageProps {
 
 export default async function PortalPage({ searchParams }: PortalPageProps) {
   const params = await searchParams;
-  // A repeated parameter arrives as an array.  CPM never produces one, so it
+  // A repeated parameter arrives as an array.  Ingressi never produces one, so it
   // is rejected rather than resolved by picking one of the values.
   const repeatedParam = Array.isArray(params.rd) || Array.isArray(params.rid);
   const redirectUri = typeof params.rd === "string" ? params.rd : "";

@@ -183,6 +183,209 @@
       "when": 1787970000000,
       "tag": "0025_accounts_issuer_default",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1790950000000,
+      "tag": "0026_audit_streaming",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1790968114000,
+      "tag": "0027_config_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1790975000000,
+      "tag": "0028_alerting",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1790990000000,
+      "tag": "0029_scheduled_backups",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1791000000000,
+      "tag": "0030_ai_analyst",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1791010000000,
+      "tag": "0031_mfa",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1791020000000,
+      "tag": "0032_custom_roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1791030000000,
+      "tag": "0033_api_monetization",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1791040000000,
+      "tag": "0034_change_approvals",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1791050000000,
+      "tag": "0035_compliance_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1791060000000,
+      "tag": "0036_ldap",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1791070000000,
+      "tag": "0037_scim_access_reviews",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1791080000000,
+      "tag": "0038_fleet",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "6",
+      "when": 1791090000000,
+      "tag": "0039_saml",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1791100000000,
+      "tag": "0040_fleet_pull",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1791110000000,
+      "tag": "0041_multi_tenancy",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "6",
+      "when": 1791120000000,
+      "tag": "0042_analytics_views",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "6",
+      "when": 1791130000000,
+      "tag": "0043_waf_tuning",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "6",
+      "when": 1791140000000,
+      "tag": "0044_access_list_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "6",
+      "when": 1791150000000,
+      "tag": "0045_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "6",
+      "when": 1791160000000,
+      "tag": "0046_governance",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "6",
+      "when": 1791170000000,
+      "tag": "0047_sign_in_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1791200000000,
+      "tag": "0050_analytics_questions",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "6",
+      "when": 1791210000000,
+      "tag": "0051_rule_feed",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "6",
+      "when": 1791230000000,
+      "tag": "0052_ha_shared_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "6",
+      "when": 1791240000000,
+      "tag": "0053_cluster_nodes",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "6",
+      "when": 1791250000000,
+      "tag": "0054_shared_runtime_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "6",
+      "when": 1791270000000,
+      "tag": "0055_cluster_node_instance",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "6",
+      "when": 1791280000000,
+      "tag": "0056_monetization_phase2",
+      "breakpoints": true
     }
   ]
 }

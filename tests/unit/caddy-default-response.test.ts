@@ -5,18 +5,8 @@ const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
 vi.mock("../../src/lib/db", async () => {
   const { createTestDb } = await import("../helpers/db");
-  const schemaModule = await import("../../src/lib/db/schema");
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    sqlite: undefined,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null => {
-      if (!value) return null;
-      return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-    },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 vi.mock("../../src/lib/caddy", async (importOriginal) => {
@@ -35,11 +25,11 @@ import {
 } from "../../src/lib/caddy-default-response";
 import * as schema from "../../src/lib/db/schema";
 
-type CpmServer = { listen?: string[]; routes?: Array<Record<string, unknown>> };
+type IngressiServer = { listen?: string[]; routes?: Array<Record<string, unknown>> };
 
-function cpmServer(document: unknown): CpmServer | undefined {
-  return (document as { apps?: { http?: { servers?: { cpm?: CpmServer } } } })
-    .apps?.http?.servers?.cpm;
+function cpmServer(document: unknown): IngressiServer | undefined {
+  return (document as { apps?: { http?: { servers?: { ingressi?: IngressiServer } } } })
+    .apps?.http?.servers?.ingressi;
 }
 
 async function seedAdminAndHost() {

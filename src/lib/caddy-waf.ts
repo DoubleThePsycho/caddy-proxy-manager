@@ -4,6 +4,14 @@
  */
 import { type WafSettings } from "./settings";
 import { type WafHostConfig } from "./models/proxy-hosts";
+import { crsTuningDirectives, resolveWafTuning, WAF_TUNING_KEYS, type WafTuningSettings } from "./waf-tuning";
+import {
+  buildExclusionDirectives,
+  isVirtualPatchRuleId,
+  VIRTUAL_PATCH_RULE_ID_MAX,
+  VIRTUAL_PATCH_RULE_ID_MIN,
+  type WafExclusionRule,
+} from "./waf-exclusions";
 
 // ---------------------------------------------------------------------------
 // Request body limits
@@ -162,7 +170,7 @@ function isOutOfRangeBodyLimit(trimmedLine: string): boolean {
   return match !== null && !isValidBodyLimit(Number(match[2]));
 }
 
-/** A custom SecLang line CPM chose not to send to Caddy, plus why. */
+/** A custom SecLang line Ingressi chose not to send to Caddy, plus why. */
 export interface DroppedWafDirective {
   line: string;
   reason: string;
@@ -184,6 +192,19 @@ export interface CustomDirectiveFilterOptions {
    * into these lines, as in the merged handler.
    */
   precedingDirectives?: string | null;
+  /**
+   * Rule ids the generated directives of the handler already take (CRS
+   * tuning, rule exclusions). A custom rule reusing one is dropped: Coraza
+   * refuses a duplicate id, and Caddy then refuses the whole config.
+   */
+  reservedRuleIds?: ReadonlySet<number>;
+  /**
+   * Which rule ids the directives may take. "custom" (the default, for
+   * administrators' custom rules): any id outside the range reserved for
+   * virtual patches. "virtual_patch" (for the rendered rule feed): only ids
+   * inside that range, and every rule must have one.
+   */
+  ruleIdRange?: "custom" | "virtual_patch";
 }
 
 // SecRule* variants that are NOT plain SecRule (must be rejected)
@@ -333,6 +354,18 @@ function ruleIdOf(text: string): number | null {
   return id;
 }
 
+/** Why a rule's id (null: none) is outside the ids its directives may take, or null. */
+function ruleIdRangeReason(id: number | null, range: "custom" | "virtual_patch"): string | null {
+  const reservedRange = `${VIRTUAL_PATCH_RULE_ID_MIN}-${VIRTUAL_PATCH_RULE_ID_MAX}`;
+  if (range === "virtual_patch") {
+    if (id === null) return `a virtual patch rule needs an id in the range ${reservedRange}`;
+    return isVirtualPatchRuleId(id) ? null : `rule id ${id} is outside the range reserved for virtual patches (${reservedRange})`;
+  }
+  return id !== null && isVirtualPatchRuleId(id)
+    ? `rule id ${id} is in the range reserved for virtual patches (${reservedRange}); pick another id`
+    : null;
+}
+
 /**
  * Why a SecRule / SecAction / SecDefaultAction directive is dropped, judged
  * on its action list as Coraza parses it, or null when it is allowed. A
@@ -460,7 +493,7 @@ function joinUnit(trimmedLines: string[]): string {
 /**
  * The strict allowlist that governs which user-supplied SecLang lines reach the
  * generated Caddy `waf` handler. Returns the lines that WILL be emitted
- * (`kept`) and the ones CPM will discard (`dropped`), each with a
+ * (`kept`) and the ones Ingressi will discard (`dropped`), each with a
  * human-readable reason.
  *
  * Lines are dropped per directive, not just per line: when any line of a
@@ -573,10 +606,23 @@ function filterDirectiveLines(
   // children are not added to it). Only kept rules take an id, since a
   // dropped one never reaches Coraza.
   const usedIds = new Set<number>();
+  const reserved = options.reservedRuleIds ?? new Set<number>();
   for (const rule of rules) {
     if (rule.lines.some((index) => reasons[index] !== null)) continue;
     const id = ruleIdOf(rule.text);
+    const rangeReason = ruleIdRangeReason(id, options.ruleIdRange ?? "custom");
+    if (rangeReason !== null) {
+      reasons[rule.lines[0]] = rangeReason;
+      dropWith(rule.lines, rule.lines.length > rule.unitLength ? 'chained rule' : 'multi-line directive');
+      continue;
+    }
     if (id === null) continue;
+    if (reserved.has(id)) {
+      reasons[rule.lines[0]] =
+        `rule id ${id} is used by the WAF settings (paranoia level, thresholds or rule exclusions); pick another id`;
+      dropWith(rule.lines, rule.lines.length > rule.unitLength ? 'chained rule' : 'multi-line directive');
+      continue;
+    }
     if (!usedIds.has(id)) {
       usedIds.add(id);
       continue;
@@ -595,7 +641,7 @@ function filterDirectiveLines(
 }
 
 /**
- * Human-readable message describing the custom directives CPM will silently
+ * Human-readable message describing the custom directives Ingressi will silently
  * drop. Shared by the global-settings and per-host validators so users learn
  * at save time — not after a confusing "nothing blocked" report.
  */
@@ -648,7 +694,7 @@ export function customDirectivesError(
     return `waf.custom_directives has an out-of-range body limit: "${badBodyLimit.line}" — ${bodyLimitRangeMessage("the byte count")}`;
   }
   // Lines in the message come straight from the user's custom_directives, but
-  // only lines CPM will drop anyway are reported, so nothing new is echoed.
+  // only lines Ingressi will drop anyway are reported, so nothing new is echoed.
   return droppedWafDirectiveMessage(dropped);
 }
 
@@ -760,6 +806,8 @@ function resolveWaf(
     if (host.enabled === false) return null;
     return {
       waf: {
+        // CRS tuning is global only; a merging host takes it as it is.
+        ...pickWafTuning(global),
         enabled: true,
         mode: host.mode ?? global.mode,
         load_owasp_crs: host.load_owasp_crs ?? global.load_owasp_crs,
@@ -799,6 +847,32 @@ function resolveWaf(
   return null;
 }
 
+/** The tuning fields of `settings`, without the rest. */
+function pickWafTuning(settings: WafTuningSettings): WafTuningSettings {
+  const picked: Record<string, unknown> = {};
+  for (const key of WAF_TUNING_KEYS) {
+    if (settings[key] !== undefined) picked[key] = settings[key];
+  }
+  return picked as WafTuningSettings;
+}
+
+/**
+ * The exclusion records that apply to a proxy host's WAF handler: the global
+ * ones (proxyHostId null) unless the host overrides the global settings, then
+ * the host's own. Same rule as the legacy excluded_rule_ids lists.
+ */
+export function wafExclusionsForHost<T extends WafExclusionRule & { proxyHostId: number | null }>(
+  exclusions: readonly T[],
+  hostId: number,
+  host: WafHostConfig | null | undefined
+): T[] {
+  const override = host?.waf_mode === "override" && host.enabled;
+  return [
+    ...(override ? [] : exclusions.filter((exclusion) => exclusion.proxyHostId === null)),
+    ...exclusions.filter((exclusion) => exclusion.proxyHostId === hostId),
+  ];
+}
+
 /**
  * Resolves the effective WAF settings for a proxy host by merging or overriding
  * the global WAF settings with the per-host WAF config.
@@ -808,6 +882,9 @@ function resolveWaf(
  *  - host.enabled === false          → explicit opt-out; no WAF regardless of global
  *  - host.waf_mode === "override"    → use host config entirely, ignore global
  *  - host.waf_mode === "merge" (default) → merge host settings on top of global
+ *
+ * CRS tuning (paranoia level, thresholds, over-the-limit action) comes from
+ * the global settings; a host that overrides them gets the CRS defaults.
  */
 export function resolveEffectiveWaf(
   global: WafSettings | null,
@@ -852,7 +929,10 @@ export function listDroppedWafDirectives(
   const reports = new Map<string, DroppedWafDirectiveReport>();
   const collect = (waf: WafSettings | null, source: string | WafDirectiveSource) => {
     if (!waf?.enabled || waf.mode === 'Off') return;
-    const { dropped } = filterDirectiveLines(waf.custom_directives, { crsLoaded: Boolean(waf.load_owasp_crs) });
+    const { dropped } = filterDirectiveLines(waf.custom_directives, {
+      crsLoaded: Boolean(waf.load_owasp_crs),
+      reservedRuleIds: tuningRuleIds(waf),
+    });
     for (const [name, lines] of droppedBySource(source, dropped)) {
       for (const { line, reason } of lines) reports.set(`${name}\n${line}\n${reason}`, { source: name, line, reason });
     }
@@ -865,6 +945,11 @@ export function listDroppedWafDirectives(
     );
   }
   return [...reports.values()];
+}
+
+/** Rule ids the CRS tuning directives of `waf` take (none without the CRS). */
+function tuningRuleIds(waf: WafSettings): Set<number> {
+  return new Set(waf.load_owasp_crs ? crsTuningDirectives(resolveWafTuning(waf)).ruleIds : []);
 }
 
 /**
@@ -881,6 +966,18 @@ export const WEBSOCKET_UPGRADE_MATCHER: Record<string, unknown> = {
 };
 
 /**
+ * The virtual patches (ee/rule-feed) a WAF handler adds: SecRule lines the
+ * feed renderer built from verified, allowlisted feed rules, every rule id in
+ * the reserved range. They are the same for every handler.
+ */
+export interface VirtualPatchDirectives {
+  rules: readonly string[];
+}
+
+/** The source named for dropped lines of the virtual patches. */
+export const VIRTUAL_PATCH_SOURCE = 'virtual patches';
+
+/**
  * Builds the Caddy `waf` handler object for the given WAF settings.
  *
  * Important: @-prefixed SecLang paths (e.g. @coraza.conf-recommended) resolve
@@ -893,12 +990,41 @@ export const WEBSOCKET_UPGRADE_MATCHER: Record<string, unknown> = {
  * `source` names where the settings came from in the warning logged when
  * custom directives are dropped: a label, or a WafDirectiveSource that splits
  * the global directives from a proxy host's own.
+ *
+ * Virtual patches (ee/rule-feed) go after the runtime exclusions and before
+ * the CRS rules, so within a phase they run first: a patch in block mode
+ * stops the request itself and the event names the patch. The renderer only
+ * builds allowlisted SecRules, but they pass the custom directive filter
+ * here too, holding them to the reserved id range; whatever fails is left
+ * out and logged. Whole-scope exclusions (SecRuleRemoveById, below) can
+ * still remove a patch rule, as an administrator chose.
  */
 export function buildWafHandler(
   waf: WafSettings,
-  source: string | WafDirectiveSource = 'WAF settings'
+  source: string | WafDirectiveSource = 'WAF settings',
+  exclusions: readonly WafExclusionRule[] = [],
+  virtualPatches: VirtualPatchDirectives | null = null
 ): Record<string, unknown> {
   const parts: string[] = [];
+  // Tuning only exists with the CRS: its SecActions set CRS variables and
+  // SecRuleUpdateActionById fails the whole config for a rule not loaded.
+  const tuning = waf.load_owasp_crs
+    ? crsTuningDirectives(resolveWafTuning(waf))
+    : { beforeRules: [], afterRules: [], ruleIds: [] };
+  const exclusionDirectives = buildExclusionDirectives(exclusions);
+  if (exclusionDirectives.skipped.length > 0) {
+    console.warn(
+      `[waf] ${typeof source === 'string' ? source : source.label}: ${exclusionDirectives.skipped.length} stored rule exclusion(s) are invalid and left out (ids ${exclusionDirectives.skipped.map((e) => e.id).join(', ')})`
+    );
+  }
+  const generatedRuleIds = new Set([...tuning.ruleIds, ...exclusionDirectives.ruleIds]);
+  const patches = filterDirectiveLines(virtualPatches?.rules.join('\n'), {
+    crsLoaded: Boolean(waf.load_owasp_crs),
+    reservedRuleIds: generatedRuleIds,
+    ruleIdRange: 'virtual_patch',
+  });
+  if (patches.dropped.length > 0) warnDroppedDirectives(VIRTUAL_PATCH_SOURCE, patches.dropped);
+  const patchRules = patches.kept.map(({ line }) => line).filter((line) => line.trim() !== '');
 
   // `mode` is interpolated straight into the directive block, and settings are
   // stored without validation — so anything other than a known engine mode
@@ -913,18 +1039,28 @@ export function buildWafHandler(
     parts.push(
       'Include @coraza.conf-recommended',
       'Include @crs-setup.conf.example',
+      // The tuning SecActions set tx variables the CRS only defaults when unset.
+      ...tuning.beforeRules,
+      // Runtime exclusions run in phase 1 ahead of every rule they exclude.
+      ...exclusionDirectives.rules,
+      ...patchRules,
       'Include @owasp_crs/*.conf',
+      // Before any SecRuleRemoveById: updating a removed rule fails the config.
+      ...tuning.afterRules,
     );
+  } else {
+    parts.push(...exclusionDirectives.rules, ...patchRules);
   }
 
-  // Runtime-validate excluded_rule_ids are positive integers
-  if (waf.excluded_rule_ids?.length) {
-    const validIds = waf.excluded_rule_ids.filter(
-      (id): id is number => typeof id === "number" && Number.isFinite(id) && id > 0 && Number.isInteger(id)
-    );
-    if (validIds.length > 0) {
-      parts.push(`SecRuleRemoveById ${validIds.join(' ')}`);
-    }
+  // Whole-scope exclusions: the legacy excluded_rule_ids lists (runtime-
+  // validated as positive integers) and the exclusion records without a path
+  // or variable, which they normally mirror.
+  const removedIds = new Set<number>(exclusionDirectives.removedRuleIds);
+  for (const id of waf.excluded_rule_ids ?? []) {
+    if (typeof id === "number" && Number.isFinite(id) && id > 0 && Number.isInteger(id)) removedIds.add(id);
+  }
+  if (removedIds.size > 0) {
+    parts.push(`SecRuleRemoveById ${[...removedIds].join(' ')}`);
   }
 
   parts.push(
@@ -965,7 +1101,10 @@ export function buildWafHandler(
   // Allowlist approach: only permit known-safe directive prefixes in custom
   // directives. Input validation rejects these lines on save, but stored
   // values can predate a rule, so say what is left out.
-  const { kept, dropped } = filterDirectiveLines(waf.custom_directives, { crsLoaded: Boolean(waf.load_owasp_crs) });
+  const { kept, dropped } = filterDirectiveLines(waf.custom_directives, {
+    crsLoaded: Boolean(waf.load_owasp_crs),
+    reservedRuleIds: generatedRuleIds,
+  });
   if (dropped.length > 0) warnDroppedBySource(source, dropped);
   if (kept.length > 0) {
     parts.push(kept.map(({ line }) => line).join('\n'));
@@ -1036,9 +1175,11 @@ function reconcileInMemoryBodyLimit(directives: string, crsLoaded: boolean): str
 export function buildWafHandlerEntry(
   waf: WafSettings,
   allowWebsocket = false,
-  source?: string | WafDirectiveSource
+  source?: string | WafDirectiveSource,
+  exclusions: readonly WafExclusionRule[] = [],
+  virtualPatches: VirtualPatchDirectives | null = null
 ): Record<string, unknown> {
-  const wafHandler = buildWafHandler(waf, source);
+  const wafHandler = buildWafHandler(waf, source, exclusions, virtualPatches);
   if (!allowWebsocket) return wafHandler;
   return {
     handler: 'subroute',

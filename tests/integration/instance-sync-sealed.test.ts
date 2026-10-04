@@ -25,7 +25,6 @@ const ctx = vi.hoisted(() => {
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   // Kept when modules are reloaded to simulate a master restart.
   ctx.master ??= createTestDb();
   ctx.slave ??= createTestDb();
@@ -37,13 +36,7 @@ vi.mock('../../src/lib/db', async () => {
       return typeof value === 'function' ? value.bind(ctx.active) : value;
     },
   });
-  return {
-    default: db,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null =>
-      value ? new Date(value).toISOString() : null,
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => db);
 });
 vi.mock('../../src/lib/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/lib/config')>()),
@@ -55,6 +48,7 @@ vi.mock('../../src/lib/l4-ports', () => ({
 }));
 vi.mock('../../src/lib/api-auth', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/lib/api-auth')>()),
+  requireApiPermission: vi.fn((request: unknown) => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireApiAdmin(request))),
   requireApiAdmin: async () => ({ userId: 1, role: 'admin', authMethod: 'bearer' }),
 }));
 
@@ -175,7 +169,7 @@ function syncExchange(): Exchange | undefined {
 }
 
 async function storedSetting(db: TestDb, key: string): Promise<unknown> {
-  const row = (await db.select().from(schema.settings).all()).find((r) => r.key === key);
+  const row = (await db.select().from(schema.settings)).find((r) => r.key === key);
   return row ? JSON.parse(row.value) : undefined;
 }
 
@@ -215,10 +209,10 @@ async function setUpMaster() {
 /** Everything the slave stores from a sync, to show that a rejected sync wrote nothing. */
 async function slaveSyncedState() {
   return {
-    settings: (await ctx.slave.select().from(schema.settings).all())
+    settings: (await ctx.slave.select().from(schema.settings))
       .filter((row) => row.key.startsWith('synced:'))
       .map(({ key, value }) => ({ key, value })),
-    certificates: await ctx.slave.select().from(schema.certificates).all(),
+    certificates: await ctx.slave.select().from(schema.certificates),
   };
 }
 
@@ -276,7 +270,7 @@ describe('sealed instance sync', () => {
 
     const stored = await asSlave(async () => {
       const synced = (await storedSetting(ctx.slave, 'synced:dns_provider')) as DnsProviderSetting;
-      const certificates = await ctx.slave.select().from(schema.certificates).all();
+      const certificates = await ctx.slave.select().from(schema.certificates);
       const values = [
         synced.providers.cloudflare.api_token,
         synced.providers.route53.secret_access_key,
@@ -297,6 +291,54 @@ describe('sealed instance sync', () => {
     expect(await storedSetting(ctx.master, 'dns_provider')).toEqual(masterDnsProvider);
     expect(() => decryptSecret(stored[0])).toThrow();
     expect((await listInstances())[0].lastSyncError).toBeNull();
+  });
+
+  it('seals the certificate storage secrets (ee/high-availability) the same way', async () => {
+    await setUpMaster();
+    const storagePassword = 'valkey-password-sealed-sentinel';
+    const storageKey = 'storage-encryption-key-sealed-sentinel-0123';
+    await setSetting('certificate_storage', {
+      backend: 'redis',
+      redis: {
+        mode: 'sentinel',
+        addresses: ['sentinel.example.com:26379'],
+        masterName: 'certs',
+        db: 0,
+        keyPrefix: 'caddy',
+        tls: { enabled: false, insecureSkipVerify: false },
+        password: encryptSecret(storagePassword),
+        sentinelPasswordEnv: 'CADDY_STORAGE_SENTINEL_PASSWORD',
+        encryptionKey: encryptSecret(storageKey),
+      },
+    });
+    connectToSlave();
+
+    expect(await syncInstances()).toMatchObject({ total: 1, success: 1, failed: 0 });
+
+    const { body } = syncExchange()!;
+    for (const secret of [storagePassword, storageKey, 'enc:v1:']) {
+      expect(body).not.toContain(secret);
+    }
+    const payload = JSON.parse(body!) as SyncPayload;
+    expect(payload.settings_secret_paths).toEqual(expect.arrayContaining([
+      ['certificate_storage', 'redis', 'password'],
+      ['certificate_storage', 'redis', 'encryptionKey'],
+    ]));
+    const sent = payload.settings.certificate_storage as { redis: Record<string, string> };
+    expect(sent.redis.password).toMatch(/^sealed:v1:/);
+    expect(sent.redis.encryptionKey).toMatch(/^sealed:v1:/);
+    expect(sent.redis.sentinelPasswordEnv).toBe('CADDY_STORAGE_SENTINEL_PASSWORD');
+
+    await asSlave(async () => {
+      const synced = (await storedSetting(ctx.slave, 'synced:certificate_storage')) as { redis: Record<string, string> };
+      for (const value of [synced.redis.password, synced.redis.encryptionKey]) {
+        expect(isEncryptedSecret(value)).toBe(true);
+        expect(reencryptSecret(value)).toBeNull();
+      }
+      expect(decryptSecret(synced.redis.password)).toBe(storagePassword);
+      expect(decryptSecret(synced.redis.encryptionKey)).toBe(storageKey);
+      expect(synced.redis.sentinelPasswordEnv).toBe('CADDY_STORAGE_SENTINEL_PASSWORD');
+    });
   });
 
   it('syncs a non-secret setting that happens to start with the sealed prefix', async () => {
@@ -516,7 +558,7 @@ describe('sealed instance sync key request', () => {
     ['is not a slave', { mode: 'standalone' }, () => {}, 'Sync key request failed with HTTP 403'],
     ['answers with a login page', { key: () => new Response('<html>login</html>', { status: 200 }) }, () => {},
       'Slave returned an invalid sync key'],
-    // Older CPM slaves answer 405; a 404 comes from something else at that address.
+    // Older Ingressi slaves answer 405; a 404 comes from something else at that address.
     ['answers 404', { key: () => new Response('page not found', { status: 404 }) }, () => {},
       'Sync key request failed with HTTP 404'],
     ['answers { ok: true }', { key: () => Response.json({ ok: true }) }, () => {}, 'Slave returned an invalid sync key'],
@@ -1017,7 +1059,7 @@ describe('sync key pinning', () => {
     const now = new Date().toISOString();
     await ctx.master.insert(schema.instances).values([
       { ...instance, id: undefined, apiToken: encryptSecret(TOKEN), createdAt: now, updatedAt: now },
-      { ...instance, id: undefined, name: 'Other', baseUrl: 'https://replica-2.example.com/cpm/', apiToken: encryptSecret(TOKEN), createdAt: now, updatedAt: now },
+      { ...instance, id: undefined, name: 'Other', baseUrl: 'https://replica-2.example.com/ingressi/', apiToken: encryptSecret(TOKEN), createdAt: now, updatedAt: now },
     ]);
     vi.mocked(logAuditEvent).mockClear();
     vi.restoreAllMocks();
@@ -1025,7 +1067,7 @@ describe('sync key pinning', () => {
 
     expect(await syncInstances()).toMatchObject({ success: 2, failed: 0 });
     expect((await listSyncKeyPins()).map((pin) => [pin.identity, pin.keyId, pin.source])).toEqual([
-      ['https://replica-2.example.com/cpm', slaveKey.keyId, 'first-use'],
+      ['https://replica-2.example.com/ingressi', slaveKey.keyId, 'first-use'],
       [SLAVE_URL, slaveKey.keyId, 'first-use'],
     ]);
     expect(logAuditEvent).toHaveBeenCalledTimes(1);
@@ -1037,7 +1079,7 @@ describe('sync key pinning', () => {
   it('sends every request of a slave to the endpoint its pin is kept under', async () => {
     await setUpMaster();
     const now = new Date().toISOString();
-    await ctx.master.update(schema.instances).set({ baseUrl: 'https://replica.example.com/cpm\\' });
+    await ctx.master.update(schema.instances).set({ baseUrl: 'https://replica.example.com/ingressi\\' });
     const [instance] = await listInstances();
     await ctx.master.insert(schema.instances).values({
       ...instance, id: undefined, name: 'Other', baseUrl: 'HTTPS://Replica-2.Example.com//', apiToken: encryptSecret(TOKEN), createdAt: now, updatedAt: now,
@@ -1049,12 +1091,12 @@ describe('sync key pinning', () => {
     const endpoints = fetchSpy.mock.calls.map(([input, init]) => [init?.method, String(input).replace(/\?.*$/, '')]);
     expect(endpoints.sort()).toEqual([
       ['GET', 'https://replica-2.example.com/api/instances/sync'],
-      ['GET', 'https://replica.example.com/cpm/api/instances/sync'],
+      ['GET', 'https://replica.example.com/ingressi/api/instances/sync'],
       ['POST', 'https://replica-2.example.com/api/instances/sync'],
-      ['POST', 'https://replica.example.com/cpm/api/instances/sync'],
+      ['POST', 'https://replica.example.com/ingressi/api/instances/sync'],
     ]);
     expect((await listSyncKeyPins()).map((pin) => pin.identity)).toEqual([
-      'https://replica-2.example.com', 'https://replica.example.com/cpm',
+      'https://replica-2.example.com', 'https://replica.example.com/ingressi',
     ]);
   });
 
@@ -1082,7 +1124,7 @@ describe('sync key pinning', () => {
     const { body } = syncExchange()!;
     expect(body).not.toContain(SYNC_KEY_PINS_SETTING);
     expect(body).not.toContain(pin.publicKey);
-    const slaveKeys = (await ctx.slave.select().from(schema.settings).all()).map((row) => row.key);
+    const slaveKeys = (await ctx.slave.select().from(schema.settings)).map((row) => row.key);
     expect(slaveKeys.some((key) => key.includes(SYNC_KEY_PINS_SETTING))).toBe(false);
 
     for (const group of [SYNC_KEY_PINS_SETTING, 'instance-sync-key-pins']) {

@@ -1,7 +1,7 @@
 /**
  * Functional tests: CaddyMonitor configuration-drift recovery.
  *
- * The monitor must re-push CPM's configuration whenever Caddy is no longer
+ * The monitor must re-push Ingressi's configuration whenever Caddy is no longer
  * serving it — container recreated/restarted without a usable autosave
  * (wiped config volume, recreated container before the first config push)
  * or restarted onto the image's default Caddyfile.
@@ -18,8 +18,8 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createProxyHost } from '../../helpers/proxy-api';
 
-const CADDY = 'caddy-proxy-manager-caddy';
-const WEB = 'caddy-proxy-manager-web';
+const CADDY = 'ingressi-caddy';
+const WEB = 'ingressi-web';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

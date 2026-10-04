@@ -1,5 +1,5 @@
 import ProxyHostsClient from "./ProxyHostsClient";
-import { listProxyHostsPaginated, countProxyHosts } from "@/src/lib/models/proxy-hosts";
+import { listProxyHosts, type ProxyHost } from "@/src/lib/models/proxy-hosts";
 import { listCertificates } from "@/src/lib/models/certificates";
 import { listCaCertificates } from "@/src/lib/models/ca-certificates";
 import { listAccessLists } from "@/src/lib/models/access-lists";
@@ -9,30 +9,48 @@ import { listIssuedClientCertificates } from "@/src/lib/models/issued-client-cer
 import { listUsers } from "@/src/lib/models/user";
 import { listGroups } from "@/src/lib/models/groups";
 import { getForwardAuthAccessForHost } from "@/src/lib/models/forward-auth";
-import { requireAdmin } from "@/src/lib/auth";
+import { requirePermission } from "@/src/lib/auth";
+import { can, scopeTagsFor, tenantOf, type Access } from "@/src/lib/permissions";
+import { certificateIdsInScope } from "@/src/lib/access-scope";
 import { toCertificatePickerOption } from "@/src/lib/certificate-api";
+import { loadHostInsights } from "@/src/lib/proxy-host-insights";
+import {
+  matchesHostSearch,
+  matchesProtection,
+  matchesStatus,
+  matchesTags,
+  parseHostListQuery,
+  sortHostRows,
+  type HostListRow,
+  type StatusFilter,
+} from "@/src/lib/proxy-host-view";
+import { getHostApprovalContext } from "@/ee/approvals/requests";
+import { dashboardOrganizationFilter } from "@/ee/multi-tenancy/view";
+
+export const metadata = { title: "Proxy hosts" };
 
 const PER_PAGE = 25;
+/** How long the list waits for certificate checks not cached yet; the rest show on the next visit. */
+const CERTIFICATE_WAIT_MS = 1500;
 
 interface PageProps {
-  searchParams: Promise<{ page?: string; search?: string; sortBy?: string; sortDir?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export default async function ProxyHostsPage({ searchParams }: PageProps) {
-  await requireAdmin();
-  const { page: pageParam, search: searchParam, sortBy: sortByParam, sortDir: sortDirParam } = await searchParams;
-  const page = Math.max(1, parseInt(pageParam ?? "1", 10) || 1);
-  const search = searchParam?.trim() || undefined;
-  const offset = (page - 1) * PER_PAGE;
-  const sortBy = sortByParam || undefined;
-  const sortDir = (sortDirParam === "asc" || sortDirParam === "desc") ? sortDirParam : "desc";
+  const { access } = await requirePermission("proxy_hosts:read");
+  // A tag scope limits the list (and the counts) to hosts with one of the role's tags.
+  const scope = scopeTagsFor(access, "proxy_hosts");
+  // An organisation user sees their organisation only; a provider-level user the organisation they picked (ee/multi-tenancy).
+  const organizationId = await dashboardOrganizationFilter(access);
+  const params = await searchParams;
+  const query = parseHostListQuery(params, can(access, "analytics:read"));
 
-  const [hosts, total, certificates, caCertificates, accessLists, authentikDefaults, forwardAuthDefaults] = await Promise.all([
-    listProxyHostsPaginated(PER_PAGE, offset, search, sortBy, sortDir),
-    countProxyHosts(search),
-    listCertificates(),
+  const [allHosts, certificates, caCertificates, accessLists, authentikDefaults, forwardAuthDefaults] = await Promise.all([
+    listProxyHosts(scope, organizationId),
+    listCertificates(organizationId),
     listCaCertificates(),
-    listAccessLists(),
+    listAccessLists(organizationId),
     getAuthentikSettings(),
     getForwardAuthSettings(),
   ]);
@@ -40,12 +58,44 @@ export default async function ProxyHostsPage({ searchParams }: PageProps) {
   const [mtlsRoles, issuedClientCerts, allUsers, allGroups] = await Promise.all([
     listMtlsRoles().catch(() => []),
     listIssuedClientCertificates().catch(() => []),
-    listUsers().catch(() => []),
-    listGroups().catch(() => []),
+    listUsers(organizationId).catch(() => []),
+    listGroups(organizationId).catch(() => []),
   ]);
 
-  // Build forward auth access map for hosts that have CPM forward auth enabled
-  const faHosts = hosts.filter((h) => h.cpmForwardAuth?.enabled);
+  // The form's pickers list only what the user's role can read, plus what the
+  // hosts they can see already use (so editing a host keeps its references).
+  const picker = await pickerVisibility(access, allHosts);
+  const visibleAccessLists = accessLists.filter((list) => picker.accessList(list.id));
+
+  // Hosts are filtered, counted and sorted in memory: their status, traffic
+  // and protection come from several sources, not from one query.
+  const { rows, analyticsStatus } = await loadHostInsights(access, allHosts, {
+    organizationId,
+    accessListNames: new Map(visibleAccessLists.map((list) => [list.id, list.name])),
+    certificateWaitMs: CERTIFICATE_WAIT_MS,
+  });
+  const filtered = rows.filter(
+    (row) => matchesHostSearch(row, query.search) && matchesProtection(row, query.protection) && matchesTags(row, query.tags)
+  );
+  const statusCounts: Record<StatusFilter, number> = {
+    all: filtered.length,
+    attention: filtered.filter((row) => matchesStatus(row, "attention")).length,
+    disabled: filtered.filter((row) => matchesStatus(row, "disabled")).length,
+  };
+  const matching = sortHostRows(filtered.filter((row) => matchesStatus(row, query.status)), query.sortBy, query.sortDir);
+  const pageCount = Math.max(1, Math.ceil(matching.length / PER_PAGE));
+  const page = Math.min(pageCount, query.page);
+  const pageRows: HostListRow[] = matching.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const byId = new Map(allHosts.map((host) => [host.id, host]));
+  const hosts = pageRows.map((row) => byId.get(row.id)!);
+  // ?edit=<id> opens the edit dialog for a host the user may see, on any page of the list.
+  const editParam = Array.isArray(params.edit) ? params.edit[0] : params.edit;
+  const editTarget = can(access, "proxy_hosts:write") && editParam && /^\d{1,15}$/.test(editParam) ? byId.get(Number(editParam)) ?? null : null;
+  const maxRequests = Math.max(0, ...filtered.map((row) => row.traffic?.requests ?? 0));
+  const availableTags = [...new Set(allHosts.flatMap((host) => host.tags))].sort();
+
+  // Build forward auth access map for hosts that have Ingressi forward auth enabled
+  const faHosts = [...hosts, ...(editTarget && !hosts.includes(editTarget) ? [editTarget] : [])].filter((h) => h.ingressiForwardAuth?.enabled);
   const faAccessEntries = await Promise.all(
     faHosts.map((h) => getForwardAuthAccessForHost(h.id).catch(() => []))
   );
@@ -74,19 +124,45 @@ export default async function ProxyHostsPage({ searchParams }: PageProps) {
   return (
     <ProxyHostsClient
       hosts={hosts}
-      certificates={certificates.map(toCertificatePickerOption)}
-      caCertificates={caCertificates}
-      accessLists={accessLists}
+      rows={pageRows}
+      totalHosts={allHosts.length}
+      statusCounts={statusCounts}
+      maxRequests={maxRequests}
+      analyticsStatus={analyticsStatus}
+      availableTags={availableTags}
+      query={{ ...query, page }}
+      certificates={certificates.filter((cert) => picker.certificate(cert.id)).map(toCertificatePickerOption)}
+      caCertificates={picker.trustAnchors ? caCertificates : []}
+      accessLists={visibleAccessLists}
       authentikDefaults={authentikDefaults}
       forwardAuthDefaults={forwardAuthDefaults}
-      pagination={{ total, page, perPage: PER_PAGE }}
-      initialSearch={search ?? ""}
-      initialSort={{ sortBy: sortBy ?? "createdAt", sortDir }}
-      mtlsRoles={mtlsRoles}
-      issuedClientCerts={issuedClientCerts}
-      forwardAuthUsers={forwardAuthUsers}
-      forwardAuthGroups={forwardAuthGroups}
+      pagination={{ total: matching.length, page, perPage: PER_PAGE }}
+      mtlsRoles={picker.trustAnchors ? mtlsRoles : []}
+      issuedClientCerts={picker.trustAnchors ? issuedClientCerts : []}
+      forwardAuthUsers={can(access, "users:read") ? forwardAuthUsers : []}
+      forwardAuthGroups={can(access, "groups:read") ? forwardAuthGroups : []}
       forwardAuthAccessMap={forwardAuthAccessMap}
+      editTarget={editTarget}
+      canWrite={can(access, "proxy_hosts:write")}
+      scopeTags={scope ? [...scope] : []}
+      approval={await getHostApprovalContext(access)}
     />
   );
+}
+
+/** What the host form may list for this user (everything for administrators). */
+async function pickerVisibility(access: Access, visibleHosts: readonly ProxyHost[]) {
+  if (access.isAdmin) {
+    return { certificate: () => true, accessList: () => true, trustAnchors: true };
+  }
+  const usedCertificates = new Set(visibleHosts.map((host) => host.certificateId).filter((id): id is number => id !== null));
+  const usedAccessLists = new Set(visibleHosts.map((host) => host.accessListId).filter((id): id is number => id !== null));
+  const readableCertificates = can(access, "certificates:read") ? await certificateIdsInScope(access) : new Set<number>();
+  const allAccessLists = can(access, "access_lists:read");
+  return {
+    certificate: (id: number) => usedCertificates.has(id) || readableCertificates === null || readableCertificates.has(id),
+    accessList: (id: number) => allAccessLists || usedAccessLists.has(id),
+    // CA and client certificates and mTLS roles are the provider's (ee/multi-tenancy).
+    trustAnchors: can(access, "certificates:read") && scopeTagsFor(access, "certificates") === null && tenantOf(access) === null,
+  };
 }

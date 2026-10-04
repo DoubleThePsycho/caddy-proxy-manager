@@ -49,8 +49,9 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: /sign in/i }).click();
     await expect(page).not.toHaveURL(/\/login/, { timeout: 10000 });
 
-    // Click logout
-    await page.getByRole('button', { name: /log\s*out|sign\s*out/i }).click();
+    // Sign out from the account menu at the foot of the sidebar
+    await page.getByRole('button', { name: /^Your account:/ }).first().click();
+    await page.getByRole('menuitem', { name: 'Sign out' }).click();
 
     // Should land on /login on localhost, not 0.0.0.0
     await expect(page).toHaveURL(/\/login/, { timeout: 10000 });

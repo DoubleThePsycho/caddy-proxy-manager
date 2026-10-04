@@ -1,7 +1,7 @@
 /**
- * Functional tests: CPM Forward Auth with excluded paths.
+ * Functional tests: Ingressi Forward Auth with excluded paths.
  *
- * Creates a proxy host with CPM forward auth enabled and excluded_paths set,
+ * Creates a proxy host with Ingressi forward auth enabled and excluded_paths set,
  * then verifies:
  * - Excluded paths bypass auth and reach the upstream directly
  * - Non-excluded paths still require authentication (redirect to portal)
@@ -30,7 +30,7 @@ test.describe.serial('Forward Auth Excluded Paths', () => {
         domains: [DOMAIN],
         upstreams: ['echo-server:8080'],
         sslForced: false,
-        cpmForwardAuth: {
+        ingressiForwardAuth: {
           enabled: true,
           excluded_paths: ['/share/*', '/rest/*'],
         },
@@ -105,21 +105,21 @@ test.describe.serial('Forward Auth Excluded Paths', () => {
       }
 
       expect(capturedRedirect).toBeTruthy();
-      expect(capturedRedirect).toContain('/.cpm-auth/callback');
+      expect(capturedRedirect).toContain('/.ingressi-auth/callback');
 
       // Complete the callback
       const callbackUrl = new URL(capturedRedirect!);
       const callbackRes = await httpGet(DOMAIN, callbackUrl.pathname + callbackUrl.search);
       expect(callbackRes.status).toBe(302);
       const setCookie = String(callbackRes.headers['set-cookie'] ?? '');
-      expect(setCookie).toContain('_cpm_fa=');
+      expect(setCookie).toContain('_ingressi_fa=');
 
       // Verify authenticated access to non-excluded path
-      const match = setCookie.match(/_cpm_fa=([^;]+)/);
+      const match = setCookie.match(/_ingressi_fa=([^;]+)/);
       expect(match).toBeTruthy();
       const sessionCookie = match![1];
       const upstreamRes = await httpGet(DOMAIN, '/protected-page', {
-        Cookie: `_cpm_fa=${sessionCookie}`,
+        Cookie: `_ingressi_fa=${sessionCookie}`,
       });
       expect(upstreamRes.status).toBe(200);
       expect(upstreamRes.body).toContain(ECHO_BODY);

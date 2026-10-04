@@ -11,10 +11,16 @@ vi.mock('@/src/lib/auth', () => ({
   checkSameOrigin: vi.fn(() => null),
 }));
 
+// The MFA policy gate (src/lib/mfa.ts); reset to "not required" before each test.
+vi.mock('@/src/lib/mfa', () => ({
+  mfaEnrolmentRequired: vi.fn(),
+}));
+
 import { authenticateApiRequest, requireApiUser, requireApiAdmin, ApiAuthError, NotFoundError, apiErrorResponse } from '@/src/lib/api-auth';
 import { ApiClientError, ApiConflictError, ApiValidationError } from '@/src/lib/api-errors';
 import { validateToken } from '@/src/lib/models/api-tokens';
 import { auth, checkSameOrigin } from '@/src/lib/auth';
+import { mfaEnrolmentRequired } from '@/src/lib/mfa';
 import { NextResponse } from 'next/server';
 
 const mockValidateToken = vi.mocked(validateToken);
@@ -41,7 +47,7 @@ beforeEach(() => {
 describe('authenticateApiRequest', () => {
   it('authenticates via Bearer token', async () => {
     mockValidateToken.mockResolvedValue({
-      token: { id: 1, name: 'test', createdBy: 42, createdAt: '', lastUsedAt: null, expiresAt: null },
+      token: { id: 1, name: 'test', createdBy: 42, createdAt: '', lastUsedAt: null, expiresAt: null, scopes: null },
       user: { id: 42, role: 'admin' },
     });
 
@@ -74,6 +80,25 @@ describe('authenticateApiRequest', () => {
     expect(result.authMethod).toBe('session');
   });
 
+  it('refuses a session whose account must set up MFA first (403), but not its API tokens', async () => {
+    vi.mocked(mfaEnrolmentRequired).mockImplementation(async (userId: number) => userId === 10);
+    mockAuth.mockResolvedValue({
+      user: { id: '10', role: 'admin', name: 'Test', email: 'test@test.com' },
+      expires: '',
+    } as any);
+    const error = await authenticateApiRequest(createMockRequest()).catch((e) => e);
+    expect(error).toBeInstanceOf(ApiAuthError);
+    expect(error.status).toBe(403);
+    expect(error.message).toMatch(/multi-factor/);
+
+    mockValidateToken.mockResolvedValue({
+      token: { id: 1, name: 'test', createdBy: 10, createdAt: '', lastUsedAt: null, expiresAt: null, scopes: null },
+      user: { id: 10, role: 'admin' },
+    });
+    const bearer = await authenticateApiRequest(createMockRequest({ authorization: 'Bearer test-token' }));
+    expect(bearer).toMatchObject({ userId: 10, authMethod: 'bearer' });
+  });
+
   it('throws 401 when neither auth method succeeds', async () => {
     mockAuth.mockResolvedValue(null as any);
 
@@ -92,7 +117,7 @@ describe('authenticateApiRequest', () => {
 describe('requireApiAdmin', () => {
   it('allows admin users', async () => {
     mockValidateToken.mockResolvedValue({
-      token: { id: 1, name: 'test', createdBy: 1, createdAt: '', lastUsedAt: null, expiresAt: null },
+      token: { id: 1, name: 'test', createdBy: 1, createdAt: '', lastUsedAt: null, expiresAt: null, scopes: null },
       user: { id: 1, role: 'admin' },
     });
 
@@ -102,7 +127,7 @@ describe('requireApiAdmin', () => {
 
   it('rejects non-admin users with 403', async () => {
     mockValidateToken.mockResolvedValue({
-      token: { id: 1, name: 'test', createdBy: 2, createdAt: '', lastUsedAt: null, expiresAt: null },
+      token: { id: 1, name: 'test', createdBy: 2, createdAt: '', lastUsedAt: null, expiresAt: null, scopes: null },
       user: { id: 2, role: 'user' },
     });
 
@@ -155,7 +180,7 @@ describe('requireApiUser', () => {
 
   it('CSRF check skips for Bearer-authenticated POST', async () => {
     mockValidateToken.mockResolvedValue({
-      token: { id: 1, name: 'test', createdBy: 42, createdAt: '', lastUsedAt: null, expiresAt: null },
+      token: { id: 1, name: 'test', createdBy: 42, createdAt: '', lastUsedAt: null, expiresAt: null, scopes: null },
       user: { id: 42, role: 'admin' },
     });
 

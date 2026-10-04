@@ -8,6 +8,10 @@ export const SYNC_SLAVE_CHANGED_DURING_SYNC_ERROR = "Slave instance was removed 
 export const SYNC_SEALED_KEY_MISMATCH_ERROR = "Sync payload was sealed for a different key; retry";
 export const SYNC_SEALED_STALE_ERROR = "Sync payload was sealed for an expired or already used key request; retry";
 export const SYNC_SEALED_OPEN_FAILED_ERROR = "Sealed secrets in the sync payload could not be opened";
+/** A pull replica runs what it was sent, but its Caddy did not accept it (see ee/fleet/pull-server.ts). */
+export const SYNC_REPLICA_CADDY_FAILED_ERROR = "The replica's Caddy did not apply the configuration";
+/** A pull replica's configuration could not be prepared on the master (a revision gone or unreadable). */
+export const SYNC_PULL_UNAVAILABLE_ERROR = "The configuration for this replica could not be prepared on the master";
 
 const SAFE_SYNC_ERRORS = new Set([
   "Stored token could not be decrypted",
@@ -23,6 +27,8 @@ const SAFE_SYNC_ERRORS = new Set([
   SYNC_SEALED_KEY_MISMATCH_ERROR,
   SYNC_SEALED_STALE_ERROR,
   SYNC_SEALED_OPEN_FAILED_ERROR,
+  SYNC_REPLICA_CADDY_FAILED_ERROR,
+  SYNC_PULL_UNAVAILABLE_ERROR,
   "Failed to apply synchronized configuration",
 ]);
 

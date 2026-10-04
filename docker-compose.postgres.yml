@@ -1,0 +1,116 @@
+# PostgreSQL for the dashboard (documentation/postgresql.md), with an
+# optional second dashboard replica (ee/docs/high-availability.md,
+# "PostgreSQL replicas", Enterprise edition). An override of
+# docker-compose.yml; it changes nothing unless you name it:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
+#
+# (or put COMPOSE_FILE=docker-compose.yml:docker-compose.postgres.yml in .env
+# and run docker compose as usual). Needs Docker Compose 2.24 or later, and in
+# .env besides the usual variables:
+#
+#   POSTGRES_PASSWORD=...   letters and digits only, it goes into a URL as it
+#                           is: openssl rand -hex 32
+#
+# For a fresh install, or after copying an SQLite install to this database
+# with the copy tool (documentation/postgresql.md, "Moving an existing
+# install"). The database is created with the C collation that Ingressi
+# requires, and is reachable only on the compose network.
+#
+# A second replica (web-2) runs with the "replicas" profile. Install an
+# Enterprise license first, then set in .env:
+#
+#   COMPOSE_PROFILES=clickhouse,replicas
+#   DASHBOARD_UPSTREAMS=web:3000,web-2:3000
+#
+# DASHBOARD_UPSTREAMS makes Caddy send forward-auth checks, sign-in callbacks
+# and the API gate to both replicas, with health checks and retries. The
+# dashboard UI stays published on port 3000 by web; to reach it through
+# either replica, add a proxy host with both as upstreams (see the docs).
+#
+# To upgrade, stop every replica, then start the new version: replicas never
+# run two versions side by side, so do not let an image updater replace them
+# one at a time.
+
+x-postgres-environment: &postgres-environment
+  DATABASE_URL: postgres://ingressi:${POSTGRES_PASSWORD:?ERROR - POSTGRES_PASSWORD is required}@postgres:5432/ingressi?sslmode=disable
+  # Connections per replica for queries (default 10); each replica also opens
+  # up to 20 for cluster locks, one for the leader election and one for
+  # change notifications. max_connections below allows five replicas.
+  DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+  # Where Caddy reaches the dashboard replicas (src/lib/dashboard-upstreams.ts).
+  # Empty: web:3000 only. The same value on every replica.
+  DASHBOARD_UPSTREAMS: ${DASHBOARD_UPSTREAMS:-}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ingressi
+      POSTGRES_DB: ingressi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ERROR - POSTGRES_PASSWORD is required}
+      # Text compares and sorts byte by byte, as on SQLite; Ingressi refuses
+      # any other collation.
+      POSTGRES_INITDB_ARGS: --locale=C --encoding=UTF8
+    # Each replica uses up to DATABASE_POOL_MAX + 22 connections.
+    command: ["postgres", "-c", "max_connections=200"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ingressi -d ingressi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    stop_grace_period: 30s
+    networks:
+      - caddy-network
+
+  web:
+    hostname: web
+    environment:
+      <<: *postgres-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # The second replica: its own data volume (it keeps its node id there), the
+  # same database, Caddy's logs, GeoIP databases and ACME CA root, and the L4
+  # ports files on web's data volume, which the l4-port-manager watches.
+  web-2:
+    extends:
+      file: docker-compose.yml
+      service: web
+    profiles: [replicas]
+    container_name: !reset null
+    hostname: web-2
+    environment:
+      <<: *postgres-environment
+      L4_PORTS_DIR: /app/l4-ports
+    # web publishes the dashboard on port 3000.
+    ports: !reset []
+    volumes: !override
+      - web-2-data:/app/data
+      - caddy-manager-data:/app/l4-ports
+      - geoip-data:/usr/share/GeoIP:ro,z
+      # Read-write: whichever replica leads ingests the logs and truncates
+      # waf-audit.log.
+      - caddy-logs:/logs
+      - acme-ca:/acme-ca
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # web joins the cluster first; web-2 then needs the license.
+      web:
+        condition: service_healthy
+
+  # Recreates caddy for L4 port changes with this file included, so the
+  # project it sees is the one that is running.
+  l4-port-manager:
+    environment:
+      COMPOSE_EXTRA_FILE: /compose/docker-compose.postgres.yml
+
+volumes:
+  postgres-data:
+  web-2-data:

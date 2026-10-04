@@ -2,6 +2,7 @@
  * Pure FormData parsing utilities extracted from proxy-hosts/actions.ts.
  * No DB or network dependencies — safe to unit-test directly.
  */
+import { isRowId } from "./row-ids";
 
 export function parseCsv(value: FormDataEntryValue | null): string[] {
   if (!value || typeof value !== "string") return [];
@@ -37,8 +38,8 @@ export function parseCertificateId(value: FormDataEntryValue | null): number | n
   const trimmed = value.trim();
   if (trimmed === "" || trimmed === "null" || trimmed === "undefined") return null;
   const num = Number(trimmed);
-  if (!Number.isFinite(num) || !Number.isInteger(num) || num <= 0) return null;
-  return num;
+  // An id an id column can hold (src/lib/row-ids.ts), or none.
+  return isRowId(num) ? num : null;
 }
 
 export function parseAccessListId(value: FormDataEntryValue | null): number | null {
@@ -47,8 +48,8 @@ export function parseAccessListId(value: FormDataEntryValue | null): number | nu
   const trimmed = value.trim();
   if (trimmed === "" || trimmed === "null" || trimmed === "undefined") return null;
   const num = Number(trimmed);
-  if (!Number.isFinite(num) || !Number.isInteger(num) || num <= 0) return null;
-  return num;
+  // An id an id column can hold (src/lib/row-ids.ts), or none.
+  return isRowId(num) ? num : null;
 }
 
 export function parseOptionalNumber(value: FormDataEntryValue | null): number | null {

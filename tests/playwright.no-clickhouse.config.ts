@@ -3,6 +3,8 @@ import { resolve } from 'node:path';
 
 export default defineConfig({
   testDir: './e2e',
+  // Two dashboard replicas need their own stack (tests/playwright.replicas.config.ts).
+  testIgnore: ['**/replicas/**'],
   globalSetup: './global-setup.no-clickhouse.ts',
   globalTeardown: './global-teardown.no-clickhouse.ts',
   fullyParallel: false,

@@ -1,7 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
 
 /**
- * Regression tests for the "Traffic by Country" world map.
+ * Regression tests for the countries map (the "Map" view of the analytics
+ * page's countries panel).
  *
  * maplibre-gl v6 moved its tile worker into a separate ES module resolved at
  * runtime from `import.meta.url`, which Turbopack cannot resolve correctly. The
@@ -18,7 +19,10 @@ const MAP_CANVAS = 'canvas.maplibregl-canvas';
 
 async function gotoAnalyticsMap(page: Page) {
   await page.goto('/analytics');
-  await expect(page.getByText('Traffic by Country')).toBeVisible({ timeout: 15_000 });
+  const toggle = page.getByRole('group', { name: 'Show countries as' });
+  await expect(toggle).toBeVisible({ timeout: 15_000 });
+  await toggle.getByRole('button', { name: 'Map' }).click();
+  await expect(toggle.getByRole('button', { name: 'Map' })).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator(MAP_CANVAS)).toBeVisible({ timeout: 15_000 });
 }
 
@@ -64,6 +68,8 @@ test.describe('Analytics world map', () => {
     await gotoAnalyticsMap(page);
 
     const canvas = page.locator(MAP_CANVAS);
+    // The countries panel sits below the chart: bring the map into view first.
+    await canvas.scrollIntoViewIfNeeded();
     const box = await canvas.boundingBox();
     expect(box).not.toBeNull();
     if (!box) return;

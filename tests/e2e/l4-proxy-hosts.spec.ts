@@ -3,25 +3,68 @@
  *
  * Verifies the L4 Proxy Hosts UI — navigation, list, create/edit/delete dialogs.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+
+const BASE_URL = 'http://localhost:3000';
+const API = `${BASE_URL}/api/v1`;
+const FIXTURE = 'E2E L4 Fixture';
+
+/**
+ * The page shows an empty state instead of its toolbar and table while there
+ * are no L4 hosts at all, so the filter and sort tests make sure one exists.
+ * It is disabled, so it needs no published port.
+ */
+async function ensureFixtureHost(page: Page) {
+  const list = await page.request.get(`${API}/l4-proxy-hosts`, { headers: { Origin: BASE_URL } });
+  expect(list.ok()).toBe(true);
+  const hosts = (await list.json()) as Array<{ name: string }>;
+  if (hosts.some((host) => host.name === FIXTURE)) return;
+  const created = await page.request.post(`${API}/l4-proxy-hosts`, {
+    data: { name: FIXTURE, protocol: 'tcp', listenAddress: ':19998', upstreams: ['10.0.0.1:5432'], enabled: false },
+    headers: { 'Content-Type': 'application/json', Origin: BASE_URL },
+  });
+  expect(created.status()).toBe(201);
+}
 
 test.describe('L4 Proxy Hosts page', () => {
   test('is accessible from sidebar navigation', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('link', { name: /l4 proxy hosts/i }).click();
+    await page.getByRole('link', { name: 'L4 hosts', exact: true }).first().click();
     await expect(page).toHaveURL(/\/l4-proxy-hosts/);
-    await expect(page.getByRole('heading', { name: 'L4 Proxy Hosts' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: /^L4 hosts/ })).toBeVisible();
   });
 
   test('shows empty state when search has no results', async ({ page }) => {
+    await ensureFixtureHost(page);
     await page.goto('/l4-proxy-hosts');
-    await page.getByPlaceholder(/search/i).fill('zzz-nonexistent-host-zzz');
-    await expect(page.getByText(/no l4 hosts match/i).last()).toBeVisible({ timeout: 5_000 });
+    await page.getByRole('searchbox', { name: 'Filter L4 hosts' }).fill('zzz-nonexistent-host-zzz');
+    await expect(page).toHaveURL(/search=zzz-nonexistent-host-zzz/);
+    await expect(page.getByText(/no l4 host matches these filters/i).last()).toBeVisible({ timeout: 5_000 });
+    await page.getByRole('button', { name: 'Clear filters' }).click();
+    await expect(page).not.toHaveURL(/search=/);
+  });
+
+  test('keeps the search deep link', async ({ page }) => {
+    await ensureFixtureHost(page);
+    await page.goto('/l4-proxy-hosts?search=zzz-deep-link-zzz');
+    await expect(page.getByRole('searchbox', { name: 'Filter L4 hosts' })).toHaveValue('zzz-deep-link-zzz');
+    await expect(page.getByText(/no l4 host matches these filters/i).last()).toBeVisible({ timeout: 5_000 });
+  });
+
+  test('filters by protocol', async ({ page }) => {
+    await ensureFixtureHost(page);
+    await page.goto('/l4-proxy-hosts');
+    const protocol = page.getByRole('group', { name: 'Protocol' });
+    await protocol.getByRole('button', { name: /^UDP/ }).click();
+    await expect(page).toHaveURL(/protocol=udp/);
+    await expect(protocol.getByRole('button', { name: /^UDP/ })).toHaveAttribute('aria-pressed', 'true');
+    await protocol.getByRole('button', { name: /^All/ }).click();
+    await expect(page).not.toHaveURL(/protocol=/);
   });
 
   test('create dialog opens and contains expected fields', async ({ page }) => {
     await page.goto('/l4-proxy-hosts');
-    await page.getByRole('button', { name: /create l4 host/i }).click();
+    await page.getByRole('button', { name: /new l4 host/i }).first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
 
     // Verify key form fields exist
@@ -32,9 +75,10 @@ test.describe('L4 Proxy Hosts page', () => {
     await expect(page.getByRole('combobox', { name: 'Matcher' }).first()).toBeVisible();
   });
 
-  test('clicking Name / Matcher header sorts the table', async ({ page }) => {
+  test('clicking Name header sorts the table', async ({ page }) => {
+    await ensureFixtureHost(page);
     await page.goto('/l4-proxy-hosts');
-    const sortBtn = page.getByRole('button', { name: 'Name / Matcher' });
+    const sortBtn = page.getByRole('columnheader', { name: 'Name' }).getByRole('button');
     await expect(sortBtn).toBeVisible();
 
     await sortBtn.click();
@@ -46,18 +90,20 @@ test.describe('L4 Proxy Hosts page', () => {
     await expect(page).toHaveURL(/sortDir=desc/);
   });
 
-  test('clicking Protocol header sorts by protocol', async ({ page }) => {
+  test('clicking Status header sorts by enabled state', async ({ page }) => {
+    await ensureFixtureHost(page);
     await page.goto('/l4-proxy-hosts');
-    const sortBtn = page.getByRole('button', { name: 'Protocol' });
+    const sortBtn = page.getByRole('columnheader', { name: 'Status' }).getByRole('button');
     await expect(sortBtn).toBeVisible();
 
     await sortBtn.click();
-    await expect(page).toHaveURL(/sortBy=protocol/);
+    await expect(page).toHaveURL(/sortBy=enabled/);
   });
 
   test('clicking Listen header sorts by listen address', async ({ page }) => {
+    await ensureFixtureHost(page);
     await page.goto('/l4-proxy-hosts');
-    const sortBtn = page.getByRole('button', { name: 'Listen' });
+    const sortBtn = page.getByRole('columnheader', { name: 'Listen' }).getByRole('button');
     await expect(sortBtn).toBeVisible();
 
     await sortBtn.click();
@@ -66,7 +112,7 @@ test.describe('L4 Proxy Hosts page', () => {
 
   test('creates a new L4 proxy host', async ({ page }) => {
     await page.goto('/l4-proxy-hosts');
-    await page.getByRole('button', { name: /create l4 host/i }).click();
+    await page.getByRole('button', { name: /new l4 host/i }).first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
 
     await page.getByLabel('Name').fill('E2E Test Host');
@@ -81,16 +127,27 @@ test.describe('L4 Proxy Hosts page', () => {
     await expect(page.getByRole('table').getByText(':19999', { exact: true })).toBeVisible();
   });
 
+  test('selecting a host shows its settings in the detail panel', async ({ page }) => {
+    await page.goto('/l4-proxy-hosts');
+    await page.getByRole('table').getByRole('button', { name: 'E2E Test Host', exact: true }).click();
+    const detail = page.getByRole('region', { name: 'E2E Test Host', exact: true });
+    await expect(detail).toBeVisible();
+    await expect(detail.getByText(':19999/tcp')).toBeVisible();
+    await expect(detail.getByRole('term').filter({ hasText: /^Upstream$/ })).toBeVisible();
+    await expect(detail.getByRole('definition').filter({ hasText: '10.0.0.1:5432' })).toBeVisible();
+    await expect(detail.getByRole('button', { name: 'Edit' })).toBeVisible();
+  });
+
   /**
    * Regression (#295): an L4 host listening on 80/443/2019 collides with
-   * CPM's own Caddy listeners. SO_REUSEPORT makes the bind succeed, so the
+   * Ingressi's own Caddy listeners. SO_REUSEPORT makes the bind succeed, so the
    * conflict is not reported — instead connections are silently split between
    * the two listeners and ~50% of TLS handshakes fail. Creating such a host
    * must be rejected with an explanatory error and the dialog must stay open.
    */
   test('rejects a listen address on reserved port 443', async ({ page }) => {
     await page.goto('/l4-proxy-hosts');
-    await page.getByRole('button', { name: /create l4 host/i }).click();
+    await page.getByRole('button', { name: /new l4 host/i }).first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
 
     await page.getByLabel('Name').fill('E2E Reserved Port Host');
@@ -107,7 +164,7 @@ test.describe('L4 Proxy Hosts page', () => {
 
   test('listen address field documents the reserved ports', async ({ page }) => {
     await page.goto('/l4-proxy-hosts');
-    await page.getByRole('button', { name: /create l4 host/i }).click();
+    await page.getByRole('button', { name: /new l4 host/i }).first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByText(/ports 80, 443 and 2019 are reserved/i)).toBeVisible();
   });
@@ -118,7 +175,7 @@ test.describe('L4 Proxy Hosts page', () => {
 
     // Open the dropdown menu for that row and click Delete
     const row = page.locator('tr', { hasText: 'E2E Test Host' });
-    await row.getByRole('button').first().click();
+    await row.getByRole('button', { name: 'More actions for E2E Test Host' }).click();
     await page.getByRole('menuitem', { name: /delete/i }).click();
 
     // Confirm deletion
@@ -143,7 +200,7 @@ test.describe('L4 Proxy Hosts page', () => {
     for (let i = 1; i <= 3; i++) {
       // Re-open the dialog each iteration — this is what exercised the stale
       // useActionState bug (dialog remount now resets form state).
-      await page.getByRole('button', { name: /create l4 host/i }).click();
+      await page.getByRole('button', { name: /new l4 host/i }).first().click();
       await expect(page.getByRole('dialog')).toBeVisible();
       await page.getByLabel('Name').fill(`E2E Rapid Host ${i}`);
       await page.getByLabel('Listen Address').fill(`:2000${i}`);
@@ -162,7 +219,7 @@ test.describe('L4 Proxy Hosts page', () => {
     for (let i = 1; i <= 3; i++) {
       const row = page.locator('tr', { hasText: `E2E Rapid Host ${i}` });
       await expect(row).toBeVisible();
-      await row.getByRole('button').first().click();
+      await row.getByRole('button', { name: `More actions for E2E Rapid Host ${i}` }).click();
       await page.getByRole('menuitem', { name: /delete/i }).click();
       await expect(page.getByRole('dialog')).toBeVisible();
       await page.getByRole('button', { name: /delete/i }).click();
@@ -177,7 +234,7 @@ test.describe('L4 Proxy Hosts page', () => {
    */
   test('toggling enabled updates the row status without reload', async ({ page }) => {
     await page.goto('/l4-proxy-hosts');
-    await page.getByRole('button', { name: /create l4 host/i }).click();
+    await page.getByRole('button', { name: /new l4 host/i }).first().click();
     await page.getByLabel('Name').fill('E2E Toggle Host');
     await page.getByLabel('Listen Address').fill(':20010');
     await page.getByLabel('Upstreams').fill('10.0.0.1:5432');
@@ -198,11 +255,20 @@ test.describe('L4 Proxy Hosts page', () => {
     await expect(rowSwitch).toHaveAttribute('data-state', 'checked', { timeout: 10_000 });
 
     // Cleanup
-    await row.getByRole('button').first().click();
+    await row.getByRole('button', { name: 'More actions for E2E Toggle Host' }).click();
     await page.getByRole('menuitem', { name: /delete/i }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await page.getByRole('button', { name: /delete/i }).click();
     await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('E2E Toggle Host')).not.toBeVisible({ timeout: 5_000 });
+  });
+
+  test('cleanup fixture host', async ({ page }) => {
+    const list = await page.request.get(`${API}/l4-proxy-hosts`, { headers: { Origin: BASE_URL } });
+    const hosts = (await list.json()) as Array<{ id: number; name: string }>;
+    for (const host of hosts.filter((h) => h.name === FIXTURE)) {
+      const res = await page.request.delete(`${API}/l4-proxy-hosts/${host.id}`, { headers: { Origin: BASE_URL } });
+      expect(res.ok()).toBe(true);
+    }
   });
 });

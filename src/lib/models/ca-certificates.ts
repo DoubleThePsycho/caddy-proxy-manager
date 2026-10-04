@@ -1,10 +1,11 @@
-import db, { nowIso, toIso } from "../db";
+import { appDb, nowIso, toIso } from "../db";
 import { logAuditEvent } from "../audit";
 import { applyCaddyConfig } from "../caddy";
 import { caCertificates, issuedClientCertificates, mtlsCertificateRoles, proxyHosts } from "../db/schema";
-import { desc, eq, inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { ApiConflictError } from "../api-errors";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "../secret";
+import { asc, desc } from "@/src/lib/db/ops";
 
 export const CA_PRIVATE_KEY_UNAVAILABLE_MESSAGE =
   "The CA private key cannot be decrypted with the current SESSION_SECRET. " +
@@ -64,7 +65,7 @@ function parseCaCertificate(row: CaCertificateRow): CaCertificate {
 }
 
 export async function listCaCertificates(): Promise<CaCertificate[]> {
-  const rows = await db.select().from(caCertificates).orderBy(desc(caCertificates.createdAt));
+  const rows = await appDb.select().from(caCertificates).orderBy(desc(caCertificates.createdAt), desc(caCertificates.id));
   return rows.map(parseCaCertificate);
 }
 
@@ -73,7 +74,7 @@ export async function listCaCertificates(): Promise<CaCertificate[]> {
  * CaPrivateKeyUnavailableError when a key is stored but cannot be decrypted.
  */
 export async function getCaCertificatePrivateKey(id: number): Promise<string | null> {
-  const cert = await db.query.caCertificates.findFirst({
+  const cert = await appDb.query.caCertificates.findFirst({
     where: (table, { eq }) => eq(table.id, id)
   });
   if (!cert?.privateKeyPem) return null;
@@ -90,13 +91,13 @@ export async function getCaCertificatePrivateKey(id: number): Promise<string | n
  * so a restored legacy backup is repaired on the next startup.
  */
 export async function migrateLegacyCaPrivateKeys(): Promise<number> {
-  const rows = await db
+  const rows = await appDb
     .select({ id: caCertificates.id, privateKeyPem: caCertificates.privateKeyPem })
     .from(caCertificates);
   let migrated = 0;
   for (const row of rows) {
     if (!row.privateKeyPem || isEncryptedSecret(row.privateKeyPem)) continue;
-    await db
+    await appDb
       .update(caCertificates)
       .set({ privateKeyPem: encryptSecret(row.privateKeyPem) })
       .where(eq(caCertificates.id, row.id));
@@ -106,7 +107,7 @@ export async function migrateLegacyCaPrivateKeys(): Promise<number> {
 }
 
 export async function getCaCertificate(id: number): Promise<CaCertificate | null> {
-  const cert = await db.query.caCertificates.findFirst({
+  const cert = await appDb.query.caCertificates.findFirst({
     where: (table, { eq }) => eq(table.id, id)
   });
   return cert ? parseCaCertificate(cert) : null;
@@ -114,7 +115,7 @@ export async function getCaCertificate(id: number): Promise<CaCertificate | null
 
 export async function createCaCertificate(input: CaCertificateInput, actorUserId: number): Promise<CaCertificate> {
   const now = nowIso();
-  const [record] = await db
+  const [record] = await appDb
     .insert(caCertificates)
     .values({
       name: input.name.trim(),
@@ -130,7 +131,7 @@ export async function createCaCertificate(input: CaCertificateInput, actorUserId
     throw new Error("Failed to create CA certificate");
   }
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "create",
     entityType: "ca_certificate",
@@ -148,7 +149,7 @@ export async function updateCaCertificate(id: number, input: Partial<CaCertifica
   }
 
   const now = nowIso();
-  await db
+  await appDb
     .update(caCertificates)
     .set({
       name: input.name?.trim() ?? existing.name,
@@ -158,7 +159,7 @@ export async function updateCaCertificate(id: number, input: Partial<CaCertifica
     })
     .where(eq(caCertificates.id, id));
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "update",
     entityType: "ca_certificate",
@@ -170,75 +171,83 @@ export async function updateCaCertificate(id: number, input: Partial<CaCertifica
 }
 
 export async function deleteCaCertificate(id: number, actorUserId: number): Promise<void> {
-  const existing = await getCaCertificate(id);
-  if (!existing) {
-    throw new Error("CA certificate not found");
-  }
+  // The in-use check and the deletes run in one transaction, so no host can
+  // start trusting the CA's certificates in between.
+  const existing = await appDb.transaction(async (tx) => {
+    const existing = await tx.query.caCertificates.findFirst({
+      where: (table, { eq }) => eq(table.id, id)
+    });
+    if (!existing) {
+      throw new Error("CA certificate not found");
+    }
 
-  // Collect the issued client certificates belonging to this CA, plus any
-  // mTLS roles that include them — used both to detect references below and to
-  // cascade-delete afterwards.
-  const issuedCerts = await db
-    .select({ id: issuedClientCertificates.id })
-    .from(issuedClientCertificates)
-    .where(eq(issuedClientCertificates.caCertificateId, id));
-  const issuedCertIds = issuedCerts.map((c) => c.id);
-  const issuedCertIdSet = new Set(issuedCertIds);
-
-  const affectedRoleIds = new Set<number>();
-  if (issuedCertIds.length > 0) {
-    const roleRows = await db
-      .select({ roleId: mtlsCertificateRoles.mtlsRoleId })
-      .from(mtlsCertificateRoles)
-      .where(inArray(mtlsCertificateRoles.issuedClientCertificateId, issuedCertIds));
-    for (const row of roleRows) affectedRoleIds.add(row.roleId);
-  }
-
-  // Check if any proxy host's mTLS config references this CA. A host is "in
-  // use" if it directly trusts one of the CA's issued certs
-  // (trusted_client_cert_ids), trusts a role that contains one
-  // (trusted_role_ids), or uses the deprecated whole-CA trust list
-  // (ca_certificate_ids). The old guard only checked the deprecated field, so
-  // CAs trusted via the current per-cert/role model could be deleted out from
-  // under a live host.
-  const allHosts = await db.select({ meta: proxyHosts.meta, name: proxyHosts.name }).from(proxyHosts);
-  const referencing = allHosts.filter((host) => {
-    const meta = tryParseJson<{
-      mtls?: {
-        enabled?: boolean;
-        trusted_client_cert_ids?: number[];
-        trusted_role_ids?: number[];
-        ca_certificate_ids?: number[];
-      };
-    }>(host.meta, {});
-    if (!meta.mtls?.enabled) return false;
-    const trustsCert = meta.mtls.trusted_client_cert_ids?.some((cid) => issuedCertIdSet.has(cid)) ?? false;
-    const trustsRole = meta.mtls.trusted_role_ids?.some((rid) => affectedRoleIds.has(rid)) ?? false;
-    const trustsCa = meta.mtls.ca_certificate_ids?.includes(id) ?? false;
-    return trustsCert || trustsRole || trustsCa;
-  });
-
-  if (referencing.length > 0) {
-    const names = referencing.map((h) => h.name).join(", ");
-    throw new ApiConflictError(`CA certificate is in use by proxy host(s): ${names}`);
-  }
-
-  // Cascade-delete the CA's issued client certificates and their role
-  // mappings. The schema declares onDelete: "cascade" for these foreign keys,
-  // but better-sqlite3 leaves PRAGMA foreign_keys OFF, so the cascade never
-  // fires automatically — without this, deleting a CA orphans its issued
-  // certificates, which keep appearing as selectable in the mTLS picker.
-  if (issuedCertIds.length > 0) {
-    await db
-      .delete(mtlsCertificateRoles)
-      .where(inArray(mtlsCertificateRoles.issuedClientCertificateId, issuedCertIds));
-    await db
-      .delete(issuedClientCertificates)
+    // Collect the issued client certificates belonging to this CA, plus any
+    // mTLS roles that include them — used both to detect references below and to
+    // cascade-delete afterwards.
+    const issuedCerts = await tx
+      .select({ id: issuedClientCertificates.id })
+      .from(issuedClientCertificates)
       .where(eq(issuedClientCertificates.caCertificateId, id));
-  }
+    const issuedCertIds = issuedCerts.map((c) => c.id);
+    const issuedCertIdSet = new Set(issuedCertIds);
 
-  await db.delete(caCertificates).where(eq(caCertificates.id, id));
-  logAuditEvent({
+    const affectedRoleIds = new Set<number>();
+    if (issuedCertIds.length > 0) {
+      const roleRows = await tx
+        .select({ roleId: mtlsCertificateRoles.mtlsRoleId })
+        .from(mtlsCertificateRoles)
+        .where(inArray(mtlsCertificateRoles.issuedClientCertificateId, issuedCertIds));
+      for (const row of roleRows) affectedRoleIds.add(row.roleId);
+    }
+
+    // Check if any proxy host's mTLS config references this CA. A host is "in
+    // use" if it directly trusts one of the CA's issued certs
+    // (trusted_client_cert_ids), trusts a role that contains one
+    // (trusted_role_ids), or uses the deprecated whole-CA trust list
+    // (ca_certificate_ids). The old guard only checked the deprecated field, so
+    // CAs trusted via the current per-cert/role model could be deleted out from
+    // under a live host.
+    const allHosts = await tx.select({ meta: proxyHosts.meta, name: proxyHosts.name }).from(proxyHosts).orderBy(asc(proxyHosts.id));
+    const referencing = allHosts.filter((host) => {
+      const meta = tryParseJson<{
+        mtls?: {
+          enabled?: boolean;
+          trusted_client_cert_ids?: number[];
+          trusted_role_ids?: number[];
+          ca_certificate_ids?: number[];
+        };
+      }>(host.meta, {});
+      if (!meta.mtls?.enabled) return false;
+      const trustsCert = meta.mtls.trusted_client_cert_ids?.some((cid) => issuedCertIdSet.has(cid)) ?? false;
+      const trustsRole = meta.mtls.trusted_role_ids?.some((rid) => affectedRoleIds.has(rid)) ?? false;
+      const trustsCa = meta.mtls.ca_certificate_ids?.includes(id) ?? false;
+      return trustsCert || trustsRole || trustsCa;
+    });
+
+    if (referencing.length > 0) {
+      const names = referencing.map((h) => h.name).join(", ");
+      throw new ApiConflictError(`CA certificate is in use by proxy host(s): ${names}`);
+    }
+
+    // Cascade-delete the CA's issued client certificates and their role
+    // mappings. The schema declares onDelete: "cascade" for these foreign keys,
+    // but production SQLite runs with foreign keys off and PostgreSQL has
+    // none, so the cascade never fires by itself — without this, deleting a CA
+    // orphans its issued certificates, which keep appearing as selectable in
+    // the mTLS picker.
+    if (issuedCertIds.length > 0) {
+      await tx
+        .delete(mtlsCertificateRoles)
+        .where(inArray(mtlsCertificateRoles.issuedClientCertificateId, issuedCertIds));
+      await tx
+        .delete(issuedClientCertificates)
+        .where(eq(issuedClientCertificates.caCertificateId, id));
+    }
+
+    await tx.delete(caCertificates).where(eq(caCertificates.id, id));
+    return existing;
+  });
+  await logAuditEvent({
     userId: actorUserId,
     action: "delete",
     entityType: "ca_certificate",

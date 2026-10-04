@@ -40,8 +40,10 @@ github.com/caddy-dns/inwx
 github.com/caddy-dns/cloudns
 github.com/caddy-dns/rfc2136
 github.com/mholt/caddy-l4
+github.com/mholt/caddy-ratelimit
 github.com/fuomag9/caddy-blocker-plugin
 github.com/corazawaf/coraza-caddy/v2
+github.com/pberkel/caddy-storage-redis
 MODULES
 
 cel_go_version="$(module_version github.com/google/cel-go)"

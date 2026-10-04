@@ -16,13 +16,8 @@ const ctx = vi.hoisted(() => ({
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 vi.mock('../../src/lib/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/lib/config')>()),
@@ -51,7 +46,7 @@ function useSecret(secret: string, previous: string[] = []) {
 
 /** The JSON value of one settings row, or undefined. */
 async function storedSetting(key: string): Promise<unknown> {
-  const row = (await ctx.db.select().from(schema.settings).all()).find((r) => r.key === key);
+  const row = (await ctx.db.select().from(schema.settings)).find((r) => r.key === key);
   return row ? JSON.parse(row.value) : undefined;
 }
 

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import db, { nowIso } from "../db";
+import { appDb, nowIso } from "../db";
 import { oauthProviders } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { encryptSecret, decryptSecret } from "../secret";
@@ -62,7 +62,7 @@ export async function createOAuthProvider(data: {
   const now = nowIso();
   const id = randomUUID();
 
-  const [row] = await db
+  const [row] = await appDb
     .insert(oauthProviders)
     .values({
       id,
@@ -87,29 +87,29 @@ export async function createOAuthProvider(data: {
 }
 
 export async function listOAuthProviders(): Promise<OAuthProviderView[]> {
-  const rows = await db.query.oauthProviders.findMany({
-    orderBy: (table, { asc }) => asc(table.name),
+  const rows = await appDb.query.oauthProviders.findMany({
+    orderBy: (table, { asc }) => [asc(table.name), asc(table.id)],
   });
   return rows.map((row) => toOAuthProviderView(parseDbProvider(row)));
 }
 
 export async function listEnabledOAuthProviders(): Promise<OAuthProvider[]> {
-  const rows = await db.query.oauthProviders.findMany({
+  const rows = await appDb.query.oauthProviders.findMany({
     where: (table, { eq }) => eq(table.enabled, true),
-    orderBy: (table, { asc }) => asc(table.name),
+    orderBy: (table, { asc }) => [asc(table.name), asc(table.id)],
   });
   return rows.map(parseDbProvider);
 }
 
 export async function getOAuthProvider(id: string): Promise<OAuthProvider | null> {
-  const row = await db.query.oauthProviders.findFirst({
+  const row = await appDb.query.oauthProviders.findFirst({
     where: (table, { eq }) => eq(table.id, id),
   });
   return row ? parseDbProvider(row) : null;
 }
 
 export async function getOAuthProviderByName(name: string): Promise<OAuthProvider | null> {
-  const row = await db.query.oauthProviders.findFirst({
+  const row = await appDb.query.oauthProviders.findFirst({
     where: (table, { eq }) => eq(table.name, name),
   });
   return row ? parseDbProvider(row) : null;
@@ -151,7 +151,7 @@ export async function updateOAuthProvider(
   if (data.autoLink !== undefined) updates.autoLink = data.autoLink;
   if (data.enabled !== undefined) updates.enabled = data.enabled;
 
-  const [row] = await db
+  const [row] = await appDb
     .update(oauthProviders)
     .set(updates)
     .where(eq(oauthProviders.id, id))
@@ -161,7 +161,7 @@ export async function updateOAuthProvider(
 }
 
 export async function deleteOAuthProvider(id: string): Promise<void> {
-  const row = await db.query.oauthProviders.findFirst({
+  const row = await appDb.query.oauthProviders.findFirst({
     where: (table, { eq }) => eq(table.id, id),
   });
 
@@ -173,15 +173,15 @@ export async function deleteOAuthProvider(id: string): Promise<void> {
     throw new Error("Cannot delete an environment-sourced OAuth provider");
   }
 
-  await db.delete(oauthProviders).where(eq(oauthProviders.id, id));
+  await appDb.delete(oauthProviders).where(eq(oauthProviders.id, id));
 }
 
 export async function getProviderDisplayList(): Promise<
   Array<{ id: string; name: string; autoLink: boolean }>
 > {
-  const rows = await db.query.oauthProviders.findMany({
+  const rows = await appDb.query.oauthProviders.findMany({
     where: (table, { eq }) => eq(table.enabled, true),
-    orderBy: (table, { asc }) => asc(table.name),
+    orderBy: (table, { asc }) => [asc(table.name), asc(table.id)],
     columns: { id: true, name: true, autoLink: true },
   });
   return rows.map((r) => ({ id: r.id, name: r.name, autoLink: r.autoLink }));

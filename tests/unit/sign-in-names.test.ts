@@ -18,7 +18,7 @@ describe('lowercasesIntoAscii', () => {
 
   it.each([
     ['Kate@Example.com'],
-    ['alice+cpm@example.com'],
+    ['alice+ingressi@example.com'],
     ['JÖHN@example.com'], // lowercased to another non-ASCII letter
     ['åsa@example.com'],
     ['\u{1D400}@example.com'],

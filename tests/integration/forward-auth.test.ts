@@ -1,20 +1,31 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createHash, randomBytes } from 'node:crypto';
-import { createTestDb, type TestDb } from '../helpers/db';
+import { createTestDb, disableForeignKeys, type TestDb } from '../helpers/db';
 import {
   forwardAuthSessions,
   forwardAuthExchanges,
   forwardAuthAccess,
+  forwardAuthRedirectIntents,
   groups,
+  mtlsAccessRules,
   users,
   proxyHosts
 } from '@/src/lib/db/schema';
-import { eq } from 'drizzle-orm';
 
 let db: TestDb;
 
-beforeEach(() => {
+vi.mock('@/src/lib/db', async () => (await import('../helpers/db-module')).mockDbModule(() => db));
+
+import { deleteForwardAuthSession, getForwardAuthAccessForHost, setForwardAuthAccess } from '@/src/lib/models/forward-auth';
+import { ApiValidationError } from '@/src/lib/api-errors';
+import { deleteGroup } from '@/src/lib/models/groups';
+import { deleteProxyHost } from '@/src/lib/models/proxy-hosts';
+import { deleteUser } from '@/src/lib/models/user';
+
+beforeEach(async () => {
   db = createTestDb();
+  // As in production: SQLite runs with foreign keys off, PostgreSQL has none.
+  await disableForeignKeys(db);
 });
 
 function nowIso() {
@@ -103,24 +114,35 @@ describe('forward auth sessions', () => {
     ).rejects.toThrow();
   });
 
-  it('cascades user deletion to sessions', async () => {
+  it('deleting a user deletes their sessions, without foreign keys', async () => {
     const user = await insertUser();
+    const other = await insertUser();
     const host = await insertProxyHost();
     const now = nowIso();
 
-    await db.insert(forwardAuthSessions).values({
-      userId: user.id,
-      proxyHostId: host.id,
-      audienceOrigin: 'https://app.example.com',
-      tokenHash: hashToken('token1'),
-      expiresAt: futureIso(3600),
-      createdAt: now,
-    });
+    await db.insert(forwardAuthSessions).values([
+      {
+        userId: user.id,
+        proxyHostId: host.id,
+        audienceOrigin: 'https://app.example.com',
+        tokenHash: hashToken('token1'),
+        expiresAt: futureIso(3600),
+        createdAt: now,
+      },
+      {
+        userId: other.id,
+        proxyHostId: host.id,
+        audienceOrigin: 'https://app.example.com',
+        tokenHash: hashToken('token2'),
+        expiresAt: futureIso(3600),
+        createdAt: now,
+      },
+    ]);
 
-    await db.delete(users).where(eq(users.id, user.id));
+    await deleteUser(user.id);
 
     const sessions = await db.query.forwardAuthSessions.findMany();
-    expect(sessions).toHaveLength(0);
+    expect(sessions.map((session) => session.userId)).toEqual([other.id]);
   });
 });
 
@@ -157,7 +179,7 @@ describe('forward auth exchanges', () => {
     expect(exchange.used).toBe(false);
   });
 
-  it('cascades session deletion to exchanges', async () => {
+  it('deleting a session deletes its exchange codes, without foreign keys', async () => {
     const user = await insertUser();
     const host = await insertProxyHost();
     const now = nowIso();
@@ -183,8 +205,9 @@ describe('forward auth exchanges', () => {
       createdAt: now,
     });
 
-    await db.delete(forwardAuthSessions).where(eq(forwardAuthSessions.id, session.id));
+    await deleteForwardAuthSession(session.id);
 
+    expect(await db.query.forwardAuthSessions.findMany()).toHaveLength(0);
     const exchanges = await db.query.forwardAuthExchanges.findMany();
     expect(exchanges).toHaveLength(0);
   });
@@ -245,37 +268,61 @@ describe('forward auth access', () => {
     ).rejects.toThrow();
   });
 
-  it('cascades proxy host deletion to access entries', async () => {
+  it('deleting a proxy host deletes its grants, sign-in state and mTLS path rules, without foreign keys', async () => {
     const user = await insertUser();
     const host = await insertProxyHost();
+    const kept = await insertProxyHost({ name: 'Kept', domains: JSON.stringify(['kept.example.com']) });
     const now = nowIso();
 
-    await db.insert(forwardAuthAccess).values({
-      proxyHostId: host.id, userId: user.id, groupId: null, createdAt: now,
-    });
+    for (const proxyHost of [host, kept]) {
+      const origin = `https://${JSON.parse(proxyHost.domains)[0]}`;
+      await db.insert(forwardAuthAccess).values({
+        proxyHostId: proxyHost.id, userId: user.id, groupId: null, createdAt: now,
+      });
+      const [session] = await db.insert(forwardAuthSessions).values({
+        userId: user.id, proxyHostId: proxyHost.id, audienceOrigin: origin,
+        tokenHash: hashToken(`session-${proxyHost.id}`), expiresAt: futureIso(3600), createdAt: now,
+      }).returning();
+      await db.insert(forwardAuthExchanges).values({
+        sessionId: session.id, proxyHostId: proxyHost.id, audienceOrigin: origin,
+        codeHash: hashToken(`code-${proxyHost.id}`), sessionToken: '[pending]', redirectUri: `${origin}/`,
+        expiresAt: futureIso(60), used: false, createdAt: now,
+      });
+      await db.insert(forwardAuthRedirectIntents).values({
+        ridHash: hashToken(`rid-${proxyHost.id}`), proxyHostId: proxyHost.id, audienceOrigin: origin,
+        redirectUri: `${origin}/`, expiresAt: futureIso(600), consumed: false, createdAt: now,
+      });
+      await db.insert(mtlsAccessRules).values({
+        proxyHostId: proxyHost.id, pathPattern: '/admin/*', createdAt: now, updatedAt: now,
+      });
+    }
 
-    await db.delete(proxyHosts).where(eq(proxyHosts.id, host.id));
+    await deleteProxyHost(host.id, user.id);
 
-    const access = await db.query.forwardAuthAccess.findMany();
-    expect(access).toHaveLength(0);
+    for (const table of [forwardAuthAccess, forwardAuthSessions, forwardAuthExchanges, forwardAuthRedirectIntents, mtlsAccessRules]) {
+      const rows = await db.select({ proxyHostId: table.proxyHostId }).from(table);
+      expect(rows.map((row) => row.proxyHostId)).toEqual([kept.id]);
+    }
   });
 
-  it('cascades group deletion to access entries', async () => {
+  it('deleting a group deletes its grants, without foreign keys', async () => {
     const host = await insertProxyHost();
+    const user = await insertUser();
     const now = nowIso();
 
     const [group] = await db.insert(groups).values({
       name: 'Team', createdAt: now, updatedAt: now,
     }).returning();
 
-    await db.insert(forwardAuthAccess).values({
-      proxyHostId: host.id, userId: null, groupId: group.id, createdAt: now,
-    });
+    await db.insert(forwardAuthAccess).values([
+      { proxyHostId: host.id, userId: null, groupId: group.id, createdAt: now },
+      { proxyHostId: host.id, userId: user.id, groupId: null, createdAt: now },
+    ]);
 
-    await db.delete(groups).where(eq(groups.id, group.id));
+    await deleteGroup(group.id, user.id);
 
     const access = await db.query.forwardAuthAccess.findMany();
-    expect(access).toHaveLength(0);
+    expect(access.map((entry) => entry.userId)).toEqual([user.id]);
   });
 
   it('allows both user and group access on same host', async () => {
@@ -296,5 +343,40 @@ describe('forward auth access', () => {
       where: (t, { eq }) => eq(t.proxyHostId, host.id),
     });
     expect(access).toHaveLength(2);
+  });
+});
+
+describe('setForwardAuthAccess', () => {
+  it('stores each existing user and group once and leaves out ids nobody has', async () => {
+    const host = await insertProxyHost();
+    const user = await insertUser();
+    const now = nowIso();
+    const [group] = await db.insert(groups).values({ name: 'Team', createdAt: now, updatedAt: now }).returning();
+    // The ids the next user and group would get.
+    const futureUser = user.id + 1;
+    const futureGroup = group.id + 1;
+
+    const entries = await setForwardAuthAccess(
+      host.id,
+      { userIds: [user.id, user.id, futureUser], groupIds: [group.id, futureGroup, group.id] },
+      user.id
+    );
+
+    expect(entries.map((entry) => [entry.userId, entry.groupId])).toEqual([[user.id, null], [null, group.id]]);
+  });
+
+  it('refuses ids that are not whole numbers, leaving the grants as they were', async () => {
+    const host = await insertProxyHost();
+    const user = await insertUser();
+    await setForwardAuthAccess(host.id, { userIds: [user.id] }, user.id);
+
+    for (const userIds of [[1.5], [-1], ['abc'], 'nope', [null]]) {
+      await expect(setForwardAuthAccess(host.id, { userIds: userIds as never }, user.id)).rejects.toBeInstanceOf(ApiValidationError);
+    }
+    expect((await getForwardAuthAccessForHost(host.id)).map((entry) => entry.userId)).toEqual([user.id]);
+
+    // Digits as text name the same user, as SQLite used to read them.
+    await setForwardAuthAccess(host.id, { userIds: [String(user.id)] as never }, user.id);
+    expect((await getForwardAuthAccessForHost(host.id)).map((entry) => entry.userId)).toEqual([user.id]);
   });
 });

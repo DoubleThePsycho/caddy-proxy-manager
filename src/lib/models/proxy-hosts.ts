@@ -1,12 +1,47 @@
-import db, { nowIso, toIso } from "../db";
+import { appDb, nowIso, toIso } from "../db";
 import { applyCaddyConfig } from "../caddy";
 import { logAuditEvent } from "../audit";
-import { proxyHosts } from "../db/schema";
-import { asc, desc, eq, count, like, or } from "drizzle-orm";
+import {
+  forwardAuthAccess,
+  forwardAuthExchanges,
+  forwardAuthRedirectIntents,
+  forwardAuthSessions,
+  mtlsAccessRules,
+  proxyHosts,
+} from "../db/schema";
+import { and, eq, count, inArray, or, type SQL } from "drizzle-orm";
+import { isDeepStrictEqual } from "node:util";
 import { type GeoBlockSettings, type WafSettings, getDnsProviderSettings, getWafSettings } from "../settings";
 import { normalizeProxyHostDomains } from "../proxy-host-domains";
 import { ApiValidationError } from "../api-errors";
+import { brandName } from "@/ee/white-label/store";
 import { bodyLimitRangeMessage, customDirectivesError, isValidBodyLimit, wafDirectiveSource } from "../caddy-waf";
+import { normalizeTags, parseStoredTags, serializeTags } from "../host-tags";
+import { tagsMatchAny } from "../host-tag-filter";
+import { assertProxyHostAuthCompatible, forgetDeletedProxyHost } from "@/ee/monetization/host-guard";
+import { assertHostCreateApproved, assertHostDeleteApproved, assertHostUpdateApproved } from "@/ee/approvals/guard";
+import { checkProxyHostCreate, checkProxyHostUpdate } from "@/ee/multi-tenancy/hosts";
+import { assertProxyHostRoom } from "@/ee/multi-tenancy/guard";
+import { assertActorReaches, organizationCondition, type OrganizationFilter } from "@/ee/multi-tenancy/scope";
+import { normalizeProxyHostRateLimit, readStoredHostRateLimit } from "../caddy-rate-limit";
+import type { ProxyHostRateLimit, RateLimitMode, RateLimitRule } from "../rate-limit-rules";
+import { deleteWafExclusionsForHost, replaceWholeScopeExclusions, syncWafExclusionMirror } from "./waf-exclusion-mirror";
+import { assertAttachableAccessList } from "./access-lists";
+import { revokeForwardAuthSessionsOfDeletedHosts } from "./forward-auth";
+import { asc, containsText, desc } from "@/src/lib/db/ops";
+
+export type { ProxyHostRateLimit } from "../rate-limit-rules";
+
+/**
+ * Rate limiting in a create or update request: validated strictly by
+ * normalizeProxyHostRateLimit (caddy-rate-limit.ts), which also applies the
+ * defaults (enabled, merge mode, no rules).
+ */
+export type ProxyHostRateLimitInput = {
+  enabled?: boolean;
+  mode?: RateLimitMode;
+  rules?: Array<Partial<RateLimitRule>>;
+};
 
 /**
  * Wildcard certificates (e.g. "*.example.com") can only be issued via the ACME
@@ -135,9 +170,12 @@ export type PathAllowRule = {
 
 export type WafHostConfig = {
   enabled?: boolean;
-  mode?: 'Off' | 'On';
+  // Coraza engine value; unset inherits the global mode (see waf-host-mode.ts).
+  mode?: 'Off' | 'On' | 'DetectionOnly';
   load_owasp_crs?: boolean;
   custom_directives?: string;
+  // Whole-host rule exclusions. Mirrors the host's waf_rule_exclusions rows
+  // without a path or variable (src/lib/models/waf-exclusions.ts).
   excluded_rule_ids?: number[];
   waf_mode?: WafMode;
   // Request body limits in bytes; unset inherits the global WAF setting.
@@ -339,6 +377,18 @@ export type MtlsConfig = {
  * out and logs a warning.
  */
 function validateWafMeta(waf: WafHostConfig, previous: WafHostConfig | undefined, globalWaf: WafSettings | null): WafHostConfig {
+  if (waf.mode !== undefined && waf.mode !== null && waf.mode !== "Off" && waf.mode !== "On" && waf.mode !== "DetectionOnly") {
+    throw new ApiValidationError("waf.mode must be Off, On or DetectionOnly (leave it out to inherit the global mode)");
+  }
+  if (waf.excluded_rule_ids !== undefined && waf.excluded_rule_ids !== null) {
+    if (
+      !Array.isArray(waf.excluded_rule_ids) ||
+      waf.excluded_rule_ids.length > 10_000 ||
+      !waf.excluded_rule_ids.every((id) => Number.isInteger(id) && id >= 1 && id <= 2_147_483_647)
+    ) {
+      throw new ApiValidationError("waf.excluded_rule_ids must be a list of rule ids (integers from 1 to 2147483647)");
+    }
+  }
   for (const key of ["request_body_limit", "request_body_in_memory_limit"] as const) {
     const value = waf[key];
     if (value === undefined || value === null) continue;
@@ -439,13 +489,13 @@ function sanitizeMtlsMeta(meta: MtlsConfig | undefined): MtlsConfig | undefined 
   return normalized;
 }
 
-export type CpmForwardAuthConfig = {
+export type IngressiForwardAuthConfig = {
   enabled: boolean;
   protected_paths: string[] | null;
   excluded_paths: string[] | null;
 };
 
-export type CpmForwardAuthInput = {
+export type IngressiForwardAuthInput = {
   enabled?: boolean;
   protected_paths?: string[] | null;
   excluded_paths?: string[] | null;
@@ -521,7 +571,7 @@ type ForwardAuthMeta = {
  * Caddy placeholders and matcher keys, so free-form text is not allowed. */
 const HEADER_NAME_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z-]+$/;
 
-type CpmForwardAuthMeta = {
+type IngressiForwardAuthMeta = {
   enabled?: boolean;
   protected_paths?: string[];
   excluded_paths?: string[];
@@ -538,7 +588,9 @@ type ProxyHostMeta = {
   geoblock_mode?: GeoBlockMode;
   waf?: WafHostConfig;
   mtls?: MtlsConfig;
-  cpm_forward_auth?: CpmForwardAuthMeta;
+  // Stored under its pre-rename key, which existing databases, exports and
+  // replicas on older versions read.
+  cpm_forward_auth?: IngressiForwardAuthMeta;
   forward_auth?: ForwardAuthMeta;
   redirects?: RedirectRule[];
   rewrite?: RewriteConfig;
@@ -547,6 +599,7 @@ type ProxyHostMeta = {
   path_blocks?: PathBlockRule[];
   path_rewrites?: PathRewriteRule[];
   error_pages?: ErrorPageRule[];
+  rate_limit?: ProxyHostRateLimit;
 };
 
 export type ProxyHost = {
@@ -575,7 +628,7 @@ export type ProxyHost = {
   geoblockMode: GeoBlockMode;
   waf: WafHostConfig | null;
   mtls: MtlsConfig | null;
-  cpmForwardAuth: CpmForwardAuthConfig | null;
+  ingressiForwardAuth: IngressiForwardAuthConfig | null;
   forwardAuth: ProxyHostForwardAuthConfig | null;
   redirects: RedirectRule[];
   rewrite: RewriteConfig | null;
@@ -584,6 +637,12 @@ export type ProxyHost = {
   pathBlocks: PathBlockRule[];
   pathRewrites: PathRewriteRule[];
   errorPages: ErrorPageRule[];
+  /** Per-host rate limiting; null inherits the global defaults. */
+  rateLimit: ProxyHostRateLimit | null;
+  /** Free-form tags (src/lib/host-tags.ts); a custom role can be scoped to them. */
+  tags: string[];
+  /** The owning organisation (ee/multi-tenancy), or null for the provider level. */
+  organizationId: number | null;
 };
 
 export type ProxyHostInput = {
@@ -609,7 +668,7 @@ export type ProxyHostInput = {
   geoblockMode?: GeoBlockMode;
   waf?: WafHostConfig | null;
   mtls?: MtlsConfig | null;
-  cpmForwardAuth?: CpmForwardAuthInput | null;
+  ingressiForwardAuth?: IngressiForwardAuthInput | null;
   forwardAuth?: ProxyHostForwardAuthInput | null;
   redirects?: RedirectRule[] | null;
   rewrite?: RewriteConfig | null;
@@ -618,6 +677,17 @@ export type ProxyHostInput = {
   pathBlocks?: PathBlockRule[] | null;
   pathRewrites?: PathRewriteRule[] | null;
   errorPages?: ErrorPageRule[] | null;
+  /** Per-host rate limiting; null removes it, so the host inherits the global defaults. */
+  rateLimit?: ProxyHostRateLimitInput | null;
+  /** Free-form tags; an array of strings (or a comma-separated string). */
+  tags?: string[] | null;
+  /**
+   * Create only: the organisation (ee/multi-tenancy) the host belongs to. An
+   * organisation user's hosts always go to their organisation; a
+   * provider-level user needs organizations:write and the license. Moving an
+   * existing host goes through the organisations API.
+   */
+  organizationId?: number | null;
 };
 
 type ProxyHostRow = typeof proxyHosts.$inferSelect;
@@ -919,9 +989,9 @@ function sanitizeUpstreamDnsResolutionMeta(
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
-function sanitizeCpmForwardAuthMeta(meta: CpmForwardAuthMeta | undefined): CpmForwardAuthMeta | undefined {
+function sanitizeIngressiForwardAuthMeta(meta: IngressiForwardAuthMeta | undefined): IngressiForwardAuthMeta | undefined {
   if (!meta) return undefined;
-  const normalized: CpmForwardAuthMeta = {};
+  const normalized: IngressiForwardAuthMeta = {};
   if (meta.enabled !== undefined) {
     normalized.enabled = Boolean(meta.enabled);
   }
@@ -996,7 +1066,7 @@ function serializeMeta(meta: ProxyHostMeta | null | undefined) {
   }
 
   if (meta.cpm_forward_auth) {
-    const cfa = sanitizeCpmForwardAuthMeta(meta.cpm_forward_auth);
+    const cfa = sanitizeIngressiForwardAuthMeta(meta.cpm_forward_auth);
     if (cfa) {
       normalized.cpm_forward_auth = cfa;
     }
@@ -1035,6 +1105,11 @@ function serializeMeta(meta: ProxyHostMeta | null | undefined) {
     if (errorPages.length > 0) {
       normalized.error_pages = errorPages;
     }
+  }
+
+  // Validated in buildMeta, and only when the caller supplies `rateLimit`.
+  if (meta.rate_limit) {
+    normalized.rate_limit = meta.rate_limit;
   }
 
   return Object.keys(normalized).length > 0 ? JSON.stringify(normalized) : null;
@@ -1245,7 +1320,7 @@ function parseMeta(value: string | null): ProxyHostMeta {
       geoblock_mode: parsed.geoblock_mode,
       waf: parsed.waf,
       mtls: parsed.mtls,
-      cpm_forward_auth: sanitizeCpmForwardAuthMeta(parsed.cpm_forward_auth),
+      cpm_forward_auth: sanitizeIngressiForwardAuthMeta(parsed.cpm_forward_auth),
       forward_auth: sanitizeForwardAuthMeta(parsed.forward_auth),
       redirects: sanitizeRedirectRules(parsed.redirects),
       rewrite: sanitizeRewriteConfig(parsed.rewrite) ?? undefined,
@@ -1254,6 +1329,7 @@ function parseMeta(value: string | null): ProxyHostMeta {
       path_blocks: sanitizePathBlocks(parsed.path_blocks),
       path_rewrites: sanitizePathRewrites(parsed.path_rewrites),
       error_pages: sanitizeErrorPageRules(parsed.error_pages),
+      rate_limit: readStoredHostRateLimit(parsed.rate_limit) ?? undefined,
     };
   } catch (error) {
     console.warn("Failed to parse proxy host meta", error);
@@ -1793,7 +1869,7 @@ function normalizeUpstreamDnsResolutionInput(
  * Rejects hosts that enable more than one forward-auth provider at once.
  *
  * Caddy config generation applies a fixed precedence (authentik > generic
- * forward_auth > cpm_forward_auth), so a host with two enabled providers
+ * forward_auth > Ingressi forward auth), so a host with two enabled providers
  * would silently authenticate via only one of them — a config the UI shows
  * as active but that does not do what the admin asked for. Legacy hosts that
  * already carry a conflicting combination keep working (generation precedence
@@ -1805,12 +1881,12 @@ function assertSingleForwardAuthProvider(meta: ProxyHostMeta, input: Partial<Pro
   const enabled: string[] = [];
   if (meta.authentik?.enabled) enabled.push("Authentik forward auth");
   if (meta.forward_auth?.enabled) enabled.push("generic forward auth");
-  if (meta.cpm_forward_auth?.enabled) enabled.push("CPM forward auth");
+  if (meta.cpm_forward_auth?.enabled) enabled.push(`${brandName()} forward auth`);
   if (enabled.length < 2) {
     return;
   }
   const touched =
-    input.authentik !== undefined || input.forwardAuth !== undefined || input.cpmForwardAuth !== undefined;
+    input.authentik !== undefined || input.forwardAuth !== undefined || input.ingressiForwardAuth !== undefined;
   if (!touched) {
     return;
   }
@@ -1916,14 +1992,14 @@ function buildMeta(
     }
   }
 
-  if (input.cpmForwardAuth !== undefined) {
-    if (input.cpmForwardAuth && input.cpmForwardAuth.enabled) {
-      const cfa: CpmForwardAuthMeta = { enabled: true };
-      if (input.cpmForwardAuth.protected_paths && input.cpmForwardAuth.protected_paths.length > 0) {
-        cfa.protected_paths = input.cpmForwardAuth.protected_paths;
+  if (input.ingressiForwardAuth !== undefined) {
+    if (input.ingressiForwardAuth && input.ingressiForwardAuth.enabled) {
+      const cfa: IngressiForwardAuthMeta = { enabled: true };
+      if (input.ingressiForwardAuth.protected_paths && input.ingressiForwardAuth.protected_paths.length > 0) {
+        cfa.protected_paths = input.ingressiForwardAuth.protected_paths;
       }
-      if (input.cpmForwardAuth.excluded_paths && input.cpmForwardAuth.excluded_paths.length > 0) {
-        cfa.excluded_paths = input.cpmForwardAuth.excluded_paths;
+      if (input.ingressiForwardAuth.excluded_paths && input.ingressiForwardAuth.excluded_paths.length > 0) {
+        cfa.excluded_paths = input.ingressiForwardAuth.excluded_paths;
       }
       next.cpm_forward_auth = cfa;
     } else {
@@ -2002,6 +2078,16 @@ function buildMeta(
       next.error_pages = rules;
     } else {
       delete next.error_pages;
+    }
+  }
+
+  if (input.rateLimit !== undefined) {
+    const rateLimit = input.rateLimit === null ? null : normalizeProxyHostRateLimit(input.rateLimit);
+    // Disabled without rules is the same as none: the host inherits the defaults.
+    if (rateLimit && (rateLimit.enabled || rateLimit.rules.length > 0)) {
+      next.rate_limit = rateLimit;
+    } else {
+      delete next.rate_limit;
     }
   }
 
@@ -2412,7 +2498,7 @@ function parseProxyHost(row: ProxyHostRow): ProxyHost {
     geoblockMode: meta.geoblock_mode ?? "merge",
     waf: meta.waf ?? null,
     mtls: meta.mtls ?? null,
-    cpmForwardAuth: meta.cpm_forward_auth?.enabled
+    ingressiForwardAuth: meta.cpm_forward_auth?.enabled
       ? { enabled: true, protected_paths: meta.cpm_forward_auth.protected_paths ?? null, excluded_paths: meta.cpm_forward_auth.excluded_paths ?? null }
       : null,
     forwardAuth: hydrateForwardAuth(meta.forward_auth),
@@ -2423,23 +2509,59 @@ function parseProxyHost(row: ProxyHostRow): ProxyHost {
     pathBlocks: meta.path_blocks ?? [],
     pathRewrites: meta.path_rewrites ?? [],
     errorPages: meta.error_pages ?? [],
+    rateLimit: meta.rate_limit ?? null,
+    tags: parseStoredTags(row.tags),
+    organizationId: row.organizationId ?? null,
   };
 }
 
-export async function listProxyHosts(): Promise<ProxyHost[]> {
-  const hosts = await db.select().from(proxyHosts).orderBy(desc(proxyHosts.createdAt));
+/**
+ * The hosts a tag scope covers: null for every host, otherwise those carrying
+ * at least one of the tags (see scopeTagsFor in src/lib/permissions.ts).
+ */
+export function proxyHostScopeCondition(scopeTags: readonly string[] | null | undefined): SQL | undefined {
+  return scopeTags ? tagsMatchAny(proxyHosts.tags, scopeTags) : undefined;
+}
+
+function proxyHostSearchCondition(search?: string): SQL | undefined {
+  return search
+    ? or(
+        containsText(proxyHosts.name, search),
+        containsText(proxyHosts.domains, search),
+        containsText(proxyHosts.upstreams, search),
+        containsText(proxyHosts.tags, search)
+      )
+    : undefined;
+}
+
+/**
+ * `organizationId` limits the list to one organisation's hosts (null: the
+ * provider level's); undefined lists every organisation's. Callers pass
+ * organizationFilterFor(access) (ee/multi-tenancy/scope.ts).
+ */
+export async function listProxyHosts(
+  scopeTags?: readonly string[] | null,
+  organizationId?: OrganizationFilter
+): Promise<ProxyHost[]> {
+  const hosts = await appDb
+    .select()
+    .from(proxyHosts)
+    .where(and(proxyHostScopeCondition(scopeTags), organizationCondition(proxyHosts.organizationId, organizationId)))
+    .orderBy(desc(proxyHosts.createdAt), desc(proxyHosts.id));
   return hosts.map(parseProxyHost);
 }
 
-export async function countProxyHosts(search?: string): Promise<number> {
-  const where = search
-    ? or(
-        like(proxyHosts.name, `%${search}%`),
-        like(proxyHosts.domains, `%${search}%`),
-        like(proxyHosts.upstreams, `%${search}%`)
-      )
-    : undefined;
-  const [row] = await db.select({ value: count() }).from(proxyHosts).where(where);
+export async function countProxyHosts(
+  search?: string,
+  scopeTags?: readonly string[] | null,
+  organizationId?: OrganizationFilter
+): Promise<number> {
+  const where = and(
+    proxyHostSearchCondition(search),
+    proxyHostScopeCondition(scopeTags),
+    organizationCondition(proxyHosts.organizationId, organizationId)
+  );
+  const [row] = await appDb.select({ value: count() }).from(proxyHosts).where(where);
   return row?.value ?? 0;
 }
 
@@ -2457,28 +2579,69 @@ export async function listProxyHostsPaginated(
   offset: number,
   search?: string,
   sortBy?: string,
-  sortDir?: "asc" | "desc"
+  sortDir?: "asc" | "desc",
+  scopeTags?: readonly string[] | null,
+  organizationId?: OrganizationFilter
 ): Promise<ProxyHost[]> {
-  const where = search
-    ? or(
-        like(proxyHosts.name, `%${search}%`),
-        like(proxyHosts.domains, `%${search}%`),
-        like(proxyHosts.upstreams, `%${search}%`)
-      )
-    : undefined;
+  const where = and(
+    proxyHostSearchCondition(search),
+    proxyHostScopeCondition(scopeTags),
+    organizationCondition(proxyHosts.organizationId, organizationId)
+  );
   const col = (sortBy && PROXY_HOST_SORT_COLUMNS[sortBy]) || proxyHosts.createdAt;
   const dir = sortDir === "asc" ? asc : desc;
-  const hosts = await db
+  const hosts = await appDb
     .select()
     .from(proxyHosts)
     .where(where)
-    .orderBy(dir(col))
+    // The id last, so that every page is the same on every database.
+    .orderBy(dir(col), dir(proxyHosts.id))
     .limit(limit)
     .offset(offset);
   return hosts.map(parseProxyHost);
 }
 
-export async function createProxyHost(input: ProxyHostInput, actorUserId: number) {
+/** Pre-rename name of `ingressiForwardAuth` in REST requests and responses. */
+const LEGACY_FORWARD_AUTH_FIELD = "cpmForwardAuth";
+
+/**
+ * REST clients written before the rename send the built-in forward-auth
+ * settings under LEGACY_FORWARD_AUTH_FIELD. It is read when the new name is
+ * absent, and sending both with different values is refused rather than
+ * silently dropping one of them.
+ */
+function resolveLegacyInputFields<T extends Partial<ProxyHostInput>>(input: T): T {
+  if (!input || typeof input !== "object" || !(LEGACY_FORWARD_AUTH_FIELD in input)) {
+    return input;
+  }
+  const { [LEGACY_FORWARD_AUTH_FIELD]: legacy, ...rest } = input as T & {
+    [LEGACY_FORWARD_AUTH_FIELD]?: IngressiForwardAuthInput | null;
+  };
+  const current = rest as T;
+  if (legacy === undefined) {
+    return current;
+  }
+  if (current.ingressiForwardAuth !== undefined && !isDeepStrictEqual(current.ingressiForwardAuth, legacy)) {
+    throw new ApiValidationError(
+      `${LEGACY_FORWARD_AUTH_FIELD} is the deprecated name of ingressiForwardAuth; send only ingressiForwardAuth`
+    );
+  }
+  return { ...current, ingressiForwardAuth: current.ingressiForwardAuth ?? legacy };
+}
+
+/**
+ * A proxy host as the REST API returns it: the built-in forward-auth settings
+ * also appear under LEGACY_FORWARD_AUTH_FIELD, for clients written before the
+ * rename.
+ */
+export function toApiProxyHost(
+  host: ProxyHost
+): ProxyHost & { [LEGACY_FORWARD_AUTH_FIELD]: IngressiForwardAuthConfig | null } {
+  return { ...host, [LEGACY_FORWARD_AUTH_FIELD]: host.ingressiForwardAuth };
+}
+
+export async function createProxyHost(rawInput: ProxyHostInput, actorUserId: number) {
+  const input = resolveLegacyInputFields(rawInput);
   const domains = normalizeProxyHostDomains(input.domains ?? []);
 
   if (!input.upstreams || input.upstreams.length === 0) {
@@ -2486,36 +2649,57 @@ export async function createProxyHost(input: ProxyHostInput, actorUserId: number
   }
   input.upstreams.forEach(validateUpstreamProtocol);
   await assertWildcardIssuable(domains, input.certificateId ?? null);
+  const tags = normalizeTags(input.tags);
+  // Change approvals (ee): a host a policy protects is only created through an approved change request.
+  await assertHostCreateApproved("proxy_host", input.name, tags);
+  // Multi-tenancy (ee): the host's organisation, what an organisation user may
+  // set, references and domains of other organisations.
+  const organizationId = await checkProxyHostCreate(actorUserId, input, domains);
+  await assertAttachableAccessList(input.accessListId);
 
   const now = nowIso();
   const meta = buildMeta({}, input, input.waf ? await getWafSettings() : null);
-  const [record] = await db
-    .insert(proxyHosts)
-    .values({
-      name: input.name.trim(),
-      domains: JSON.stringify(domains),
-      upstreams: JSON.stringify(Array.from(new Set(input.upstreams.map((u) => u.trim())))),
-      certificateId: input.certificateId ?? null,
-      accessListId: input.accessListId ?? null,
-      ownerUserId: actorUserId,
-      sslForced: input.sslForced ?? true,
-      hstsEnabled: input.hstsEnabled ?? true,
-      hstsSubdomains: input.hstsSubdomains ?? false,
-      allowWebsocket: input.allowWebsocket ?? true,
-      preserveHostHeader: input.preserveHostHeader ?? true,
-      meta,
-      skipHttpsHostnameValidation: input.skipHttpsHostnameValidation ?? false,
-      enabled: input.enabled ?? true,
-      createdAt: now,
-      updatedAt: now
-    })
-    .returning();
+  // The organisation's host limit is checked in the transaction that inserts
+  // the host, with its WAF exclusion records.
+  const record = await appDb.transaction(async (tx) => {
+    await assertProxyHostRoom(tx, organizationId);
+    const [record] = await tx
+      .insert(proxyHosts)
+      .values({
+        name: input.name.trim(),
+        domains: JSON.stringify(domains),
+        upstreams: JSON.stringify(Array.from(new Set(input.upstreams.map((u) => u.trim())))),
+        certificateId: input.certificateId ?? null,
+        accessListId: input.accessListId ?? null,
+        ownerUserId: actorUserId,
+        sslForced: input.sslForced ?? true,
+        hstsEnabled: input.hstsEnabled ?? true,
+        hstsSubdomains: input.hstsSubdomains ?? false,
+        allowWebsocket: input.allowWebsocket ?? true,
+        preserveHostHeader: input.preserveHostHeader ?? true,
+        meta,
+        skipHttpsHostnameValidation: input.skipHttpsHostnameValidation ?? false,
+        enabled: input.enabled ?? true,
+        tags: serializeTags(tags),
+        organizationId,
+        createdAt: now,
+        updatedAt: now
+      })
+      .returning();
 
-  if (!record) {
-    throw new Error("Failed to create proxy host");
-  }
+    if (!record) {
+      throw new Error("Failed to create proxy host");
+    }
 
-  logAuditEvent({
+    // The host's excluded rule ids become exclusion records (see waf-exclusions.ts).
+    const createdExclusions = input.waf?.excluded_rule_ids;
+    if (Array.isArray(createdExclusions) && createdExclusions.length > 0) {
+      await replaceWholeScopeExclusions(tx, record.id, createdExclusions, actorUserId);
+    }
+    return record;
+  });
+
+  await logAuditEvent({
     userId: actorUserId,
     action: "create",
     entityType: "proxy_host",
@@ -2529,19 +2713,27 @@ export async function createProxyHost(input: ProxyHostInput, actorUserId: number
 }
 
 export async function getProxyHost(id: number): Promise<ProxyHost | null> {
-  const host = await db.query.proxyHosts.findFirst({
+  const host = await appDb.query.proxyHosts.findFirst({
     where: (table, { eq }) => eq(table.id, id)
   });
   return host ? parseProxyHost(host) : null;
 }
 
-export async function updateProxyHost(id: number, input: Partial<ProxyHostInput>, actorUserId: number) {
+export async function updateProxyHost(id: number, rawInput: Partial<ProxyHostInput>, actorUserId: number) {
+  const input = resolveLegacyInputFields(rawInput);
   const existing = await getProxyHost(id);
   if (!existing) {
     throw new Error("Proxy host not found");
   }
+  // Multi-tenancy (ee): an organisation user reaches only their organisation's hosts.
+  await assertActorReaches(actorUserId, existing.organizationId, "Proxy host not found");
+  await assertHostUpdateApproved("proxy_host", existing, input);
 
   const domainList = input.domains ? normalizeProxyHostDomains(input.domains) : existing.domains;
+  await checkProxyHostUpdate(actorUserId, existing, input, input.domains ? domainList : null);
+  if (input.accessListId !== undefined && input.accessListId !== existing.accessListId) {
+    await assertAttachableAccessList(input.accessListId);
+  }
   const domains = JSON.stringify(domainList);
   if (input.upstreams) {
     input.upstreams.forEach(validateUpstreamProtocol);
@@ -2561,11 +2753,11 @@ export async function updateProxyHost(id: number, input: Partial<ProxyHostInput>
     ...(existing.geoblockMode !== "merge" ? { geoblock_mode: existing.geoblockMode } : {}),
     ...(existing.waf ? { waf: existing.waf } : {}),
     ...(existing.mtls ? { mtls: existing.mtls } : {}),
-    ...(existing.cpmForwardAuth?.enabled ? {
+    ...(existing.ingressiForwardAuth?.enabled ? {
       cpm_forward_auth: {
         enabled: true,
-        ...(existing.cpmForwardAuth.protected_paths ? { protected_paths: existing.cpmForwardAuth.protected_paths } : {}),
-        ...(existing.cpmForwardAuth.excluded_paths ? { excluded_paths: existing.cpmForwardAuth.excluded_paths } : {})
+        ...(existing.ingressiForwardAuth.protected_paths ? { protected_paths: existing.ingressiForwardAuth.protected_paths } : {}),
+        ...(existing.ingressiForwardAuth.excluded_paths ? { excluded_paths: existing.ingressiForwardAuth.excluded_paths } : {})
       }
     } : {}),
     ...(existing.forwardAuth ? { forward_auth: dehydrateForwardAuth(existing.forwardAuth) } : {}),
@@ -2576,11 +2768,28 @@ export async function updateProxyHost(id: number, input: Partial<ProxyHostInput>
     ...(existing.pathBlocks && existing.pathBlocks.length > 0 ? { path_blocks: existing.pathBlocks } : {}),
     ...(existing.pathRewrites && existing.pathRewrites.length > 0 ? { path_rewrites: existing.pathRewrites } : {}),
     ...(existing.errorPages && existing.errorPages.length > 0 ? { error_pages: existing.errorPages } : {}),
+    ...(existing.rateLimit ? { rate_limit: existing.rateLimit } : {}),
   };
   const meta = buildMeta(existingMeta, input, input.waf ? await getWafSettings() : null);
+  const tags = input.tags !== undefined ? normalizeTags(input.tags) : existing.tags;
+  if (
+    input.authentik !== undefined ||
+    input.forwardAuth !== undefined ||
+    input.ingressiForwardAuth !== undefined ||
+    input.accessListId !== undefined
+  ) {
+    // API monetization is an authentication mode of its own (ee/monetization).
+    const nextMeta = parseMeta(meta);
+    await assertProxyHostAuthCompatible(id, {
+      accessListId: input.accessListId !== undefined ? input.accessListId ?? null : existing.accessListId,
+      authentik: nextMeta.authentik,
+      forwardAuth: nextMeta.forward_auth,
+      ingressiForwardAuth: nextMeta.cpm_forward_auth,
+    });
+  }
 
   const now = nowIso();
-  await db
+  await appDb
     .update(proxyHosts)
     .set({
       name: input.name ?? existing.name,
@@ -2596,11 +2805,24 @@ export async function updateProxyHost(id: number, input: Partial<ProxyHostInput>
       meta,
       skipHttpsHostnameValidation: input.skipHttpsHostnameValidation ?? existing.skipHttpsHostnameValidation,
       enabled: input.enabled ?? existing.enabled,
+      tags: serializeTags(tags),
       updatedAt: now
     })
     .where(eq(proxyHosts.id, id));
 
-  logAuditEvent({
+  // excluded_rule_ids is a view of the host's whole-host exclusion records:
+  // a list in the input replaces them (exclusions with a path or variable
+  // stay); WAF settings without one keep them, and the list is written back.
+  if (input.waf !== undefined) {
+    const excluded = input.waf?.excluded_rule_ids;
+    await appDb.transaction(async (tx) =>
+      Array.isArray(excluded)
+        ? await replaceWholeScopeExclusions(tx, id, excluded, actorUserId)
+        : await syncWafExclusionMirror(tx, id)
+    );
+  }
+
+  await logAuditEvent({
     userId: actorUserId,
     action: "update",
     entityType: "proxy_host",
@@ -2618,14 +2840,36 @@ export async function deleteProxyHost(id: number, actorUserId: number) {
   if (!existing) {
     throw new Error("Proxy host not found");
   }
+  await assertActorReaches(actorUserId, existing.organizationId, "Proxy host not found");
+  await assertHostDeleteApproved("proxy_host", existing);
 
-  await db.delete(proxyHosts).where(eq(proxyHosts.id, id));
-  logAuditEvent({
+  // Foreign keys are not enforced (SQLite runs with them off, PostgreSQL has
+  // none): the host's mTLS path rules, forward-auth grants and forward-auth
+  // sign-in state go with it here, or they would belong to whichever host
+  // got the id next.
+  await appDb.transaction(async (tx) => {
+    await tx.delete(mtlsAccessRules).where(eq(mtlsAccessRules.proxyHostId, id));
+    await tx.delete(forwardAuthAccess).where(eq(forwardAuthAccess.proxyHostId, id));
+    await tx.delete(forwardAuthExchanges).where(eq(forwardAuthExchanges.proxyHostId, id));
+    await tx.delete(forwardAuthRedirectIntents).where(eq(forwardAuthRedirectIntents.proxyHostId, id));
+    await tx.delete(forwardAuthExchanges).where(inArray(
+      forwardAuthExchanges.sessionId,
+      tx.select({ id: forwardAuthSessions.id }).from(forwardAuthSessions).where(eq(forwardAuthSessions.proxyHostId, id))
+    ));
+    await tx.delete(forwardAuthSessions).where(eq(forwardAuthSessions.proxyHostId, id));
+    await tx.delete(proxyHosts).where(eq(proxyHosts.id, id));
+    await deleteWafExclusionsForHost(tx, id);
+  });
+  await forgetDeletedProxyHost(id);
+  // Its forward-auth sessions end on every node (shared state).
+  await revokeForwardAuthSessionsOfDeletedHosts([id]);
+  await logAuditEvent({
     userId: actorUserId,
     action: "delete",
     entityType: "proxy_host",
     entityId: id,
-    summary: `Deleted proxy host ${existing.name}`
+    summary: `Deleted proxy host ${existing.name}`,
+    organizationId: existing.organizationId
   });
   await applyCaddyConfig();
 }

@@ -27,9 +27,9 @@ const provider = {
 
 describe("OAuth provider browser boundary", () => {
   it("uses Better Auth 1.7's standard, path-safe social callback URL", () => {
-    expect(oauthCallbackUrl("https://cpm.example.com/", "team/provider"))
-      .toBe("https://cpm.example.com/api/auth/callback/team%2Fprovider");
-    expect(oauthCallbackUrl("https://cpm.example.com", "provider-id"))
+    expect(oauthCallbackUrl("https://ingressi.example.com/", "team/provider"))
+      .toBe("https://ingressi.example.com/api/auth/callback/team%2Fprovider");
+    expect(oauthCallbackUrl("https://ingressi.example.com", "provider-id"))
       .not.toContain("/oauth2/callback/");
   });
 

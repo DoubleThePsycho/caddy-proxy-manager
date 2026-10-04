@@ -19,17 +19,8 @@ const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null => {
-      if (!value) return null;
-      return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-    },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 vi.mock('../../src/lib/caddy', () => ({
@@ -44,6 +35,7 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/lib/api-auth')>();
   return {
     ...actual,
+    requireApiPermission: vi.fn((request: unknown) => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireApiAdmin(request))),
     requireApiAdmin: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
     requireApiUser: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
   };
@@ -106,7 +98,9 @@ describe('v1 OpenAPI schemas: no top-level snake_case', () => {
     'WafSettings',
     'MtlsConfig',
     'RewriteConfig',
-    'CpmForwardAuthConfig',
+    'IngressiForwardAuthConfig',
+    // The usage ping's wire format, sent to another service (ping.ingres.si).
+    'UsagePingPayload',
   ]);
   // Properties on otherwise-camelCase schemas that we intentionally keep
   // snake_case because the route handler reads them that way.
@@ -357,5 +351,29 @@ describe('v1 API contract: camelCase round-trip', () => {
     expect(data.name).toBe('Contract CA');
     expect(data.certificatePem).toBe(fakePem);
     expect(data.hasPrivateKey).toBe(true);
+  });
+});
+
+describe('v1 OpenAPI references', () => {
+  it('resolves every $ref to a defined component', async () => {
+    const response = await getOpenApi(mockRequest(undefined));
+    const spec = await response.json() as any;
+    const missing = new Set<string>();
+    const visit = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(visit);
+      } else if (node && typeof node === 'object') {
+        for (const [key, value] of Object.entries(node)) {
+          if (key === '$ref' && typeof value === 'string') {
+            const [, section, name] = value.match(/^#\/components\/([^/]+)\/(.+)$/) ?? [];
+            if (!section || !spec.components?.[section]?.[name]) missing.add(value);
+          } else {
+            visit(value);
+          }
+        }
+      }
+    };
+    visit(spec);
+    expect([...missing]).toEqual([]);
   });
 });

@@ -57,7 +57,7 @@ export function ImportCertDrawer({ open, cert, onClose }: Props) {
     <Sheet open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
       <SheetContent side="right" className="w-full sm:w-[480px] sm:max-w-[480px] flex flex-col gap-6 overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>{isEdit ? "Edit Certificate" : "Import Certificate"}</SheetTitle>
+          <SheetTitle>{isEdit ? "Edit certificate" : "Import certificate"}</SheetTitle>
         </SheetHeader>
 
         <form
@@ -76,7 +76,7 @@ export function ImportCertDrawer({ open, cert, onClose }: Props) {
               required
               autoFocus
             />
-            <p className="text-xs text-muted-foreground">Descriptive name to identify this certificate</p>
+            <p className="text-xs text-muted-foreground">A name to recognise this certificate by</p>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -87,7 +87,7 @@ export function ImportCertDrawer({ open, cert, onClose }: Props) {
               defaultValue={isEdit ? cert.domains.join("\n") : ""}
               rows={3}
             />
-            <p className="text-xs text-muted-foreground">Domains covered by this certificate</p>
+            <p className="text-xs text-muted-foreground">The domains this certificate covers</p>
           </div>
 
           {/* Certificate PEM */}
@@ -103,7 +103,7 @@ export function ImportCertDrawer({ open, cert, onClose }: Props) {
                 onChange={(e) => setCertPem(e.target.value)}
                 className="font-mono text-xs"
               />
-              <p className="text-xs text-muted-foreground">Full chain recommended (cert + intermediates)</p>
+              <p className="text-xs text-muted-foreground">The full chain: the certificate, then its intermediates</p>
             </div>
             <input
               type="file"
@@ -159,7 +159,7 @@ export function ImportCertDrawer({ open, cert, onClose }: Props) {
                   <TooltipContent>{showKey ? "Hide" : "Show"}</TooltipContent>
                 </Tooltip>
               </div>
-              <p className="text-xs text-muted-foreground">Keep this secure! Never share your private key</p>
+              <p className="text-xs text-muted-foreground">Stored encrypted and never shown again</p>
             </div>
             <input
               type="file"
@@ -189,7 +189,7 @@ export function ImportCertDrawer({ open, cert, onClose }: Props) {
               Cancel
             </Button>
             <Button type="submit" disabled={isPending}>
-              {isPending ? "Saving..." : isEdit ? "Save Changes" : "Import Certificate"}
+              {isPending ? "Saving…" : isEdit ? "Save changes" : "Import certificate"}
             </Button>
           </div>
         </form>

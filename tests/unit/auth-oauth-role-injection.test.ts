@@ -17,18 +17,8 @@ const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    sqlite: undefined,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null => {
-      if (!value) return null;
-      return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-    },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 // Stub better-auth so importing auth-server doesn't pull in the full runtime
@@ -103,6 +93,14 @@ describe('better-auth user.create.before hook (wired into the real config)', () 
     expect(result.data.status).toBe('active');
     expect(result.data.email).toBe('attacker@evil-idp.example'); // identity preserved
   });
+
+  it('drops a custom role injected via OAuth claims', async () => {
+    const auth = getAuth() as any;
+    const hook = auth.options.databaseHooks.user.create.before;
+    const result = await hook({ email: 'mallory@evil-idp.example', name: 'Mallory', customRoleId: 7 });
+    expect(result.data).not.toHaveProperty('customRoleId');
+    expect(enforceSafeUserDefaults({ email: 'x@y.z', customRoleId: 7 } as Record<string, unknown>)).not.toHaveProperty('customRoleId');
+  });
 });
 
 describe('mapOAuthProvider — OAuth self-registration gating (M2)', () => {
@@ -161,9 +159,9 @@ describe('mapOAuthProvider — OAuth self-registration gating (M2)', () => {
   });
 });
 
-describe('better-auth account.create.before hook — pins the CPM issuer namespace', () => {
+describe('better-auth account.create.before hook — pins the Ingressi issuer namespace', () => {
   // Better Auth 1.7.4 removed `issuer` from the account schema and keys
-  // external identities by (providerId, accountId). CPM keeps a NOT NULL
+  // external identities by (providerId, accountId). Ingressi keeps a NOT NULL
   // `accounts.issuer` column for its own identity bookkeeping, and derives it
   // here before insert so the credential and OAuth namespaces stay isolated.
   it('is configured as a function', () => {
@@ -206,7 +204,7 @@ describe('better-auth account.create.before hook — pins the CPM issuer namespa
       source: 'ui',
       createdAt: NOW,
       updatedAt: NOW,
-    }).run();
+    });
 
     const auth = getAuth() as any;
     const hook = auth.options.databaseHooks.account.create.before;

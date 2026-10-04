@@ -1,7 +1,7 @@
 /**
- * CPM's password policy applies to the Better Auth endpoints that are still
+ * Ingressi's password policy applies to the Better Auth endpoints that are still
  * enabled and set a password (self-registration and password reset), and a
- * password set through CPM works on Better Auth's credential login.
+ * password set through Ingressi works on Better Auth's credential login.
  *
  * Like auth-accounts-issuer-schema.test.ts, this boots the real db module and
  * the real auth-server (no better-auth stub) against a file-backed SQLite
@@ -9,25 +9,11 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import bcrypt from 'bcryptjs';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { openAppDatabase, type AppDatabase } from '../helpers/app-database';
 
-const workDir = mkdtempSync(join(tmpdir(), 'cpm-password-policy-'));
+let database: AppDatabase;
+
 const APP_BASE_URL = 'http://localhost:3000';
-
-const globalForDb = globalThis as {
-  __SQLITE_CLIENT__?: { close: () => void };
-  __DRIZZLE_DB__?: unknown;
-  __MIGRATIONS_RAN__?: boolean;
-};
-
-function resetGlobals() {
-  globalForDb.__SQLITE_CLIENT__?.close();
-  delete globalForDb.__SQLITE_CLIENT__;
-  delete globalForDb.__DRIZZLE_DB__;
-  delete globalForDb.__MIGRATIONS_RAN__;
-}
 
 type App = {
   db: Awaited<typeof import('../../src/lib/db')>['default'];
@@ -38,12 +24,11 @@ type App = {
 let app: App;
 
 beforeAll(async () => {
-  process.env.DATABASE_URL = `file:${join(workDir, 'app.db')}`;
+  database = await openAppDatabase('ingressi-password-policy-');
   // Vitest leaks Vite's BASE_URL='/' into process.env, which better-auth rejects.
   process.env.BASE_URL = APP_BASE_URL;
   process.env.AUTH_ALLOW_SELF_REGISTRATION = 'true';
   process.env.AUTH_RATE_LIMIT_ENABLED = 'false';
-  resetGlobals();
   vi.resetModules();
 
   const dbModule = await import('../../src/lib/db');
@@ -53,10 +38,8 @@ beforeAll(async () => {
   app = { db: dbModule.default, schema, auth: getAuth(), userModel };
 });
 
-afterAll(() => {
-  resetGlobals();
-  rmSync(workDir, { recursive: true, force: true });
-  process.env.DATABASE_URL = ':memory:';
+afterAll(async () => {
+  await database.close();
   delete process.env.AUTH_ALLOW_SELF_REGISTRATION;
   delete process.env.AUTH_RATE_LIMIT_ENABLED;
   vi.resetModules();
@@ -78,7 +61,7 @@ function signUpBody(email: string, password: string) {
   return { email, password, name: email.split('@')[0], username: email.split('@')[0] };
 }
 
-describe('Better Auth password endpoints follow the CPM password policy', () => {
+describe('Better Auth password endpoints follow the Ingressi password policy', () => {
   it('rejects a self-registration password that is too short', async () => {
     const error = await apiError(api('signUpEmail')({ body: signUpBody('short@example.com', 'short123') }));
     expect(error.statusCode).toBe(400);
@@ -108,7 +91,7 @@ describe('Better Auth password endpoints follow the CPM password policy', () => 
     })) as { user?: { id?: string; email?: string } };
     expect(result.user?.email).toBe('strong@example.com');
 
-    // Better Auth stores the hash on the credential account only; CPM still
+    // Better Auth stores the hash on the credential account only; Ingressi still
     // counts it as a password (change-password, profile, unlink-oauth).
     const user = await app.userModel.getUserById(Number(result.user?.id));
     expect(user?.passwordHash).toBeNull();
@@ -127,7 +110,7 @@ describe('Better Auth password endpoints follow the CPM password policy', () => 
     expect(strong.message).not.toMatch(/Password must/);
   });
 
-  it('signs in an OAuth-only user by email once they set a password through CPM', async () => {
+  it('signs in an OAuth-only user by email once they set a password through Ingressi', async () => {
     const { db, schema, userModel } = app;
     const now = new Date().toISOString();
     // The way an OAuth sign-up provisions a user: no username, no password.
@@ -142,14 +125,14 @@ describe('Better Auth password endpoints follow the CPM password policy', () => 
       createdAt: now,
       updatedAt: now,
     }).returning();
-    db.insert(schema.accounts).values({
+    await db.insert(schema.accounts).values({
       userId: user.id,
       issuer: 'https://dex.example.com',
       accountId: 'dex-subject',
       providerId: 'dex',
       createdAt: now,
       updatedAt: now,
-    }).run();
+    });
     expect(await userModel.getPasswordSignInUsername(user.id)).toBeNull();
 
     await userModel.changeUserPassword(user.id, bcrypt.hashSync('Correct-Horse-9!', 4), null);

@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAdmin, apiErrorResponse } from "@/src/lib/api-auth";
+import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
+import { assertUnscopedCertificates } from "@/src/lib/access-scope";
 import { getCertificateRoles } from "@/src/lib/models/mtls-roles";
+import { routeRowId } from "@/src/lib/row-ids";
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiAdmin(request);
+    const { access } = await requireApiPermission(request, "certificates:read");
+    assertUnscopedCertificates(access);
     const { id } = await params;
-    const roles = await getCertificateRoles(Number(id));
+    const roles = await getCertificateRoles(routeRowId(id));
     return NextResponse.json(roles);
   } catch (error) {
     return apiErrorResponse(error);

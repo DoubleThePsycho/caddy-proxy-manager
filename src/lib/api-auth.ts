@@ -3,6 +3,10 @@ import { auth, checkSameOrigin } from "./auth";
 import { validateToken } from "./models/api-tokens";
 import { randomUUID } from "node:crypto";
 import { ApiClientError } from "./api-errors";
+import { mfaEnrolmentRequired } from "./mfa";
+import { can, permissionDeniedMessage, type Access, type Permission } from "./permissions";
+import { applyTokenScopes } from "./api-token-scopes";
+import { accessForUser } from "@/ee/custom-roles/access";
 
 export class ApiAuthError extends Error {
   status: number;
@@ -23,8 +27,35 @@ export class NotFoundError extends Error {
 export type ApiAuthResult = {
   userId: number;
   role: string;
+  /** The user's custom role (ee/custom-roles), or null for a built-in role. API tokens act with it. */
+  customRoleId?: number | null;
+  /** The user's organisation (ee/multi-tenancy), or null for the provider level. API tokens act within it. */
+  organizationId?: number | null;
   authMethod: "bearer" | "session";
+  /**
+   * The scopes of the API token the request carried (src/lib/api-token-scopes.ts);
+   * null or absent for a session or a token without scopes.
+   */
+  tokenScopes?: readonly Permission[] | null;
 };
+
+/** Options of requireApiUser. */
+export type RequireApiUserOptions = {
+  /**
+   * Let a token with scopes through. Only for endpoints that check a
+   * permission with getApiAccess afterwards, or that return nothing about any
+   * account. Every other endpoint (the owner's sessions, tokens, passkeys,
+   * preferences, access review assignments) refuses such a token: its scopes
+   * do not cover them.
+   */
+  allowScopedToken?: boolean;
+};
+
+export const SCOPED_TOKEN_REFUSED_MESSAGE =
+  "This API token is limited to its scopes and cannot use this endpoint. Use a session or a token without scopes.";
+
+/** A request that passed requireApiPermission, with what the caller may do. */
+export type ApiPermissionResult = ApiAuthResult & { access: Access };
 
 export async function authenticateApiRequest(
   request: NextRequest
@@ -45,7 +76,10 @@ export async function authenticateApiRequest(
     return {
       userId: result.user.id,
       role: result.user.role,
+      customRoleId: result.user.customRoleId ?? null,
+      organizationId: result.user.organizationId ?? null,
       authMethod: "bearer",
+      tokenScopes: result.token.scopes ?? null,
     };
   }
 
@@ -61,15 +95,28 @@ export async function authenticateApiRequest(
     throw new ApiAuthError("Session missing role claim", 401);
   }
 
+  // The MFA policy's grace period is over and the account has not set up
+  // MFA: its dashboard session can only do that (src/lib/mfa.ts). API tokens
+  // are separate credentials and are not affected.
+  if (await mfaEnrolmentRequired(Number(session.user.id))) {
+    throw new ApiAuthError("Set up multi-factor authentication to continue", 403);
+  }
+
   return {
     userId: Number(session.user.id),
     role,
+    customRoleId: session.user.customRoleId ?? null,
+    organizationId: session.user.organizationId ?? null,
     authMethod: "session",
   };
 }
 
-export async function requireApiUser(request: NextRequest): Promise<ApiAuthResult> {
+export async function requireApiUser(request: NextRequest, options: RequireApiUserOptions = {}): Promise<ApiAuthResult> {
   const result = await authenticateApiRequest(request);
+
+  if (result.tokenScopes && !options.allowScopedToken) {
+    throw new ApiAuthError(SCOPED_TOKEN_REFUSED_MESSAGE, 403);
+  }
 
   // CSRF check for session-authenticated mutating requests
   if (result.authMethod === "session") {
@@ -85,9 +132,46 @@ export async function requireApiUser(request: NextRequest): Promise<ApiAuthResul
   return result;
 }
 
+/**
+ * What an authenticated caller may do. API tokens act with their owner's
+ * role, limited to the token's scopes when it has some
+ * (src/lib/api-token-scopes.ts). Never checks the license. Every permission
+ * check on a REST request goes through here, so a scoped token can never do
+ * more than its owner or its scopes.
+ */
+export async function getApiAccess(result: ApiAuthResult): Promise<Access> {
+  const access = await accessForUser({
+    id: result.userId,
+    role: result.role,
+    customRoleId: result.customRoleId ?? null,
+    organizationId: result.organizationId ?? null,
+  });
+  return applyTokenScopes(access, result.tokenScopes ?? null);
+}
+
+/**
+ * Require one permission from the catalogue (src/lib/permissions.ts); 403
+ * otherwise. Administrators hold every permission, built-in user and viewer
+ * roles none. A role's tag scope is applied by the route with the helpers in
+ * src/lib/access-scope.ts.
+ */
+export async function requireApiPermission(request: NextRequest, permission: Permission): Promise<ApiPermissionResult> {
+  const result = await requireApiUser(request, { allowScopedToken: true });
+  const access = await getApiAccess(result);
+  if (!can(access, permission)) {
+    throw new ApiAuthError(permissionDeniedMessage(access, permission), 403);
+  }
+  return { ...result, access };
+}
+
+/**
+ * Require the built-in admin role. Kept for the paths that stay
+ * administrator-only whatever a custom role holds (ee/docs/custom-roles.md).
+ * A token with scopes is never an administrator.
+ */
 export async function requireApiAdmin(request: NextRequest): Promise<ApiAuthResult> {
   const result = await requireApiUser(request);
-  if (result.role !== "admin") {
+  if (!(await getApiAccess(result)).isAdmin) {
     throw new ApiAuthError("Administrator privileges required", 403);
   }
   return result;

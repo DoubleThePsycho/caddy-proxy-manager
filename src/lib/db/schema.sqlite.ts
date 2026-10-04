@@ -1,0 +1,2468 @@
+import { sql } from "drizzle-orm";
+import { integer, text, sqliteTable, uniqueIndex, index } from "drizzle-orm/sqlite-core";
+
+export const users = sqliteTable(
+  "users",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    email: text("email").notNull(),
+    name: text("name"),
+    passwordHash: text("passwordHash"),
+    role: text("role").notNull().default("user"),
+    // Informational, re-derived from accounts (syncUserOAuthIdentity in
+    // src/lib/models/user.ts). DEFAULT '' since drizzle/0022: what an insert
+    // that leaves them out stores, Better Auth's included.
+    provider: text("provider").default(""),
+    subject: text("subject").default(""),
+    avatarUrl: text("avatarUrl"),
+    status: text("status").notNull().default("active"),
+    username: text("username"),
+    displayUsername: text("displayUsername"),
+    emailVerified: integer("emailVerified", { mode: "boolean" }).notNull().default(false),
+    /** Better Auth two-factor plugin: the account has a verified second factor (see twoFactors). */
+    twoFactorEnabled: integer("twoFactorEnabled", { mode: "boolean" }).notNull().default(false),
+    /**
+     * The user's custom role (custom_roles.id, ee/custom-roles), or null for a
+     * built-in role. A custom-role user's `role` is "viewer", which is also
+     * what they fall back to when the custom role is deleted.
+     */
+    customRoleId: integer("customRoleId"),
+    /**
+     * The organisation (organizations.id, ee/multi-tenancy) the user belongs
+     * to, or null for the provider level. An organisation user is never
+     * "admin" (the organisation administrator role is "org_admin"); a trigger
+     * (drizzle/0041_multi_tenancy.sql) refuses any write that breaks this.
+     */
+    organizationId: integer("organizationId"),
+    /**
+     * When the account last completed a dashboard sign-in, and how
+     * (src/lib/sign-in-activity.ts). Null: it never has (an "invited"
+     * account, created by an administrator or SCIM).
+     */
+    lastSignInAt: text("lastSignInAt"),
+    /** password | sso | saml | ldap | passkey */
+    lastSignInMethod: text("lastSignInMethod"),
+    /**
+     * When the account was disabled; null while it is not, and for accounts
+     * disabled before drizzle/0047. Kept by triggers on status changes.
+     */
+    disabledAt: text("disabledAt"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    emailUnique: uniqueIndex("users_email_unique").on(table.email),
+    organizationIdx: index("users_organization_idx").on(table.organizationId)
+  })
+);
+
+/**
+ * The newest completed dashboard sign-in through each identity provider,
+ * keyed like accounts.providerId (an OIDC provider's id, "saml:<id>",
+ * "ldap:<id>"); see src/lib/sign-in-activity.ts. lastUserId is not a foreign
+ * key: a deleted account leaves the time without a name.
+ */
+export const signInSources = sqliteTable("sign_in_sources", {
+  providerId: text("providerId").primaryKey(),
+  lastSignInAt: text("lastSignInAt").notNull(),
+  lastUserId: integer("lastUserId")
+});
+
+// Auth tables use camelCase DB columns to match Better Auth's Kysely adapter.
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("userId")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    token: text("token").notNull(),
+    expiresAt: text("expiresAt").notNull(),
+    ipAddress: text("ipAddress"),
+    userAgent: text("userAgent"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    tokenUnique: uniqueIndex("sessions_token_unique").on(table.token),
+    userIdx: index("sessions_user_idx").on(table.userId)
+  })
+);
+
+export const accounts = sqliteTable(
+  "accounts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("userId")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    // Better Auth 1.7.3+ stopped writing `issuer` (accounts are keyed by
+    // (providerId, accountId) again) and its runtime schema validation fails
+    // closed on any NOT NULL column it never writes unless the column is
+    // nullable or carries a database default. Ingressi fills issuer via the
+    // account.create.after hook, so the default only covers inserts that
+    // bypass it — it exists to keep Better Auth's schema check (and any
+    // insert path it doesn't reach) working. See issue #283.
+    issuer: text("issuer").notNull().default(""),
+    accountId: text("accountId").notNull(),
+    providerId: text("providerId").notNull(),
+    accessToken: text("accessToken"),
+    refreshToken: text("refreshToken"),
+    idToken: text("idToken"),
+    accessTokenExpiresAt: text("accessTokenExpiresAt"),
+    refreshTokenExpiresAt: text("refreshTokenExpiresAt"),
+    scope: text("scope"),
+    password: text("password"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    issuerAccountIdx: uniqueIndex("accounts_issuer_account_idx").on(table.issuer, table.accountId),
+    userIdx: index("accounts_user_idx").on(table.userId)
+  })
+);
+
+export const verifications = sqliteTable(
+  "verifications",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    identifier: text("identifier").notNull(),
+    value: text("value").notNull(),
+    expiresAt: text("expiresAt").notNull(),
+    createdAt: text("createdAt"),
+    updatedAt: text("updatedAt")
+  }
+);
+
+export const oauthProviders = sqliteTable(
+  "oauth_providers",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    type: text("type").notNull().default("oidc"),
+    clientId: text("clientId").notNull(),
+    clientSecret: text("clientSecret").notNull(),
+    issuer: text("issuer"),
+    authorizationUrl: text("authorizationUrl"),
+    tokenUrl: text("tokenUrl"),
+    userinfoUrl: text("userinfoUrl"),
+    scopes: text("scopes").notNull().default("openid email profile"),
+    autoLink: integer("autoLink", { mode: "boolean" }).notNull().default(false),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    source: text("source").notNull().default("ui"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    nameUnique: uniqueIndex("oauth_providers_name_unique").on(table.name)
+  })
+);
+
+export const oauthStates = sqliteTable(
+  "oauth_states",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    state: text("state").notNull(),
+    codeVerifier: text("codeVerifier").notNull(),
+    redirectTo: text("redirectTo"),
+    createdAt: text("createdAt").notNull(),
+    expiresAt: text("expiresAt").notNull()
+  },
+  (table) => ({
+    stateUnique: uniqueIndex("oauth_state_unique").on(table.state)
+  })
+);
+
+export const pendingOAuthLinks = sqliteTable("pending_oauth_links", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+  provider: text("provider", { length: 50 }).notNull(),
+  userEmail: text("userEmail").notNull(), // Email of the user who initiated linking
+  createdAt: text("createdAt").notNull(),
+  expiresAt: text("expiresAt").notNull()
+}, (table) => ({
+  // Ensure only one pending link per user per provider (prevents race conditions)
+  userProviderUnique: uniqueIndex("pending_oauth_user_provider_unique").on(table.userId, table.provider)
+}));
+
+export const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: text("updatedAt").notNull()
+});
+
+export const instances = sqliteTable(
+  "instances",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    baseUrl: text("baseUrl").notNull(),
+    apiToken: text("apiToken").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    lastSyncAt: text("lastSyncAt"),
+    lastSyncError: text("lastSyncError"),
+    /**
+     * "push": the master pushes to `baseUrl` with `apiToken`. "pull": a pull
+     * replica (ee/fleet/pull-replicas.ts) that fetches its configuration from
+     * the master; `baseUrl` then only names it ("pull:" and a random id, the
+     * identity its sync key pin is kept under) and `apiToken` is empty.
+     */
+    syncMode: text("syncMode").notNull().default("push"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    baseUrlUnique: uniqueIndex("instances_base_url_unique").on(table.baseUrl)
+  })
+);
+
+export const accessLists = sqliteTable(
+  "access_lists",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    description: text("description"),
+    createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull(),
+    /** Owning organisation (ee/multi-tenancy); null for the provider level. */
+    organizationId: integer("organizationId"),
+    /** What a request that matches no rule gets: "allow" or "deny" (access_list_rules). */
+    defaultAction: text("defaultAction").notNull().default("allow"),
+    /** Status of a denied request (400-599); ignored when denyRedirectUrl is set. */
+    denyStatus: integer("denyStatus").notNull().default(403),
+    /** Body of a denied request; null serves "Forbidden". */
+    denyBody: text("denyBody"),
+    /** When set, a denied request gets a 302 to this URL instead. */
+    denyRedirectUrl: text("denyRedirectUrl"),
+    /** Deny when the client address cannot be worked out behind a trusted proxy. */
+    failClosed: integer("failClosed", { mode: "boolean" }).notNull().default(false),
+    /** "blocked_sources" for the global Blocked sources list; null for lists users create. */
+    systemKey: text("systemKey")
+  },
+  (table) => ({
+    systemKeyUnique: uniqueIndex("access_lists_system_key_unique").on(table.systemKey),
+    organizationIdx: index("access_lists_organization_idx").on(table.organizationId)
+  })
+);
+
+export const accessListEntries = sqliteTable(
+  "access_list_entries",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    accessListId: integer("accessListId")
+      .references(() => accessLists.id, { onDelete: "cascade" })
+      .notNull(),
+    username: text("username").notNull(),
+    passwordHash: text("passwordHash").notNull(),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    accessListIdIdx: index("access_list_entries_list_idx").on(table.accessListId)
+  })
+);
+
+export const certificates = sqliteTable("certificates", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  type: text("type").notNull(),
+  domainNames: text("domainNames").notNull(),
+  autoRenew: integer("autoRenew", { mode: "boolean" }).notNull().default(true),
+  providerOptions: text("providerOptions"),
+  certificatePem: text("certificatePem"),
+  privateKeyPem: text("privateKeyPem"),
+  createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
+  createdAt: text("createdAt").notNull(),
+  updatedAt: text("updatedAt").notNull(),
+  /** Owning organisation (ee/multi-tenancy); null for the provider level. */
+  organizationId: integer("organizationId")
+}, (table) => ({
+  organizationIdx: index("certificates_organization_idx").on(table.organizationId)
+}));
+
+export const caCertificates = sqliteTable("ca_certificates", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  certificatePem: text("certificatePem").notNull(),
+  privateKeyPem: text("privateKeyPem"),
+  createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
+  createdAt: text("createdAt").notNull(),
+  updatedAt: text("updatedAt").notNull()
+});
+
+export const issuedClientCertificates = sqliteTable(
+  "issued_client_certificates",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    caCertificateId: integer("caCertificateId")
+      .references(() => caCertificates.id, { onDelete: "cascade" })
+      .notNull(),
+    commonName: text("commonName").notNull(),
+    serialNumber: text("serialNumber").notNull(),
+    fingerprintSha256: text("fingerprintSha256").notNull(),
+    certificatePem: text("certificatePem").notNull(),
+    validFrom: text("validFrom").notNull(),
+    validTo: text("validTo").notNull(),
+    revokedAt: text("revokedAt"),
+    createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    caCertificateIdx: index("issued_client_certificates_ca_idx").on(table.caCertificateId),
+    revokedAtIdx: index("issued_client_certificates_revoked_at_idx").on(table.revokedAt)
+  })
+);
+
+export const proxyHosts = sqliteTable("proxy_hosts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  domains: text("domains").notNull(),
+  upstreams: text("upstreams").notNull(),
+  certificateId: integer("certificateId").references(() => certificates.id, { onDelete: "set null" }),
+  accessListId: integer("accessListId").references(() => accessLists.id, { onDelete: "set null" }),
+  ownerUserId: integer("ownerUserId").references(() => users.id, { onDelete: "set null" }),
+  sslForced: integer("sslForced", { mode: "boolean" }).notNull().default(true),
+  hstsEnabled: integer("hstsEnabled", { mode: "boolean" }).notNull().default(true),
+  hstsSubdomains: integer("hstsSubdomains", { mode: "boolean" }).notNull().default(false),
+  allowWebsocket: integer("allowWebsocket", { mode: "boolean" }).notNull().default(true),
+  preserveHostHeader: integer("preserveHostHeader", { mode: "boolean" }).notNull().default(true),
+  meta: text("meta"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("createdAt").notNull(),
+  updatedAt: text("updatedAt").notNull(),
+  skipHttpsHostnameValidation: integer("skipHttpsHostnameValidation", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  /** Free-form tags, a JSON array of strings (src/lib/host-tags.ts). */
+  tags: text("tags").notNull().default("[]"),
+  /** Owning organisation (ee/multi-tenancy); null for the provider level. */
+  organizationId: integer("organizationId")
+}, (table) => ({
+  organizationIdx: index("proxy_hosts_organization_idx").on(table.organizationId)
+}));
+
+export const apiTokens = sqliteTable(
+  "api_tokens",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    tokenHash: text("tokenHash").notNull(),
+    createdBy: integer("createdBy")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    createdAt: text("createdAt").notNull(),
+    lastUsedAt: text("lastUsedAt"),
+    expiresAt: text("expiresAt"),
+    /**
+     * The permissions the token is limited to (a JSON array of permission
+     * names), intersected with its owner's on every request
+     * (src/lib/api-token-scopes.ts). Null: the owner's role.
+     */
+    scopes: text("scopes")
+  },
+  (table) => ({
+    tokenHashUnique: uniqueIndex("api_tokens_token_hash_unique").on(table.tokenHash)
+  })
+);
+
+export const auditEvents = sqliteTable(
+  "audit_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("userId").references(() => users.id, { onDelete: "set null" }),
+    action: text("action").notNull(),
+    entityType: text("entityType").notNull(),
+    entityId: integer("entityId"),
+    summary: text("summary"),
+    data: text("data"),
+    createdAt: text("createdAt").notNull(),
+    // Tamper-evident hash chain (src/lib/audit-chain.ts). Null on events
+    // recorded before the chain existed.
+    prevHash: text("prevHash"),
+    hash: text("hash"),
+    // Digest of the userId the event was recorded with. Deleting a user clears
+    // userId; the hash covers this digest instead, so the chain still verifies.
+    actorDigest: text("actorDigest"),
+    // The organisation (ee/multi-tenancy) whose audit log shows the event, or
+    // null for the provider level only. Set when the event is recorded; not
+    // covered by the hash.
+    organizationId: integer("organizationId"),
+    // Configuration history versions (config_snapshots ids) from before and
+    // after a configuration change, and the change request (ee/approvals)
+    // that applied it; see ee/config-history/links.ts. Not covered by the
+    // hash; null on events that are not configuration changes and on events
+    // recorded before the link existed.
+    configBeforeId: integer("configBeforeId"),
+    configAfterId: integer("configAfterId"),
+    changeRequestId: integer("changeRequestId")
+  },
+  (table) => ({
+    createdAtIdx: index("audit_events_created_at_idx").on(table.createdAt),
+    organizationIdx: index("audit_events_organization_idx").on(table.organizationId, table.id),
+    configAfterIdx: index("audit_events_config_after_idx").on(table.configAfterId),
+    userIdx: index("audit_events_user_idx").on(table.userId, table.createdAt),
+    entityIdx: index("audit_events_entity_idx").on(table.entityType, table.entityId)
+  })
+);
+
+export const linkingTokens = sqliteTable("linking_tokens", {
+  id: text("id").primaryKey(),
+  token: text("token").notNull(),
+  createdAt: text("createdAt").notNull(),
+  expiresAt: text("expiresAt").notNull()
+}, (table) => ({
+  expiresAtIdx: index("linking_tokens_expires_at_idx").on(table.expiresAt)
+}));
+
+// traffic_events and waf_events have been migrated to ClickHouse.
+// See src/lib/clickhouse/client.ts for the ClickHouse schema.
+
+export const logParseState = sqliteTable('log_parse_state', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+});
+
+export const wafLogParseState = sqliteTable('waf_log_parse_state', {
+  key: text('key').primaryKey(),
+  value: text('value').notNull(),
+});
+
+// ── mTLS RBAC ──────────────────────────────────────────────────────────
+
+export const mtlsRoles = sqliteTable(
+  "mtls_roles",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    description: text("description"),
+    createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    nameUnique: uniqueIndex("mtls_roles_name_unique").on(table.name)
+  })
+);
+
+export const mtlsCertificateRoles = sqliteTable(
+  "mtls_certificate_roles",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    issuedClientCertificateId: integer("issuedClientCertificateId")
+      .references(() => issuedClientCertificates.id, { onDelete: "cascade" })
+      .notNull(),
+    mtlsRoleId: integer("mtlsRoleId")
+      .references(() => mtlsRoles.id, { onDelete: "cascade" })
+      .notNull(),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    certRoleUnique: uniqueIndex("mtls_cert_role_unique").on(
+      table.issuedClientCertificateId,
+      table.mtlsRoleId
+    ),
+    roleIdx: index("mtls_certificate_roles_role_idx").on(table.mtlsRoleId)
+  })
+);
+
+export const mtlsAccessRules = sqliteTable(
+  "mtls_access_rules",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    proxyHostId: integer("proxyHostId")
+      .references(() => proxyHosts.id, { onDelete: "cascade" })
+      .notNull(),
+    pathPattern: text("pathPattern").notNull(),
+    allowedRoleIds: text("allowedRoleIds").notNull().default("[]"),
+    allowedCertIds: text("allowedCertIds").notNull().default("[]"),
+    denyAll: integer("denyAll", { mode: "boolean" }).notNull().default(false),
+    priority: integer("priority").notNull().default(0),
+    description: text("description"),
+    createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    proxyHostIdx: index("mtls_access_rules_proxy_host_idx").on(table.proxyHostId),
+    hostPathUnique: uniqueIndex("mtls_access_rules_host_path_unique").on(
+      table.proxyHostId,
+      table.pathPattern
+    )
+  })
+);
+
+// ── Forward Auth (IdP) ───────────────────────────────────────────────
+
+export const groups = sqliteTable(
+  "groups",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    description: text("description"),
+    createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull(),
+    /** Owning organisation (ee/multi-tenancy); null for the provider level. */
+    organizationId: integer("organizationId")
+  },
+  (table) => ({
+    // Unique per organisation (the provider level counts as one), so one
+    // organisation's group names neither block nor reveal another's.
+    nameUnique: uniqueIndex("groups_organization_name_unique").on(sql`ifnull(${table.organizationId}, 0)`, table.name)
+  })
+);
+
+export const groupMembers = sqliteTable(
+  "group_members",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    groupId: integer("groupId")
+      .references(() => groups.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: integer("userId")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    memberUnique: uniqueIndex("group_members_unique").on(table.groupId, table.userId),
+    userIdx: index("group_members_user_idx").on(table.userId)
+  })
+);
+
+export const forwardAuthAccess = sqliteTable(
+  "forward_auth_access",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    proxyHostId: integer("proxyHostId")
+      .references(() => proxyHosts.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: integer("userId").references(() => users.id, { onDelete: "cascade" }),
+    groupId: integer("groupId").references(() => groups.id, { onDelete: "cascade" }),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    hostIdx: index("faa_host_idx").on(table.proxyHostId),
+    userUnique: uniqueIndex("faa_user_unique").on(table.proxyHostId, table.userId),
+    groupUnique: uniqueIndex("faa_group_unique").on(table.proxyHostId, table.groupId)
+  })
+);
+
+export const forwardAuthSessions = sqliteTable(
+  "forward_auth_sessions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("userId")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    proxyHostId: integer("proxyHostId")
+      .references(() => proxyHosts.id, { onDelete: "cascade" })
+      .notNull(),
+    audienceOrigin: text("audienceOrigin").notNull(),
+    tokenHash: text("tokenHash").notNull(),
+    expiresAt: text("expiresAt").notNull(),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    tokenHashUnique: uniqueIndex("fas_token_hash_unique").on(table.tokenHash),
+    userIdx: index("fas_user_idx").on(table.userId),
+    proxyHostIdx: index("fas_proxy_host_idx").on(table.proxyHostId),
+    expiresIdx: index("fas_expires_idx").on(table.expiresAt)
+  })
+);
+
+export const forwardAuthExchanges = sqliteTable(
+  "forward_auth_exchanges",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sessionId: integer("sessionId")
+      .references(() => forwardAuthSessions.id, { onDelete: "cascade" })
+      .notNull(),
+    proxyHostId: integer("proxyHostId")
+      .references(() => proxyHosts.id, { onDelete: "cascade" })
+      .notNull(),
+    audienceOrigin: text("audienceOrigin").notNull(),
+    codeHash: text("codeHash").notNull(),
+    // Legacy compatibility column. Only a fixed placeholder is stored; the
+    // replacement session token is generated at atomic redemption time.
+    sessionToken: text("sessionToken").notNull(),
+    redirectUri: text("redirectUri").notNull(),
+    expiresAt: text("expiresAt").notNull(),
+    used: integer("used", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    codeHashUnique: uniqueIndex("fae_code_hash_unique").on(table.codeHash)
+  })
+);
+
+export const forwardAuthRedirectIntents = sqliteTable(
+  "forward_auth_redirect_intents",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    ridHash: text("ridHash").notNull(),
+    proxyHostId: integer("proxyHostId")
+      .references(() => proxyHosts.id, { onDelete: "cascade" })
+      .notNull(),
+    audienceOrigin: text("audienceOrigin").notNull(),
+    redirectUri: text("redirectUri").notNull(),
+    expiresAt: text("expiresAt").notNull(),
+    consumed: integer("consumed", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    ridHashUnique: uniqueIndex("fari_rid_hash_unique").on(table.ridHash),
+    expiresIdx: index("fari_expires_idx").on(table.expiresAt)
+  })
+);
+
+// ── L4 Proxy Hosts ───────────────────────────────────────────────────
+
+export const l4ProxyHosts = sqliteTable("l4_proxy_hosts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  protocol: text("protocol").notNull(),
+  listenAddress: text("listenAddress").notNull(),
+  upstreams: text("upstreams").notNull(),
+  matcherType: text("matcherType").notNull().default("none"),
+  matcherValue: text("matcherValue"),
+  tlsTermination: integer("tlsTermination", { mode: "boolean" }).notNull().default(false),
+  proxyProtocolVersion: text("proxyProtocolVersion"),
+  proxyProtocolReceive: integer("proxyProtocolReceive", { mode: "boolean" }).notNull().default(false),
+  ownerUserId: integer("ownerUserId").references(() => users.id, { onDelete: "set null" }),
+  meta: text("meta"),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("createdAt").notNull(),
+  updatedAt: text("updatedAt").notNull(),
+  /** Free-form tags, a JSON array of strings (src/lib/host-tags.ts). */
+  tags: text("tags").notNull().default("[]"),
+});
+
+// ── audit_streaming (ee) ─────────────────────────────────────────────
+
+export const auditSinks = sqliteTable("audit_sinks", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  /** "webhook" | "syslog" | "splunk_hec" */
+  type: text("type").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  /** Non-secret settings as JSON (URL, host, port, protocol, ...). */
+  config: text("config").notNull(),
+  /** encryptSecret() value: webhook signing secret or Splunk HEC token. */
+  secret: text("secret"),
+  /** Highest audit_events.id delivered; events with a larger id are pending. */
+  lastDeliveredId: integer("lastDeliveredId").notNull().default(0),
+  lastDeliveryAt: text("lastDeliveryAt"),
+  lastError: text("lastError"),
+  lastErrorAt: text("lastErrorAt"),
+  consecutiveFailures: integer("consecutiveFailures").notNull().default(0),
+  /** Earliest next delivery attempt while backing off after failures. */
+  nextAttemptAt: text("nextAttemptAt"),
+  createdAt: text("createdAt").notNull(),
+  updatedAt: text("updatedAt").notNull(),
+});
+
+// ── Configuration history (ee) ───────────────────────────────────────
+
+/**
+ * Point-in-time copies of the configuration (see src/lib/config-content.ts
+ * for what that covers). `content` holds the rows as stored, so secret
+ * columns stay encrypted with this instance's key. `userId` only records who
+ * caused the snapshot; it is deliberately not a foreign key, so deleting a
+ * user never touches history.
+ */
+export const configSnapshots = sqliteTable(
+  "config_snapshots",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    createdAt: text("createdAt").notNull(),
+    userId: integer("userId"),
+    /** auto | manual | before_restore | import */
+    reason: text("reason").notNull(),
+    summary: text("summary").notNull(),
+    /** SHA-256 of the canonical content, used to skip unchanged configurations. */
+    fingerprint: text("fingerprint").notNull(),
+    content: text("content").notNull(),
+    sizeBytes: integer("sizeBytes").notNull(),
+    /** The version `changes` was computed against (the newest one kept before this). */
+    previousId: integer("previousId"),
+    /** JSON: what changed from previousId (ee/config-history/versions.ts); null until computed. */
+    changes: text("changes")
+  },
+  (table) => ({
+    createdAtIdx: index("config_snapshots_created_at_idx").on(table.createdAt)
+  })
+);
+
+// ── alerting (ee) ─────────────────────────────────────────────────────
+
+/**
+ * Where alert notifications go. `config` holds the non-secret settings as
+ * JSON; `secrets` holds the credentials (passwords, keys, webhook URLs with
+ * embedded tokens) as one encryptSecret()-encrypted JSON object. Who created
+ * or changed channels and rules is in the audit log (no users.id reference,
+ * so deleting a user needs no extra cleanup).
+ */
+export const alertChannels = sqliteTable("alert_channels", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  type: text("type").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  config: text("config").notNull().default("{}"),
+  secrets: text("secrets"),
+  lastDeliveryAt: text("lastDeliveryAt"),
+  lastDeliveryError: text("lastDeliveryError"),
+  createdAt: text("createdAt").notNull(),
+  updatedAt: text("updatedAt").notNull()
+});
+
+export const alertRules = sqliteTable("alert_rules", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  type: text("type").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  params: text("params").notNull().default("{}"),
+  /** JSON array of alert_channels ids. */
+  channelIds: text("channelIds").notNull().default("[]"),
+  cooldownMinutes: integer("cooldownMinutes").notNull().default(60),
+  notifyOnResolve: integer("notifyOnResolve", { mode: "boolean" }).notNull().default(true),
+  /** Ask the configured AI provider for a plain-language explanation (ai_analyst). */
+  explain: integer("explain", { mode: "boolean" }).notNull().default(false),
+  /** JSON: {"type":"all"} or {"type":"hosts","proxyHostIds":[...]} (rule types that watch hosts). */
+  scope: text("scope").notNull().default('{"type":"all"}'),
+  /** Minutes the condition must hold before the rule fires; 0 fires at once. */
+  forMinutes: integer("forMinutes").notNull().default(0),
+  createdAt: text("createdAt").notNull(),
+  updatedAt: text("updatedAt").notNull()
+});
+
+/** Per rule and subject (a certificate, an upstream, ...): firing or not, and when it last notified. */
+export const alertRuleStates = sqliteTable(
+  "alert_rule_states",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    ruleId: integer("ruleId")
+      .references(() => alertRules.id, { onDelete: "cascade" })
+      .notNull(),
+    subjectKey: text("subjectKey").notNull(),
+    status: text("status").notNull(),
+    title: text("title"),
+    firedAt: text("firedAt"),
+    resolvedAt: text("resolvedAt"),
+    lastNotifiedAt: text("lastNotifiedAt"),
+    /** Whether the firing notification of the current episode was sent (resolve notices follow only then). */
+    notifiedFiring: integer("notifiedFiring", { mode: "boolean" }).notNull().default(false),
+    lastEvaluatedAt: text("lastEvaluatedAt").notNull(),
+    /** status "pending": the condition has held since then, waiting out the rule's forMinutes. */
+    pendingSince: text("pendingSince")
+  },
+  (table) => ({
+    ruleSubjectUnique: uniqueIndex("alert_rule_states_rule_subject_unique").on(table.ruleId, table.subjectKey)
+  })
+);
+
+/** Alert history. Kept when the rule is deleted (no foreign key), pruned by age. */
+export const alertEvents = sqliteTable(
+  "alert_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    ruleId: integer("ruleId").notNull(),
+    ruleName: text("ruleName").notNull(),
+    ruleType: text("ruleType").notNull(),
+    subjectKey: text("subjectKey").notNull(),
+    status: text("status").notNull(),
+    severity: text("severity").notNull(),
+    title: text("title").notNull(),
+    message: text("message").notNull(),
+    facts: text("facts"),
+    explanation: text("explanation"),
+    notified: integer("notified", { mode: "boolean" }).notNull().default(false),
+    deliveries: text("deliveries"),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    createdAtIdx: index("alert_events_created_at_idx").on(table.createdAt),
+    ruleIdx: index("alert_events_rule_idx").on(table.ruleId)
+  })
+);
+
+// ── scheduled_backups (ee) ────────────────────────────────────────────
+
+/**
+ * Where scheduled configuration backups go: an S3-compatible bucket. The
+ * secret access key and the passphrase of the export files are stored as
+ * encryptSecret() values (the passphrase so that unattended backups work).
+ * Master-only configuration, not synced to slaves.
+ */
+export const backupDestinations = sqliteTable("backup_destinations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  /** Origin of the S3 API, e.g. https://s3.eu-central-1.amazonaws.com */
+  endpoint: text("endpoint").notNull(),
+  region: text("region").notNull(),
+  bucket: text("bucket").notNull(),
+  /** Without leading or trailing slashes; "" for the bucket root. */
+  keyPrefix: text("keyPrefix").notNull().default(""),
+  pathStyle: integer("pathStyle", { mode: "boolean" }).notNull().default(false),
+  accessKeyId: text("accessKeyId").notNull(),
+  secretAccessKey: text("secretAccessKey").notNull(),
+  passphrase: text("passphrase").notNull(),
+  /** JSON: {"kind":"hourly","minute":0} | {"kind":"daily","time":"03:00"} | {"kind":"weekly","day":"monday","time":"03:00"} */
+  schedule: text("schedule").notNull(),
+  /** IANA time zone the schedule is read in. */
+  timeZone: text("timeZone").notNull().default("UTC"),
+  /** Backups to keep; older backup files under the prefix are deleted. */
+  retention: integer("retention").notNull().default(30),
+  /** Next scheduled attempt (also the retry time while backing off); null while disabled. */
+  nextRunAt: text("nextRunAt"),
+  lastRunAt: text("lastRunAt"),
+  /** success | failed */
+  lastStatus: text("lastStatus"),
+  lastError: text("lastError"),
+  lastSuccessAt: text("lastSuccessAt"),
+  consecutiveFailures: integer("consecutiveFailures").notNull().default(0),
+  createdAt: text("createdAt").notNull(),
+  updatedAt: text("updatedAt").notNull(),
+});
+
+/** One backup attempt. Deleted with its destination (explicitly: cascades are not enforced). */
+export const backupRuns = sqliteTable(
+  "backup_runs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    destinationId: integer("destinationId").notNull(),
+    /** schedule | manual */
+    trigger: text("trigger").notNull(),
+    /** running | success | failed */
+    status: text("status").notNull(),
+    startedAt: text("startedAt").notNull(),
+    finishedAt: text("finishedAt"),
+    objectKey: text("objectKey"),
+    sizeBytes: integer("sizeBytes"),
+    sha256: text("sha256"),
+    /** Older backup files deleted by the retention step. */
+    prunedCount: integer("prunedCount"),
+    error: text("error"),
+    /** Set when the upload worked but a later step (retention) did not. */
+    warning: text("warning"),
+  },
+  (table) => ({
+    destinationIdx: index("backup_runs_destination_idx").on(table.destinationId, table.id),
+    startedAtIdx: index("backup_runs_started_at_idx").on(table.startedAt),
+  })
+);
+
+// ── ai_analyst (ee) ───────────────────────────────────────────────────
+
+/**
+ * WAF tuning suggestions: one row per request host and rule. Open rows are
+ * replaced each time suggestions are generated; dismissed and applied rows
+ * are kept so a dismissed suggestion is not proposed again. `data` holds the
+ * evidence and reasons as JSON. No foreign keys (proxy hosts and users can be
+ * deleted without cleanup here).
+ */
+export const wafTuningSuggestions = sqliteTable(
+  "waf_tuning_suggestions",
+  {
+    id: text("id").primaryKey(),
+    host: text("host").notNull(),
+    ruleId: integer("ruleId").notNull(),
+    proxyHostId: integer("proxyHostId").notNull(),
+    /** open | applied | dismissed */
+    status: text("status").notNull(),
+    /** high | medium | low */
+    confidence: text("confidence").notNull(),
+    score: integer("score").notNull(),
+    data: text("data").notNull(),
+    /** AI-generated risk assessment, plain text */
+    explanation: text("explanation"),
+    generatedAt: text("generatedAt").notNull(),
+    decidedAt: text("decidedAt"),
+    decidedBy: integer("decidedBy")
+  },
+  (table) => ({
+    hostRuleUnique: uniqueIndex("waf_tuning_suggestions_host_rule_unique").on(table.host, table.ruleId),
+    statusIdx: index("waf_tuning_suggestions_status_idx").on(table.status)
+  })
+);
+
+// ── mfa ──────────────────────────────────────────────────────────────────
+
+/**
+ * Dashboard multi-factor authentication (Better Auth two-factor plugin, model
+ * "twoFactor"), one row per account. `secret` is the TOTP secret, encrypted
+ * by Better Auth with SESSION_SECRET; `backupCodes` is the JSON list of unused
+ * one-time codes, encrypted with encryptSecret. `verified` stays false until
+ * the first code is confirmed. The failure counter and lock cap second-factor
+ * attempts per account. Neither secret ever leaves the server after enrolment.
+ */
+export const twoFactors = sqliteTable(
+  "two_factors",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("userId")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    secret: text("secret").notNull(),
+    backupCodes: text("backupCodes").notNull(),
+    verified: integer("verified", { mode: "boolean" }).notNull().default(true),
+    failedVerificationCount: integer("failedVerificationCount").notNull().default(0),
+    lockedUntil: text("lockedUntil")
+  },
+  (table) => ({
+    userUnique: uniqueIndex("two_factors_user_unique").on(table.userId)
+  })
+);
+
+// ── custom_roles (ee) ─────────────────────────────────────────────────
+
+/**
+ * Custom roles (ee/custom-roles): a named set of permissions from
+ * src/lib/permissions.ts (`permissions`, a JSON array) and an optional tag
+ * scope (`scopeTags`, a JSON array; empty means every host). Users reference
+ * a role through users.customRoleId; deleting a role clears that column
+ * explicitly (foreign keys are not enforced).
+ */
+export const customRoles = sqliteTable(
+  "custom_roles",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    description: text("description"),
+    permissions: text("permissions").notNull().default("[]"),
+    scopeTags: text("scopeTags").notNull().default("[]"),
+    createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    nameUnique: uniqueIndex("custom_roles_name_unique").on(table.name)
+  })
+);
+
+// ── api_monetization (ee) ─────────────────────────────────────────────
+
+/**
+ * API monetization (ee/monetization): prepaid, per-request billing of API
+ * consumers, enforced at the edge. Every amount is an integer number of
+ * micro-units of the install's currency (1 USD = 1,000,000 micro-units), so a
+ * price per request can be a fraction of a cent. Master-only configuration:
+ * not synced to slaves and not part of configuration export or history.
+ * Foreign keys are not enforced: deleting a consumer deletes its keys
+ * explicitly and keeps its ledger entries.
+ */
+export const monetizationPlans = sqliteTable(
+  "monetization_plans",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    pricePerRequestMicros: integer("pricePerRequestMicros").notNull().default(0),
+    /** Requests per calendar month (UTC) that cost nothing, used before the balance. */
+    includedRequestsPerMonth: integer("includedRequestsPerMonth").notNull().default(0),
+    /** Null: no per-minute limit. */
+    requestsPerMinute: integer("requestsPerMinute"),
+    /** prepaid | postpaid: how the plan's consumers pay unless a consumer says otherwise. */
+    billing: text("billing").notNull().default("prepaid"),
+    /** The most unpaid usage a postpaid consumer may run up (required for postpaid). */
+    postpaidCapMicros: integer("postpaidCapMicros"),
+    /** Postpaid: the saved card is charged when the unpaid usage reaches this; null: half the cap. */
+    postpaidThresholdMicros: integer("postpaidThresholdMicros"),
+    /** Requests answered with a 5xx are credited back, reconciled from the access log. */
+    creditFailedAnswers: integer("creditFailedAnswers", { mode: "boolean" }).notNull().default(false),
+    /** Key holders on this plan may also pay a request with x402 when their balance does not cover it. */
+    acceptX402: integer("acceptX402", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    nameUnique: uniqueIndex("monetization_plans_name_unique").on(table.name)
+  })
+);
+
+export const monetizationConsumers = sqliteTable(
+  "monetization_consumers",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    email: text("email"),
+    /** active | disabled */
+    status: text("status").notNull().default("active"),
+    planId: integer("planId"),
+    balanceMicros: integer("balanceMicros").notNull().default(0),
+    /** How far below zero the balance may go (0: strictly prepaid). */
+    overdraftAllowanceMicros: integer("overdraftAllowanceMicros").notNull().default(0),
+    /** "YYYY-MM" (UTC) the free-request count belongs to. */
+    freeUsageMonth: text("freeUsageMonth"),
+    freeUsageCount: integer("freeUsageCount").notNull().default(0),
+    /** SHA-256 of the self-service portal token; null when the portal link is off. */
+    portalTokenHash: text("portalTokenHash"),
+    /** prepaid | postpaid; null: the plan's billing. */
+    billing: text("billing"),
+    /** The consumer's Stripe Customer in the operator's account (postpaid: the saved card's owner). */
+    stripeCustomerId: text("stripeCustomerId"),
+    /** The saved card (postpaid), charged off-session; brand, last four and expiry for display only. */
+    paymentMethodId: text("paymentMethodId"),
+    cardBrand: text("cardBrand"),
+    cardLast4: text("cardLast4"),
+    cardExpMonth: integer("cardExpMonth"),
+    cardExpYear: integer("cardExpYear"),
+    /** Postpaid: set while a charge failed or a payment is disputed; requests get 402 until it is paid or resumed. */
+    suspendedAt: text("suspendedAt"),
+    /** payment_failed | authentication_required | dispute */
+    suspendedReason: text("suspendedReason"),
+    /** "YYYY-MM" (UTC) of the last billing period whose end-of-period charge ran. */
+    billedPeriod: text("billedPeriod"),
+    createdBy: integer("createdBy"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    portalTokenUnique: uniqueIndex("monetization_consumers_portal_token_unique").on(table.portalTokenHash),
+    planIdx: index("monetization_consumers_plan_idx").on(table.planId)
+  })
+);
+
+/** Consumer API keys: SHA-256 of the key, looked up by its public prefix. Shown once. */
+export const monetizationKeys = sqliteTable(
+  "monetization_keys",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    consumerId: integer("consumerId").notNull(),
+    name: text("name"),
+    prefix: text("prefix").notNull(),
+    keyHash: text("keyHash").notNull(),
+    createdAt: text("createdAt").notNull(),
+    lastUsedAt: text("lastUsedAt"),
+    revokedAt: text("revokedAt")
+  },
+  (table) => ({
+    prefixUnique: uniqueIndex("monetization_keys_prefix_unique").on(table.prefix),
+    keyHashUnique: uniqueIndex("monetization_keys_key_hash_unique").on(table.keyHash),
+    consumerIdx: index("monetization_keys_consumer_idx").on(table.consumerId)
+  })
+);
+
+/**
+ * Every change of a consumer's balance. type: topup | usage | adjustment.
+ * Usage is recorded as one row per consumer and UTC hour, updated by each
+ * flush (externalReference "usage:<consumer>:<hour>"); top-ups carry
+ * "stripe:<checkout session id>", which makes crediting idempotent.
+ */
+export const monetizationLedger = sqliteTable(
+  "monetization_ledger",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    consumerId: integer("consumerId").notNull(),
+    type: text("type").notNull(),
+    amountMicros: integer("amountMicros").notNull(),
+    balanceAfterMicros: integer("balanceAfterMicros").notNull(),
+    requests: integer("requests").notNull().default(0),
+    freeRequests: integer("freeRequests").notNull().default(0),
+    externalReference: text("externalReference"),
+    description: text("description"),
+    createdBy: integer("createdBy"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    externalReferenceUnique: uniqueIndex("monetization_ledger_external_reference_unique").on(table.externalReference),
+    consumerIdx: index("monetization_ledger_consumer_idx").on(table.consumerId, table.id),
+    createdAtIdx: index("monetization_ledger_created_at_idx").on(table.createdAt)
+  })
+);
+
+/**
+ * Proxy hosts with monetization on. allowedPlanIds: JSON array, empty = every
+ * plan. x402: requests without an API key may pay per request with USDC on
+ * Base through Stripe's machine payments (ee/monetization/x402), at
+ * x402PriceCents US cents each.
+ */
+export const monetizationHosts = sqliteTable("monetization_hosts", {
+  proxyHostId: integer("proxyHostId").primaryKey(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  keyHeader: text("keyHeader").notNull().default("Authorization"),
+  allowedPlanIds: text("allowedPlanIds").notNull().default("[]"),
+  x402Enabled: integer("x402Enabled", { mode: "boolean" }).notNull().default(false),
+  x402PriceCents: integer("x402PriceCents"),
+  createdAt: text("createdAt").notNull(),
+  updatedAt: text("updatedAt").notNull()
+});
+
+// ── Change approvals (ee) ─────────────────────────────────────────────
+
+/**
+ * Change approval policies (ee/approvals): which host changes need approval
+ * (four-eyes), how many distinct approvers, and when approved changes may be
+ * applied (change windows, wall-clock time in an IANA time zone). JSON
+ * columns: targetTypes, operations and hostTags are arrays of strings
+ * (hostTags empty: every host); windows is an array of
+ * {"days":["monday",...],"start":"HH:MM","end":"HH:MM"} (empty: any time).
+ * Master-only: not synced to slaves and not part of configuration export or
+ * history, so restoring a configuration can never switch a policy off.
+ */
+export const approvalPolicies = sqliteTable(
+  "approval_policies",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    description: text("description"),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    targetTypes: text("targetTypes").notNull().default('["proxy_host","l4_proxy_host"]'),
+    operations: text("operations").notNull().default('["create","update","delete","enable","disable"]'),
+    hostTags: text("hostTags").notNull().default("[]"),
+    requiredApprovals: integer("requiredApprovals").notNull().default(1),
+    allowEmergency: integer("allowEmergency", { mode: "boolean" }).notNull().default(true),
+    timeZone: text("timeZone").notNull().default("UTC"),
+    windows: text("windows").notNull().default("[]"),
+    /** Hours a request may wait for its approvals before it expires. */
+    requestTtlHours: integer("requestTtlHours").notNull().default(72),
+    createdBy: integer("createdBy"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    nameUnique: uniqueIndex("approval_policies_name_unique").on(table.name)
+  })
+);
+
+// ── Compliance reports (ee) ───────────────────────────────────────────
+
+/**
+ * Generated compliance reports (ee/compliance). `content` is the report as
+ * canonical JSON (RFC 8785) and `sha256` its digest, which generation also
+ * records in the audit log. `generatedBy` only records who generated it; it is
+ * deliberately not a foreign key (user ids are reused), and the generator's
+ * name and e-mail are part of the hashed content. Master-local records, not
+ * configuration: not synced, exported or kept in configuration history.
+ */
+export const complianceReports = sqliteTable(
+  "compliance_reports",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    /** Random UUID, also inside the content (reportId). */
+    uid: text("uid").notNull(),
+    /** access_review | change_log | certificate_inventory | protection_coverage */
+    type: text("type").notNull(),
+    periodFrom: text("periodFrom").notNull(),
+    periodTo: text("periodTo").notNull(),
+    generatedAt: text("generatedAt").notNull(),
+    generatedBy: integer("generatedBy"),
+    generatedByName: text("generatedByName"),
+    sha256: text("sha256").notNull(),
+    /** JSON: finding counts by severity, for listing without parsing the content. */
+    findingCounts: text("findingCounts").notNull().default("{}"),
+    sizeBytes: integer("sizeBytes").notNull(),
+    content: text("content").notNull(),
+    /** The report schedule that generated it (null: generated by hand). */
+    scheduleId: integer("scheduleId"),
+    /** Random id shared by the reports of one scheduled run (an evidence pack). */
+    packId: text("packId")
+  },
+  (table) => ({
+    uidUnique: uniqueIndex("compliance_reports_uid_unique").on(table.uid),
+    generatedAtIdx: index("compliance_reports_generated_at_idx").on(table.generatedAt),
+    typeIdx: index("compliance_reports_type_idx").on(table.type),
+    packIdx: index("compliance_reports_pack_idx").on(table.packId)
+  })
+);
+
+/**
+ * A change to a protected host waiting for (or past) its approvals. input is
+ * the validated change as JSON; baseState the target as it was when the
+ * request was made (null for a create) and baseFingerprint its SHA-256, which
+ * must still match when the change is applied. status: pending | approved |
+ * applied | rejected | cancelled | expired | failed. tags: the tags the host
+ * has and would have, for scope checks and policy matching.
+ */
+export const changeRequests = sqliteTable(
+  "change_requests",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    targetType: text("targetType").notNull(),
+    /** Null for a create until it is applied. */
+    targetId: integer("targetId"),
+    targetName: text("targetName").notNull(),
+    operation: text("operation").notNull(),
+    /** JSON array: every operation the change performs (an update can also enable or disable). */
+    operations: text("operations").notNull().default("[]"),
+    input: text("input").notNull(),
+    baseState: text("baseState"),
+    baseFingerprint: text("baseFingerprint"),
+    tags: text("tags").notNull().default("[]"),
+    status: text("status").notNull().default("pending"),
+    requiredApprovals: integer("requiredApprovals").notNull().default(1),
+    /** JSON arrays of the policies that covered the change when it was requested. */
+    policyIds: text("policyIds").notNull().default("[]"),
+    policyNames: text("policyNames").notNull().default("[]"),
+    note: text("note"),
+    requestedBy: integer("requestedBy").notNull(),
+    emergency: integer("emergency", { mode: "boolean" }).notNull().default(false),
+    emergencyReason: text("emergencyReason"),
+    emergencyBy: integer("emergencyBy"),
+    expiresAt: text("expiresAt").notNull(),
+    decidedAt: text("decidedAt"),
+    appliedAt: text("appliedAt"),
+    /** Who applied it; null when the scheduler did (in a change window). */
+    appliedBy: integer("appliedBy"),
+    /** Why applying failed, or a warning when it was applied but Caddy did not take it. */
+    error: text("error"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    statusIdx: index("change_requests_status_idx").on(table.status, table.id),
+    targetIdx: index("change_requests_target_idx").on(table.targetType, table.targetId)
+  })
+);
+
+/** Approvals, rejections and comments on a change request. decision: approve | reject | comment. */
+export const changeRequestReviews = sqliteTable(
+  "change_request_reviews",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    requestId: integer("requestId").notNull(),
+    userId: integer("userId").notNull(),
+    decision: text("decision").notNull(),
+    comment: text("comment"),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    requestIdx: index("change_request_reviews_request_idx").on(table.requestId, table.id)
+  })
+);
+
+/**
+ * NIS2 Article 23 incident notification drafts. `facts` holds aggregated
+ * figures (counts, host names, rule ids) collected when the draft was made or
+ * refreshed; `stages` the text of each notification stage as JSON, with when
+ * it was AI-drafted, edited and submitted (submission happens outside the
+ * product and is only recorded here). No foreign keys.
+ */
+export const complianceIncidents = sqliteTable(
+  "compliance_incidents",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    title: text("title").notNull(),
+    /** open | closed */
+    status: text("status").notNull().default("open"),
+    /** en | it: language of the templates and AI drafts. */
+    language: text("language").notNull().default("en"),
+    /** When the organisation became aware of the incident; the deadlines run from here. */
+    detectedAt: text("detectedAt").notNull(),
+    periodFrom: text("periodFrom").notNull(),
+    periodTo: text("periodTo").notNull(),
+    alertEventId: integer("alertEventId"),
+    /** JSON array of proxy_hosts ids; empty means every host. */
+    proxyHostIds: text("proxyHostIds").notNull().default("[]"),
+    facts: text("facts"),
+    factsCollectedAt: text("factsCollectedAt"),
+    stages: text("stages").notNull().default("{}"),
+    createdBy: integer("createdBy"),
+    createdByName: text("createdByName"),
+    createdAt: text("createdAt").notNull(),
+    updatedBy: integer("updatedBy"),
+    updatedAt: text("updatedAt").notNull(),
+    // ── Incident register ──
+    /** When the incident started and ended (null while ongoing or unknown). */
+    startedAt: text("startedAt"),
+    endedAt: text("endedAt"),
+    /** undetermined | not_significant | significant (NIS2 Art. 23(3)), set by a person. */
+    classification: text("classification").notNull().default("undetermined"),
+    classifiedAt: text("classifiedAt"),
+    classifiedBy: integer("classifiedBy"),
+    classifiedByName: text("classifiedByName"),
+    /** JSON: the significance questions with their answers and reasons. */
+    assessment: text("assessment").notNull().default("{}"),
+    /** The cause, recorded when it is known or at closing. */
+    cause: text("cause"),
+    /** JSON array of {at, text}: timeline entries a person added. */
+    timeline: text("timeline").notNull().default("[]"),
+    closedAt: text("closedAt")
+  },
+  (table) => ({
+    detectedAtIdx: index("compliance_incidents_detected_at_idx").on(table.detectedAt)
+  })
+);
+
+// ── LDAP / Active Directory (ee) ──────────────────────────────────────
+
+/**
+ * Directories people sign in to the dashboard with (ee/ldap). The service
+ * account password is an encryptSecret() value and is never returned.
+ * groupRoleMappings is a JSON array of {"group": "<group DN>", "role":
+ * "admin" | "user" | "viewer"}: the only way a directory grants a role.
+ * Accounts signed in through a directory are `accounts` rows with providerId
+ * "ldap:<id>" and the entry's stable unique id as accountId; deleting a
+ * directory deletes them explicitly (foreign keys are not enforced). Per
+ * dashboard, like users: not synced to slaves.
+ */
+export const ldapDirectories = sqliteTable(
+  "ldap_directories",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    /** ldaps://host[:port] or ldap://host[:port]. */
+    url: text("url").notNull(),
+    /** Upgrade an ldap:// connection with StartTLS before anything is sent. */
+    startTls: integer("startTls", { mode: "boolean" }).notNull().default(false),
+    /** Explicit opt-in to binds over a connection without TLS (ldap:// without StartTLS). */
+    allowUnencrypted: integer("allowUnencrypted", { mode: "boolean" }).notNull().default(false),
+    /** PEM of the CA(s) the server certificate must chain to; null: the system trust store. */
+    caCertificate: text("caCertificate"),
+    connectTimeoutMs: integer("connectTimeoutMs").notNull().default(5000),
+    operationTimeoutMs: integer("operationTimeoutMs").notNull().default(10000),
+    bindDn: text("bindDn").notNull(),
+    bindPassword: text("bindPassword").notNull(),
+    userSearchBase: text("userSearchBase").notNull(),
+    /** RFC 4515 filter with a {username} placeholder, escaped when it is filled in. */
+    userSearchFilter: text("userSearchFilter").notNull(),
+    usernameAttribute: text("usernameAttribute").notNull().default("uid"),
+    emailAttribute: text("emailAttribute").notNull().default("mail"),
+    displayNameAttribute: text("displayNameAttribute").notNull().default("cn"),
+    /** entryUUID (OpenLDAP and most servers) or objectGUID (Active Directory). */
+    uniqueIdAttribute: text("uniqueIdAttribute").notNull().default("entryUUID"),
+    /** none | member_of | search */
+    groupMode: text("groupMode").notNull().default("none"),
+    groupMembershipAttribute: text("groupMembershipAttribute").notNull().default("memberOf"),
+    groupSearchBase: text("groupSearchBase"),
+    /** RFC 4515 filter with {dn} and/or {username} placeholders. */
+    groupSearchFilter: text("groupSearchFilter"),
+    /** Active Directory: every group, nested ones included (LDAP_MATCHING_RULE_IN_CHAIN). */
+    nestedGroups: integer("nestedGroups", { mode: "boolean" }).notNull().default(false),
+    groupRoleMappings: text("groupRoleMappings").notNull().default("[]"),
+    /** Role of a user in none of the mapped groups: user | viewer. */
+    defaultRole: text("defaultRole").notNull().default("user"),
+    /** Group DN a user must belong to; null: any user the search finds. */
+    requiredGroup: text("requiredGroup"),
+    provisionUsers: integer("provisionUsers", { mode: "boolean" }).notNull().default(false),
+    linkExistingAccounts: integer("linkExistingAccounts", { mode: "boolean" }).notNull().default(false),
+    /** Directory sign-in stays open while enforced SSO (ee/sso) is on. */
+    allowWhenSsoEnforced: integer("allowWhenSsoEnforced", { mode: "boolean" }).notNull().default(false),
+    createdBy: integer("createdBy"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    nameUnique: uniqueIndex("ldap_directories_name_unique").on(table.name)
+  })
+);
+
+// ── scim (ee) ─────────────────────────────────────────────────────────
+
+/**
+ * SCIM 2.0 provisioning (ee/scim). Master-only: not synced to slaves and not
+ * part of configuration export or history, like the users it provisions.
+ * Foreign keys are not declared: deleting a user or a group deletes its rows
+ * here explicitly (models/user.ts, models/groups.ts).
+ *
+ * scim_tokens: bearer tokens that only the /scim/v2 endpoints accept, stored
+ * as the SHA-256 of the token (shown once). `prefix` is the first characters,
+ * for telling tokens apart.
+ */
+export const scimTokens = sqliteTable(
+  "scim_tokens",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    prefix: text("prefix").notNull(),
+    tokenHash: text("tokenHash").notNull(),
+    createdBy: integer("createdBy"),
+    createdAt: text("createdAt").notNull(),
+    lastUsedAt: text("lastUsedAt"),
+    expiresAt: text("expiresAt")
+  },
+  (table) => ({
+    tokenHashUnique: uniqueIndex("scim_tokens_token_hash_unique").on(table.tokenHash)
+  })
+);
+
+/**
+ * The users SCIM manages: created through SCIM (origin "scim") or explicitly
+ * handed to SCIM by an administrator (origin "adopted"). SCIM never sees or
+ * changes any other account. userName, externalId, the name parts and the
+ * e-mail list are the exact values the identity provider sent; userNameKey is
+ * userName lowercased, only for comparing (SCIM userNames are not
+ * case-sensitive) and keeping them unique. `active` is the provider's own
+ * active flag: the account is disabled when it turns false and enabled again
+ * when it turns true, so an administrator's own disable is not undone by a
+ * provider that keeps sending active=true. `deletedAt`:
+ * the provider deleted the user while the delete mode was "disable"; the
+ * account is disabled and hidden from SCIM until the provider creates the
+ * same userName again. `linkedAt`: when the first sign-in through the SCIM
+ * sign-in provider linked the identity to the account.
+ */
+export const scimUsers = sqliteTable(
+  "scim_users",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("userId").notNull(),
+    userName: text("userName").notNull(),
+    userNameKey: text("userNameKey").notNull(),
+    externalId: text("externalId"),
+    displayName: text("displayName"),
+    givenName: text("givenName"),
+    familyName: text("familyName"),
+    formattedName: text("formattedName"),
+    /** JSON array of {value, type, primary}. */
+    emails: text("emails").notNull().default("[]"),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    origin: text("origin").notNull().default("scim"),
+    deletedAt: text("deletedAt"),
+    linkedAt: text("linkedAt"),
+    createdByTokenId: integer("createdByTokenId"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    userUnique: uniqueIndex("scim_users_user_unique").on(table.userId),
+    userNameKeyUnique: uniqueIndex("scim_users_user_name_key_unique").on(table.userNameKey),
+    externalIdIdx: index("scim_users_external_id_idx").on(table.externalId)
+  })
+);
+
+/** Forward-auth groups SCIM manages (created through SCIM or adopted by an administrator). */
+export const scimGroups = sqliteTable(
+  "scim_groups",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    groupId: integer("groupId").notNull(),
+    externalId: text("externalId"),
+    origin: text("origin").notNull().default("scim"),
+    createdByTokenId: integer("createdByTokenId"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    groupUnique: uniqueIndex("scim_groups_group_unique").on(table.groupId)
+  })
+);
+
+/**
+ * The memberships the identity provider asserted through SCIM. Group-to-role
+ * mappings read these, never group_members, so a membership added or removed
+ * by hand on the Groups page (groups:write) cannot change a SCIM user's role.
+ * SCIM writes both tables; the dashboard writes group_members only.
+ */
+export const scimGroupMembers = sqliteTable(
+  "scim_group_members",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    groupId: integer("groupId").notNull(),
+    userId: integer("userId").notNull(),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    memberUnique: uniqueIndex("scim_group_members_unique").on(table.groupId, table.userId),
+    userIdx: index("scim_group_members_user_idx").on(table.userId)
+  })
+);
+
+/**
+ * Group-to-role mappings: the only way SCIM gives a user a role. A SCIM user
+ * gets the role of the first mapping (lowest priority, then lowest id) whose
+ * group the identity provider put them in (scim_group_members), while the
+ * SCIM settings let SCIM manage roles.
+ * `role` is a built-in role; a custom role is stored as role "viewer" plus
+ * `customRoleId`, as on users.
+ */
+export const scimRoleMappings = sqliteTable(
+  "scim_role_mappings",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    groupId: integer("groupId").notNull(),
+    role: text("role").notNull(),
+    customRoleId: integer("customRoleId"),
+    priority: integer("priority").notNull().default(100),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    groupUnique: uniqueIndex("scim_role_mappings_group_unique").on(table.groupId)
+  })
+);
+
+// ── access_reviews (ee) ───────────────────────────────────────────────
+
+/**
+ * Access recertification (ee/access-reviews). A campaign snapshots, when it
+ * starts, every access of the users in its scope as items; reviewers keep or
+ * revoke each item. Items copy the labels they show (e-mail, group name,
+ * token name) so the record stays readable after users, groups or tokens are
+ * gone; user ids here are not foreign keys. Master-only, not synced.
+ *
+ * scope: JSON {"type":"all"} or {"type":"filter","roles":[...],
+ * "customRoleIds":[...],"groupIds":[...]}. reviewerIds: JSON array of user ids.
+ * status: open | completed | cancelled.
+ */
+export const accessReviewCampaigns = sqliteTable(
+  "access_review_campaigns",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    status: text("status").notNull().default("open"),
+    scope: text("scope").notNull().default('{"type":"all"}'),
+    reviewerIds: text("reviewerIds").notNull().default("[]"),
+    dueAt: text("dueAt").notNull(),
+    startedAt: text("startedAt").notNull(),
+    completedAt: text("completedAt"),
+    cancelledAt: text("cancelledAt"),
+    scheduleId: integer("scheduleId"),
+    createdBy: integer("createdBy"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    statusIdx: index("access_review_campaigns_status_idx").on(table.status)
+  })
+);
+
+/**
+ * One access of one user in a campaign. kind: account | role | group |
+ * api_token; targetId is the group, API token or custom role id. decision
+ * (keep | revoke) is a draft until confirmedAt; outcome records what
+ * confirming did: kept | revoked | unchanged (already gone or changed since
+ * the campaign started) | failed | not_reviewed.
+ */
+export const accessReviewItems = sqliteTable(
+  "access_review_items",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    campaignId: integer("campaignId").notNull(),
+    subjectUserId: integer("subjectUserId").notNull(),
+    subjectEmail: text("subjectEmail").notNull(),
+    subjectName: text("subjectName"),
+    kind: text("kind").notNull(),
+    targetId: integer("targetId"),
+    targetLabel: text("targetLabel").notNull(),
+    decision: text("decision"),
+    comment: text("comment"),
+    decidedBy: integer("decidedBy"),
+    decidedByEmail: text("decidedByEmail"),
+    decidedAt: text("decidedAt"),
+    confirmedAt: text("confirmedAt"),
+    outcome: text("outcome"),
+    outcomeDetail: text("outcomeDetail"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    campaignIdx: index("access_review_items_campaign_idx").on(table.campaignId, table.subjectUserId)
+  })
+);
+
+/** Recurring campaigns: a new campaign every intervalMonths, due durationDays after it starts. */
+export const accessReviewSchedules = sqliteTable("access_review_schedules", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  scope: text("scope").notNull().default('{"type":"all"}'),
+  reviewerIds: text("reviewerIds").notNull().default("[]"),
+  durationDays: integer("durationDays").notNull().default(14),
+  intervalMonths: integer("intervalMonths").notNull().default(3),
+  nextRunAt: text("nextRunAt").notNull(),
+  lastRunAt: text("lastRunAt"),
+  lastCampaignId: integer("lastCampaignId"),
+  lastError: text("lastError"),
+  createdBy: integer("createdBy"),
+  createdAt: text("createdAt").notNull(),
+  updatedAt: text("updatedAt").notNull()
+});
+
+// ── fleet (ee) ────────────────────────────────────────────────────────
+
+/**
+ * Fleet management (ee/fleet): named, ordered environments of sync slaves.
+ * A promotion-only environment receives configuration only through rollouts
+ * and stays on `revisionId`; any other environment receives every change at
+ * once, like an instance without an environment. Master-only: not synced to
+ * slaves and not part of configuration export or history. Foreign keys are
+ * not enforced: deleting an environment or an instance cleans up explicitly.
+ */
+export const fleetEnvironments = sqliteTable(
+  "fleet_environments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    description: text("description"),
+    /** Promotion order, lowest first: an environment promotes from the one before it. */
+    position: integer("position").notNull(),
+    promotionOnly: integer("promotionOnly", { mode: "boolean" }).notNull().default(false),
+    /** The fleet revision a promotion-only environment is pinned to; null until its first promotion. */
+    revisionId: integer("revisionId"),
+    /** Defaults for promotions into the environment. */
+    canaryEnabled: integer("canaryEnabled", { mode: "boolean" }).notNull().default(true),
+    canaryWaitSeconds: integer("canaryWaitSeconds").notNull().default(300),
+    checkCaddyStatus: integer("checkCaddyStatus", { mode: "boolean" }).notNull().default(true),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    nameUnique: uniqueIndex("fleet_environments_name_unique").on(table.name)
+  })
+);
+
+/**
+ * What the master knows about each slave instance: its environment, what it
+ * last received and its drift state. `pushedFingerprint` is the sync
+ * fingerprint of the last successful push (an HMAC keyed with the
+ * instance's sync token, see src/lib/instance-sync-fingerprint.ts).
+ */
+export const fleetInstances = sqliteTable(
+  "fleet_instances",
+  {
+    instanceId: integer("instanceId").primaryKey(),
+    environmentId: integer("environmentId"),
+    /** Revision of the last successful push; null when it was the live configuration. */
+    revisionId: integer("revisionId"),
+    pushedFingerprint: text("pushedFingerprint"),
+    pushedAt: text("pushedAt"),
+    /** in_sync | drifted | unreachable | older_version | unknown */
+    driftStatus: text("driftStatus"),
+    driftCheckedAt: text("driftCheckedAt"),
+    /** When the instance was last found drifted after being in sync. */
+    driftSince: text("driftSince"),
+    /** Application-authored, safe-to-show detail of the last check. */
+    driftDetail: text("driftDetail"),
+    reportedFingerprint: text("reportedFingerprint"),
+    reportedVersion: text("reportedVersion"),
+    localChanges: integer("localChanges", { mode: "boolean" }),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    environmentIdx: index("fleet_instances_environment_idx").on(table.environmentId)
+  })
+);
+
+/**
+ * Configurations that environments can be pinned to, captured from the
+ * master's configuration when promoted. `content` uses the format of
+ * configuration snapshots (src/lib/config-content.ts) limited to what
+ * instance sync sends; secrets stay encrypted with this instance's key.
+ */
+export const fleetRevisions = sqliteTable(
+  "fleet_revisions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    createdAt: text("createdAt").notNull(),
+    /** Who caused the capture; not a foreign key. */
+    createdBy: integer("createdBy"),
+    summary: text("summary").notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    content: text("content").notNull(),
+    sizeBytes: integer("sizeBytes").notNull()
+  },
+  (table) => ({
+    fingerprintIdx: index("fleet_revisions_fingerprint_idx").on(table.fingerprint)
+  })
+);
+
+/** A promotion or rollback of one revision to one environment. */
+export const fleetRollouts = sqliteTable(
+  "fleet_rollouts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    environmentId: integer("environmentId").notNull(),
+    revisionId: integer("revisionId").notNull(),
+    /** The environment's revision before the rollout; what a rollback restores. */
+    fromRevisionId: integer("fromRevisionId"),
+    /** promotion | rollback */
+    kind: text("kind").notNull(),
+    /** Where the revision came from; null for the master's configuration. */
+    sourceEnvironmentId: integer("sourceEnvironmentId"),
+    rollbackOfId: integer("rollbackOfId"),
+    /** running | succeeded | failed | aborted */
+    status: text("status").notNull(),
+    /** canary | observing | rolling | done */
+    phase: text("phase").notNull(),
+    canaryInstanceId: integer("canaryInstanceId"),
+    canaryWaitSeconds: integer("canaryWaitSeconds").notNull().default(0),
+    checkCaddyStatus: integer("checkCaddyStatus", { mode: "boolean" }).notNull().default(false),
+    /** End of the canary's observation window. */
+    observeUntil: text("observeUntil"),
+    lastCheckAt: text("lastCheckAt"),
+    /** Application-authored, safe-to-show reason of a failure. */
+    error: text("error"),
+    startedBy: integer("startedBy"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull(),
+    finishedAt: text("finishedAt")
+  },
+  (table) => ({
+    environmentIdx: index("fleet_rollouts_environment_idx").on(table.environmentId, table.id),
+    statusIdx: index("fleet_rollouts_status_idx").on(table.status)
+  })
+);
+
+/** The instances a rollout pushes to, and how each push went. */
+export const fleetRolloutTargets = sqliteTable(
+  "fleet_rollout_targets",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    rolloutId: integer("rolloutId").notNull(),
+    instanceId: integer("instanceId").notNull(),
+    /** Kept for display after the instance is deleted. */
+    instanceName: text("instanceName").notNull(),
+    /** canary | rest */
+    role: text("role").notNull(),
+    /** pending | synced | failed | skipped */
+    status: text("status").notNull(),
+    error: text("error"),
+    syncedAt: text("syncedAt"),
+    /**
+     * For a pull replica: when the rollout asked it to take the revision. The
+     * target is synced once the replica reports it runs the revision after
+     * this, and fails when it has not by the pull timeout.
+     */
+    requestedAt: text("requestedAt")
+  },
+  (table) => ({
+    rolloutInstanceUnique: uniqueIndex("fleet_rollout_targets_rollout_instance_unique").on(table.rolloutId, table.instanceId)
+  })
+);
+
+// ── Fleet pull replicas (ee) ──
+
+/**
+ * Pull replicas (ee/fleet/pull-replicas.ts): instances with syncMode "pull"
+ * that fetch their configuration from the master instead of being pushed to.
+ * Master-only, like the other fleet tables. A replica authenticates with its
+ * own credential, of which only the SHA-256 is kept (null once revoked);
+ * `fingerprintToken` (encrypted) keys its sync fingerprints and is derived
+ * from the credential, which it cannot be turned back into. The last status
+ * it reported and what the master last sent it drive drift detection and
+ * rollouts. Deleting the instance deletes the row (no cascades).
+ */
+export const fleetPullReplicas = sqliteTable(
+  "fleet_pull_replicas",
+  {
+    instanceId: integer("instanceId").primaryKey(),
+    credentialHash: text("credentialHash"),
+    /** The start of the credential, to tell credentials apart. */
+    credentialPrefix: text("credentialPrefix"),
+    credentialCreatedAt: text("credentialCreatedAt"),
+    fingerprintToken: text("fingerprintToken"),
+    /** The poll interval the replica reported, in seconds. */
+    pollIntervalSeconds: integer("pollIntervalSeconds"),
+    /** Last request that authenticated and proved the pinned sync key. */
+    lastSeenAt: text("lastSeenAt"),
+    lastSeenAddress: text("lastSeenAddress"),
+    /** The replica's last status report (validated JSON, no secrets). */
+    lastStatus: text("lastStatus"),
+    /** The configuration last sent to it: sync fingerprint, revision (null: live) and time. */
+    deliveredFingerprint: text("deliveredFingerprint"),
+    deliveredRevisionId: integer("deliveredRevisionId"),
+    deliveredAt: text("deliveredAt"),
+    /** A re-sync waiting to be confirmed: sent even when the replica reports it runs the configuration. */
+    resyncRequestedAt: text("resyncRequestedAt"),
+    resyncRevisionId: integer("resyncRevisionId"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    credentialHashUnique: uniqueIndex("fleet_pull_replicas_credential_hash_unique").on(table.credentialHash)
+  })
+);
+
+// ── SAML (ee) ─────────────────────────────────────────────────────────
+
+/**
+ * SAML 2.0 identity providers for dashboard sign-in (ee/saml). Managed only
+ * through /api/v1/saml-providers and the dashboard. idpCertificates is a
+ * JSON array of PEM certificates (several for rollover); spPrivateKey is an
+ * encryptSecret() value used to sign AuthnRequests and is never returned.
+ * Accounts signed in through a provider are `accounts` rows with providerId
+ * "saml:<id>"; deleting a provider deletes them, its group mappings, its
+ * pending sign-ins and its replay records explicitly (foreign keys are not
+ * enforced). Per dashboard, like users: not synced to slaves.
+ */
+export const samlProviders = sqliteTable(
+  "saml_providers",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    idpEntityId: text("idpEntityId").notNull(),
+    /** HTTP-Redirect SingleSignOnService location of the IdP. */
+    idpSsoUrl: text("idpSsoUrl").notNull(),
+    idpCertificates: text("idpCertificates").notNull(),
+    spPrivateKey: text("spPrivateKey"),
+    /** PEM certificate of spPrivateKey, published in the SP metadata. */
+    spCertificate: text("spCertificate"),
+    /** Attribute holding the immutable account id; null: the NameID, which must then be persistent. */
+    subjectAttribute: text("subjectAttribute"),
+    emailAttribute: text("emailAttribute").notNull().default("email"),
+    nameAttribute: text("nameAttribute"),
+    groupsAttribute: text("groupsAttribute"),
+    /** Role of a user in none of the mapped groups: user | viewer. */
+    defaultRole: text("defaultRole").notNull().default("user"),
+    /** Group value a user must have; null: any user the IdP signs in. */
+    requiredGroup: text("requiredGroup"),
+    provisionUsers: integer("provisionUsers", { mode: "boolean" }).notNull().default(false),
+    linkExistingAccounts: integer("linkExistingAccounts", { mode: "boolean" }).notNull().default(false),
+    createdBy: integer("createdBy"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    nameUnique: uniqueIndex("saml_providers_name_unique").on(table.name)
+  })
+);
+
+/** Group value to built-in role: the only way a SAML sign-in grants a role. */
+export const samlGroupRoles = sqliteTable(
+  "saml_group_roles",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    providerId: integer("providerId").notNull(),
+    groupValue: text("groupValue").notNull(),
+    /** admin | user | viewer */
+    role: text("role").notNull(),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    providerGroupUnique: uniqueIndex("saml_group_roles_provider_group_unique").on(table.providerId, table.groupValue)
+  })
+);
+
+/**
+ * Sign-ins started and not finished yet: the AuthnRequest ID the response
+ * must answer (InResponseTo), and the SHA-256 of the browser's binding
+ * cookie. Each row is consumed by the first response that presents its
+ * cookie.
+ */
+export const samlRequests = sqliteTable(
+  "saml_requests",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    providerId: integer("providerId").notNull(),
+    requestId: text("requestId").notNull(),
+    bindingHash: text("bindingHash").notNull(),
+    /** Relative path to go to after signing in. */
+    callbackUrl: text("callbackUrl").notNull(),
+    createdAt: text("createdAt").notNull(),
+    expiresAt: text("expiresAt").notNull()
+  },
+  (table) => ({
+    requestIdUnique: uniqueIndex("saml_requests_request_id_unique").on(table.requestId),
+    bindingUnique: uniqueIndex("saml_requests_binding_unique").on(table.bindingHash),
+    expiresIdx: index("saml_requests_expires_idx").on(table.expiresAt)
+  })
+);
+
+/** Assertion IDs already used, kept until the assertion could no longer be accepted (replay protection). */
+export const samlUsedAssertions = sqliteTable(
+  "saml_used_assertions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    providerId: integer("providerId").notNull(),
+    assertionId: text("assertionId").notNull(),
+    expiresAt: text("expiresAt").notNull(),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    assertionUnique: uniqueIndex("saml_used_assertions_unique").on(table.providerId, table.assertionId),
+    expiresIdx: index("saml_used_assertions_expires_idx").on(table.expiresAt)
+  })
+);
+
+// ── multi_tenancy (ee) ────────────────────────────────────────────────
+
+/**
+ * Multi-tenancy (ee/multi-tenancy): client organisations of a managed
+ * service provider. users, proxy_hosts, certificates, access_lists, groups
+ * and audit_events carry organizationId (null: the provider level); API
+ * tokens belong to their owner's organisation. Master-only, like users: not
+ * synced to slaves (the hosts are, with their organizationId) and not part of
+ * configuration export or history. Ids are never reused (AUTOINCREMENT), so
+ * a snapshot restored later never hands rows to another organisation.
+ * Foreign keys are not enforced: an organisation that still owns rows cannot
+ * be deleted (ee/multi-tenancy/service.ts).
+ */
+export const organizations = sqliteTable(
+  "organizations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    /** Lowercase letters, digits and hyphens; unique. */
+    slug: text("slug").notNull(),
+    /** A disabled organisation's users cannot sign in; its hosts keep serving. */
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    /** Limits; null means none. */
+    maxProxyHosts: integer("maxProxyHosts"),
+    maxUsers: integer("maxUsers"),
+    /**
+     * Upstreams the organisation's own users may proxy to: a JSON array of
+     * host names, "*.suffix" wildcards and IP CIDRs, or ["*"] for any. Empty
+     * means none (secure by default).
+     */
+    allowedUpstreams: text("allowedUpstreams").notNull().default("[]"),
+    notes: text("notes"),
+    createdBy: integer("createdBy"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    slugUnique: uniqueIndex("organizations_slug_unique").on(table.slug)
+  })
+);
+
+// ── Analytics saved views ────────────────────────────────────────────
+
+/**
+ * Named analytics views (src/lib/models/analytics-views.ts): a range,
+ * filters, metric and grouping one user saved, optionally shared with
+ * everyone of the same organisation (or the provider level) who can read
+ * analytics. Master-only, like users: not synced to slaves and not part of
+ * configuration export or history. No foreign key: deleteUser deletes a
+ * user's views itself.
+ */
+export const analyticsSavedViews = sqliteTable(
+  "analytics_saved_views",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("userId").notNull(),
+    /** The owner's organisation when the view was saved (null: provider level); sharing stays inside it. */
+    organizationId: integer("organizationId"),
+    name: text("name").notNull(),
+    shared: integer("shared", { mode: "boolean" }).notNull().default(false),
+    /** JSON: {"preset":"24h"} or {"from":<unix seconds>,"to":<unix seconds>}. */
+    range: text("range").notNull(),
+    /** JSON array of {dim, op, value} (src/lib/analytics/filters.ts). */
+    filters: text("filters").notNull().default("[]"),
+    metric: text("metric").notNull().default("requests"),
+    /** Grouping of the chart; null for the metric's default. */
+    groupBy: text("groupBy"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    userIdx: index("analytics_saved_views_user_idx").on(table.userId),
+    sharedIdx: index("analytics_saved_views_shared_idx").on(table.organizationId, table.shared)
+  })
+);
+
+// ── WAF tuning ────────────────────────────────────────────────────────
+
+/**
+ * WAF rule exclusions (src/lib/models/waf-exclusions.ts): one rule skipped
+ * for every host that follows or merges with the global WAF settings
+ * (proxyHostId null) or for one proxy host, optionally only for requests to a
+ * path (pathMatch "exact" or "prefix") and/or only on one variable
+ * ("ARGS:name", "REQUEST_HEADERS:name", ...). Whole-scope exclusions (no path,
+ * no variable) are mirrored into the legacy excluded_rule_ids lists of the
+ * "waf" setting and the host's meta.waf, so older clients, replicas and
+ * downgrades keep them. Synced to slaves and part of configuration export and
+ * history. Foreign keys are not enforced: deleting a proxy host deletes its
+ * exclusions explicitly.
+ */
+export const wafRuleExclusions = sqliteTable(
+  "waf_rule_exclusions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    ruleId: integer("ruleId").notNull(),
+    /** The proxy host the exclusion is limited to; null for the global WAF settings. */
+    proxyHostId: integer("proxyHostId"),
+    /** "exact" or "prefix" when the exclusion is limited to a path, else null. */
+    pathMatch: text("pathMatch"),
+    path: text("path"),
+    /** A SecLang variable such as "ARGS:content"; null skips the rule on every variable. */
+    variable: text("variable"),
+    reason: text("reason").notNull().default(""),
+    createdBy: integer("createdBy"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    hostIdx: index("waf_rule_exclusions_host_idx").on(table.proxyHostId)
+  })
+);
+
+// ── Access list rules ─────────────────────────────────────────────────
+
+/**
+ * Ordered rules of an access list (src/lib/access-list-rules.ts): allow or
+ * deny an IP address or CIDR range, a country, a continent or an AS number.
+ * Rules are checked by ascending position and the first match decides; the
+ * list's defaultAction covers the rest. `matchValues` is a JSON array of
+ * normalized values of one kind. A rule with `expiresAt` stops applying then
+ * and is deleted by the expiry job (src/lib/access-list-expiry.ts). Synced to
+ * slaves and part of configuration export and history, like the lists.
+ * Foreign keys are not enforced: deleting a list deletes its rules
+ * explicitly.
+ */
+export const accessListRules = sqliteTable(
+  "access_list_rules",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    accessListId: integer("accessListId")
+      .references(() => accessLists.id, { onDelete: "cascade" })
+      .notNull(),
+    position: integer("position").notNull(),
+    /** "allow" or "deny". */
+    action: text("action").notNull(),
+    /** "ip", "country", "continent" or "asn". */
+    kind: text("kind").notNull(),
+    matchValues: text("matchValues").notNull(),
+    note: text("note"),
+    expiresAt: text("expiresAt"),
+    createdBy: integer("createdBy").references(() => users.id, { onDelete: "set null" }),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    listPositionIdx: index("access_list_rules_list_position_idx").on(table.accessListId, table.position),
+    expiresIdx: index("access_list_rules_expires_idx").on(table.expiresAt)
+  })
+);
+
+// ── Identity ──────────────────────────────────────────────────────────
+
+/**
+ * Passkeys (WebAuthn) for dashboard sign-in: Better Auth's passkey plugin,
+ * model "passkey" (src/lib/passkey-auth.ts). Holds each credential's public
+ * key and signature counter, never a secret. `lastUsedAt` is Ingressi's own
+ * column, written after a passkey sign-in. Deleting a user or resetting their
+ * MFA deletes their rows explicitly (foreign keys are not enforced).
+ */
+export const passkeys = sqliteTable(
+  "passkeys",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name"),
+    publicKey: text("publicKey").notNull(),
+    userId: integer("userId")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    credentialID: text("credentialID").notNull(),
+    counter: integer("counter").notNull().default(0),
+    deviceType: text("deviceType").notNull(),
+    backedUp: integer("backedUp", { mode: "boolean" }).notNull().default(false),
+    transports: text("transports"),
+    createdAt: text("createdAt"),
+    aaguid: text("aaguid"),
+    lastUsedAt: text("lastUsedAt")
+  },
+  (table) => ({
+    credentialUnique: uniqueIndex("passkeys_credential_id_unique").on(table.credentialID),
+    userIdx: index("passkeys_user_idx").on(table.userId)
+  })
+);
+
+/**
+ * Interface preferences of an account (src/lib/preferences.ts): theme, time
+ * zone and number format. Per dashboard, like users: not synced to slaves.
+ */
+export const userPreferences = sqliteTable("user_preferences", {
+  userId: integer("userId")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** system | dark | light */
+  theme: text("theme").notNull().default("system"),
+  /** An IANA time zone name. */
+  timeZone: text("timeZone").notNull().default("UTC"),
+  /** A locale whose digit grouping and decimal mark numbers use (en-US, de-DE, fr-FR, ...). */
+  numberFormat: text("numberFormat").notNull().default("en-US"),
+  updatedAt: text("updatedAt").notNull()
+});
+
+/**
+ * The periodic connection check of each enabled LDAP directory
+ * (ee/ldap/health.ts): the service account binds and the user search base is
+ * searched, every 5 minutes. `lastError` is the description sign-in tests
+ * show, never a password. No foreign key: deleting a directory deletes its
+ * row explicitly.
+ */
+export const ldapDirectoryHealth = sqliteTable("ldap_directory_health", {
+  directoryId: integer("directoryId").primaryKey(),
+  /** ok | failing */
+  status: text("status").notNull(),
+  checkedAt: text("checkedAt").notNull(),
+  lastSuccessAt: text("lastSuccessAt"),
+  lastFailureAt: text("lastFailureAt"),
+  /** When the current run of failures started; null while the directory is reachable. */
+  failingSince: text("failingSince"),
+  lastError: text("lastError"),
+  consecutiveFailures: integer("consecutiveFailures").notNull().default(0)
+});
+
+// ── Governance (ee/compliance) ────────────────────────────────────────
+
+/**
+ * Scheduled evidence reports (ee/compliance/schedules.ts): every week or
+ * month the chosen report types are generated for the period that just
+ * ended, stored like reports generated by hand (complianceReports, with
+ * scheduleId and a packId per run) and announced on alert channels.
+ * frequency: weekly | monthly; weekday (weekly) monday..sunday; dayOfMonth
+ * (monthly) 1..28; time HH:MM in timeZone. reportTypes and channelIds are
+ * JSON arrays. Master-local, not synced; who set it up is in the audit log.
+ */
+export const complianceReportSchedules = sqliteTable("compliance_report_schedules", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  frequency: text("frequency").notNull(),
+  weekday: text("weekday"),
+  dayOfMonth: integer("dayOfMonth"),
+  time: text("time").notNull().default("06:00"),
+  timeZone: text("timeZone").notNull().default("UTC"),
+  reportTypes: text("reportTypes")
+    .notNull()
+    .default('["access_review","change_log","certificate_inventory","protection_coverage"]'),
+  channelIds: text("channelIds").notNull().default("[]"),
+  /** Next run; null while disabled. */
+  nextRunAt: text("nextRunAt"),
+  lastRunAt: text("lastRunAt"),
+  /** success | partial | failed */
+  lastStatus: text("lastStatus"),
+  lastError: text("lastError"),
+  lastPackId: text("lastPackId"),
+  /** JSON array of {channelId, channelName, ok, error}. */
+  lastDeliveries: text("lastDeliveries"),
+  /**
+   * JSON array of saved analytics questions copied into the schedule
+   * (ee/ai/questions): {savedQuestionId, question, query}. Each run adds a
+   * "Traffic questions" report that re-runs them for the period. A copy, so
+   * deleting the saved question (or its owner) leaves the schedule as it was.
+   */
+  questions: text("questions").notNull().default("[]"),
+  createdBy: integer("createdBy"),
+  createdAt: text("createdAt").notNull(),
+  updatedAt: text("updatedAt").notNull()
+});
+
+/**
+ * Restores of a configuration backup done as a test (usually on a spare
+ * instance), recorded by a person as evidence for business continuity
+ * controls. source: backup | snapshot | export | other; outcome: success |
+ * partial | failed. recordedBy is not a foreign key; recordedByName keeps
+ * the record readable after the user is gone.
+ */
+export const complianceRestoreTests = sqliteTable(
+  "compliance_restore_tests",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    testedAt: text("testedAt").notNull(),
+    source: text("source").notNull(),
+    backupDestinationId: integer("backupDestinationId"),
+    backupObjectKey: text("backupObjectKey"),
+    outcome: text("outcome").notNull(),
+    notes: text("notes"),
+    recordedBy: integer("recordedBy"),
+    recordedByName: text("recordedByName"),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    testedAtIdx: index("compliance_restore_tests_tested_at_idx").on(table.testedAt)
+  })
+);
+
+// ── Analytics questions (ee/ai/questions) ─────────────────────────────
+
+/**
+ * Plain-language analytics questions a user saved: the question as typed
+ * and the validated structured query it was turned into (JSON, see
+ * ee/ai/questions/types.ts), re-run with fresh data without asking the model
+ * again. Shared, a question is listed for everyone of the same organisation
+ * (or of the provider level) who can read analytics. Master-only, like
+ * saved views: not synced and not part of configuration export or history.
+ * No foreign key: deleteUser deletes a user's questions itself.
+ */
+export const analyticsQuestions = sqliteTable(
+  "analytics_questions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("userId").notNull(),
+    /** The owner's organisation when the question was saved (null: provider level); sharing stays inside it. */
+    organizationId: integer("organizationId"),
+    question: text("question").notNull(),
+    /** JSON QuestionQuery. */
+    query: text("query").notNull(),
+    shared: integer("shared", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    userIdx: index("analytics_questions_user_idx").on(table.userId),
+    sharedIdx: index("analytics_questions_shared_idx").on(table.organizationId, table.shared)
+  })
+);
+
+// ── Virtual patching ──────────────────────────────────────────────────
+
+/**
+ * The virtual patches a verified rule feed delivered (ee/rule-feed), one row
+ * per pack, keyed by the pack id. `rules` holds the pack's SecRule lines as
+ * published (JSON array; validated again before every use), `ruleIds` their
+ * ids in the reserved range (src/lib/waf-exclusions.ts), and the other JSON
+ * columns the CVE details the dashboard shows. `mode` (off, detect, block)
+ * is the administrator's choice. A pack missing from a newer feed keeps its
+ * mode and gets `withdrawnAt`. Who changed a mode is in the audit log. The
+ * subscription settings and the installed feed live in the settings
+ * "virtual_patching" and "virtual_patching_state"; replicas get the patches
+ * that are on through instance sync ("virtual_patches"), not this table.
+ */
+export const virtualPatches = sqliteTable("virtual_patches", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  summary: text("summary").notNull().default(""),
+  severity: text("severity").notNull(),
+  cves: text("cves").notNull().default("[]"),
+  affected: text("affected").notNull().default("[]"),
+  referenceUrls: text("referenceUrls").notNull().default("[]"),
+  rules: text("rules").notNull().default("[]"),
+  ruleIds: text("ruleIds").notNull().default("[]"),
+  samples: text("samples").notNull().default('{"positive":[],"negative":[]}'),
+  defaultMode: text("defaultMode").notNull().default("detect"),
+  example: integer("example", { mode: "boolean" }).notNull().default(false),
+  publishedAt: text("publishedAt").notNull(),
+  packUpdatedAt: text("packUpdatedAt").notNull(),
+  mode: text("mode").notNull().default("off"),
+  modeChangedAt: text("modeChangedAt"),
+  /** Sequence of the feed that last delivered the pack. */
+  feedSequence: integer("feedSequence"),
+  withdrawnAt: text("withdrawnAt"),
+  firstSeenAt: text("firstSeenAt").notNull(),
+  updatedAt: text("updatedAt").notNull()
+});
+
+// ── High availability shared state (ee) ─────────────────────────────
+
+/**
+ * How much of each API consumer's shared usage counters
+ * (ee/high-availability/shared-state) the leader has written to the ledger.
+ * Counters restart with a new epoch when the shared hash is created again.
+ * Updated in the same transaction as the ledger rows it accounts for, so the
+ * write-back never counts anything twice. consumerId is not a foreign key.
+ */
+export const monetizationSharedCursors = sqliteTable("monetization_shared_cursors", {
+  consumerId: integer("consumerId").primaryKey(),
+  epoch: text("epoch").notNull(),
+  chargedMicros: integer("chargedMicros").notNull().default(0),
+  requests: integer("requests").notNull().default(0),
+  freeRequests: integer("freeRequests").notNull().default(0),
+  updatedAt: text("updatedAt").notNull()
+});
+
+/**
+ * Every top-up or adjustment the leader took from a consumer's shared credit
+ * queue, by its id, written with the ledger row so none is applied twice.
+ * ledgerId is null when the credit's reference was already in the ledger.
+ */
+export const monetizationSharedCredits = sqliteTable("monetization_shared_credits", {
+  creditId: text("creditId").primaryKey(),
+  consumerId: integer("consumerId").notNull(),
+  ledgerId: integer("ledgerId"),
+  createdAt: text("createdAt").notNull()
+});
+
+// ── PostgreSQL replicas ─────────────────────────────────────────────
+
+/**
+ * The web replicas sharing one PostgreSQL database (src/lib/cluster-nodes.ts):
+ * each registers when it starts and records a heartbeat every few seconds.
+ * nodeId is the replica's persistent id (INGRESSI_NODE_ID or the id kept in
+ * its data volume); hostname is a label only. leader is set by the replica
+ * holding the job leader lock (src/lib/db/leader.ts) and cleared on the
+ * others when it takes over. A replica that stops cleanly sets stoppedAt;
+ * rows without a heartbeat for 30 days are deleted. On SQLite the table
+ * exists and stays empty.
+ */
+export const clusterNodes = sqliteTable("cluster_nodes", {
+  nodeId: text("nodeId").primaryKey(),
+  hostname: text("hostname").notNull(),
+  version: text("version").notNull(),
+  schemaVersion: text("schemaVersion").notNull(),
+  firstSeenAt: text("firstSeenAt").notNull(),
+  startedAt: text("startedAt").notNull(),
+  lastHeartbeatAt: text("lastHeartbeatAt").notNull(),
+  stoppedAt: text("stoppedAt"),
+  leader: integer("leader", { mode: "boolean" }).notNull().default(false),
+  leaderSince: text("leaderSince"),
+  // The process that last wrote the row: a random token each process draws
+  // at start (drizzle/0055). Another live token on this node id is a second
+  // process with the same id; the newer one refuses to run as a replica.
+  instanceToken: text("instanceToken")
+});
+
+// ── Shared runtime state ──────────────────────────────────────────────
+
+/**
+ * The counters of the request and login rate limiters
+ * (src/lib/rate-limit.ts) when several web replicas share one PostgreSQL
+ * database, so that a limit counts every replica's requests. On SQLite (one
+ * process) the limiters keep these counters in memory and the table stays
+ * empty. `bucket` is "<limiter>:<key>"; times are milliseconds since the
+ * epoch. `held` counts attempts in progress (reserved, outcome not known
+ * yet) until `heldUntilMs`, so a replica that stops while holding one does
+ * not hold it for ever. A row is stale once `expiresAtMs` has passed and is
+ * pruned (src/lib/shared-runtime-state.ts).
+ */
+export const rateLimitCounters = sqliteTable(
+  "rate_limit_counters",
+  {
+    bucket: text("bucket").primaryKey(),
+    attempts: integer("attempts").notNull().default(0),
+    windowStartMs: integer("windowStartMs").notNull(),
+    blockedUntilMs: integer("blockedUntilMs").notNull().default(0),
+    held: integer("held").notNull().default(0),
+    heldUntilMs: integer("heldUntilMs").notNull().default(0),
+    expiresAtMs: integer("expiresAtMs").notNull()
+  },
+  (table) => ({
+    expiresIdx: index("rate_limit_counters_expires_idx").on(table.expiresAtMs)
+  })
+);
+
+/**
+ * Better Auth's own request rate limits (rateLimit.storage "database" in
+ * src/lib/auth-server.ts) on PostgreSQL, where several replicas must count
+ * together; Better Auth keeps them in memory on SQLite. Better Auth names
+ * the columns: `key` is the client address and path, `lastRequest` a time in
+ * milliseconds. Better Auth deletes rows older than its longest window; the
+ * prune job does too.
+ */
+export const authRateLimits = sqliteTable(
+  "auth_rate_limits",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    key: text("key").notNull(),
+    count: integer("count").notNull(),
+    lastRequest: integer("lastRequest").notNull()
+  },
+  (table) => ({
+    keyUnique: uniqueIndex("auth_rate_limits_key_unique").on(table.key),
+    lastRequestIdx: index("auth_rate_limits_last_request_idx").on(table.lastRequest)
+  })
+);
+
+/**
+ * Short-lived values one request leaves for a later one, which with several
+ * replicas may land on another replica (src/lib/shared-runtime-state.ts):
+ * how a sign-in that waits for its second factor started, the TOTP codes
+ * that already signed an account in. `key` is "<scope>:<key>", `value`
+ * JSON, `expiresAt` ISO 8601; expired rows are ignored and pruned. Used on
+ * PostgreSQL; on SQLite (one process) the values stay in memory.
+ */
+export const sharedRuntimeEntries = sqliteTable(
+  "shared_runtime_entries",
+  {
+    key: text("key").primaryKey(),
+    value: text("value").notNull(),
+    expiresAt: text("expiresAt").notNull()
+  },
+  (table) => ({
+    expiresIdx: index("shared_runtime_entries_expires_idx").on(table.expiresAt)
+  })
+);
+
+// ── API monetization, phase 2 (ee) ──────────────────────────────────
+
+/**
+ * Stripe payments of API consumers (ee/monetization): Checkout top-ups,
+ * off-session charges of postpaid consumers' saved cards, and Checkout
+ * payments of an open postpaid amount. kind: topup | charge | open_amount;
+ * reason (charges): threshold | period | manual | switch; status: pending |
+ * succeeded | failed | requires_action | canceled. A charge row is written
+ * (pending, with its Stripe idempotency key) before Stripe is called, so a
+ * crash between the charge and the ledger write is reconciled with the same
+ * key at start. refundedMicros and disputedMicros follow Stripe's refund and
+ * dispute events. ledgerId: the ledger row that credited the payment.
+ */
+export const monetizationPayments = sqliteTable(
+  "monetization_payments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    consumerId: integer("consumerId").notNull(),
+    kind: text("kind").notNull(),
+    reason: text("reason"),
+    status: text("status").notNull(),
+    amountMicros: integer("amountMicros").notNull(),
+    currency: text("currency").notNull(),
+    /** "YYYY-MM" of a period-end charge. */
+    period: text("period"),
+    idempotencyKey: text("idempotencyKey"),
+    /** The saved card a charge was sent with, so a charge is sent again identically when reconciled. */
+    paymentMethodId: text("paymentMethodId"),
+    paymentIntentId: text("paymentIntentId"),
+    checkoutSessionId: text("checkoutSessionId"),
+    failureCode: text("failureCode"),
+    refundedMicros: integer("refundedMicros").notNull().default(0),
+    disputedMicros: integer("disputedMicros").notNull().default(0),
+    ledgerId: integer("ledgerId"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    idempotencyKeyUnique: uniqueIndex("monetization_payments_idempotency_key_unique").on(table.idempotencyKey),
+    paymentIntentUnique: uniqueIndex("monetization_payments_payment_intent_unique").on(table.paymentIntentId),
+    checkoutSessionUnique: uniqueIndex("monetization_payments_checkout_session_unique").on(table.checkoutSessionId),
+    consumerIdx: index("monetization_payments_consumer_idx").on(table.consumerId, table.id),
+    statusIdx: index("monetization_payments_status_idx").on(table.status)
+  })
+);
+
+/**
+ * Requests credited back because their answer was a 5xx (plans with
+ * creditFailedAnswers), by the charge id the gate issued and Caddy logged:
+ * written in the same transaction as the ledger credit, so a log line read
+ * twice credits once. Pruned after the window in which a charge id is
+ * accepted (ee/monetization/answer-credits.ts).
+ */
+export const monetizationAnswerCredits = sqliteTable(
+  "monetization_answer_credits",
+  {
+    chargeId: text("chargeId").primaryKey(),
+    consumerId: integer("consumerId").notNull(),
+    amountMicros: integer("amountMicros").notNull(),
+    free: integer("free", { mode: "boolean" }).notNull().default(false),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    createdAtIdx: index("monetization_answer_credits_created_at_idx").on(table.createdAt)
+  })
+);
+
+/**
+ * x402 pay-per-request payments (ee/monetization/x402): who paid (the payer's
+ * address), on which network and asset, how much (USDC micro-units: six
+ * decimals), the settlement transaction and the Stripe PaymentIntent that
+ * records it in the operator's Stripe balance. nonceKey (SHA-256 of the
+ * network, asset, payer and authorization nonce) is unique: a payment payload
+ * is accepted once, across every web node. consumerId is set when a key
+ * holder paid with x402. status: verifying | settling | recording (settled
+ * on chain, Stripe has not confirmed its PaymentIntent yet) | settled
+ * (confirmed by Stripe) | failed.
+ */
+export const monetizationX402Payments = sqliteTable(
+  "monetization_x402_payments",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    proxyHostId: integer("proxyHostId").notNull(),
+    consumerId: integer("consumerId"),
+    payer: text("payer").notNull(),
+    network: text("network").notNull(),
+    asset: text("asset").notNull(),
+    amountMicros: integer("amountMicros").notNull(),
+    nonceKey: text("nonceKey").notNull(),
+    status: text("status").notNull(),
+    transaction: text("transaction"),
+    paymentIntentId: text("paymentIntentId"),
+    /** Stripe refusals so far: each later attempt uses its own idempotency key (x402/gate.ts). */
+    recordAttempts: integer("recordAttempts").notNull().default(0),
+    errorReason: text("errorReason"),
+    createdAt: text("createdAt").notNull(),
+    updatedAt: text("updatedAt").notNull()
+  },
+  (table) => ({
+    nonceKeyUnique: uniqueIndex("monetization_x402_payments_nonce_key_unique").on(table.nonceKey),
+    // One transaction backs one payment, and one PaymentIntent records one payment.
+    transactionUnique: uniqueIndex("monetization_x402_payments_transaction_unique").on(table.network, table.transaction),
+    paymentIntentUnique: uniqueIndex("monetization_x402_payments_payment_intent_unique").on(table.paymentIntentId),
+    createdAtIdx: index("monetization_x402_payments_created_at_idx").on(table.createdAt),
+    payerIdx: index("monetization_x402_payments_payer_idx").on(table.payer)
+  })
+);

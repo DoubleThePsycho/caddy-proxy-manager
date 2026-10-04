@@ -1,16 +1,10 @@
-import GroupsClient from "./GroupsClient";
-import { listGroups } from "@/src/lib/models/groups";
-import { listUsers } from "@/src/lib/models/user";
-import { requireAdmin } from "@/src/lib/auth";
+import { requirePermission } from "@/src/lib/auth";
+import { renderUsersAndGroups } from "../users/users-and-groups";
 
+export const metadata = { title: "Users and groups" };
+
+/** Users and groups, opened on the Groups tab. A role with groups:read but not users:read sees that tab only. */
 export default async function GroupsPage() {
-  await requireAdmin();
-  const [allGroups, allUsers] = await Promise.all([listGroups(), listUsers()]);
-  const userList = allUsers.map((u) => ({
-    id: u.id,
-    email: u.email,
-    name: u.name,
-    role: u.role,
-  }));
-  return <GroupsClient groups={allGroups} users={userList} />;
+  const session = await requirePermission("groups:read");
+  return renderUsersAndGroups(session, "groups");
 }

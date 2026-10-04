@@ -1,0 +1,45 @@
+# Seed data for tests/e2e/ldap-sign-in.spec.ts (osixia/openldap, base
+# dc=example,dc=com). Passwords are stored as given; they exist only in the
+# test stack.
+dn: ou=people,dc=example,dc=com
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=example,dc=com
+objectClass: organizationalUnit
+ou: groups
+
+dn: uid=e2e-admin,ou=people,dc=example,dc=com
+objectClass: inetOrgPerson
+uid: e2e-admin
+cn: E2E Directory Admin
+sn: Admin
+mail: e2e-admin@example.com
+userPassword: E2eAdminPassword2026!
+
+dn: uid=e2e-user,ou=people,dc=example,dc=com
+objectClass: inetOrgPerson
+uid: e2e-user
+cn: E2E Directory User
+sn: User
+mail: e2e-user@example.com
+userPassword: E2eUserPassword2026!
+
+dn: uid=e2e-outsider,ou=people,dc=example,dc=com
+objectClass: inetOrgPerson
+uid: e2e-outsider
+cn: E2E Directory Outsider
+sn: Outsider
+mail: e2e-outsider@example.com
+userPassword: E2eOutsiderPassword2026!
+
+dn: cn=ingressi-users,ou=groups,dc=example,dc=com
+objectClass: groupOfNames
+cn: ingressi-users
+member: uid=e2e-admin,ou=people,dc=example,dc=com
+member: uid=e2e-user,ou=people,dc=example,dc=com
+
+dn: cn=ingressi-admins,ou=groups,dc=example,dc=com
+objectClass: groupOfNames
+cn: ingressi-admins
+member: uid=e2e-admin,ou=people,dc=example,dc=com

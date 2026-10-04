@@ -4,7 +4,7 @@
  * waf-blocking.spec.ts proves Caddy/Coraza *blocks* attacks, but nothing
  * asserted that a block is ever *recorded*. That left the whole ingestion
  * pipeline — Coraza audit log → waf-log-parser → ClickHouse → /api/waf-events
- * → the WAF page — without any coverage, so it could break in production while
+ * → the Security events page — without any coverage, so it could break in production while
  * the entire suite stayed green. These tests close that gap.
  *
  * Scope note: the specific regression in #233 was that rule attribution came
@@ -99,11 +99,25 @@ test.describe.serial('WAF event ingestion', () => {
     expect(event.severity).toBeTruthy();
   });
 
-  test('ingested events are visible on the WAF page', async ({ page }) => {
+  test('ingested events are visible on the Security events page', async ({ page }) => {
     test.setTimeout(60_000);
 
-    await page.goto('/waf');
+    await page.goto('/security?kind=waf');
     await expect(page.getByText('/ingest-blocked', { exact: false }).first()).toBeVisible({ timeout: 20_000 });
+  });
+
+  test('an ingested event explains why it was blocked', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    await page.goto('/security?kind=waf');
+    // An event row (it opens), not the rule summary that also lists the path.
+    const row = page.getByRole('row').filter({ hasText: '/ingest-blocked' }).filter({ has: page.getByRole('button', { expanded: false }) }).first();
+    await expect(row).toBeVisible({ timeout: 20_000 });
+    await row.getByRole('button', { expanded: false }).click();
+    await expect(page.getByRole('heading', { level: 3, name: 'Why it was blocked' })).toBeVisible();
+    await expect(page.getByText(/anomaly score, the limit is/)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('button', { name: /^This was a false positive/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Block .*Blocked sources/ })).toBeVisible();
   });
 
   test('ordinary traffic does not produce WAF events', async ({ page }) => {

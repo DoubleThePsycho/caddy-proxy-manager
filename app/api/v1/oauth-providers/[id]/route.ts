@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAdmin, apiErrorResponse } from "@/src/lib/api-auth";
+import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { getOAuthProvider, updateOAuthProvider, deleteOAuthProvider } from "@/src/lib/models/oauth-providers";
 import { oauthCallbackUrl, toOAuthProviderView, type OAuthProviderView } from "@/src/lib/oauth-provider-view";
 import { createAuditEvent } from "@/src/lib/models/audit";
-import { invalidateProviderCache } from "@/src/lib/auth-server";
+import { reloadOAuthProviders } from "@/src/lib/auth-server";
 import { config } from "@/src/lib/config";
 
 const PRIVATE_RESPONSE_HEADERS = { "Cache-Control": "no-store" };
@@ -23,7 +23,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireApiAdmin(request);
+    await requireApiPermission(request, "sso:read");
     const { id } = await params;
     const provider = await getOAuthProvider(id);
     if (!provider) {
@@ -42,7 +42,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId } = await requireApiPermission(request, "sso:write");
     const { id } = await params;
     const body = await request.json();
 
@@ -69,7 +69,7 @@ export async function PUT(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    invalidateProviderCache();
+    await reloadOAuthProviders();
 
     await createAuditEvent({
       userId,
@@ -93,7 +93,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId } = await requireApiPermission(request, "sso:write");
     const { id } = await params;
 
     const existing = await getOAuthProvider(id);
@@ -110,7 +110,7 @@ export async function DELETE(
 
     await deleteOAuthProvider(id);
 
-    invalidateProviderCache();
+    await reloadOAuthProviders();
 
     await createAuditEvent({
       userId,

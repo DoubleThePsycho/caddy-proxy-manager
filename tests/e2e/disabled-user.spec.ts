@@ -9,16 +9,10 @@
  * 4. Re-enabling the user restores access
  */
 import { test, expect, type BrowserContext } from '@playwright/test';
-import { execFileSync } from 'node:child_process';
+import { createApiTokenFor, ensureLocalUser, webSql } from '../helpers/e2e-sql';
 
 const BASE = 'http://localhost:3000';
 const API_BASE = `${BASE}/api/v1`;
-
-const COMPOSE_ARGS = [
-  'compose',
-  '-f', 'docker-compose.yml',
-  '-f', 'tests/docker-compose.test.yml',
-];
 
 const TEST_USERNAME = 'disabletest';
 const TEST_EMAIL = `${TEST_USERNAME}@localhost`;
@@ -26,73 +20,16 @@ const TEST_PASSWORD = 'DisableTest2026!';
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-function execInContainer(script: string) {
-  execFileSync('docker', [...COMPOSE_ARGS, 'exec', '-T', 'web', 'bun', '-e', script], {
-    cwd: process.cwd(),
-    stdio: 'pipe',
-  });
-}
-
 function ensureTestUser() {
-  const script = `
-    import { Database } from "bun:sqlite";
-    const db = new Database("./data/caddy-proxy-manager.db");
-    db.run("PRAGMA busy_timeout = 5000");
-    const email = "${TEST_EMAIL}";
-    const hash = await Bun.password.hash("${TEST_PASSWORD}", { algorithm: "bcrypt", cost: 12 });
-    const now = new Date().toISOString();
-    const existing = db.query("SELECT id FROM users WHERE email = ?").get(email);
-    if (existing) {
-      db.run("UPDATE users SET passwordHash = ?, role = 'user', status = 'active', updatedAt = ? WHERE email = ?",
-        [hash, now, email]);
-      const acc = db.query("SELECT id FROM accounts WHERE userId = ? AND providerId = 'credential'").get(existing.id);
-      if (acc) {
-        db.run("UPDATE accounts SET password = ?, updatedAt = ? WHERE id = ?", [hash, now, acc.id]);
-      } else {
-        db.run("INSERT INTO accounts (userId, issuer, accountId, providerId, password, createdAt, updatedAt) VALUES (?, 'local:credential', ?, 'credential', ?, ?, ?)",
-          [existing.id, String(existing.id), hash, now, now]);
-      }
-    } else {
-      db.run(
-        "INSERT INTO users (email, name, passwordHash, role, provider, subject, username, status, createdAt, updatedAt) VALUES (?, ?, ?, 'user', 'credentials', ?, ?, 'active', ?, ?)",
-        [email, "${TEST_USERNAME}", hash, "${TEST_USERNAME}", "${TEST_USERNAME}", now, now]
-      );
-      const user = db.query("SELECT id FROM users WHERE email = ?").get(email);
-      db.run("INSERT INTO accounts (userId, issuer, accountId, providerId, password, createdAt, updatedAt) VALUES (?, 'local:credential', ?, 'credential', ?, ?, ?)",
-        [user.id, String(user.id), hash, now, now]);
-    }
-  `;
-  execInContainer(script);
+  ensureLocalUser({ username: TEST_USERNAME, password: TEST_PASSWORD, role: 'user', email: TEST_EMAIL });
 }
 
 function setUserStatus(status: 'active' | 'disabled') {
-  const script = `
-    import { Database } from "bun:sqlite";
-    const db = new Database("./data/caddy-proxy-manager.db");
-    db.run("PRAGMA busy_timeout = 5000");
-    const now = new Date().toISOString();
-    db.run("UPDATE users SET status = ?, updatedAt = ? WHERE email = ?",
-      ["${status}", now, "${TEST_EMAIL}"]);
-  `;
-  execInContainer(script);
+  webSql('UPDATE users SET status = ?, "updatedAt" = ? WHERE email = ?', [status, new Date().toISOString(), TEST_EMAIL]);
 }
 
 function createApiToken(): string {
-  const token = `test-disabled-token-${Date.now()}`;
-  const script = `
-    import { Database } from "bun:sqlite";
-    import { createHash } from "crypto";
-    const db = new Database("./data/caddy-proxy-manager.db");
-    db.run("PRAGMA busy_timeout = 5000");
-    const user = db.query("SELECT id FROM users WHERE email = ?").get("${TEST_EMAIL}");
-    if (!user) { console.error("User not found"); process.exit(1); }
-    const hash = createHash("sha256").update("${token}").digest("hex");
-    const now = new Date().toISOString();
-    db.run("INSERT INTO api_tokens (name, tokenHash, createdBy, createdAt) VALUES (?, ?, ?, ?)",
-      ["e2e-disabled-test", hash, user.id, now]);
-  `;
-  execInContainer(script);
-  return token;
+  return createApiTokenFor(TEST_EMAIL, 'test-disabled-token');
 }
 
 async function loginAs(

@@ -10,10 +10,7 @@ import { users, sessions } from '../../src/lib/db/schema';
 let db: TestDb;
 
 vi.mock('../../src/lib/db', async () => {
-  return {
-    get default() { return db; },
-    get sqlite() { return undefined; },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => db);
 });
 
 import { listUserSessions, revokeUserSession, revokeOtherUserSessions } from '../../src/lib/models/sessions';

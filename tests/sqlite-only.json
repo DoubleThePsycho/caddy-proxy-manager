@@ -1,0 +1,14 @@
+{
+  "$comment": "Test files the postgres Vitest project skips (bun run test:pg; tests/vitest.config.ts, tests/helpers/database-test-files.ts). Every other test file that imports the database layer (src/lib/db.ts, src/lib/db/**), directly or through what it imports, runs on PostgreSQL too: nothing needs listing for that. A file listed here tests SQLite itself or what only runs on SQLite; say why.",
+  "files": {
+    "tests/integration/db-compat-accounts.test.ts": "Tests the SQLite legacy schema repairs (fixAccountsSchema) on SQLite files.",
+    "tests/integration/db-legacy-usernames.test.ts": "Tests the Better Auth data migration on a SQLite file opened through the SQLite module (DATABASE_URL=file:…).",
+    "tests/unit/auth-accounts-issuer-schema.test.ts": "Tests SQLite files (a read-only database file, the accounts schema repair).",
+    "tests/unit/db-executor.test.ts": "Tests the SQLite executor (the gate, BEGIN IMMEDIATE, PRAGMA query_only, better-sqlite3); the PostgreSQL executor's tests are tests/integration/pg/executor.test.ts.",
+    "tests/unit/db-schema-generated.test.ts": "Checks that schema.ts exports the SQLite tables, which is what it does on SQLite; on PostgreSQL it exports the PostgreSQL ones.",
+    "tests/unit/forward-auth-login-limiter.test.ts": "Tests the portal's sign-in limits on the memory store (fake timers, module resets). The database store PostgreSQL uses under the same limiters is tested in tests/integration/shared-runtime-state.test.ts and tests/e2e/replicas/03-sign-in-limits.spec.ts.",
+    "tests/unit/ha-cluster-api.test.ts": "The Litestream cluster (HA_ENABLED) is refused with PostgreSQL (D15).",
+    "tests/unit/rate-limit.test.ts": "Tests the memory store of the rate limiters, the default on SQLite (one process): bounded keys, module resets. PostgreSQL's default, the database store, is tested in tests/integration/shared-runtime-state.test.ts on both dialects and between two replicas.",
+    "tests/unit/sqlite-skipped-migration-indexes.test.ts": "Tests a repair of SQLite migration history (indexes of migrations the SQLite migrator skipped) on a SQLite file; PostgreSQL's baseline creates them."
+  }
+}

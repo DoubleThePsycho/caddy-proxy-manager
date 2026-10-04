@@ -1,8 +1,9 @@
-import db, { nowIso, toIso } from "../db";
+import { appDb, nowIso, toIso } from "../db";
 import { logAuditEvent } from "../audit";
 import { applyCaddyConfig } from "../caddy";
 import { issuedClientCertificates } from "../db/schema";
-import { desc, eq } from "drizzle-orm";
+import { desc } from "@/src/lib/db/ops";
+import { eq } from "drizzle-orm";
 
 export type IssuedClientCertificate = {
   id: number;
@@ -47,15 +48,15 @@ function parseIssuedClientCertificate(row: IssuedClientCertificateRow): IssuedCl
 }
 
 export async function listIssuedClientCertificates(): Promise<IssuedClientCertificate[]> {
-  const rows = await db
+  const rows = await appDb
     .select()
     .from(issuedClientCertificates)
-    .orderBy(desc(issuedClientCertificates.createdAt));
+    .orderBy(desc(issuedClientCertificates.createdAt), desc(issuedClientCertificates.id));
   return rows.map(parseIssuedClientCertificate);
 }
 
 export async function getIssuedClientCertificate(id: number): Promise<IssuedClientCertificate | null> {
-  const record = await db.query.issuedClientCertificates.findFirst({
+  const record = await appDb.query.issuedClientCertificates.findFirst({
     where: (table, { eq: compareEq }) => compareEq(table.id, id)
   });
   return record ? parseIssuedClientCertificate(record) : null;
@@ -66,7 +67,7 @@ export async function createIssuedClientCertificate(
   actorUserId: number
 ): Promise<IssuedClientCertificate> {
   const now = nowIso();
-  const [record] = await db
+  const [record] = await appDb
     .insert(issuedClientCertificates)
     .values({
       caCertificateId: input.caCertificateId,
@@ -86,7 +87,7 @@ export async function createIssuedClientCertificate(
     throw new Error("Failed to store issued client certificate");
   }
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "create",
     entityType: "issued_client_certificate",
@@ -114,7 +115,7 @@ export async function revokeIssuedClientCertificate(
   }
 
   const revokedAt = nowIso();
-  await db
+  await appDb
     .update(issuedClientCertificates)
     .set({
       revokedAt,
@@ -122,7 +123,7 @@ export async function revokeIssuedClientCertificate(
     })
     .where(eq(issuedClientCertificates.id, id));
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "revoke",
     entityType: "issued_client_certificate",

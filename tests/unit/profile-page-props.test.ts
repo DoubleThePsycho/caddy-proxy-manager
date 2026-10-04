@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/src/lib/auth', () => ({
   requireUser: vi.fn().mockResolvedValue({ user: { id: '7', role: 'user' } }),
   getCurrentSessionId: vi.fn().mockResolvedValue(null),
+  getSessionAccess: vi.fn(() => ({ userId: 7, role: 'user', isAdmin: false, customRole: null, permissions: new Set(), scopeTags: [] })),
 }));
 vi.mock('@/src/lib/models/user', () => ({
   getUserById: mocks.getUserById,
@@ -24,8 +25,18 @@ vi.mock('@/src/lib/models/user', () => ({
   listUserOAuthProviders: vi.fn().mockResolvedValue([]),
 }));
 vi.mock('@/src/lib/models/oauth-providers', () => ({ getProviderDisplayList: vi.fn().mockResolvedValue([]) }));
-vi.mock('@/src/lib/models/api-tokens', () => ({ listApiTokens: vi.fn().mockResolvedValue([]) }));
-vi.mock('@/src/lib/models/sessions', () => ({ listUserSessions: vi.fn().mockResolvedValue([]) }));
+vi.mock('@/src/lib/models/api-tokens', () => ({ listApiTokens: vi.fn().mockResolvedValue([]), MAX_TOKENS_PER_USER: 10 }));
+vi.mock('@/src/lib/models/sessions', () => ({ describeUserSessions: vi.fn().mockResolvedValue([]) }));
+vi.mock('@/src/lib/passkeys', () => ({ listPasskeys: vi.fn(() => []), passkeyRegistrationBlocker: vi.fn(() => null) }));
+vi.mock('@/src/lib/login-providers', () => ({ oauthProviderHosts: vi.fn(() => new Map()) }));
+vi.mock('@/src/lib/db', async () => (await import('../helpers/db-module')).mockDbModule(() => {}));
+vi.mock('@/ee/sso/enforcement-store', () => ({ readSsoEnforcement: vi.fn(() => ({ enabled: false, breakGlassUserIds: [] })) }));
+vi.mock('@/ee/custom-roles/store', () => ({ readCustomRole: vi.fn(() => null) }));
+vi.mock('@/src/lib/mfa', () => ({
+  getMfaStatus: vi.fn(() => ({
+    enabled: true, backupCodesRemaining: 7, hasPassword: true, required: false, gate: 'none', deadline: null,
+  })),
+}));
 vi.mock('@/app/(dashboard)/profile/ProfileClient', () => ({ default: () => null }));
 
 import ProfilePage from '@/app/(dashboard)/profile/page';
@@ -64,6 +75,15 @@ describe('profile page props', () => {
     expect(props.user.hasPassword).toBe(true);
     expect(props.user).not.toHaveProperty('passwordHash');
     expect(JSON.stringify(props)).not.toContain('$2a$');
+  });
+
+  it('passes the MFA state as flags and counts only', async () => {
+    mocks.getUserById.mockResolvedValue(user(HASH));
+    mocks.getUserPasswordHash.mockResolvedValue(HASH);
+    const props = (await renderProps()) as unknown as { mfa: Record<string, unknown> };
+    expect(props.mfa).toEqual({
+      enabled: true, backupCodesRemaining: 7, hasPassword: true, required: false, gate: 'none', deadline: null,
+    });
   });
 
   it('counts a password stored only on the credential account', async () => {

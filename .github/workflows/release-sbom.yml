@@ -1,0 +1,27 @@
+name: Release SBOM
+
+# Attaches a CycloneDX SBOM of the source tree (JavaScript and Go
+# dependencies) to every published release. Each image also carries its own
+# SBOM attestation from the build (docker-build-trusted.yml).
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Generate and attach the SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          artifact-name: ingressi-${{ github.event.release.tag_name }}.cdx.json
+          upload-release-assets: true

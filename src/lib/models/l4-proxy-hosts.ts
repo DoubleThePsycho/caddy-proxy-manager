@@ -1,9 +1,23 @@
-import db, { nowIso, toIso } from "../db";
+import { appDb, nowIso, toIso } from "../db";
 import { applyCaddyConfig } from "../caddy";
 import { RESERVED_L4_PORTS } from "../l4-reserved-ports";
 import { logAuditEvent } from "../audit";
 import { l4ProxyHosts } from "../db/schema";
-import { asc, desc, eq, count, like, or } from "drizzle-orm";
+import { and, eq, count, or, type SQL } from "drizzle-orm";
+import { brandName } from "@/ee/white-label/store";
+import { normalizeTags, parseStoredTags, serializeTags } from "../host-tags";
+import { tagsMatchAny } from "../host-tag-filter";
+import { assertHostCreateApproved, assertHostDeleteApproved, assertHostUpdateApproved } from "@/ee/approvals/guard";
+import { actorOrganizationId, TenantError } from "@/ee/multi-tenancy/scope";
+import { asc, containsText, desc } from "@/src/lib/db/ops";
+
+/**
+ * L4 hosts are provider-level (ee/multi-tenancy): their listening ports are
+ * one namespace for every tenant. Organisation users never write them.
+ */
+async function assertProviderActor(actorUserId: number): Promise<void> {
+  if (await actorOrganizationId(actorUserId) !== null) throw new TenantError("L4 proxy hosts are managed by your provider");
+}
 
 export type L4Protocol = "tcp" | "udp";
 export type L4MatcherType = "none" | "tls_sni" | "http_host" | "proxy_protocol";
@@ -124,6 +138,8 @@ export type L4ProxyHost = {
   upstreamDnsResolution: L4UpstreamDnsResolutionConfig | null;
   geoblock: L4GeoBlockConfig | null;
   geoblockMode: L4GeoBlockMode;
+  /** Free-form tags (src/lib/host-tags.ts); a custom role can be scoped to them. */
+  tags: string[];
   createdAt: string;
   updatedAt: string;
 };
@@ -145,6 +161,8 @@ export type L4ProxyHostInput = {
   upstreamDnsResolution?: Partial<L4UpstreamDnsResolutionConfig> | null;
   geoblock?: L4GeoBlockConfig | null;
   geoblockMode?: L4GeoBlockMode;
+  /** Free-form tags; an array of strings (or a comma-separated string). */
+  tags?: string[] | null;
 };
 
 const VALID_PROTOCOLS: L4Protocol[] = ["tcp", "udp"];
@@ -362,6 +380,7 @@ function parseL4ProxyHost(row: L4ProxyHostRow): L4ProxyHost {
     upstreamDnsResolution: hydrateL4UpstreamDnsResolution(meta.upstream_dns_resolution),
     geoblock: meta.geoblock?.enabled ? meta.geoblock : null,
     geoblockMode: meta.geoblock_mode ?? "merge",
+    tags: parseStoredTags(row.tags),
     createdAt: toIso(row.createdAt)!,
     updatedAt: toIso(row.updatedAt)!,
   };
@@ -404,7 +423,7 @@ function validateL4Input(input: L4ProxyHostInput | Partial<L4ProxyHostInput>, is
     }
     if ((RESERVED_L4_PORTS as readonly number[]).includes(port)) {
       throw new Error(
-        `Port ${port} is reserved for CPM's own Caddy listeners (HTTP 80/443, admin API 2019) and cannot be used for L4 proxy hosts. Choose a different port.`
+        `Port ${port} is reserved for ${brandName()}'s own Caddy listeners (HTTP 80/443, admin API 2019) and cannot be used for L4 proxy hosts. Choose a different port.`
       );
     }
   }
@@ -442,20 +461,34 @@ function validateL4Input(input: L4ProxyHostInput | Partial<L4ProxyHostInput>, is
   }
 }
 
-export async function listL4ProxyHosts(): Promise<L4ProxyHost[]> {
-  const hosts = await db.select().from(l4ProxyHosts).orderBy(desc(l4ProxyHosts.createdAt));
+/** The L4 hosts a tag scope covers: null for every host (see proxyHostScopeCondition). */
+export function l4ProxyHostScopeCondition(scopeTags: readonly string[] | null | undefined): SQL | undefined {
+  return scopeTags ? tagsMatchAny(l4ProxyHosts.tags, scopeTags) : undefined;
+}
+
+function l4SearchCondition(search?: string): SQL | undefined {
+  return search
+    ? or(
+        containsText(l4ProxyHosts.name, search),
+        containsText(l4ProxyHosts.listenAddress, search),
+        containsText(l4ProxyHosts.upstreams, search),
+        containsText(l4ProxyHosts.tags, search)
+      )
+    : undefined;
+}
+
+export async function listL4ProxyHosts(scopeTags?: readonly string[] | null): Promise<L4ProxyHost[]> {
+  const hosts = await appDb
+    .select()
+    .from(l4ProxyHosts)
+    .where(l4ProxyHostScopeCondition(scopeTags))
+    .orderBy(desc(l4ProxyHosts.createdAt), desc(l4ProxyHosts.id));
   return hosts.map(parseL4ProxyHost);
 }
 
-export async function countL4ProxyHosts(search?: string): Promise<number> {
-  const where = search
-    ? or(
-        like(l4ProxyHosts.name, `%${search}%`),
-        like(l4ProxyHosts.listenAddress, `%${search}%`),
-        like(l4ProxyHosts.upstreams, `%${search}%`)
-      )
-    : undefined;
-  const [row] = await db.select({ value: count() }).from(l4ProxyHosts).where(where);
+export async function countL4ProxyHosts(search?: string, scopeTags?: readonly string[] | null): Promise<number> {
+  const where = and(l4SearchCondition(search), l4ProxyHostScopeCondition(scopeTags));
+  const [row] = await appDb.select({ value: count() }).from(l4ProxyHosts).where(where);
   return row?.value ?? 0;
 }
 
@@ -474,32 +507,32 @@ export async function listL4ProxyHostsPaginated(
   offset: number,
   search?: string,
   sortBy?: string,
-  sortDir?: "asc" | "desc"
+  sortDir?: "asc" | "desc",
+  scopeTags?: readonly string[] | null
 ): Promise<L4ProxyHost[]> {
-  const where = search
-    ? or(
-        like(l4ProxyHosts.name, `%${search}%`),
-        like(l4ProxyHosts.listenAddress, `%${search}%`),
-        like(l4ProxyHosts.upstreams, `%${search}%`)
-      )
-    : undefined;
+  const where = and(l4SearchCondition(search), l4ProxyHostScopeCondition(scopeTags));
   const col = (sortBy && L4_SORT_COLUMNS[sortBy]) || l4ProxyHosts.createdAt;
   const dir = sortDir === "asc" ? asc : desc;
-  const hosts = await db
+  const hosts = await appDb
     .select()
     .from(l4ProxyHosts)
     .where(where)
-    .orderBy(dir(col))
+    // The id last, so that every page is the same on every database.
+    .orderBy(dir(col), dir(l4ProxyHosts.id))
     .limit(limit)
     .offset(offset);
   return hosts.map(parseL4ProxyHost);
 }
 
 export async function createL4ProxyHost(input: L4ProxyHostInput, actorUserId: number) {
+  await assertProviderActor(actorUserId);
   validateL4Input(input, true);
+  const tags = normalizeTags(input.tags);
+  // Change approvals (ee): a host a policy protects is only created through an approved change request.
+  await assertHostCreateApproved("l4_proxy_host", input.name, tags);
 
   const now = nowIso();
-  const [record] = await db
+  const [record] = await appDb
     .insert(l4ProxyHosts)
     .values({
       name: input.name.trim(),
@@ -522,6 +555,7 @@ export async function createL4ProxyHost(input: L4ProxyHostInput, actorUserId: nu
         return Object.keys(meta).length > 0 ? JSON.stringify(meta) : null;
       })(),
       enabled: input.enabled ?? true,
+      tags: serializeTags(tags),
       createdAt: now,
       updatedAt: now,
     })
@@ -531,7 +565,7 @@ export async function createL4ProxyHost(input: L4ProxyHostInput, actorUserId: nu
     throw new Error("Failed to create L4 proxy host");
   }
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "create",
     entityType: "l4_proxy_host",
@@ -545,17 +579,19 @@ export async function createL4ProxyHost(input: L4ProxyHostInput, actorUserId: nu
 }
 
 export async function getL4ProxyHost(id: number): Promise<L4ProxyHost | null> {
-  const host = await db.query.l4ProxyHosts.findFirst({
+  const host = await appDb.query.l4ProxyHosts.findFirst({
     where: (table, { eq }) => eq(table.id, id),
   });
   return host ? parseL4ProxyHost(host) : null;
 }
 
 export async function updateL4ProxyHost(id: number, input: Partial<L4ProxyHostInput>, actorUserId: number) {
+  await assertProviderActor(actorUserId);
   const existing = await getL4ProxyHost(id);
   if (!existing) {
     throw new Error("L4 proxy host not found");
   }
+  await assertHostUpdateApproved("l4_proxy_host", existing, input);
 
   // For validation, merge with existing to check cross-field constraints
   const merged = {
@@ -572,11 +608,13 @@ export async function updateL4ProxyHost(id: number, input: Partial<L4ProxyHostIn
   }
 
   validateL4Input(input, false);
+  const tags = input.tags !== undefined ? normalizeTags(input.tags) : undefined;
 
   const now = nowIso();
-  await db
+  await appDb
     .update(l4ProxyHosts)
     .set({
+      ...(tags !== undefined ? { tags: serializeTags(tags) } : {}),
       ...(input.name !== undefined ? { name: input.name.trim() } : {}),
       ...(input.protocol !== undefined ? { protocol: input.protocol } : {}),
       ...(input.listenAddress !== undefined ? { listenAddress: input.listenAddress.trim() } : {}),
@@ -659,7 +697,7 @@ export async function updateL4ProxyHost(id: number, input: Partial<L4ProxyHostIn
     })
     .where(eq(l4ProxyHosts.id, id));
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorUserId,
     action: "update",
     entityType: "l4_proxy_host",
@@ -673,13 +711,15 @@ export async function updateL4ProxyHost(id: number, input: Partial<L4ProxyHostIn
 }
 
 export async function deleteL4ProxyHost(id: number, actorUserId: number) {
+  await assertProviderActor(actorUserId);
   const existing = await getL4ProxyHost(id);
   if (!existing) {
     throw new Error("L4 proxy host not found");
   }
+  await assertHostDeleteApproved("l4_proxy_host", existing);
 
-  await db.delete(l4ProxyHosts).where(eq(l4ProxyHosts.id, id));
-  logAuditEvent({
+  await appDb.delete(l4ProxyHosts).where(eq(l4ProxyHosts.id, id));
+  await logAuditEvent({
     userId: actorUserId,
     action: "delete",
     entityType: "l4_proxy_host",

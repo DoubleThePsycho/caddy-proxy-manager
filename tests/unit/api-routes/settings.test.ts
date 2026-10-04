@@ -31,6 +31,8 @@ vi.mock('@/src/lib/settings', () => ({
   saveTrustedProxiesSettings: vi.fn(),
   getDefaultResponseSettings: vi.fn(),
   saveDefaultResponseSettings: vi.fn(),
+  getRateLimitSettings: vi.fn(),
+  saveRateLimitSettings: vi.fn(),
   getSetting: vi.fn(),
   setSetting: vi.fn(),
   clearSetting: vi.fn(),
@@ -45,6 +47,7 @@ vi.mock('@/src/lib/instance-sync', () => ({
 }));
 
 vi.mock('@/src/lib/auth', () => ({
+  requirePermission: vi.fn(() => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireAdmin())),
   requireAdmin: vi.fn().mockResolvedValue({ user: { id: '1' } }),
 }));
 
@@ -60,6 +63,11 @@ vi.mock('@/src/lib/models/proxy-hosts', () => ({
   sanitizeErrorPageRules: vi.fn((rules: unknown) => rules),
 }));
 vi.mock('@/src/lib/models/waf-events', () => ({ getWafRuleMessages: vi.fn() }));
+// The WAF group snapshots the global exclusion records to put them back if Caddy refuses the change.
+vi.mock('@/src/lib/models/waf-exclusion-mirror', () => ({
+  readGlobalWafExclusionRows: vi.fn(() => []),
+  restoreGlobalWafExclusionRows: vi.fn(),
+}));
 
 vi.mock('@/src/lib/caddy', () => ({
   applyCaddyConfig: vi.fn().mockResolvedValue({ ok: true }),
@@ -71,6 +79,7 @@ vi.mock('@/src/lib/api-auth', () => {
     constructor(msg: string, status: number) { super(msg); this.status = status; this.name = 'ApiAuthError'; }
   };
   return {
+    requireApiPermission: vi.fn((request: unknown) => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireApiAdmin(request))),
     requireApiAdmin: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
     requireApiUser: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }),
     apiErrorResponse: vi.fn((error: unknown) => {
@@ -108,7 +117,10 @@ import { getInstanceMode, setInstanceMode, getSlaveMasterToken, setSlaveMasterTo
 import { applyCaddyConfig } from '@/src/lib/caddy';
 import { requireApiAdmin } from '@/src/lib/api-auth';
 import { DefaultResponseValidationError } from '@/src/lib/caddy-default-response';
-import { updateGeneralSettingsAction } from '@/app/(dashboard)/settings/actions';
+import { updateGeneralSettingsAction, updateRateLimitSettingsAction } from '@/app/(dashboard)/settings/actions';
+import { saveRateLimitSettings } from '@/src/lib/settings';
+import { logAuditEvent } from '@/src/lib/audit';
+import { CaddyApplyError } from '@/src/lib/caddy-apply-error';
 
 const mockGetGeneral = vi.mocked(getGeneralSettings);
 const mockSaveGeneral = vi.mocked(saveGeneralSettings);
@@ -927,7 +939,8 @@ describe('PUT waf settings', () => {
 
     expect(response.status).toBe(200);
     expect(data).toEqual({ ok: true });
-    expect(mockSaveWaf).toHaveBeenCalledWith(body);
+    // The caller is the author of exclusion records the excluded_rule_ids list adds.
+    expect(mockSaveWaf).toHaveBeenCalledWith(body, { actorUserId: 1 });
     expect(mockApplyCaddyConfig).toHaveBeenCalled();
   });
 
@@ -939,7 +952,7 @@ describe('PUT waf settings', () => {
     const unchanged = { enabled: true, mode: 'DetectionOnly', load_owasp_crs: true, custom_directives: legacy, excluded_rule_ids: [] };
     const ok = await PUT(createMockRequest({ method: 'PUT', body: unchanged }), { params: Promise.resolve({ group: 'waf' }) });
     expect(ok.status).toBe(200);
-    expect(mockSaveWaf).toHaveBeenCalledWith(unchanged);
+    expect(mockSaveWaf).toHaveBeenCalledWith(unchanged, { actorUserId: 1 });
 
     mockSaveWaf.mockClear();
     const added = 'SecRule ARGS "@ipMatchFromFile /etc/blocklist" "id:2,deny"';
@@ -979,5 +992,68 @@ describe('PUT trusted-proxies settings', () => {
     expect(data).toEqual({ ok: true });
     expect(mockSaveTrustedProxies).toHaveBeenCalledWith(body);
     expect(mockApplyCaddyConfig).toHaveBeenCalled();
+  });
+});
+
+describe('updateRateLimitSettingsAction (dashboard form)', () => {
+  const form = (value: unknown) => {
+    const formData = new FormData();
+    formData.set('rateLimitSettingsJson', typeof value === 'string' ? value : JSON.stringify(value));
+    return formData;
+  };
+  const settings = {
+    enabled: true,
+    rules: [{ path: '/login', methods: ['post'], key: 'client_ip', events: 5, window: '1m' }],
+    allowlist: ['192.0.2.1'],
+    ipv6Prefix: 64,
+  };
+
+  it('saves the normalized settings, applies Caddy and records an audit event', async () => {
+    const result = await updateRateLimitSettingsAction(null, form(settings));
+    expect(result).toMatchObject({ success: true });
+    const saved = {
+      enabled: true,
+      rules: [{ path: '/login', methods: ['POST'], key: 'client_ip', events: 5, window: '1m' }],
+      allowlist: ['192.0.2.1'],
+      ipv6Prefix: 64,
+    };
+    expect(vi.mocked(saveRateLimitSettings)).toHaveBeenCalledWith(saved);
+    expect(mockApplyCaddyConfig).toHaveBeenCalled();
+    expect(vi.mocked(logAuditEvent)).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 1, entityType: 'setting', summary: 'Updated rate limiting defaults', data: saved,
+    }));
+  });
+
+  it('reports invalid input without saving', async () => {
+    expect(await updateRateLimitSettingsAction(null, form('{not json'))).toEqual({ success: false, message: 'Invalid rate limiting payload' });
+    const result = await updateRateLimitSettingsAction(null, form({ ...settings, rules: [{ events: 5, window: '1d' }] }));
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/Rate limiting\.rules\[0\]\.window/);
+    expect(vi.mocked(saveRateLimitSettings)).not.toHaveBeenCalled();
+    expect(mockApplyCaddyConfig).not.toHaveBeenCalled();
+  });
+
+  it('restores the previous value when Caddy rejects the configuration', async () => {
+    const previous = { enabled: false, rules: [], allowlist: [] };
+    mockGetSetting.mockResolvedValueOnce(previous);
+    mockApplyCaddyConfig.mockRejectedValueOnce(new CaddyApplyError('Caddy rejected configuration', 'CADDY_REJECTED'));
+    const result = await updateRateLimitSettingsAction(null, form(settings));
+    expect(result.success).toBe(false);
+    expect(mockSetSetting).toHaveBeenCalledWith('rate_limit', previous);
+    expect(mockApplyCaddyConfig).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(logAuditEvent)).not.toHaveBeenCalled();
+  });
+
+  it('clears the setting on rejection when there was none, and keeps it when only syncing failed', async () => {
+    mockApplyCaddyConfig.mockRejectedValueOnce(new CaddyApplyError('Caddy rejected configuration', 'CADDY_REJECTED'));
+    await updateRateLimitSettingsAction(null, form(settings));
+    expect(mockClearSetting).toHaveBeenCalledWith('rate_limit');
+
+    vi.clearAllMocks();
+    mockApplyCaddyConfig.mockRejectedValueOnce(new CaddyApplyError('sync failed', 'INSTANCE_SYNC_FAILED'));
+    const result = await updateRateLimitSettingsAction(null, form(settings));
+    expect(result).toMatchObject({ success: true });
+    expect(mockClearSetting).not.toHaveBeenCalled();
+    expect(mockSetSetting).not.toHaveBeenCalled();
   });
 });

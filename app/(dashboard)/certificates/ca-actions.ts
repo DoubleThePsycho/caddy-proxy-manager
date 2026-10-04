@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/src/lib/auth";
+import { BRAND_NAME } from "@/src/lib/brand";
+import { requirePermission } from "@/src/lib/auth";
+import { assertUnscopedCertificates } from "@/src/lib/access-scope";
 import {
   CaPrivateKeyUnavailableError,
   createCaCertificate,
@@ -23,7 +25,8 @@ function validatePem(pem: string): void {
 }
 
 export async function createCaCertificateAction(formData: FormData) {
-  const session = await requireAdmin();
+  const session = await requirePermission("certificates:write");
+  assertUnscopedCertificates(session.access);
   const userId = Number(session.user.id);
   const name = String(formData.get("name") ?? "").trim();
   const certificatePem = String(formData.get("certificate_pem") ?? "").trim();
@@ -37,7 +40,8 @@ export async function createCaCertificateAction(formData: FormData) {
 }
 
 export async function updateCaCertificateAction(id: number, formData: FormData) {
-  const session = await requireAdmin();
+  const session = await requirePermission("certificates:write");
+  assertUnscopedCertificates(session.access);
   const userId = Number(session.user.id);
   const name = formData.get("name") ? String(formData.get("name")).trim() : undefined;
   const certificatePem = formData.get("certificate_pem") ? String(formData.get("certificate_pem")).trim() : undefined;
@@ -54,7 +58,8 @@ export async function updateCaCertificateAction(id: number, formData: FormData) 
 }
 
 export async function deleteCaCertificateAction(id: number): Promise<{ success: boolean; error?: string }> {
-  const session = await requireAdmin();
+  const session = await requirePermission("certificates:write");
+  assertUnscopedCertificates(session.access);
   const userId = Number(session.user.id);
   try {
     await deleteCaCertificate(id, userId);
@@ -66,7 +71,8 @@ export async function deleteCaCertificateAction(id: number): Promise<{ success: 
 }
 
 export async function generateCaCertificateAction(formData: FormData): Promise<{ id: number }> {
-  const session = await requireAdmin();
+  const session = await requirePermission("certificates:write");
+  assertUnscopedCertificates(session.access);
   const userId = Number(session.user.id);
   const name = String(formData.get("name") ?? "").trim();
   const commonName = String(formData.get("common_name") ?? name).trim() || name;
@@ -84,7 +90,7 @@ export async function generateCaCertificateAction(formData: FormData): Promise<{
 
   const attrs = [
     { name: "commonName", value: commonName },
-    { name: "organizationName", value: "Caddy Proxy Manager" },
+    { name: "organizationName", value: BRAND_NAME },
   ];
   cert.setSubject(attrs);
   cert.setIssuer(attrs);
@@ -120,7 +126,8 @@ export async function issueClientCertificateAction(
   caCertId: number,
   formData: FormData
 ): Promise<IssueClientCertResult> {
-  const session = await requireAdmin();
+  const session = await requirePermission("certificates:write");
+  assertUnscopedCertificates(session.access);
   const userId = Number(session.user.id);
   const commonName = String(formData.get("common_name") ?? "").trim();
   const validityDays = Math.min(3650, Math.max(1, parseInt(String(formData.get("validity_days") ?? "365"), 10) || 365));
@@ -199,7 +206,8 @@ export async function issueClientCertificateAction(
 }
 
 export async function revokeIssuedClientCertificateAction(id: number): Promise<{ revokedAt: string }> {
-  const session = await requireAdmin();
+  const session = await requirePermission("certificates:write");
+  assertUnscopedCertificates(session.access);
   const userId = Number(session.user.id);
   const record = await revokeIssuedClientCertificate(id, userId);
   revalidatePath("/certificates");

@@ -1,39 +1,28 @@
 /**
  * Functional tests: HTTP→HTTPS redirect when ssl_forced is enabled.
  *
- * Creates a proxy host with ssl_forced=true (the default when the form
- * field is present without the ssl_forced_present bypass) and verifies
- * that plain HTTP requests receive a 308 permanent redirect to HTTPS.
+ * Creates a proxy host with "Redirect HTTP to HTTPS" on (the host editor's
+ * default) and verifies that plain HTTP requests receive a 308 permanent
+ * redirect to HTTPS.
  *
  * Domain: func-ssl.test
  */
 import { test, expect } from '@playwright/test';
+
 import { httpGet, waitForRoute } from '../../helpers/http';
-import { injectFormFields } from '../../helpers/http';
+import { fillHostBasics, openCreateHostDialog, openEditorSection, saveHostEditor } from '../../helpers/proxy-api';
 
 const DOMAIN = 'func-ssl.test';
 
 test.describe.serial('SSL Redirect (ssl_forced)', () => {
   test('setup: create proxy host with ssl_forced=true', async ({ page }) => {
-    // Navigate to proxy-hosts and open the create dialog manually so we can
-    // inject ssl_forced=true without the ssl_forced_present bypass.
-    await page.goto('/proxy-hosts');
-    await page.getByRole('button', { name: /create host/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    await openCreateHostDialog(page);
+    await fillHostBasics(page, { name: 'Functional SSL Redirect Test', domain: DOMAIN, upstream: 'echo-server:8080' });
 
-    await page.getByLabel('Name').fill('Functional SSL Redirect Test');
-    await page.getByLabel(/domains/i).fill(DOMAIN);
-    await page.getByPlaceholder('10.0.0.5:8080').fill('echo-server:8080');
-
-    // Inject ssl_forced=true (default form behavior — no override)
-    await injectFormFields(page, {
-      sslForcedPresent: 'on',
-      sslForced: 'on',    // checkbox checked → ssl_forced = true
-    });
-
-    await page.getByRole('button', { name: /^create$/i }).click();
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole('table').getByText('Functional SSL Redirect Test')).toBeVisible({ timeout: 10_000 });
+    // "Redirect HTTP to HTTPS" is on by default for a new host.
+    await openEditorSection(page, 'Certificate');
+    await expect(page.getByRole('switch', { name: 'Redirect HTTP to HTTPS' })).toHaveAttribute('aria-checked', 'true');
+    await saveHostEditor(page);
 
     await waitForRoute(DOMAIN);
   });

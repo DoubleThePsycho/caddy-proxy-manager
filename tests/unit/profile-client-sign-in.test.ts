@@ -10,14 +10,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
 vi.mock('@/src/lib/auth-client', () => ({ authClient: { signIn: { social: vi.fn() } } }));
-vi.mock('@/app/(dashboard)/api-tokens/actions', () => ({
-  createApiTokenAction: vi.fn(),
-  deleteApiTokenAction: vi.fn(),
-}));
-vi.mock('@/app/(dashboard)/profile/session-actions', () => ({
-  revokeSessionAction: vi.fn(),
-  revokeOtherSessionsAction: vi.fn(),
-}));
 
 import ProfileClient from '@/app/(dashboard)/profile/ProfileClient';
 
@@ -28,11 +20,11 @@ const NO_USERNAME = 'Your account has no sign-in username the login page can use
 const ADMIN_SETS = 'An administrator has to set a sign-in username for your account';
 const SET_FIRST = 'you must first set a password';
 
-function render(user: Partial<Props['user']>) {
+function render(user: Partial<Props['user']>, mfa: Partial<Props['mfa']> = {}, extra: Partial<Props> = {}) {
   const props: Props = {
     user: {
       id: 7,
-      email: 'alice+cpm@example.com',
+      email: 'alice+ingressi@example.com',
       name: 'Alice',
       provider: 'dex',
       subject: 'dex-7',
@@ -47,9 +39,47 @@ function render(user: Partial<Props['user']>) {
     enabledProviders: [{ id: 'dex', name: 'Dex', autoLink: true }],
     apiTokens: [],
     sessions: [],
+    mfa: {
+      enabled: false, authenticatorApp: false, passkeys: 0, backupCodesRemaining: null, hasPassword: true, required: false,
+      gate: 'none', deadline: null,
+      ...mfa,
+    },
+    ...extra,
   };
   return renderToStaticMarkup(createElement(ProfileClient, props));
 }
+
+describe('profile multi-factor authentication', () => {
+  it('offers to set it up for an account with a password', () => {
+    const html = render({ signInUsername: 'alice' });
+    expect(html).toContain('Sign-in security');
+    expect(html).toContain('Multi-factor off');
+    expect(html).toContain('Set up authenticator app');
+    expect(html).toContain('Add a passkey');
+  });
+
+  it('shows how many backup codes are left, never the codes', () => {
+    const html = render({ signInUsername: 'alice' }, { enabled: true, authenticatorApp: true, backupCodesRemaining: 2 });
+    expect(html).toContain('2 of 10 left');
+    expect(html).toContain('Generate new backup codes');
+    expect(html).toContain('Turn off');
+    expect(html).not.toContain('Set up authenticator app');
+  });
+
+  it('keeps it on when the policy requires it, and shows the deadline while it is off', () => {
+    const on = render({ signInUsername: 'alice' }, { enabled: true, authenticatorApp: true, backupCodesRemaining: 9, required: true });
+    expect(on).toContain('cannot be turned off');
+    const off = render({ signInUsername: 'alice' }, { required: true, gate: 'prompt', deadline: '2026-10-09T12:00:00.000Z' });
+    expect(off).toContain('Your administrator requires multi-factor authentication');
+    expect(off).toContain('Required');
+  });
+
+  it('explains that an account without a password uses its identity provider', () => {
+    const html = render({ hasPassword: false }, { hasPassword: false });
+    expect(html).toContain('identity provider, which handles multi-factor authentication');
+    expect(html).not.toContain('Set up authenticator app');
+  });
+});
 
 describe('profile password sign-in', () => {
   it('shows the sign-in username and the unlink button when password sign-in works', () => {
@@ -101,5 +131,63 @@ describe('profile password sign-in', () => {
     expect(html).toContain(`${ADMIN_SETS}, then you can set your password here`);
     expect(html).not.toContain('This page then shows it');
     expect(html).not.toContain('You are using OAuth-only authentication');
+  });
+});
+
+describe('profile passkeys, sessions, tokens and enforced SSO', () => {
+  const passkey = {
+    id: 3, name: 'Security key', authenticator: null, deviceType: 'singleDevice', backedUp: false,
+    createdAt: '2026-10-01T08:00:00.000Z', lastUsedAt: null,
+  };
+
+  it('lists passkeys without anything secret and keeps the last required factor', () => {
+    const html = render({ signInUsername: 'alice' }, { enabled: true, passkeys: 1, required: true }, { passkeys: [passkey] });
+    expect(html).toContain('Security key');
+    expect(html).toContain('not used yet');
+    expect(html).toContain('Multi-factor on');
+    expect(html).toMatch(/aria-label="Remove passkey Security key"[^>]*disabled=""|disabled=""[^>]*aria-label="Remove passkey Security key"/);
+  });
+
+  it('says why a passkey cannot be added', () => {
+    const html = render({ signInUsername: 'alice' }, {}, { passkeyBlocker: 'Single sign-on is enforced, so only break-glass accounts can add a passkey.' });
+    expect(html).toContain('only break-glass accounts can add a passkey');
+    expect(html).not.toContain('Add a passkey');
+  });
+
+  it('shows sessions with device and place, the current one marked', () => {
+    const now = new Date().toISOString();
+    const session = (id: number, current: boolean) => ({
+      id, current, createdAt: now, updatedAt: now, expiresAt: now, signedInAt: now, lastSeenAt: now,
+      ipAddress: '203.0.113.24', userAgent: 'Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0',
+      device: { browser: 'Firefox', os: 'Linux', kind: 'desktop' as const, label: 'Firefox on Linux' },
+      location: { countryCode: 'IT', country: 'Italy', asn: 64500, network: 'Example Telecom' },
+    });
+    const html = render({ signInUsername: 'alice' }, {}, { sessions: [session(1, true), session(2, false)] });
+    expect(html).toContain('Active sessions');
+    expect(html).toContain('This device');
+    expect(html).toContain('Firefox on Linux');
+    expect(html).toContain('Italy');
+    expect(html).toContain('AS64500 Example Telecom');
+    expect(html).toContain('Sign out all other sessions');
+  });
+
+  it('shows token scopes, or that a token has its owner\'s role', () => {
+    const token = (id: number, scopes: string[] | null) => ({
+      id, name: `token-${id}`, createdBy: 7, createdAt: '2026-08-12T00:00:00.000Z', lastUsedAt: null, expiresAt: null, scopes,
+    });
+    const html = render({ signInUsername: 'alice' }, {}, {
+      apiTokens: [token(1, ['proxy_hosts:write', 'certificates:read']), token(2, null)] as never,
+      heldPermissions: ['proxy_hosts:read', 'proxy_hosts:write', 'certificates:read'],
+    });
+    expect(html).toContain('proxy_hosts:write');
+    expect(html).toContain('Same as my role');
+    expect(html).toContain('2 of 10');
+    expect(html).toContain('Choose permissions');
+  });
+
+  it('tells a non-break-glass account under enforced SSO that its password is not accepted', () => {
+    const html = render({ signInUsername: 'alice' }, {}, { sso: { enforced: true, breakGlass: false } });
+    expect(html).toContain('Set, but not accepted while single sign-on is enforced.');
+    expect(html).toContain('Single sign-on is enforced');
   });
 });

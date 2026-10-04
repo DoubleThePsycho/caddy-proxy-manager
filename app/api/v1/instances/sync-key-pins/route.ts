@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAdmin, apiErrorResponse } from "@/src/lib/api-auth";
+import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { listSyncKeyPinsWithSlaves, pinSyncKey, resetSyncKeyPin } from "@/src/lib/models/instances";
 
 /** The sync key pins this master holds, by slave URL, with the slaves they apply to. */
 export async function GET(request: NextRequest) {
   try {
-    await requireApiAdmin(request);
+    await requireApiPermission(request, "instances:read");
     return NextResponse.json(await listSyncKeyPinsWithSlaves());
   } catch (error) {
     return apiErrorResponse(error);
@@ -24,7 +24,7 @@ function requiredUrl(request: NextRequest): string | NextResponse {
  */
 export async function PUT(request: NextRequest) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId } = await requireApiPermission(request, "instances:write");
     const url = requiredUrl(request);
     if (url instanceof NextResponse) return url;
     let body: unknown;
@@ -46,7 +46,7 @@ export async function PUT(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId } = await requireApiPermission(request, "instances:write");
     const url = requiredUrl(request);
     if (url instanceof NextResponse) return url;
     await resetSyncKeyPin(url, userId);

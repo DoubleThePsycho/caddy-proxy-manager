@@ -1,9 +1,9 @@
 /**
- * Better Auth's username sign-in only reaches an account by a username CPM
+ * Better Auth's username sign-in only reaches an account by a username Ingressi
  * stored on purpose: the account's own email, or one an administrator set.
  * An email the login page refuses (here one with a '+') is never turned into
  * a username, so no account can sign in as a lookalike address such as
- * alice-cpm@example.com, which may be somebody else's.
+ * alice-ingressi@example.com, which may be somebody else's.
  *
  * Like auth-password-policy-endpoints.test.ts, this boots the real db module
  * and the real auth-server (no better-auth stub) against a file-backed SQLite
@@ -11,27 +11,13 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import bcrypt from 'bcryptjs';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { CREDENTIAL_ACCOUNT_ISSUER } from '../../src/lib/account-issuer';
+import { openAppDatabase, type AppDatabase } from '../helpers/app-database';
 
-const workDir = mkdtempSync(join(tmpdir(), 'cpm-sign-in-username-'));
+let database: AppDatabase;
+
 const PASSWORD = 'Correct-Horse-9!';
 const OTHER_PASSWORD = 'Another-Horse-7!';
-
-const globalForDb = globalThis as {
-  __SQLITE_CLIENT__?: { close: () => void };
-  __DRIZZLE_DB__?: unknown;
-  __MIGRATIONS_RAN__?: boolean;
-};
-
-function resetGlobals() {
-  globalForDb.__SQLITE_CLIENT__?.close();
-  delete globalForDb.__SQLITE_CLIENT__;
-  delete globalForDb.__DRIZZLE_DB__;
-  delete globalForDb.__MIGRATIONS_RAN__;
-}
 
 type App = {
   db: Awaited<typeof import('../../src/lib/db')>['default'];
@@ -42,11 +28,10 @@ type App = {
 let app: App;
 
 beforeAll(async () => {
-  process.env.DATABASE_URL = `file:${join(workDir, 'app.db')}`;
+  database = await openAppDatabase('ingressi-sign-in-username-');
   // Vitest leaks Vite's BASE_URL='/' into process.env, which better-auth rejects.
   process.env.BASE_URL = 'http://localhost:3000';
   process.env.AUTH_RATE_LIMIT_ENABLED = 'false';
-  resetGlobals();
   vi.resetModules();
 
   const dbModule = await import('../../src/lib/db');
@@ -56,10 +41,8 @@ beforeAll(async () => {
   app = { db: dbModule.default, schema, auth: getAuth(), userModel };
 });
 
-afterAll(() => {
-  resetGlobals();
-  rmSync(workDir, { recursive: true, force: true });
-  process.env.DATABASE_URL = ':memory:';
+afterAll(async () => {
+  await database.close();
   delete process.env.AUTH_RATE_LIMIT_ENABLED;
   vi.resetModules();
 });
@@ -134,13 +117,13 @@ async function seedLegacyCredentialUser(email: string) {
 
 describe('sign-in usernames', () => {
   it('gives a plus-addressed OAuth user who sets a password no username made from their email', async () => {
-    const user = await seedOAuthUser('dex+cpm@example.com');
+    const user = await seedOAuthUser('dex+ingressi@example.com');
 
     await app.userModel.changeUserPassword(user.id, bcrypt.hashSync(PASSWORD, 4), null);
 
     expect(await app.userModel.getPasswordSignInStatus(user.id)).toEqual({ username: null, blocker: 'no-username' });
     expect(await trySignIn('dex-cpm@example.com', PASSWORD)).toBeNull();
-    expect(await trySignIn('dex+cpm@example.com', PASSWORD)).toBeNull();
+    expect(await trySignIn('dex+ingressi@example.com', PASSWORD)).toBeNull();
   });
 
   it('does not let an account sign in as an address derived from its email', async () => {
@@ -164,35 +147,35 @@ describe('sign-in usernames', () => {
 
   it('gives a plus-addressed user an administrator created no username', async () => {
     const user = await app.userModel.createUser({
-      email: 'carol+cpm@example.com',
+      email: 'carol+ingressi@example.com',
       provider: 'credentials',
-      subject: 'carol+cpm@example.com',
+      subject: 'carol+ingressi@example.com',
       passwordHash: bcrypt.hashSync(PASSWORD, 4),
     });
 
     expect(user.username).toBeNull();
-    expect(await trySignIn('carol-cpm@example.com', PASSWORD)).toBeNull();
+    expect(await trySignIn('carol-ingressi@example.com', PASSWORD)).toBeNull();
   });
 
   it('leaves a legacy plus-addressed username alone when an administrator edits the profile', async () => {
-    const user = await seedLegacyCredentialUser('fay+cpm@example.com');
+    const user = await seedLegacyCredentialUser('fay+ingressi@example.com');
 
     await app.userModel.updateUserProfile(user.id, { name: 'Fay', email: 'fay@example.com' });
 
-    expect((await app.userModel.getUserById(user.id))?.username).toBe('fay+cpm@example.com');
-    expect(await trySignIn('fay-cpm@example.com', PASSWORD)).toBeNull();
+    expect((await app.userModel.getUserById(user.id))?.username).toBe('fay+ingressi@example.com');
+    expect(await trySignIn('fay-ingressi@example.com', PASSWORD)).toBeNull();
     expect(await trySignIn('fay@example.com', PASSWORD)).toBeNull();
   });
 
   it('signs in a legacy plus-addressed user with the username an administrator set, in any case', async () => {
-    const user = await seedLegacyCredentialUser('erin+cpm@example.com');
-    expect(await trySignIn('erin+cpm@example.com', PASSWORD)).toBeNull();
-    expect(await trySignIn('erin-cpm@example.com', PASSWORD)).toBeNull();
+    const user = await seedLegacyCredentialUser('erin+ingressi@example.com');
+    expect(await trySignIn('erin+ingressi@example.com', PASSWORD)).toBeNull();
+    expect(await trySignIn('erin-ingressi@example.com', PASSWORD)).toBeNull();
 
     await app.userModel.setUserSignInUsername(user.id, 'erin');
 
     expect(await signIn('erin', PASSWORD)).toBe(String(user.id));
     expect(await signIn('ERIN', PASSWORD)).toBe(String(user.id));
-    expect(await trySignIn('erin-cpm@example.com', PASSWORD)).toBeNull();
+    expect(await trySignIn('erin-ingressi@example.com', PASSWORD)).toBeNull();
   });
 });

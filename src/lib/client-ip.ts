@@ -55,12 +55,12 @@ function parseIp(raw: string | undefined): string | null {
  *
  * With TRUSTED_CLIENT_IP_HEADER set (e.g. "x-real-ip", "cf-connecting-ip"),
  * that header is read first. This is only sound when every route by which
- * requests reach CPM sets or overwrites the header; otherwise a client can
+ * requests reach Ingressi sets or overwrites the header; otherwise a client can
  * send any value and pick its own rate-limit key. For a CDN header such as
  * cf-connecting-ip, that means the origin accepts connections from the CDN's
- * addresses only. Caddy, CPM's own proxy hosts included, passes these headers
+ * addresses only. Caddy, Ingressi's own proxy hosts included, passes these headers
  * through unchanged, so leave the variable unset when Caddy is the proxy in
- * front of CPM. A request without a usable value falls back to
+ * front of Ingressi. A request without a usable value falls back to
  * X-Forwarded-For below, since its sender could as well have sent any value.
  *
  * X-Forwarded-For: the rightmost entry, i.e. the address the nearest proxy
@@ -75,7 +75,7 @@ export function getClientIp(headers: Headers): string {
   const configured = process.env.TRUSTED_CLIENT_IP_HEADER?.trim().toLowerCase();
   if (configured) {
     if (HEADER_NAME.test(configured)) {
-      // Repeated headers arrive comma-joined; the last one was added nearest to CPM.
+      // Repeated headers arrive comma-joined; the last one was added nearest to Ingressi.
       const ip = parseIp(headers.get(configured)?.split(",").pop());
       if (ip) return ip;
     } else if (!warnedInvalidHeader) {
@@ -88,12 +88,17 @@ export function getClientIp(headers: Headers): string {
 
 /**
  * Rate-limit bucket for an address from getClientIp. IPv4 addresses are kept
- * whole. IPv6 addresses are reduced to their /64 prefix, since a client
- * usually holds at least a /64 and can send each request from a new address
- * in it.
+ * whole. IPv6 addresses are reduced to their /64 prefix (or /48 with
+ * `ipv6PrefixBits` 48), since a client usually holds at least a /64, often a
+ * /48, and can send each request from a new address in it.
  */
-export function ipRateLimitBucket(ip: string): string {
+export function ipRateLimitBucket(ip: string, ipv6PrefixBits: 48 | 64 = 64): string {
   if (isIP(ip) !== 6) return ip;
-  const prefix = ipv6Groups(ip).slice(0, 4).map((group) => group.toString(16));
-  return `${prefix.join(":")}::/64`;
+  const prefix = ipv6Groups(ip).slice(0, ipv6PrefixBits / 16).map((group) => group.toString(16));
+  return `${prefix.join(":")}::/${ipv6PrefixBits}`;
+}
+
+/** A client address as a proxy wrote it (plain, "[v6]:port", "v4:port", IPv4-mapped), validated; null when it is not one. */
+export function parseClientIp(raw: string | null | undefined): string | null {
+  return parseIp(raw ?? undefined);
 }

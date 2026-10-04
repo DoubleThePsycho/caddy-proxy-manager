@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/src/lib/auth";
 import { config } from "@/src/lib/config";
+import { FORWARD_AUTH_CALLBACK_PATH } from "@/src/lib/forward-auth-trust";
 import {
   createForwardAuthSession,
   createExchangeCode,
@@ -16,7 +17,7 @@ import { logAuditEvent } from "@/src/lib/audit";
  */
 export async function POST(request: NextRequest) {
   try {
-    // CSRF: verify the request originates from the CPM portal
+    // CSRF: verify the request originates from the dashboard portal
     const origin = request.headers.get("origin");
     const baseOrigin = new URL(config.baseUrl).origin;
     if (!origin || origin !== baseOrigin) {
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
     // Authorize the concrete proxy host captured by the one-time intent.
     const hasAccess = await checkHostAccess(userId, intent.audience.proxyHostId);
     if (!hasAccess) {
-      logAuditEvent({
+      await logAuditEvent({
         userId,
         action: "forward_auth_access_denied",
         entityType: "proxy_host",
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
       intent.audience,
     );
 
-    logAuditEvent({
+    await logAuditEvent({
       userId,
       action: "forward_auth_login",
       entityType: "user",
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       summary: `Forward auth login (session) for user ${session.user.email} to ${targetUrl.hostname}`
     });
 
-    const callbackUrl = new URL("/.cpm-auth/callback", intent.audience.origin);
+    const callbackUrl = new URL(FORWARD_AUTH_CALLBACK_PATH, intent.audience.origin);
     callbackUrl.searchParams.set("code", rawCode);
 
     return NextResponse.json({ redirectTo: callbackUrl.toString() });

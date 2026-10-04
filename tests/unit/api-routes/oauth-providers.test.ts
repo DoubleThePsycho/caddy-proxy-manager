@@ -9,6 +9,7 @@ vi.mock("@/src/lib/models/oauth-providers", () => ({
 }));
 
 vi.mock("@/src/lib/api-auth", () => ({
+  requireApiPermission: vi.fn((request: unknown) => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireApiAdmin(request))),
   requireApiAdmin: vi.fn().mockResolvedValue({
     userId: 1,
     role: "admin",
@@ -28,7 +29,7 @@ vi.mock("@/src/lib/models/audit", () => ({
 }));
 
 vi.mock("@/src/lib/auth-server", () => ({
-  invalidateProviderCache: vi.fn(),
+  reloadOAuthProviders: vi.fn(async () => {}),
 }));
 
 import { GET as listGET, POST } from "@/app/api/v1/oauth-providers/route";

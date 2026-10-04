@@ -13,18 +13,8 @@ const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
 vi.mock("../../src/lib/db", async () => {
   const { createTestDb } = await import("../helpers/db");
-  const schemaModule = await import("../../src/lib/db/schema");
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    sqlite: undefined,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null => {
-      if (!value) return null;
-      return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-    },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 vi.mock("../../src/lib/caddy", async (importOriginal) => {
@@ -41,11 +31,11 @@ import * as schema from "../../src/lib/db/schema";
 
 // Unique to this test: the warning is deduplicated per source and content
 // for the lifetime of the module.
-const DROPPED_RULE = 'SecRule ARGS "@pmFromFile /etc/cpm-warn-test.data" "id:7301,phase:2,deny"';
-const GLOBAL_DROPPED_RULE = 'SecRule ARGS "@pmFromFile /etc/cpm-warn-global.data" "id:7302,phase:2,deny"';
-const HOST_DROPPED_RULE = 'SecRule ARGS "@pmFromFile /etc/cpm-warn-merge-host.data" "id:7303,phase:2,deny"';
+const DROPPED_RULE = 'SecRule ARGS "@pmFromFile /etc/ingressi-warn-test.data" "id:7301,phase:2,deny"';
+const GLOBAL_DROPPED_RULE = 'SecRule ARGS "@pmFromFile /etc/ingressi-warn-global.data" "id:7302,phase:2,deny"';
+const HOST_DROPPED_RULE = 'SecRule ARGS "@pmFromFile /etc/ingressi-warn-merge-host.data" "id:7303,phase:2,deny"';
 const GLOBAL_CRS_RULE = 'SecRule ARGS "@pmFromFile @owasp_crs/unix-shell.data" "id:7304,phase:2,deny"';
-const SHARED_ID_RULE = 'SecRule REQUEST_URI "@beginsWith /cpm-warn-dup/" "id:7305,phase:1,pass,nolog"';
+const SHARED_ID_RULE = 'SecRule REQUEST_URI "@beginsWith /ingressi-warn-dup/" "id:7305,phase:1,pass,nolog"';
 
 /** Stores a host's WAF directives directly: the validators reject dropped lines on save. */
 async function storeHostDirectives(hostId: number, waf: WafHostConfig, customDirectives: string) {
@@ -92,9 +82,9 @@ describe("dropped per-host WAF directives", () => {
     const document = await buildCaddyDocument();
 
     expect(JSON.stringify(document)).toContain('"handler":"waf"');
-    expect(JSON.stringify(document)).not.toContain("cpm-warn-test");
+    expect(JSON.stringify(document)).not.toContain("ingressi-warn-test");
     const messages = warn.mock.calls.map((args) => String(args[0]));
-    const dropped = messages.find((message) => message.includes("cpm-warn-test"));
+    const dropped = messages.find((message) => message.includes("ingressi-warn-test"));
     expect(dropped).toBeDefined();
     expect(dropped).toContain('proxy host "Legacy WAF" (legacy-waf.example.com)');
   });
@@ -122,18 +112,18 @@ describe("dropped global WAF directives", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const document = JSON.stringify(await buildCaddyDocument());
 
-    expect(document).not.toContain("cpm-warn-global");
-    expect(document).not.toContain("cpm-warn-merge-host");
+    expect(document).not.toContain("ingressi-warn-global");
+    expect(document).not.toContain("ingressi-warn-merge-host");
     const messages = warn.mock.calls.map((args) => String(args[0]));
-    const globalWarnings = messages.filter((message) => message.includes("cpm-warn-global"));
+    const globalWarnings = messages.filter((message) => message.includes("ingressi-warn-global"));
     expect(globalWarnings).toHaveLength(1);
     expect(globalWarnings[0]).toContain("[waf] global WAF settings:");
     expect(globalWarnings[0]).not.toContain("proxy host");
-    expect(globalWarnings[0]).not.toContain("cpm-warn-merge-host");
-    const hostWarnings = messages.filter((message) => message.includes("cpm-warn-merge-host"));
+    expect(globalWarnings[0]).not.toContain("ingressi-warn-merge-host");
+    const hostWarnings = messages.filter((message) => message.includes("ingressi-warn-merge-host"));
     expect(hostWarnings).toHaveLength(1);
     expect(hostWarnings[0]).toContain('[waf] proxy host "Merge D" (merge-d.example.com):');
-    expect(hostWarnings[0]).not.toContain("cpm-warn-global");
+    expect(hostWarnings[0]).not.toContain("ingressi-warn-global");
   });
 });
 
@@ -167,14 +157,14 @@ describe("global WAF directives dropped in one host's handler only", () => {
       { name: "Dup F", domains: ["dup-f.example.com"], upstreams: ["10.0.0.12:8080"], waf: merge },
       1
     );
-    await storeHostDirectives(host.id, merge, SHARED_ID_RULE.replace("/cpm-warn-dup/", "/cpm-warn-dup-host/"));
+    await storeHostDirectives(host.id, merge, SHARED_ID_RULE.replace("/ingressi-warn-dup/", "/ingressi-warn-dup-host/"));
 
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const document = JSON.stringify(await buildCaddyDocument());
 
-    expect(document).toContain("/cpm-warn-dup/");
-    expect(document).not.toContain("/cpm-warn-dup-host/");
-    const messages = warn.mock.calls.map((args) => String(args[0])).filter((message) => message.includes("cpm-warn-dup"));
+    expect(document).toContain("/ingressi-warn-dup/");
+    expect(document).not.toContain("/ingressi-warn-dup-host/");
+    const messages = warn.mock.calls.map((args) => String(args[0])).filter((message) => message.includes("ingressi-warn-dup"));
     expect(messages).toHaveLength(1);
     expect(messages[0]).toContain('[waf] proxy host "Dup F" (dup-f.example.com):');
     expect(messages[0]).toContain("rule id 7305 is already used");

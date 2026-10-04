@@ -1,0 +1,5 @@
+{
+  "description": "drizzle-pg/<baseline>.sql builds the database that the SQLite migrations in drizzle/ build up to and including <sqlite>. Every later migration exists in both folders under the same tag (tests/unit/db-migration-pairs.test.ts). The leading underscore keeps drizzle-kit from reading this file as a snapshot.",
+  "baseline": "0000_baseline",
+  "sqlite": "0052_ha_shared_state"
+}

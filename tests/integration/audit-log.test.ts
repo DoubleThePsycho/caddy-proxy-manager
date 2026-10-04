@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb, type TestDb } from '../helpers/db';
 import { auditEvents, users } from '@/src/lib/db/schema';
-import { desc, eq, like } from 'drizzle-orm';
+import { desc, likeText } from '@/src/lib/db/ops';
+import { eq } from 'drizzle-orm';
 
 let db: TestDb;
 
@@ -80,7 +81,7 @@ describe('audit-log integration', () => {
     await insertEvent({ summary: 'Deleted access list Bar' });
     await insertEvent({ summary: 'Updated host baz.com' });
 
-    const rows = await db.select().from(auditEvents).where(like(auditEvents.summary, '%host%'));
+    const rows = await db.select().from(auditEvents).where(likeText(auditEvents.summary, '%host%'));
     expect(rows.length).toBe(2);
   });
 

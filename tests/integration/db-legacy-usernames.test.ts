@@ -1,6 +1,6 @@
 /**
- * The one-time Better Auth data migration in src/lib/db.ts runs on databases
- * that never had it. It gives a user without a username only their own email
+ * The one-time Better Auth data migration (src/lib/db/startup.ts, run at
+ * server start) runs on databases that never had it. It gives a user without a username only their own email
  * address, lowercased, when the login page accepts it and no other account
  * signs in with it or has it as email address; the others keep none.
  */
@@ -58,7 +58,7 @@ describe('Better Auth data migration usernames', () => {
     try {
       createLegacyDatabase(dbPath, [
         ['Dave@Example.com', null],
-        ['alice+cpm@example.com', null],
+        ['alice+ingressi@example.com', null],
         ['Kate@example.com', null],
         ['holder@example.com', 'carol@example.com'],
         ['carol@example.com', null],
@@ -68,11 +68,12 @@ describe('Better Auth data migration usernames', () => {
 
       process.env.DATABASE_URL = `file:${dbPath}`;
       resetDbModuleState();
-      await import('@/src/lib/db');
+      const { runDatabaseStartup } = await import('@/src/lib/db/startup');
+      await runDatabaseStartup();
 
       expect(usernames(dbPath)).toEqual([
         { email: 'Dave@Example.com', username: 'dave@example.com' },
-        { email: 'alice+cpm@example.com', username: null },
+        { email: 'alice+ingressi@example.com', username: null },
         { email: 'Kate@example.com', username: null },
         { email: 'holder@example.com', username: 'carol@example.com' },
         { email: 'carol@example.com', username: null },

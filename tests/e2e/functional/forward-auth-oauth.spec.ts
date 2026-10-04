@@ -181,8 +181,8 @@ async function completeCallback(domain: string, callbackUrl: string): Promise<st
   const res = await httpGet(domain, url.pathname + url.search);
   expect(res.status).toBe(302);
   const setCookie = String(res.headers['set-cookie'] ?? '');
-  expect(setCookie).toContain('_cpm_fa=');
-  const match = setCookie.match(/_cpm_fa=([^;]+)/);
+  expect(setCookie).toContain('_ingressi_fa=');
+  const match = setCookie.match(/_ingressi_fa=([^;]+)/);
   expect(match).toBeTruthy();
   return match![1];
 }
@@ -209,7 +209,7 @@ test.describe.serial('Forward Auth with OAuth (Dex)', () => {
       domains: [DOMAIN],
       upstreams: ['echo-server:8080'],
       sslForced: false,
-      cpmForwardAuth: { enabled: true },
+      ingressiForwardAuth: { enabled: true },
     });
     expect(res.status()).toBe(201);
     const host = await res.json();
@@ -262,7 +262,7 @@ test.describe.serial('Forward Auth with OAuth (Dex)', () => {
   });
 
   test('forged session cookie gets redirected', async () => {
-    const res = await httpGet(DOMAIN, '/', { Cookie: '_cpm_fa=forged-token' });
+    const res = await httpGet(DOMAIN, '/', { Cookie: '_ingressi_fa=forged-token' });
     expect(res.status).toBe(302);
     expect(String(res.headers['location'])).toContain('/portal');
   });
@@ -276,11 +276,11 @@ test.describe.serial('Forward Auth with OAuth (Dex)', () => {
       const result = await oauthPortalLogin(p, DOMAIN, ALICE);
       expect(result.error).toBeNull();
       expect(result.redirectTo).toBeTruthy();
-      expect(result.redirectTo).toContain('/.cpm-auth/callback');
+      expect(result.redirectTo).toContain('/.ingressi-auth/callback');
 
       // Complete callback and verify upstream access
       const sessionCookie = await completeCallback(DOMAIN, result.redirectTo!);
-      const upstreamRes = await httpGet(DOMAIN, '/', { Cookie: `_cpm_fa=${sessionCookie}` });
+      const upstreamRes = await httpGet(DOMAIN, '/', { Cookie: `_ingressi_fa=${sessionCookie}` });
       expect(upstreamRes.status).toBe(200);
       expect(upstreamRes.body).toContain(ECHO_BODY);
     } finally {
@@ -331,7 +331,7 @@ test.describe.serial('Forward Auth with OAuth (Dex)', () => {
       expect(result.redirectTo).toBeTruthy();
 
       const sessionCookie = await completeCallback(DOMAIN, result.redirectTo!);
-      const upstreamRes = await httpGet(DOMAIN, '/', { Cookie: `_cpm_fa=${sessionCookie}` });
+      const upstreamRes = await httpGet(DOMAIN, '/', { Cookie: `_ingressi_fa=${sessionCookie}` });
       expect(upstreamRes.status).toBe(200);
       expect(upstreamRes.body).toContain(ECHO_BODY);
     } finally {
@@ -405,11 +405,11 @@ test.describe.serial('Forward Auth with OAuth (Dex)', () => {
       }
 
       expect(capturedRedirect).toBeTruthy();
-      expect(capturedRedirect).toContain('/.cpm-auth/callback');
+      expect(capturedRedirect).toContain('/.ingressi-auth/callback');
 
       // Complete via httpGet
       const sessionCookie = await completeCallback(DOMAIN, capturedRedirect!);
-      const upstreamRes = await httpGet(DOMAIN, '/', { Cookie: `_cpm_fa=${sessionCookie}` });
+      const upstreamRes = await httpGet(DOMAIN, '/', { Cookie: `_ingressi_fa=${sessionCookie}` });
       expect(upstreamRes.status).toBe(200);
       expect(upstreamRes.body).toContain(ECHO_BODY);
     } finally {

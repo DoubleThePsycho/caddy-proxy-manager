@@ -4,7 +4,7 @@
 
   On stock configuration these tables (metric_log / asynchronous_metric_log in
   particular) flush every few seconds regardless of user traffic, which writes
-  several GB/day and wears out SSDs even when the proxy is idle. caddy-proxy-manager
+  several GB/day and wears out SSDs even when the proxy is idle. Ingressi
   never queries them, so we turn them off to keep disk writes proportional to
   actual traffic. Remove this file (and restart ClickHouse) to restore the
   defaults if you need them for debugging.

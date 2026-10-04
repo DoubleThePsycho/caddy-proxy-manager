@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  authorizeForwardAuthRequest,
   validateForwardAuthSession,
-  checkHostAccess,
 } from "@/src/lib/models/forward-auth";
-import { getUserById } from "@/src/lib/models/user";
-import { getGroupsForUser } from "@/src/lib/models/groups";
 import {
+  FORWARD_AUTH_COOKIE_NAME,
+  FORWARD_AUTH_IDENTITY_HEADERS,
   FORWARD_AUTH_PORTAL_TARGET_HEADER,
+  LEGACY_FORWARD_AUTH_COOKIE_NAME,
+  LEGACY_FORWARD_AUTH_IDENTITY_HEADERS,
   getForwardAuthPortalTarget,
   resolveTrustedForwardAuthAudience,
 } from "@/src/lib/forward-auth-trust";
-
-const COOKIE_NAME = "_cpm_fa";
 
 /**
  * A 401/403 for Caddy, which answers it with a redirect to the portal.  The
@@ -39,43 +39,52 @@ export async function GET(request: NextRequest) {
     return deny(request, 401);
   }
 
-  const token = request.cookies.get(COOKIE_NAME)?.value;
+  const token =
+    request.cookies.get(FORWARD_AUTH_COOKIE_NAME)?.value ??
+    request.cookies.get(LEGACY_FORWARD_AUTH_COOKIE_NAME)?.value;
   if (!token) {
     return deny(request, 401);
   }
 
-  const session = await validateForwardAuthSession(token, audience);
+  let session: Awaited<ReturnType<typeof validateForwardAuthSession>>;
+  try {
+    session = await validateForwardAuthSession(token, audience);
+  } catch {
+    // High availability shared state cannot be reached: refuse, never let through.
+    return new NextResponse("Sign-in is temporarily unavailable", { status: 503, headers: { "Retry-After": "5" } });
+  }
   if (!session) {
     return deny(request, 401);
   }
 
-  const user = await getUserById(session.userId);
-  if (!user || user.status !== "active") {
-    return deny(request, 401);
+  // 401 for a user that is gone or not active, 403 without access to the
+  // host (checkHostAccess); otherwise the user and the groups for the header,
+  // with the user read once.
+  const verdict = await authorizeForwardAuthRequest(session.userId, audience.proxyHostId);
+  if (verdict.status !== 200) {
+    return deny(request, verdict.status);
   }
-
-  const hasAccess = await checkHostAccess(session.userId, audience.proxyHostId);
-  if (!hasAccess) {
-    return deny(request, 403);
-  }
-
-  // Get user's groups for the header
-  const userGroups = await getGroupsForUser(session.userId);
-  const groupNames = userGroups.map((g) => g.name).join(",");
+  const { user, groups } = verdict;
+  const groupNames = groups.map((g) => g.name).join(",");
 
   // Return 200 with user info headers that Caddy will copy to upstream.
-  // X-CPM-User is the sign-in username, or the email address for an account
-  // without one: no other account can hold either (see sign-in-names.ts).
-  // The display name is not unique, since users, OAuth providers and
-  // ADMIN_USERNAME choose it, so an upstream trusting it could be told one
-  // user is another.
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      "X-CPM-User": user.username ?? user.email,
-      "X-CPM-Email": user.email,
-      "X-CPM-Groups": groupNames,
-      "X-CPM-User-Id": String(user.id)
+  // X-Ingressi-User is the sign-in username, or the email address for an
+  // account without one: no other account can hold either (see
+  // sign-in-names.ts). The display name is not unique, since users, OAuth
+  // providers and ADMIN_USERNAME choose it, so an upstream trusting it could
+  // be told one user is another. The legacy X-CPM-* names carry the same
+  // values for upstreams configured before the rename.
+  const identity = {
+    user: user.username ?? user.email,
+    email: user.email,
+    groups: groupNames,
+    userId: String(user.id)
+  };
+  const headers = new Headers();
+  for (const names of [FORWARD_AUTH_IDENTITY_HEADERS, LEGACY_FORWARD_AUTH_IDENTITY_HEADERS]) {
+    for (const [field, value] of Object.entries(identity)) {
+      headers.set(names[field as keyof typeof identity], value);
     }
-  });
+  }
+  return new NextResponse(null, { status: 200, headers });
 }

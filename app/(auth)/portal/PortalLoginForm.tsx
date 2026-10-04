@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useState, type ReactNode } from "react";
 import { Shield } from "lucide-react";
 import { authClient } from "@/src/lib/auth-client";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
+import { BrandFooter, BrandLogo, hasLogo } from "@/ee/white-label/ui/BrandParts";
 
 interface PortalLoginFormProps {
   rid: string;
@@ -18,6 +20,26 @@ interface PortalLoginFormProps {
   errorMessage?: string | null;
   enabledProviders?: Array<{ id: string; name: string }>;
   existingSession?: { userId: string; name: string | null; email: string | null } | null;
+}
+
+/**
+ * The page around every state of the portal. People signing in to a
+ * protected site see this page most, so it carries the white-label logo (or
+ * name), footer text, support contact and "Powered by" note.
+ */
+function PortalShell({ children }: { children: ReactNode }) {
+  const branding = useBranding();
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background px-4 py-8">
+      {hasLogo(branding) ? (
+        <BrandLogo branding={branding} className="max-h-12 w-auto max-w-[220px]" />
+      ) : (
+        <p className="text-lg font-semibold tracking-tight break-words text-center">{branding.loginHeading}</p>
+      )}
+      {children}
+      <BrandFooter branding={branding} className="w-full max-w-sm" />
+    </div>
+  );
 }
 
 export default function PortalLoginForm({
@@ -107,20 +129,20 @@ export default function PortalLoginForm({
 
   if (!hasRedirect) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <PortalShell>
         <Card className="w-full max-w-sm">
           <CardHeader className="text-center space-y-1">
             <CardTitle className="text-xl">Authentication Required</CardTitle>
             <CardDescription>No redirect destination specified.</CardDescription>
           </CardHeader>
         </Card>
-      </div>
+      </PortalShell>
     );
   }
 
   if (errorMessage) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <PortalShell>
         <Card className="w-full max-w-sm">
           <CardHeader className="text-center space-y-1">
             <div className="flex justify-center mb-2">
@@ -139,14 +161,14 @@ export default function PortalLoginForm({
             </Alert>
           </CardContent>
         </Card>
-      </div>
+      </PortalShell>
     );
   }
 
   // If we have a session and are auto-redirecting, show a loading state
   if (existingSession && pending && !error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <PortalShell>
         <Card className="w-full max-w-sm">
           <CardHeader className="text-center space-y-1">
             <div className="flex justify-center mb-2">
@@ -158,12 +180,12 @@ export default function PortalLoginForm({
             </CardDescription>
           </CardHeader>
         </Card>
-      </div>
+      </PortalShell>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+    <PortalShell>
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center space-y-1">
           <div className="flex justify-center mb-2">
@@ -244,6 +266,6 @@ export default function PortalLoginForm({
           </form>
         </CardContent>
       </Card>
-    </div>
+    </PortalShell>
   );
 }

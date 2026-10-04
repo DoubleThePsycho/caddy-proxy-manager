@@ -1,6 +1,6 @@
 /**
  * Functional coverage for the configurable unmatched-host response (issue #241).
- * These tests update CPM through its API and then make real requests to Caddy.
+ * These tests update Ingressi through its API and then make real requests to Caddy.
  */
 import { expect, request as playwrightRequest, test, type APIRequestContext } from "@playwright/test";
 import { resolve } from "node:path";
@@ -113,7 +113,7 @@ test.describe.serial("Default response — live Caddy", () => {
       body: RESPONSE_MARKER,
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
-        "X-Cpm-Default": "enabled",
+        "X-Test-Default": "enabled",
       },
     });
     await waitForResponse(418, RESPONSE_MARKER);
@@ -123,7 +123,7 @@ test.describe.serial("Default response — live Caddy", () => {
       expect(response.status).toBe(418);
       expect(response.body).toBe(RESPONSE_MARKER);
       expect(response.headers["content-type"]).toBe("text/plain; charset=utf-8");
-      expect(response.headers["x-cpm-default"]).toBe("enabled");
+      expect(response.headers["x-test-default"]).toBe("enabled");
     }
   });
 

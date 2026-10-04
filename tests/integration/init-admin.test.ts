@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import bcrypt from 'bcryptjs';
-import type { TestDb } from '../helpers/db';
+import { testDbIsPostgres, type TestDb } from '../helpers/db';
 
 const ctx = vi.hoisted(() => ({
   db: null as unknown as TestDb,
@@ -18,18 +18,8 @@ const ctx = vi.hoisted(() => ({
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    sqlite: undefined,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null => {
-      if (!value) return null;
-      return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-    },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 vi.mock('../../src/lib/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/lib/config')>()),
@@ -39,11 +29,12 @@ vi.mock('../../src/lib/config', async (importOriginal) => ({
 import * as schema from '../../src/lib/db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { ensureAdminUser } from '../../src/lib/init-db';
+import { execRaw, first } from '@/src/lib/db/ops';
 
 const MARKER_KEY = 'admin_env_credentials_fingerprint';
 
 async function adminRow() {
-  return (await ctx.db.select().from(schema.users).where(eq(schema.users.id, 1)).get())!;
+  return (await first(ctx.db.select().from(schema.users).where(eq(schema.users.id, 1)).limit(1)))!;
 }
 
 async function adminHash(): Promise<string> {
@@ -51,7 +42,7 @@ async function adminHash(): Promise<string> {
 }
 
 async function accountHash(): Promise<string> {
-  const row = await ctx.db.select().from(schema.accounts).where(eq(schema.accounts.userId, 1)).get();
+  const row = await first(ctx.db.select().from(schema.accounts).where(eq(schema.accounts.userId, 1)).limit(1));
   return row!.password!;
 }
 
@@ -69,7 +60,7 @@ async function forgetMarker() {
 }
 
 async function storedMarker(): Promise<unknown> {
-  const row = await ctx.db.select().from(schema.settings).where(eq(schema.settings.key, MARKER_KEY)).get();
+  const row = await first(ctx.db.select().from(schema.settings).where(eq(schema.settings.key, MARKER_KEY)).limit(1));
   return row ? JSON.parse(row.value) : null;
 }
 
@@ -90,10 +81,32 @@ async function signIn(userId: number) {
   });
 }
 
+/** Makes every delete from forward_auth_sessions fail (a trigger), or stops it. */
+async function failForwardAuthSessionDeletes(fail: boolean) {
+  if (testDbIsPostgres()) {
+    if (fail) {
+      await execRaw(sql`CREATE FUNCTION fail_forward_auth_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN RAISE EXCEPTION 'simulated failure'; END $$`, ctx.db);
+      await execRaw(sql`CREATE TRIGGER fail_forward_auth_delete BEFORE DELETE ON forward_auth_sessions
+        FOR EACH ROW EXECUTE FUNCTION fail_forward_auth_delete()`, ctx.db);
+    } else {
+      await execRaw(sql`DROP TRIGGER fail_forward_auth_delete ON forward_auth_sessions`, ctx.db);
+      await execRaw(sql`DROP FUNCTION fail_forward_auth_delete()`, ctx.db);
+    }
+    return;
+  }
+  if (fail) {
+    await execRaw(sql`CREATE TRIGGER fail_forward_auth_delete BEFORE DELETE ON forward_auth_sessions
+      BEGIN SELECT RAISE(ABORT, 'simulated failure'); END`, ctx.db);
+  } else {
+    await execRaw(sql`DROP TRIGGER fail_forward_auth_delete`, ctx.db);
+  }
+}
+
 async function sessionCounts(userId: number) {
-  const sessions = await ctx.db.select().from(schema.sessions).where(eq(schema.sessions.userId, userId)).all();
+  const sessions = await ctx.db.select().from(schema.sessions).where(eq(schema.sessions.userId, userId));
   const forwardAuth = await ctx.db.select().from(schema.forwardAuthSessions)
-    .where(eq(schema.forwardAuthSessions.userId, userId)).all();
+    .where(eq(schema.forwardAuthSessions.userId, userId));
   return { sessions: sessions.length, forwardAuth: forwardAuth.length };
 }
 
@@ -168,12 +181,12 @@ describe('ensureAdminUser', { timeout: 20_000 }, () => {
     await signIn(1);
     ctx.config.adminPassword = 'Recovery-Password-2026!';
 
-    ctx.db.run(sql`CREATE TRIGGER fail_forward_auth_delete BEFORE DELETE ON forward_auth_sessions
-      BEGIN SELECT RAISE(ABORT, 'simulated failure'); END`);
+    await failForwardAuthSessionDeletes(true);
     try {
-      await expect(ensureAdminUser()).rejects.toThrow(/simulated failure/);
+      // Drizzle reports the driver's error as the cause of its "Failed query" error.
+      await expect(ensureAdminUser()).rejects.toMatchObject({ cause: expect.objectContaining({ message: expect.stringMatching(/simulated failure/) }) });
     } finally {
-      ctx.db.run(sql`DROP TRIGGER fail_forward_auth_delete`);
+      await failForwardAuthSessionDeletes(false);
     }
     // The password did not change without the sessions being ended.
     expect(bcrypt.compareSync('Env-Password-2026!', await adminHash())).toBe(true);
@@ -250,7 +263,7 @@ describe('ensureAdminUser', { timeout: 20_000 }, () => {
       // Nothing is written, so the next start tries again.
       expect(await adminRow()).toEqual(before);
       expect(await storedMarker()).toEqual(marker);
-      const other = await ctx.db.select().from(schema.users).where(eq(schema.users.id, otherId)).get();
+      const other = await first(ctx.db.select().from(schema.users).where(eq(schema.users.id, otherId)).limit(1));
       expect(other).toMatchObject({ email, username });
     });
 
@@ -269,7 +282,7 @@ describe('ensureAdminUser', { timeout: 20_000 }, () => {
       await seedOtherUser('ops@example.com', 'admin');
 
       await expect(ensureAdminUser()).rejects.toThrow(/ADMIN_USERNAME "admin" is not applied/);
-      expect(await ctx.db.select().from(schema.users).where(eq(schema.users.id, 1)).get()).toBeUndefined();
+      expect(await first(ctx.db.select().from(schema.users).where(eq(schema.users.id, 1)).limit(1))).toBeUndefined();
     });
 
     it('still applies other environment changes when the admin keeps its username', async () => {

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { openCreateHostDialog, openEditorSection, setEditorSwitch } from '../helpers/proxy-api';
 
 const API_CA = 'http://localhost:3000/api/v1/ca-certificates';
 const API_CLIENT_CERTS = 'http://localhost:3000/api/v1/client-certificates';
@@ -51,13 +52,9 @@ test.describe('mTLS — deleted CA must not remain selectable', () => {
     let caDeleted = false;
     try {
       // 3. The issued cert is selectable in a host's mTLS picker.
-      await page.reload();
-      await openMtlsPicker(page);
-      const dialog = page.getByRole('dialog');
-      await expect(dialog.getByText(caName)).toBeVisible({ timeout: 10000 });
-      await expect(dialog.getByText(certCommonName)).toBeVisible();
-      await dialog.getByRole('button', { name: /cancel|close/i }).first().click();
-      await expect(dialog).not.toBeVisible({ timeout: 10000 });
+      const picker = await openMtlsPicker(page);
+      await expect(picker.getByText(caName)).toBeVisible({ timeout: 10000 });
+      await expect(picker.getByText(certCommonName)).toBeVisible();
 
       // 4. Delete the CA. This must cascade to its issued certificates.
       const delResp = await page.request.delete(`${API_CA}/${ca.id}`, { headers: { Origin: origin } });
@@ -69,11 +66,9 @@ test.describe('mTLS — deleted CA must not remain selectable', () => {
       expect(certAfter.status()).toBe(404);
 
       // 5. The CA and its cert must no longer appear in the mTLS picker.
-      await page.reload();
-      await openMtlsPicker(page);
-      const dialog2 = page.getByRole('dialog');
-      await expect(dialog2.getByText(certCommonName)).toHaveCount(0);
-      await expect(dialog2.getByText(caName)).toHaveCount(0);
+      const picker2 = await openMtlsPicker(page);
+      await expect(picker2.getByText(certCommonName)).toHaveCount(0);
+      await expect(picker2.getByText(caName)).toHaveCount(0);
     } finally {
       if (!caDeleted) {
         await page.request.delete(`${API_CA}/${ca.id}`, { headers: { Origin: origin } });
@@ -83,17 +78,14 @@ test.describe('mTLS — deleted CA must not remain selectable', () => {
 });
 
 /**
- * Opens the Create Host dialog and enables the Mutual TLS (mTLS) section so the
- * "Trusted Certificates" picker is rendered.
+ * Opens a new host in the host editor and turns on client certificates (mTLS)
+ * so the "Trusted certificates" picker is rendered. Returns the mTLS card.
  */
 async function openMtlsPicker(page: import('@playwright/test').Page) {
-  await page.getByRole('button', { name: /create host/i }).click();
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
-
-  const mtlsCard = dialog.locator('div:has(> input[name="mtlsPresent"])');
-  await mtlsCard.scrollIntoViewIfNeeded();
-  const mtlsSwitch = mtlsCard.getByRole('switch').first();
-  await mtlsSwitch.click();
-  await expect(mtlsSwitch).toHaveAttribute('data-state', 'checked');
+  await openCreateHostDialog(page);
+  await openEditorSection(page, 'Access');
+  await setEditorSwitch(page, 'Require client certificates', true);
+  const card = page.locator('#f-mtls');
+  await expect(card.getByText('Trusted certificates')).toBeVisible();
+  return card;
 }

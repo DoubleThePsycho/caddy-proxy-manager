@@ -1,14 +1,20 @@
-import db, { nowIso } from "./db";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { appDb, nowIso } from "./db";
 import { settings } from "./db/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { encryptSecret, isEncryptedSecret } from "./secret";
 import { sanitizeErrorPageRules, type ErrorPageRule } from "./models/proxy-hosts";
 import {
   normalizeDefaultResponseSettings,
   type DefaultResponseSettings,
 } from "./caddy-default-response";
+import { normalizeRateLimitSettings, readStoredRateLimitSettings } from "./caddy-rate-limit";
+import type { RateLimitSettings } from "./rate-limit-rules";
+import { storedWafTuning, type WafTuningSettings } from "./waf-tuning";
+import { replaceWholeScopeExclusions, syncWafExclusionMirror } from "./models/waf-exclusion-mirror";
 
 export type { DefaultResponseSettings } from "./caddy-default-response";
+export type { RateLimitSettings } from "./rate-limit-rules";
 
 export type SettingValue<T> = T | null;
 
@@ -127,24 +133,91 @@ type InstanceMode = "standalone" | "master" | "slave";
 const INSTANCE_MODE_KEY = "instance_mode";
 const SYNCED_PREFIX = "synced:";
 
-export async function getSetting<T>(key: string): Promise<SettingValue<T>> {
-  const setting = await db.query.settings.findFirst({
-    where: (table, { eq }) => eq(table.key, key)
-  });
+// ── Settings snapshots ──
 
-  if (!setting) {
+/**
+ * The settings a snapshot (withSettingsSnapshot) has read: the stored value
+ * of each key (null when the key is not set), as a promise so that callers
+ * running side by side share one read.
+ */
+type SettingsSnapshot = { values: Map<string, Promise<string | null>>; closed: boolean };
+
+const snapshotGlobal = globalThis as typeof globalThis & {
+  __ingressiSettingsSnapshotStorage?: AsyncLocalStorage<SettingsSnapshot>;
+};
+const snapshotStorage = (snapshotGlobal.__ingressiSettingsSnapshotStorage ??= new AsyncLocalStorage<SettingsSnapshot>());
+
+function openSnapshot(): SettingsSnapshot | null {
+  const snapshot = snapshotStorage.getStore();
+  return snapshot && !snapshot.closed ? snapshot : null;
+}
+
+/**
+ * Runs `fn`, which only reads, with every setting it reads through this
+ * module read once: `keys` (with the synced copies a slave reads and the
+ * instance mode) in one query up front, any other key when first asked for.
+ * The Caddy configuration build reads some twenty settings, each behind the
+ * instance mode; on PostgreSQL every read is a round trip. A setting `fn`
+ * writes through setSetting or clearSetting is read back as written; a
+ * setting written elsewhere meanwhile is not seen, as in one transaction.
+ */
+export async function withSettingsSnapshot<T>(keys: readonly string[], fn: () => Promise<T>): Promise<T> {
+  if (openSnapshot()) return await fn();
+  const wanted = [...new Set([INSTANCE_MODE_KEY, ...keys, ...keys.map((key) => `${SYNCED_PREFIX}${key}`)])];
+  const loaded = appDb
+    .select({ key: settings.key, value: settings.value })
+    .from(settings)
+    .where(inArray(settings.key, wanted))
+    .then((rows) => new Map(rows.map((row) => [row.key, row.value])));
+  const snapshot: SettingsSnapshot = { values: new Map(), closed: false };
+  for (const key of wanted) {
+    const value = loaded.then((rows) => rows.get(key) ?? null);
+    // A failed read reaches the callers that ask for the key, not the process.
+    value.catch(() => undefined);
+    snapshot.values.set(key, value);
+  }
+  try {
+    return await snapshotStorage.run(snapshot, fn);
+  } finally {
+    snapshot.closed = true;
+  }
+}
+
+async function readStoredSetting(key: string): Promise<string | null> {
+  const snapshot = openSnapshot();
+  const remembered = snapshot?.values.get(key);
+  if (remembered) return await remembered;
+  const read = appDb.query.settings
+    .findFirst({ where: (table, { eq }) => eq(table.key, key) })
+    .then((row) => row?.value ?? null);
+  snapshot?.values.set(key, read);
+  return await read;
+}
+
+/** Keeps an open snapshot in step with a write made inside it. */
+function rememberWrite(key: string, value: string | null): void {
+  openSnapshot()?.values.set(key, Promise.resolve(value));
+}
+
+export async function getSetting<T>(key: string): Promise<SettingValue<T>> {
+  const value = await readStoredSetting(key);
+  if (value === null) {
     return null;
   }
 
   try {
-    return JSON.parse(setting.value) as T;
+    return JSON.parse(value) as T;
   } catch (error) {
     console.warn(`Failed to parse setting ${key}`, error);
     return null;
   }
 }
 
-async function getInstanceModeForSettings(): Promise<InstanceMode> {
+/**
+ * This instance's mode as the settings layer sees it (the environment first,
+ * then the stored mode); a slave reads synced:* values.
+ */
+export async function getInstanceModeForSettings(): Promise<InstanceMode> {
   // Environment variable takes precedence — mirrors getInstanceMode() in
   // instance-sync.ts. An env-configured slave never writes the mode to the DB
   // (setInstanceMode refuses when env-set), so reading the DB alone here would
@@ -183,7 +256,7 @@ export async function setSetting<T>(key: string, value: T): Promise<void> {
   const payload = JSON.stringify(value);
   const now = nowIso();
 
-  await db
+  await appDb
     .insert(settings)
     .values({
       key,
@@ -197,10 +270,18 @@ export async function setSetting<T>(key: string, value: T): Promise<void> {
         updatedAt: now
       }
     });
+  rememberWrite(key, payload);
+}
+
+/** When a setting was last written (ISO time), or null when it is not set. */
+export async function getSettingUpdatedAt(key: string): Promise<string | null> {
+  const row = await appDb.query.settings.findFirst({ where: (table, { eq }) => eq(table.key, key) });
+  return row?.updatedAt ?? null;
 }
 
 export async function clearSetting(key: string): Promise<void> {
-  await db.delete(settings).where(eq(settings.key, key));
+  await appDb.delete(settings).where(eq(settings.key, key));
+  rememberWrite(key, null);
 }
 
 export async function getCloudflareSettings(): Promise<CloudflareSettings | null> {
@@ -322,13 +403,18 @@ export async function saveGeoBlockSettings(settings: GeoBlockSettings): Promise<
   await setSetting("geoblock", settings);
 }
 
-export type WafSettings = {
+export type WafSettings = WafTuningSettings & {
+  // Whether the WAF applies to every proxy host ("Apply to all hosts"); when
+  // false only hosts that turn their WAF section on use it.
   enabled: boolean;
-  // Coraza's SecRuleEngine values. DetectionOnly is settable through the REST
-  // API (the UI only offers Off/On); buildWafHandler rejects anything else.
+  // The global mode, as Coraza's SecRuleEngine values: Off, DetectionOnly
+  // (log, never block) or On (blocking). buildWafHandler rejects anything
+  // else. Hosts that inherit their mode use it.
   mode: 'Off' | 'On' | 'DetectionOnly';
   load_owasp_crs: boolean;
   custom_directives: string;
+  // Whole-scope global rule exclusions. Mirrors the waf_rule_exclusions rows
+  // without a host, path or variable (src/lib/models/waf-exclusions.ts).
   excluded_rule_ids?: number[];
   // Request body limits, in bytes. Unset means Coraza's own default applies
   // (12.5 MiB from @coraza.conf-recommended when load_owasp_crs is on, else
@@ -344,8 +430,33 @@ export async function getWafSettings(): Promise<WafSettings | null> {
   return await getEffectiveSetting<WafSettings>("waf");
 }
 
-export async function saveWafSettings(s: WafSettings): Promise<void> {
-  await setSetting("waf", s);
+/**
+ * Stores the global WAF settings. Tuning fields are kept only where they
+ * differ from the CRS defaults. `excluded_rule_ids` is the legacy view of the
+ * global whole-scope rule exclusions: a list replaces those records (each
+ * record created gets `actorUserId` as its author); no list keeps them. Either
+ * way the stored list is rewritten from the records, in the same transaction.
+ */
+export async function saveWafSettings(s: WafSettings, options: { actorUserId?: number | null } = {}): Promise<void> {
+  const {
+    excluded_rule_ids: excluded,
+    paranoia_level: _paranoia,
+    detection_paranoia_level: _detection,
+    inbound_anomaly_threshold: _inbound,
+    outbound_anomaly_threshold: _outbound,
+    anomaly_action: _action,
+    ...rest
+  } = s;
+  void [_paranoia, _detection, _inbound, _outbound, _action];
+  const value = JSON.stringify({ ...rest, ...storedWafTuning(s) });
+  const now = nowIso();
+  await appDb.transaction(async (tx) => {
+    await tx.insert(settings)
+      .values({ key: "waf", value, updatedAt: now })
+      .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt: now } });
+    if (Array.isArray(excluded)) await replaceWholeScopeExclusions(tx, null, excluded, options.actorUserId ?? null);
+    else await syncWafExclusionMirror(tx, null);
+  });
 }
 
 // Global error pages, applied as fallback error routes across every proxy host.
@@ -378,4 +489,14 @@ export async function getDefaultResponseSettings(): Promise<DefaultResponseSetti
 
 export async function saveDefaultResponseSettings(value: DefaultResponseSettings): Promise<void> {
   await setSetting("default_response", normalizeDefaultResponseSettings(value));
+}
+
+// Rate limiting defaults (Community): rules that hosts inherit, merge or
+// override, and the client ranges no rule limits. See caddy-rate-limit.ts.
+export async function getRateLimitSettings(): Promise<RateLimitSettings | null> {
+  return readStoredRateLimitSettings(await getEffectiveSetting<unknown>("rate_limit"));
+}
+
+export async function saveRateLimitSettings(value: RateLimitSettings): Promise<void> {
+  await setSetting("rate_limit", normalizeRateLimitSettings(value));
 }

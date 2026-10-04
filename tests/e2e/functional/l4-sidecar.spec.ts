@@ -19,7 +19,7 @@ import { execFileSync } from 'node:child_process';
 import { waitForTcpRoute, tcpSend } from '../../helpers/tcp';
 
 // Container name as defined in docker-compose.yml
-const L4_CONTAINER = 'caddy-proxy-manager-l4-ports';
+const L4_CONTAINER = 'ingressi-l4-ports';
 
 // Port created by l4-proxy-routing.spec.ts — must match that file
 const TCP_PORT = 15432;
@@ -89,7 +89,7 @@ test.describe.serial('L4 Port Manager Sidecar', () => {
     const state = await waitForL4Terminal(page, 90_000);
     expect(
       state,
-      'Expected "applied" but got "failed". Run: docker logs caddy-proxy-manager-l4-ports',
+      'Expected "applied" but got "failed". Run: docker logs ingressi-l4-ports',
     ).toBe('applied');
   });
 
@@ -130,7 +130,7 @@ test.describe.serial('L4 Port Manager Sidecar', () => {
       state,
       'Sidecar returned "failed" after restart. ' +
       'Likely cause: docker-socket-proxy is missing NETWORKS: 1. ' +
-      'Run: docker logs caddy-proxy-manager-l4-ports',
+      'Run: docker logs ingressi-l4-ports',
     ).toBe('applied');
   });
 
@@ -170,7 +170,7 @@ test.describe.serial('L4 Port Manager Sidecar', () => {
     execFileSync(
       'docker',
       [
-        'exec', '-u', 'root', 'caddy-proxy-manager-web', 'sh', '-c',
+        'exec', '-u', 'root', 'ingressi-web', 'sh', '-c',
         `echo ${staleTs} > /app/data/.l4-apply.lock && ` +
         `printf '{"state":"applying","message":"Recreating caddy container with updated ports...","appliedAt":"2020-01-01T00:00:00.000Z"}' > /app/data/l4-ports.status`,
       ],
@@ -187,13 +187,13 @@ test.describe.serial('L4 Port Manager Sidecar', () => {
     expect(
       state,
       'Sidecar did not recover from the planted stale lock. ' +
-        'Check: docker logs caddy-proxy-manager-l4-ports',
+        'Check: docker logs ingressi-l4-ports',
     ).toBe('applied');
 
     // The lock must be gone after the recovered apply
     const lockGone = execFileSync(
       'docker',
-      ['exec', 'caddy-proxy-manager-web', 'sh', '-c', 'test -f /app/data/.l4-apply.lock && echo present || echo absent'],
+      ['exec', 'ingressi-web', 'sh', '-c', 'test -f /app/data/.l4-apply.lock && echo present || echo absent'],
       { cwd: process.cwd(), env: ENV },
     ).toString().trim();
     expect(lockGone).toBe('absent');

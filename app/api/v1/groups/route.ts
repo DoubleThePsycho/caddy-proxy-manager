@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAdmin, apiErrorResponse } from "@/src/lib/api-auth";
+import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { listGroups, createGroup } from "@/src/lib/models/groups";
+import { readOrganizationFilterParam } from "@/ee/multi-tenancy/scope";
 
 export async function GET(request: NextRequest) {
   try {
-    await requireApiAdmin(request);
-    const allGroups = await listGroups();
+    const { access } = await requireApiPermission(request, "groups:read");
+    // Organisation users get their organisation's groups; provider-level users can filter (?organizationId=).
+    const allGroups = await listGroups(readOrganizationFilterParam(access, request.nextUrl.searchParams.get("organizationId")));
     return NextResponse.json(allGroups);
   } catch (error) {
     return apiErrorResponse(error);
@@ -14,7 +16,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId } = await requireApiPermission(request, "groups:write");
     const body = await request.json();
     const group = await createGroup(body, userId);
     return NextResponse.json(group, { status: 201 });

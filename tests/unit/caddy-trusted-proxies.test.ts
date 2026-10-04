@@ -4,7 +4,7 @@
  * Caddy resolves {http.request.client_ip} in core, before any handler runs, so
  * the only place a global trusted-proxy list can correct client-IP attribution
  * (access logs, analytics, downstream handlers) is the HTTP server object
- * itself (servers.cpm). These tests cover the pure builder plus the emission
+ * itself (servers.ingressi). These tests cover the pure builder plus the emission
  * into the generated Caddy document.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -14,18 +14,8 @@ const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    sqlite: undefined,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null => {
-      if (!value) return null;
-      return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-    },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 // Keep the real buildCaddyDocument but stub the network apply so createProxyHost
@@ -49,8 +39,8 @@ import * as schema from '../../src/lib/db/schema';
 const PRIVATE_RANGES = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', 'fd00::/8', '::1/128'];
 
 function cpmServer(doc: unknown): Record<string, unknown> {
-  return (doc as { apps?: { http?: { servers?: { cpm?: Record<string, unknown> } } } })
-    ?.apps?.http?.servers?.cpm ?? {};
+  return (doc as { apps?: { http?: { servers?: { ingressi?: Record<string, unknown> } } } })
+    ?.apps?.http?.servers?.ingressi ?? {};
 }
 
 const baseGeoBlock: GeoBlockSettings = {
@@ -135,7 +125,7 @@ describe('buildCaddyDocument server-level trusted proxies', () => {
     );
   });
 
-  it('does not emit trusted_proxies on servers.cpm by default', async () => {
+  it('does not emit trusted_proxies on servers.ingressi by default', async () => {
     const doc = await buildCaddyDocument();
     const server = cpmServer(doc);
     expect(server.trusted_proxies).toBeUndefined();
@@ -143,7 +133,7 @@ describe('buildCaddyDocument server-level trusted proxies', () => {
     expect(server.trusted_proxies_strict).toBeUndefined();
   });
 
-  it('emits trusted_proxies / client_ip_headers / strict on servers.cpm when configured', async () => {
+  it('emits trusted_proxies / client_ip_headers / strict on servers.ingressi when configured', async () => {
     await saveTrustedProxiesSettings({
       ranges: ['172.21.0.1/32'],
       client_ip_headers: ['Cf-Connecting-Ip'],

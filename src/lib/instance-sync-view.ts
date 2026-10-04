@@ -10,6 +10,14 @@ import type { EnvSlaveInstance } from "./instance-sync";
  */
 export const UNREADABLE_SYNC_KEY_PIN_SOURCE = "unreadable";
 
+/**
+ * How the stored base URL of a pull replica starts (see
+ * ee/fleet/pull-replicas.ts): it has no URL the master could reach, so its
+ * base URL is "pull:" and a random id, which only names it, for example as
+ * the identity its sync key pin is kept under.
+ */
+export const PULL_REPLICA_IDENTITY_PREFIX = "pull:";
+
 export type EnvSlaveInstanceView = Pick<EnvSlaveInstance, "name" | "url" | "syncKeyId" | "syncPublicKey">;
 
 /**

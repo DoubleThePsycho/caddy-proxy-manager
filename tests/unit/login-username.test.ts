@@ -23,7 +23,7 @@ describe('isValidLoginUsername', () => {
   });
 
   it('refuses other characters and lengths', () => {
-    expect(isValidLoginUsername('alice+cpm@example.com')).toBe(false);
+    expect(isValidLoginUsername('alice+ingressi@example.com')).toBe(false);
     expect(isValidLoginUsername('a b')).toBe(false);
     expect(isValidLoginUsername('jöhn')).toBe(false);
     expect(isValidLoginUsername('Kate')).toBe(false);
@@ -36,7 +36,7 @@ describe('isUsableSignInUsername', () => {
   it('accepts a lowercase valid username only', () => {
     expect(isUsableSignInUsername('alice@example.com')).toBe(true);
     expect(isUsableSignInUsername('Alice')).toBe(false);
-    expect(isUsableSignInUsername('alice+cpm@example.com')).toBe(false);
+    expect(isUsableSignInUsername('alice+ingressi@example.com')).toBe(false);
     expect(isUsableSignInUsername('ab')).toBe(false);
     expect(isUsableSignInUsername('')).toBe(false);
     expect(isUsableSignInUsername(null)).toBe(false);

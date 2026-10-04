@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAdmin, apiErrorResponse } from "@/src/lib/api-auth";
+import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { pinInstanceSyncKey, resetInstanceSyncKeyPin } from "@/src/lib/models/instances";
+import { routeRowId } from "@/src/lib/row-ids";
 
 /**
  * Pin `{ publicKey }`, the slave's sync public key as the slave shows it, for
@@ -11,7 +12,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId } = await requireApiPermission(request, "instances:write");
     const { id } = await params;
     let body: unknown;
     try {
@@ -20,7 +21,7 @@ export async function PUT(
       return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
     }
     const publicKey = (body as { publicKey?: unknown } | null)?.publicKey;
-    return NextResponse.json(await pinInstanceSyncKey(Number(id), publicKey, userId));
+    return NextResponse.json(await pinInstanceSyncKey(routeRowId(id, "Instance not found"), publicKey, userId));
   } catch (error) {
     return apiErrorResponse(error);
   }
@@ -32,9 +33,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId } = await requireApiPermission(request, "instances:write");
     const { id } = await params;
-    await resetInstanceSyncKeyPin(Number(id), userId);
+    await resetInstanceSyncKeyPin(routeRowId(id, "Instance not found"), userId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return apiErrorResponse(error);

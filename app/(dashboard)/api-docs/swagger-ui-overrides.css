@@ -1,16 +1,39 @@
-.dark .swagger-ui {
+/*
+ * Swagger UI inside the API reference panel. Its own stylesheet is drawn
+ * for a white page: in the dark theme (the default, and the "dark" class
+ * next-themes sets) it is inverted, with code blocks inverted back so
+ * syntax colours stay as designed. The panel behind it is transparent to
+ * the filter, so the dashboard's panel colour shows through.
+ */
+:root:not(.light) .api-docs .swagger-ui {
   filter: invert(88%) hue-rotate(180deg);
 }
 
-.dark .swagger-ui .highlight-code,
-.dark .swagger-ui pre {
+:root:not(.light) .api-docs .swagger-ui .highlight-code,
+:root:not(.light) .api-docs .swagger-ui pre {
   filter: invert(100%) hue-rotate(180deg);
 }
 
-.swagger-ui .topbar {
+.api-docs .swagger-ui .topbar {
   display: none;
 }
 
-.swagger-ui .information-container {
-  padding: 1rem 0;
+.api-docs .swagger-ui .wrapper {
+  padding: 0 16px;
+}
+
+.api-docs .swagger-ui .information-container {
+  padding: 0;
+}
+
+.api-docs .swagger-ui .information-container .info {
+  margin: 16px 0;
+}
+
+.api-docs .swagger-ui .scheme-container {
+  background: transparent;
+  box-shadow: none;
+  border-top: 1px solid rgba(59, 65, 81, 0.2);
+  border-bottom: 1px solid rgba(59, 65, 81, 0.2);
+  padding: 16px 0;
 }

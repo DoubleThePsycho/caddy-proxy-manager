@@ -2,17 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { MoreHorizontal, Network, ArrowRight } from "lucide-react";
+import { MoreHorizontal, Network, Plus, Search } from "lucide-react";
 import type { L4ProxyHost } from "@/src/lib/models/l4-proxy-hosts";
 import { toggleL4ProxyHostAction } from "./actions";
+import { toast } from "sonner";
+import type { HostApprovalContext } from "@/ee/approvals/types";
+import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { SearchField } from "@/components/ui/SearchField";
 import { DataTable } from "@/components/ui/DataTable";
-import { StatusChip } from "@/components/ui/StatusChip";
-import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { SegmentedControl } from "@/components/ui/SegmentedControl";
+import { StatusDot, type StatusTone } from "@/components/ui/StatusDot";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,33 +22,61 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 import { CreateL4HostDialog, EditL4HostDialog, DeleteL4HostDialog } from "@/components/l4-proxy-hosts/L4HostDialogs";
-import { L4PortsApplyBanner } from "@/components/l4-proxy-hosts/L4PortsApplyBanner";
+import { L4PortsApplyBanner, portMappingFor, type PortsDiff } from "@/components/l4-proxy-hosts/L4PortsApplyBanner";
+import { HostTagBadges } from "@/components/hosts/HostTags";
+import { matcherText, proxyProtocolText, tlsView, type L4ProtocolFilter } from "./list";
+import { L4HostDetail } from "./L4HostDetail";
 
 type Props = {
   hosts: L4ProxyHost[];
+  /** Every L4 host the user may see, before filters. */
+  totalHosts: number;
   pagination: { total: number; page: number; perPage: number };
   initialSearch: string;
+  protocol: L4ProtocolFilter;
+  protocolCounts: Record<L4ProtocolFilter, number>;
   initialSort?: { sortBy: string; sortDir: "asc" | "desc" };
+  /** The user may create, change and delete hosts (l4_proxy_hosts:write); true when omitted. */
+  canWrite?: boolean;
+  /** The tags the user's role is limited to, if any. */
+  scopeTags?: string[];
+  /** Change approval policies (ee/approvals), so the dialogs can say a host is protected. */
+  approval?: HostApprovalContext | null;
 };
 
-function formatMatcher(host: L4ProxyHost): string {
-  switch (host.matcherType) {
-    case "tls_sni":    return `SNI: ${host.matcherValue.join(", ")}`;
-    case "http_host":  return `Host: ${host.matcherValue.join(", ")}`;
-    case "proxy_protocol": return "Proxy Protocol";
-    default:           return "None";
+export type L4HostStatus = { tone: StatusTone; label: string };
+
+/** Disabled, waiting for its port to be published, or active. */
+export function l4HostStatus(host: L4ProxyHost, portsDiff: PortsDiff | null): L4HostStatus {
+  if (!host.enabled) return { tone: "off", label: "Disabled" };
+  const mapping = portMappingFor(host);
+  if (portsDiff && mapping && portsDiff.requiredPorts.includes(mapping) && !portsDiff.currentPorts.includes(mapping)) {
+    return { tone: "warn", label: "Port not published" };
   }
+  return { tone: "ok", label: "Active" };
 }
 
-function ProtocolBadge({ protocol }: { protocol: string }) {
-  if (protocol === "tcp") {
-    return <Badge variant="info">{protocol.toUpperCase()}</Badge>;
-  }
-  return <Badge variant="warning">{protocol.toUpperCase()}</Badge>;
+function ProtocolChip({ protocol }: { protocol: string }) {
+  return (
+    <span className="num rounded bg-raise px-[5px] text-[11px] leading-[18px] text-muted-foreground">{protocol.toUpperCase()}</span>
+  );
 }
 
-export default function L4ProxyHostsClient({ hosts, pagination, initialSearch, initialSort }: Props) {
+export default function L4ProxyHostsClient({
+  hosts,
+  totalHosts,
+  pagination,
+  initialSearch,
+  protocol,
+  protocolCounts,
+  initialSort,
+  canWrite = true,
+  scopeTags = [],
+  approval = null,
+}: Props) {
+  const { productName } = useBranding();
   const [createOpen, setCreateOpen] = useState(false);
   const [duplicateHost, setDuplicateHost] = useState<L4ProxyHost | null>(null);
   const [editHost, setEditHost] = useState<L4ProxyHost | null>(null);
@@ -55,6 +85,8 @@ export default function L4ProxyHostsClient({ hosts, pagination, initialSearch, i
   const [dialogKey, setDialogKey] = useState(0);
   const [searchTerm, setSearchTerm] = useState(initialSearch);
   const [bannerRefresh, setBannerRefresh] = useState(0);
+  const [portsDiff, setPortsDiff] = useState<PortsDiff | null>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(hosts[0]?.id ?? null);
 
   const router = useRouter();
   const pathname = usePathname();
@@ -65,199 +97,306 @@ export default function L4ProxyHostsClient({ hosts, pagination, initialSearch, i
 
   useEffect(() => { setSearchTerm(initialSearch); }, [initialSearch]);
 
+  const selected = hosts.find((host) => host.id === selectedId) ?? hosts[0] ?? null;
+
+  function pushParams(update: (params: URLSearchParams) => void) {
+    const params = new URLSearchParams(searchParams.toString());
+    update(params);
+    params.set("page", "1");
+    router.push(`${pathname}?${params.toString()}`);
+  }
+
   function handleSearchChange(value: string) {
     setSearchTerm(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (value.trim()) { params.set("search", value.trim()); } else { params.delete("search"); }
-      params.set("page", "1");
-      router.push(`${pathname}?${params.toString()}`);
+      pushParams((params) => {
+        if (value.trim()) params.set("search", value.trim());
+        else params.delete("search");
+      });
     }, 400);
   }
 
+  function handleProtocolChange(value: L4ProtocolFilter) {
+    pushParams((params) => {
+      if (value === "all") params.delete("protocol");
+      else params.set("protocol", value);
+    });
+  }
+
+  function clearFilters() {
+    setSearchTerm("");
+    pushParams((params) => {
+      params.delete("search");
+      params.delete("protocol");
+    });
+  }
+
   const handleToggleEnabled = async (id: number, enabled: boolean) => {
-    await toggleL4ProxyHostAction(id, enabled);
+    const result = await toggleL4ProxyHostAction(id, enabled);
     signalBannerRefresh();
+    // A protected host is not toggled at once: the change waits for approval (ee/approvals).
+    if (result.status === "error") toast.error(result.message ?? "Failed to toggle L4 proxy host");
+    else if (result.changeRequest) toast.info(result.message ?? "Submitted for approval", { duration: 10000 });
     router.refresh();
   };
+
+  const openCreate = () => { setDuplicateHost(null); setDialogKey(k => k + 1); setCreateOpen(true); };
+  const openDuplicate = (host: L4ProxyHost) => { setDuplicateHost(host); setDialogKey(k => k + 1); setCreateOpen(true); };
+
+  const actionsMenu = (host: L4ProxyHost) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon-sm" aria-label={`More actions for ${host.name}`}>
+          <MoreHorizontal />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => setEditHost(host)}>Edit</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => openDuplicate(host)}>Duplicate</DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="text-bad focus:text-bad" onSelect={() => setDeleteHost(host)}>
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const nameButton = (host: L4ProxyHost) => (
+    <button
+      type="button"
+      onClick={() => setSelectedId(host.id)}
+      aria-pressed={selected?.id === host.id}
+      className="text-left font-semibold text-foreground underline-offset-4 hover:underline"
+    >
+      {host.name}
+    </button>
+  );
 
   const columns = [
     {
       id: "name",
-      label: "Name / Matcher",
+      label: "Name",
       sortKey: "name",
       render: (host: L4ProxyHost) => (
-        <div className="flex items-start gap-3">
-          <div className={[
-            "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border",
-            host.protocol === "tcp"
-              ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-500"
-              : "border-amber-500/30 bg-amber-500/10 text-amber-500",
-          ].join(" ")}>
-            <Network className="h-3.5 w-3.5" />
-          </div>
-          <div>
-            <p className="text-sm font-semibold leading-tight">{host.name}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{formatMatcher(host)}</p>
-          </div>
-        </div>
+        <span className="flex min-w-0 flex-col gap-px">
+          {nameButton(host)}
+          <span className="text-xs text-soft">{matcherText(host)}</span>
+          <HostTagBadges tags={host.tags} />
+        </span>
       ),
-    },
-    {
-      id: "protocol",
-      label: "Protocol",
-      sortKey: "protocol",
-      width: 90,
-      render: (host: L4ProxyHost) => <ProtocolBadge protocol={host.protocol} />,
     },
     {
       id: "listen",
       label: "Listen",
       sortKey: "listenAddress",
       render: (host: L4ProxyHost) => (
-        <span className="text-sm font-mono font-medium tabular-nums text-foreground/80">
-          {host.listenAddress}
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+          <span className="num">{host.listenAddress}</span>
+          <ProtocolChip protocol={host.protocol} />
         </span>
       ),
     },
     {
       id: "upstreams",
-      label: "Upstreams",
+      label: "Upstream",
+      sortKey: "upstreams",
       render: (host: L4ProxyHost) => (
-        <div className="flex items-center gap-1.5">
-          <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-          <span className="text-sm font-mono font-medium text-foreground/80">
-            {host.upstreams[0]}
-            {host.upstreams.length > 1 && (
-              <span className="ml-1 text-muted-foreground">+{host.upstreams.length - 1}</span>
-            )}
-          </span>
-        </div>
+        <span className="num whitespace-nowrap">
+          {host.upstreams[0]}
+          {host.upstreams.length > 1 && <span className="ml-1 text-soft">+{host.upstreams.length - 1}</span>}
+        </span>
       ),
+    },
+    {
+      id: "tls",
+      label: "TLS",
+      render: (host: L4ProxyHost) => {
+        const tls = tlsView(host);
+        return (
+          <span className="flex flex-col">
+            <span className={cn(tls.muted && "text-soft")}>{tls.label}</span>
+            {tls.detail && <span className={cn("text-xs text-soft", tls.label === "Terminate" && "num")}>{tls.detail}</span>}
+          </span>
+        );
+      },
+    },
+    {
+      id: "proxyProtocol",
+      label: "PROXY protocol",
+      render: (host: L4ProxyHost) => {
+        const text = proxyProtocolText(host);
+        return <span className={cn(text === "Off" && "text-soft")}>{text}</span>;
+      },
     },
     {
       id: "status",
       label: "Status",
       sortKey: "enabled",
-      width: 110,
-      render: (host: L4ProxyHost) => (
-        <StatusChip status={host.enabled ? "active" : "inactive"} />
-      ),
+      render: (host: L4ProxyHost) => {
+        const status = l4HostStatus(host, portsDiff);
+        return <StatusDot tone={status.tone} label={status.label} className="whitespace-nowrap" />;
+      },
     },
     {
       id: "actions",
       label: "",
       align: "right" as const,
-      width: 80,
-      render: (host: L4ProxyHost) => (
-        <div className="flex items-center gap-2 justify-end">
+      width: 96,
+      render: (host: L4ProxyHost) => canWrite && (
+        <div className="flex items-center justify-end gap-2">
           <Switch
             checked={host.enabled}
+            aria-label={`${host.enabled ? "Disable" : "Enable"} ${host.name}`}
             onCheckedChange={(checked) => handleToggleEnabled(host.id, checked)}
           />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreHorizontal className="h-4 w-4" />
-                <span className="sr-only">Open menu</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setEditHost(host)}>Edit</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => { setDuplicateHost(host); setDialogKey(k => k + 1); setCreateOpen(true); }}>Duplicate</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onClick={() => setDeleteHost(host)}
-              >
-                Delete
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {actionsMenu(host)}
         </div>
       ),
     },
   ];
 
-  const mobileCard = (host: L4ProxyHost) => (
-    <Card className={[
-      "border-l-2",
-      host.protocol === "tcp" ? "border-l-cyan-500" : "border-l-amber-500",
-    ].join(" ")}>
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex flex-col gap-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold truncate">{host.name}</p>
-              <ProtocolBadge protocol={host.protocol} />
-            </div>
-            <p className="text-xs text-muted-foreground font-mono truncate">
-              {host.listenAddress}
-              <span className="mx-1 text-muted-foreground">→</span>
-              {host.upstreams[0]}{host.upstreams.length > 1 ? ` +${host.upstreams.length - 1}` : ""}
-            </p>
-            <StatusChip status={host.enabled ? "active" : "inactive"} className="w-fit mt-1" />
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
+  const mobileCard = (host: L4ProxyHost) => {
+    const status = l4HostStatus(host, portsDiff);
+    return (
+      <div
+        className={cn(
+          "flex items-start justify-between gap-3 rounded-xl border border-line bg-panel p-4",
+          selected?.id === host.id && "border-brand bg-brand-tint"
+        )}
+      >
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="flex flex-wrap items-center gap-2">
+            {nameButton(host)}
+            <ProtocolChip protocol={host.protocol} />
+          </span>
+          <span className="num truncate text-xs text-muted-foreground">
+            {host.listenAddress} → {host.upstreams[0]}
+            {host.upstreams.length > 1 ? ` +${host.upstreams.length - 1}` : ""}
+          </span>
+          <HostTagBadges tags={host.tags} />
+          <StatusDot tone={status.tone} label={status.label} className="mt-1" />
+        </div>
+        {canWrite && (
+          <div className="flex shrink-0 items-center gap-1">
             <Switch
               checked={host.enabled}
+              aria-label={`${host.enabled ? "Disable" : "Enable"} ${host.name}`}
               onCheckedChange={(checked) => handleToggleEnabled(host.id, checked)}
             />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
-                  <MoreHorizontal className="h-4 w-4" />
-                  <span className="sr-only">Open menu</span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setEditHost(host)}>Edit</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => { setDuplicateHost(host); setDialogKey(k => k + 1); setCreateOpen(true); }}>Duplicate</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleteHost(host)}>Delete</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {actionsMenu(host)}
           </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+        )}
+      </div>
+    );
+  };
+
+  const filtering = Boolean(initialSearch) || protocol !== "all";
 
   return (
-    <div className="flex flex-col gap-6">
-      <L4PortsApplyBanner refreshSignal={bannerRefresh} />
-
+    <div className="flex min-w-0 flex-col gap-4">
       <PageHeader
-        title="L4 Proxy Hosts"
-        description="Define TCP/UDP stream proxies powered by caddy-l4. Port mappings are applied automatically."
-        action={{ label: "Create L4 Host", onClick: () => { setDialogKey(k => k + 1); setCreateOpen(true); } }}
+        className="mb-0"
+        breadcrumb={["Traffic", "L4 hosts"]}
+        title="L4 hosts"
+        count={totalHosts}
+        description={`TCP and UDP proxies for traffic that is not HTTP. ${productName} publishes their ports on the Caddy container.`}
+        actions={
+          canWrite ? (
+            <Button onClick={openCreate}>
+              <Plus />
+              New L4 host
+            </Button>
+          ) : undefined
+        }
       />
 
-      <div className="flex items-center gap-2">
-        <SearchField
-          value={searchTerm}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          placeholder="Search L4 hosts..."
-        />
-      </div>
+      <L4PortsApplyBanner refreshSignal={bannerRefresh} canApply={canWrite} hosts={hosts} onDiff={setPortsDiff} />
 
-      <DataTable
-        columns={columns}
-        data={hosts}
-        keyField="id"
-        emptyMessage={searchTerm ? "No L4 hosts match your search" : "No L4 proxy hosts found"}
-        pagination={pagination}
-        sort={initialSort}
-        mobileCard={mobileCard}
-        rowClassName={(host) => host.enabled ? "" : "opacity-75"}
-      />
+      {totalHosts === 0 ? (
+        <section aria-label="L4 hosts" className="rounded-2xl border border-line bg-panel">
+          <EmptyState
+            icon={Network}
+            title="No L4 hosts yet"
+            description="An L4 host forwards TCP or UDP traffic on a port of its own, for protocols that are not HTTP: SSH, mail, DNS over TLS, WireGuard."
+            action={
+              canWrite ? (
+                <Button onClick={openCreate}>
+                  <Plus />
+                  New L4 host
+                </Button>
+              ) : undefined
+            }
+          />
+        </section>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <label className="flex h-[38px] min-w-0 flex-[1_1_280px] items-center gap-2 rounded-[10px] border border-line bg-panel px-3 text-soft focus-within:border-brand">
+              <Search aria-hidden="true" className="h-4 w-4 shrink-0" />
+              <span className="sr-only">Filter L4 hosts</span>
+              <input
+                type="search"
+                value={searchTerm}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder="Name, port or upstream"
+                className="h-full min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-soft"
+              />
+            </label>
+            <SegmentedControl<L4ProtocolFilter>
+              label="Protocol"
+              value={protocol}
+              onChange={handleProtocolChange}
+              options={[
+                { value: "all", label: <>All <span className="num text-muted-foreground">{protocolCounts.all}</span></> },
+                { value: "tcp", label: <>TCP <span className="num text-muted-foreground">{protocolCounts.tcp}</span></> },
+                { value: "udp", label: <>UDP <span className="num text-muted-foreground">{protocolCounts.udp}</span></> },
+              ]}
+            />
+          </div>
+
+          <section aria-label="L4 hosts" className="min-w-0">
+            <DataTable
+              columns={columns}
+              data={hosts}
+              keyField="id"
+              emptyMessage="No L4 host matches these filters."
+              pagination={pagination}
+              sort={initialSort}
+              mobileCard={mobileCard}
+              rowClassName={(host) =>
+                cn(selected?.id === host.id && "bg-brand-tint hover:bg-brand-tint", !host.enabled && "text-muted-foreground")
+              }
+            />
+            {hosts.length === 0 && filtering && (
+              <div className="mt-3 flex justify-center">
+                <Button variant="secondary" size="sm" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              </div>
+            )}
+          </section>
+
+          {selected && (
+            <L4HostDetail
+              host={selected}
+              status={l4HostStatus(selected, portsDiff)}
+              canWrite={canWrite}
+              onToggle={() => handleToggleEnabled(selected.id, !selected.enabled)}
+              onDuplicate={() => openDuplicate(selected)}
+              onEdit={() => setEditHost(selected)}
+            />
+          )}
+        </>
+      )}
 
       <CreateL4HostDialog
         key={dialogKey}
         open={createOpen}
         onClose={() => { setCreateOpen(false); setTimeout(() => setDuplicateHost(null), 200); signalBannerRefresh(); router.refresh(); }}
         initialData={duplicateHost}
+        scopeTags={scopeTags}
+        approval={approval}
       />
 
       {editHost && (
@@ -265,6 +404,8 @@ export default function L4ProxyHostsClient({ hosts, pagination, initialSearch, i
           open={!!editHost}
           host={editHost}
           onClose={() => { setEditHost(null); signalBannerRefresh(); router.refresh(); }}
+          scopeTags={scopeTags}
+          approval={approval}
         />
       )}
 
@@ -273,6 +414,7 @@ export default function L4ProxyHostsClient({ hosts, pagination, initialSearch, i
           open={!!deleteHost}
           host={deleteHost}
           onClose={() => { setDeleteHost(null); signalBannerRefresh(); router.refresh(); }}
+          approval={approval}
         />
       )}
     </div>

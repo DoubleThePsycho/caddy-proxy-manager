@@ -1,6 +1,6 @@
 /**
  * Regression (#261): OAuth account linking/unlinking was not reflected in the
- * CPM user state. Better Auth writes federated identities to the `accounts`
+ * Ingressi user state. Better Auth writes federated identities to the `accounts`
  * table only, while the Profile UI (and admin user list) read the informational
  * `users.provider` / `users.subject` columns:
  *
@@ -22,23 +22,13 @@ const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
 
-  return {
-    default: ctx.db,
-    sqlite: undefined,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null => {
-      if (!value) return null;
-      return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-    },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 // Stub better-auth so `betterAuth(options)` hands back the raw options object;
-// the databaseHooks on getAuth().options are then the real functions CPM wired.
+// the databaseHooks on getAuth().options are then the real functions Ingressi wired.
 vi.mock('better-auth', () => ({
   betterAuth: (options: any) => ({ options }),
 }));
@@ -85,13 +75,13 @@ async function seedProvider(id: string, issuer: string) {
     source: 'ui',
     createdAt: NOW,
     updatedAt: NOW,
-  }).run();
+  });
 }
 
 /**
  * Mimic what Better Auth's internal adapter does on OAuth sign-up/link: a row
  * in `accounts`, nothing else. The account.create.after hook under test is the
- * seam CPM uses to keep users.provider/subject in step.
+ * seam Ingressi uses to keep users.provider/subject in step.
  */
 async function createAccountLikeBetterAuth(userId: number, providerId: string, issuer: string, accountId: string) {
   await db().insert(accounts).values({
@@ -101,7 +91,7 @@ async function createAccountLikeBetterAuth(userId: number, providerId: string, i
     providerId,
     createdAt: NOW,
     updatedAt: NOW,
-  }).run();
+  });
 
   const options = (getAuth() as any).options;
   expect(typeof options.databaseHooks?.account?.create?.after).toBe('function');
@@ -166,7 +156,7 @@ describe('#261 — account.create.after keeps users.provider/subject in sync', (
       providerId: 'prov-a',
       createdAt: NOW,
       updatedAt: NOW,
-    }).run();
+    });
 
     // Simulate a repeat sign-in: Better Auth updates the existing account row.
     const options = (getAuth() as any).options;
@@ -198,7 +188,7 @@ describe('#261 — account.create.after keeps users.provider/subject in sync', (
       password: 'y'.repeat(60),
       createdAt: NOW,
       updatedAt: NOW,
-    }).run();
+    });
 
     const options = (getAuth() as any).options;
     await options.databaseHooks.account.create.after({
@@ -240,7 +230,7 @@ describe('#261 — syncUserOAuthIdentity', () => {
         createdAt: NOW,
         updatedAt: NOW,
       },
-    ]).run();
+    ]);
 
     await syncUserOAuthIdentity(user.id);
 
@@ -264,10 +254,10 @@ describe('#261 — syncUserOAuthIdentity', () => {
       providerId: 'prov-a',
       createdAt: NOW,
       updatedAt: NOW,
-    }).run();
+    });
 
     // Simulate unlink: delete the OAuth account rows, then re-derive.
-    await db().delete(accounts).where(eq(accounts.userId, user.id)).run();
+    await db().delete(accounts).where(eq(accounts.userId, user.id));
     await syncUserOAuthIdentity(user.id);
 
     const fresh = await getUserById(user.id);
@@ -282,7 +272,7 @@ describe('#261 — syncUserOAuthIdentity', () => {
       provider: 'prov-a',
       subject: 'sub-a-1',
     });
-    await db().delete(accounts).where(eq(accounts.userId, user.id)).run();
+    await db().delete(accounts).where(eq(accounts.userId, user.id));
 
     await syncUserOAuthIdentity(user.id);
 
@@ -321,7 +311,7 @@ describe('#261 — unlink API re-derives identity from the accounts table', () =
     expect(fresh?.provider).toBe('credentials');
     expect(fresh?.subject).toBeNull();
 
-    const remaining = await db().select().from(accounts).where(eq(accounts.userId, user.id)).all();
+    const remaining = await db().select().from(accounts).where(eq(accounts.userId, user.id));
     expect(remaining.map((a) => a.providerId)).toEqual(['credential']);
   });
 });
@@ -340,13 +330,13 @@ describe('#261 — profile connection state is derived from the accounts table',
     // Even if users.provider were stale, the profile must see the link.
     await db().update(
       (await import('../../src/lib/db/schema')).users,
-    ).set({ provider: '', subject: '' }).where(eq((await import('../../src/lib/db/schema')).users.id, user.id)).run();
+    ).set({ provider: '', subject: '' }).where(eq((await import('../../src/lib/db/schema')).users.id, user.id));
 
     const linked = await listUserOAuthProviders(user.id);
     expect(linked).toEqual([{ providerId: 'prov-a', accountId: 'sub-a-derived' }]);
 
     // And after unlinking, the list empties.
-    await db().delete(accounts).where(eq(accounts.userId, user.id)).run();
+    await db().delete(accounts).where(eq(accounts.userId, user.id));
     expect(await listUserOAuthProviders(user.id)).toEqual([]);
   });
 });

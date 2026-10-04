@@ -2,18 +2,17 @@ import { chromium } from '@playwright/test';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { composeArgs, composeEnv, e2eStack } from './helpers/e2e-stack';
 
-const COMPOSE_ARGS = [
-  'compose',
-  '-f', 'docker-compose.yml',
-  '-f', 'tests/docker-compose.test.yml',
-];
+// The SQLite stack, or with E2E_STACK=postgres the same stack with the
+// dashboard on PostgreSQL (tests/playwright.pg.config.ts).
+const COMPOSE_ARGS = composeArgs();
 const HEALTH_URL = 'http://localhost:3000/api/health';
 export const AUTH_DIR = resolve(__dirname, '.auth');
 export const AUTH_FILE = resolve(AUTH_DIR, 'admin.json');
 const MAX_WAIT_MS = 180_000;
 const POLL_INTERVAL_MS = 3_000;
-const ENV = { ...process.env, CLICKHOUSE_PASSWORD: 'test-clickhouse-password-2026', COMPOSE_PROFILES: 'clickhouse' };
+const ENV = composeEnv();
 
 async function waitForHealth(): Promise<void> {
   const start = Date.now();
@@ -56,7 +55,7 @@ async function waitForCaddyHealthy(): Promise<void> {
   const maxWait = 90_000;
   console.log('[global-setup] Verifying Caddy is healthy...');
   while (Date.now() - start < maxWait) {
-    const result = spawnSync('docker', ['inspect', '--format={{.State.Health.Status}}', 'caddy-proxy-manager-caddy'], {
+    const result = spawnSync('docker', ['inspect', '--format={{.State.Health.Status}}', 'ingressi-caddy'], {
       encoding: 'utf-8',
       cwd: process.cwd(),
     });
@@ -94,7 +93,7 @@ async function seedAuthState(): Promise<void> {
 }
 
 export default async function globalSetup() {
-  console.log('[global-setup] Starting Docker Compose test stack...');
+  console.log(`[global-setup] Starting Docker Compose test stack (${e2eStack()})...`);
   execFileSync('docker', [
     ...COMPOSE_ARGS,
     'up', '-d', '--build',

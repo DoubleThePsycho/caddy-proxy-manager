@@ -12,7 +12,7 @@ describe('clickhouse client analytics enablement', () => {
 
     const query = vi
       .fn()
-      .mockResolvedValueOnce({ json: async () => [{ total: '12', unique_ips: '4', blocked: '2', bytes: '1024' }] })
+      .mockResolvedValueOnce({ json: async () => [{ total: '12', unique_ips: '4', blocked: '2', rate_limited: '1', bytes: '1024' }] })
       .mockResolvedValueOnce({ json: async () => [{ waf_blocked: '3' }] });
 
     const createClient = vi.fn(() => ({ query, command: vi.fn(), insert: vi.fn(), close: vi.fn() }));
@@ -30,6 +30,7 @@ describe('clickhouse client analytics enablement', () => {
       uniqueIps: 4,
       blockedRequests: 5,
       blockedPercent: 41.7,
+      rateLimitedRequests: 1,
       bytesServed: 1024,
     });
 
@@ -58,6 +59,7 @@ describe('clickhouse client analytics enablement', () => {
       uniqueIps: 0,
       blockedRequests: 0,
       blockedPercent: 0,
+      rateLimitedRequests: 0,
       bytesServed: 0,
     });
 
@@ -223,5 +225,39 @@ describe('clickhouse client analytics enablement', () => {
     });
 
     expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds the WAF event id column to new and existing tables, computed from the audit record', async () => {
+    vi.stubEnv('CLICKHOUSE_PASSWORD', 'test-clickhouse-password');
+    const commands: string[] = [];
+    const command = vi.fn(async ({ query }: { query: string }) => { commands.push(query); });
+    const query = vi.fn(async () => ({ json: async () => [{ create_table_query: 'TTL ts + toIntervalDay(30)' }] }));
+    vi.doMock('@clickhouse/client', () => ({
+      createClient: vi.fn(() => ({ query, command, insert: vi.fn(), close: vi.fn() })),
+    }));
+    const { initClickHouse } = await import('@/src/lib/clickhouse/client');
+    await initClickHouse();
+    const expression = "JSONExtractString(ifNull(raw_data, ''), 'transaction', 'id')";
+    expect(commands.find((q) => q.includes('CREATE TABLE IF NOT EXISTS waf_events'))).toContain(`tx_id        String            DEFAULT ${expression}`);
+    expect(commands).toContain(`ALTER TABLE waf_events ADD COLUMN IF NOT EXISTS tx_id String DEFAULT ${expression} CODEC(ZSTD(3))`);
+  });
+
+  it('finds a WAF event by its id with a bound parameter', async () => {
+    vi.stubEnv('CLICKHOUSE_PASSWORD', 'test-clickhouse-password');
+    const query = vi.fn().mockResolvedValueOnce({
+      json: async () => [{
+        ts: '1790938961', host: 'app.example.com', client_ip: '203.0.113.66', country_code: null, method: 'GET', uri: '/',
+        rule_id: '942100', rule_message: 'SQL Injection', severity: 'critical', raw_data: '{}', blocked: '1', tx_id: "x' OR 1=1 --",
+      }],
+    });
+    vi.doMock('@clickhouse/client', () => ({
+      createClient: vi.fn(() => ({ query, command: vi.fn(), insert: vi.fn(), close: vi.fn() })),
+    }));
+    const { queryWafEventByTxId } = await import('@/src/lib/clickhouse/client');
+    await expect(queryWafEventByTxId("x' OR 1=1 --")).resolves.toMatchObject({ eventId: "x' OR 1=1 --", ruleId: 942100, blocked: true });
+    const call = query.mock.calls[0][0] as { query: string; query_params: Record<string, unknown> };
+    expect(call.query).toContain('WHERE tx_id = {p_tx:String}');
+    expect(call.query).not.toContain('OR 1=1');
+    expect(call.query_params).toEqual({ p_tx: "x' OR 1=1 --" });
   });
 });

@@ -3,11 +3,12 @@ import { randomBytes } from "crypto";
 import { SignJWT, jwtVerify } from "jose";
 import { config } from "../config";
 import { findUserByEmail, getUserById } from "../models/user";
-import db from "../db";
+import { appDb } from "../db";
 import { users, linkingTokens, accounts, oauthProviders } from "../db/schema";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, gte, lt } from "drizzle-orm";
 import { nowIso } from "../db";
 import { resolveOAuthAccountIssuer } from "../account-issuer";
+import { first } from "@/src/lib/db/ops";
 
 const LINKING_TOKEN_EXPIRY = 5 * 60; // 5 minutes in seconds
 
@@ -26,10 +27,10 @@ export type LinkingTokenPayload = {
 };
 
 async function getOAuthAccountIssuer(provider: string): Promise<string> {
-  const configuredProvider = await db.select({ issuer: oauthProviders.issuer })
+  const configuredProvider = await first(appDb.select({ issuer: oauthProviders.issuer })
     .from(oauthProviders)
     .where(eq(oauthProviders.id, provider))
-    .get();
+    .limit(1));
   return resolveOAuthAccountIssuer(provider, configuredProvider?.issuer);
 }
 
@@ -43,7 +44,7 @@ export async function decideLinkingStrategy(
 ): Promise<LinkingDecision> {
   const issuer = await getOAuthAccountIssuer(provider);
   // Check accounts table for existing OAuth connection
-  const existingAccount = await db.select().from(accounts).where(
+  const existingAccount = await appDb.select().from(accounts).where(
     and(eq(accounts.issuer, issuer), eq(accounts.accountId, providerAccountId))
   ).limit(1);
 
@@ -142,9 +143,9 @@ export async function storeLinkingToken(token: string): Promise<string> {
   const expiresAt = new Date(Date.now() + LINKING_TOKEN_EXPIRY * 1000).toISOString();
 
   // Purge expired tokens opportunistically
-  await db.delete(linkingTokens).where(lt(linkingTokens.expiresAt, now));
+  await appDb.delete(linkingTokens).where(lt(linkingTokens.expiresAt, now));
 
-  await db.insert(linkingTokens).values({
+  await appDb.insert(linkingTokens).values({
     id,
     token,
     createdAt: now,
@@ -161,7 +162,7 @@ export async function storeLinkingToken(token: string): Promise<string> {
  */
 export async function peekLinkingToken(id: string): Promise<string | null> {
   const now = nowIso();
-  const rows = await db.select().from(linkingTokens)
+  const rows = await appDb.select().from(linkingTokens)
     .where(eq(linkingTokens.id, id))
     .limit(1);
   if (rows.length === 0 || rows[0].expiresAt < now) {
@@ -175,16 +176,12 @@ export async function peekLinkingToken(id: string): Promise<string | null> {
  * Returns null if the ID is not found or the token is expired.
  */
 export async function retrieveLinkingToken(id: string): Promise<string | null> {
-  const now = nowIso();
-  const rows = await db.select().from(linkingTokens)
-    .where(eq(linkingTokens.id, id))
-    .limit(1);
-  if (rows.length === 0 || rows[0].expiresAt < now) {
-    return null;
-  }
-  const { token } = rows[0];
-  await db.delete(linkingTokens).where(eq(linkingTokens.id, id));
-  return token;
+  // Taken in one statement, so two requests never both get it.
+  const [taken] = await appDb
+    .delete(linkingTokens)
+    .where(and(eq(linkingTokens.id, id), gte(linkingTokens.expiresAt, nowIso())))
+    .returning({ token: linkingTokens.token });
+  return taken?.token ?? null;
 }
 
 /**
@@ -209,7 +206,7 @@ export async function verifyAndLinkOAuth(
 
   // Insert OAuth account link
   const issuer = await getOAuthAccountIssuer(provider);
-  await db.insert(accounts).values({
+  await appDb.insert(accounts).values({
     userId,
     issuer,
     accountId: providerAccountId,
@@ -243,7 +240,7 @@ export async function autoLinkOAuth(
 
   // Insert OAuth account link
   const issuer = await getOAuthAccountIssuer(provider);
-  await db.insert(accounts).values({
+  await appDb.insert(accounts).values({
     userId,
     issuer,
     accountId: providerAccountId,
@@ -254,7 +251,7 @@ export async function autoLinkOAuth(
 
   // Update avatar if provided
   if (avatarUrl) {
-    await db
+    await appDb
       .update(users)
       .set({ avatarUrl, updatedAt: nowIso() })
       .where(eq(users.id, userId));
@@ -280,7 +277,7 @@ export async function linkOAuthAuthenticated(
 
   // Insert OAuth account link
   const issuer = await getOAuthAccountIssuer(provider);
-  await db.insert(accounts).values({
+  await appDb.insert(accounts).values({
     userId,
     issuer,
     accountId: providerAccountId,
@@ -291,7 +288,7 @@ export async function linkOAuthAuthenticated(
 
   // Update avatar if provided
   if (avatarUrl) {
-    await db
+    await appDb
       .update(users)
       .set({ avatarUrl, updatedAt: nowIso() })
       .where(eq(users.id, userId));

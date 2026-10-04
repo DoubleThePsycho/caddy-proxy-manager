@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiUser, apiErrorResponse } from "@/src/lib/api-auth";
-import { revokeUserSession } from "@/src/lib/models/sessions";
+import { signOutSession } from "@/src/lib/models/sessions";
+import { parseRowId } from "@/src/lib/row-ids";
 
-/** DELETE /api/v1/sessions/[id] — revoke one of the user's own sessions. */
+/** DELETE /api/v1/sessions/[id] — sign out one of the caller's own sessions. */
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -10,11 +11,11 @@ export async function DELETE(
   try {
     const { userId } = await requireApiUser(request);
     const { id } = await params;
-    const sessionId = Number(id);
-    if (!Number.isInteger(sessionId) || sessionId <= 0) {
+    const sessionId = parseRowId(id);
+    if (sessionId === null) {
       return NextResponse.json({ error: "Invalid session id" }, { status: 400 });
     }
-    const revoked = await revokeUserSession(userId, sessionId);
+    const revoked = await signOutSession({ actorUserId: userId, userId }, sessionId);
     if (!revoked) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }

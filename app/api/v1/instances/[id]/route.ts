@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAdmin, apiErrorResponse } from "@/src/lib/api-auth";
+import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { deleteInstance, updateInstance } from "@/src/lib/models/instances";
 import { instanceSyncTokenValidationError } from "@/src/lib/instance-sync-token";
+import { routeRowId } from "@/src/lib/row-ids";
 
 /**
  * Update an instance's name, base URL, token or enabled flag; fields left out
@@ -13,7 +14,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId } = await requireApiPermission(request, "instances:write");
     const { id } = await params;
     let body: unknown;
     try {
@@ -32,7 +33,7 @@ export async function PUT(
       }
     }
     const instance = await updateInstance(
-      Number(id),
+      routeRowId(id, "Instance not found"),
       {
         name: name as string | undefined,
         baseUrl: baseUrl as string | undefined,
@@ -52,9 +53,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { userId } = await requireApiAdmin(request);
+    const { userId } = await requireApiPermission(request, "instances:write");
     const { id } = await params;
-    await deleteInstance(Number(id), userId);
+    await deleteInstance(routeRowId(id, "Instance not found"), userId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return apiErrorResponse(error);

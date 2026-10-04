@@ -1,2487 +1,515 @@
 "use client";
 
-import { useState, useActionState, useEffect, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
-  Cloud, Globe, Network, Pin, Activity,
-  ScrollText, Settings2, UserCheck, MapPin, KeyRound,
-  Search, ChevronRight, FileWarning, ShieldCheck, Waypoints, Server,
+  Activity,
+  Award,
+  BarChart3,
+  Database,
+  FileWarning,
+  Gauge,
+  Globe,
+  History,
+  KeyRound,
+  Lock,
+  Palette,
+  Pin,
+  RefreshCw,
+  Search,
+  Server,
+  SlidersHorizontal,
+  UserCheck,
+  Waypoints,
+  X,
+  type LucideIcon,
 } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  CommandDialog,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { StatusChip } from "@/components/ui/StatusChip";
-import type {
-  GeneralSettings,
-  AcmeSettings,
-  AuthentikSettings, ForwardAuthSettings,
-  MetricsSettings,
-  LoggingSettings,
-  DnsSettings,
-  UpstreamDnsResolutionSettings,
-  GeoBlockSettings,
-  ErrorPagesSettings,
-  TrustedProxiesSettings,
-  DefaultResponseSettings,
-} from "@/lib/settings";
-import type { DnsProviderApiStatus, DnsProviderDefinition } from "@/src/lib/dns-providers";
-import type { SyncKeyPin } from "@/src/lib/instance-sync-key-pins";
-import { UNREADABLE_SYNC_KEY_PIN_SOURCE } from "@/src/lib/instance-sync-view";
-import { formatDateTimeUtc } from "@/src/lib/date-format";
-import { GeoBlockFields } from "@/components/proxy-hosts/GeoBlockFields";
-import { ErrorPagesFields } from "@/components/proxy-hosts/ErrorPagesFields";
-import OAuthProvidersSection from "./OAuthProvidersSection";
-import type { OAuthProviderView } from "@/src/lib/oauth-provider-view";
-import {
-  updateDnsProviderSettingsAction,
-  updateGeneralSettingsAction,
-  updateAcmeSettingsAction,
-  updateAuthentikSettingsAction,
-  updateForwardAuthSettingsAction,
-  updateMetricsSettingsAction,
-  updateLoggingSettingsAction,
-  updateDnsSettingsAction,
-  updateUpstreamDnsResolutionSettingsAction,
-  updateInstanceModeAction,
-  updateSlaveMasterTokenAction,
-  createSlaveInstanceAction,
-  deleteSlaveInstanceAction,
-  toggleSlaveInstanceAction,
-  updateSlaveInstanceAction,
-  pinSlaveSyncKeyAction,
-  resetSlaveSyncKeyPinAction,
-  syncSlaveInstancesAction,
-  updateGeoBlockSettingsAction,
-  updateErrorPagesSettingsAction,
-  updateTrustedProxiesSettingsAction,
-  updateDefaultResponseSettingsAction,
-} from "./actions";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { SectionCard } from "@/components/ui/SectionCard";
 import { cn } from "@/lib/utils";
+import {
+  SETTINGS_SECTION_ALIASES,
+  SETTINGS_SECTION_GROUPS,
+  resolveSettingsSection,
+  type SettingsSection,
+} from "@/src/lib/settings-sections";
+import OAuthProvidersSection from "./OAuthProvidersSection";
+import UsagePingSection from "./UsagePingSection";
+import GeneralGroup from "./groups/GeneralGroup";
+import CertificatesGroup from "./groups/CertificatesGroup";
+import SyncGroup, { MODE_LABELS } from "./groups/SyncGroup";
+import { TrustedProxiesGroup, UpstreamDnsGroup } from "./groups/NetworkingGroups";
+import { ErrorPagesGroup, ForwardAuthGroup, GeoGroup, RateLimitGroup } from "./groups/SecurityGroups";
+import AnalyticsGroup from "./groups/AnalyticsGroup";
+import { BackupsGroup } from "@/ee/backups/ui/BackupsSummaryGroup";
+import { BrandingGroup } from "@/ee/white-label/ui/BrandingSummaryGroup";
+import { RestrictedNotice } from "@/src/components/settings/RestrictedNotice";
+import ClusterSection, { clusterSummaryLabel } from "@/ee/high-availability/ui/ClusterSection";
+import SharedStateSection from "@/ee/high-availability/ui/SharedStateSection";
+import { removeSharedStateAction, saveSharedStateAction, sharedStateStatusAction } from "@/ee/high-availability/ui/shared-state-actions";
+import type { AnalyticsStatusView, BackupsSummaryView, BrandingSummaryView, SettingsClientProps } from "./types";
 
-// ─── Settings navigation catalog ─────────────────────────────────────────────
+// The dialogs of the instance sync group, rendered on their own by tests.
+export { EditSlaveInstanceForm, RemovePinnedSlaveConfirmation, SyncKeyPinDialogBody } from "./groups/SyncGroup";
 
-type SettingItem = {
-  id: string;
-  name: string;
-  desc: string;
-  icon: ReactNode;
+const GROUP_ICONS: Record<string, LucideIcon> = {
+  general: SlidersHorizontal,
+  acme: Award,
+  sync: RefreshCw,
+  "high-availability": Server,
+  backups: Database,
+  "usage-ping": BarChart3,
+  "trusted-proxies": Waypoints,
+  "upstream-dns": Pin,
+  geoblock: Globe,
+  "rate-limit": Gauge,
+  "error-pages": FileWarning,
+  "forward-auth": UserCheck,
+  oauth: KeyRound,
+  analytics: Activity,
+  branding: Palette,
 };
 
-type SettingsGroup = {
-  id: string;
-  label: string;
-  items: SettingItem[];
-};
+const DEFAULT_GROUP = "general";
 
-const SETTINGS_GROUPS: SettingsGroup[] = [
-  {
-    id: "system",
-    label: "System",
-    items: [
-      { id: "sync", name: "Instance Sync", desc: "Standalone, master, or slave coordination", icon: <Network className="h-4 w-4" /> },
-      { id: "general", name: "General", desc: "Primary domain and ACME contact email", icon: <Settings2 className="h-4 w-4" /> },
-      { id: "acme", name: "ACME Server", desc: "Custom ACME directory URL for internal CAs", icon: <ShieldCheck className="h-4 w-4" /> },
-      { id: "default-response", name: "Default Response", desc: "Handle requests for unknown hosts and direct IP access", icon: <Server className="h-4 w-4" /> },
-    ],
-  },
-  {
-    id: "networking",
-    label: "Networking",
-    items: [
-      { id: "dns-providers", name: "DNS Providers", desc: "Provider credentials for ACME DNS-01", icon: <Cloud className="h-4 w-4" /> },
-      { id: "dns-resolvers", name: "DNS Resolvers", desc: "Custom resolvers for challenge verification", icon: <Globe className="h-4 w-4" /> },
-      { id: "upstream-dns", name: "Upstream DNS Pinning", desc: "Pin upstream IPs at config-apply time", icon: <Pin className="h-4 w-4" /> },
-      { id: "trusted-proxies", name: "Trusted Proxies", desc: "Resolve real client IP behind an upstream proxy", icon: <Waypoints className="h-4 w-4" /> },
-    ],
-  },
-  {
-    id: "security",
-    label: "Security",
-    items: [
-      { id: "geoblock", name: "Global Geoblocking", desc: "Default geoblock rules across all hosts", icon: <MapPin className="h-4 w-4" /> },
-      { id: "error-pages", name: "Error Pages", desc: "Global custom error responses (fallback for all hosts)", icon: <FileWarning className="h-4 w-4" /> },
-      { id: "authentik", name: "Authentik Defaults", desc: "Forward-auth defaults for new proxy hosts", icon: <UserCheck className="h-4 w-4" /> },
-      { id: "forward-auth", name: "Forward Auth Defaults", desc: "Generic forward-auth (Authelia) defaults for new proxy hosts", icon: <ShieldCheck className="h-4 w-4" /> },
-      { id: "oauth", name: "OAuth Providers", desc: "OAuth/OIDC SSO providers", icon: <KeyRound className="h-4 w-4" /> },
-    ],
-  },
-  {
-    id: "observability",
-    label: "Observability",
-    items: [
-      { id: "metrics", name: "Metrics & Monitoring", desc: "Prometheus metrics endpoint", icon: <Activity className="h-4 w-4" /> },
-      { id: "logging", name: "Access Logging", desc: "HTTP access log for proxied requests", icon: <ScrollText className="h-4 w-4" /> },
-    ],
-  },
-];
+const DEFAULT_ANALYTICS: AnalyticsStatusView = { enabled: false, retentionDays: 30, retentionFromEnv: false, totals: null, totalsError: null };
+const DEFAULT_BACKUPS: BackupsSummaryView = { allowed: false, configurable: false, editionLabel: "Business", destinations: [] };
+const DEFAULT_BRANDING: BrandingSummaryView = { licensed: false, canRead: false, editionLabel: "MSP" };
 
-const ALL_ITEMS = SETTINGS_GROUPS.flatMap((g) =>
-  g.items.map((i) => ({ ...i, groupId: g.id, groupLabel: g.label }))
+type GroupItem = SettingsSection & { section: string };
+
+const ALL_GROUPS: readonly GroupItem[] = SETTINGS_SECTION_GROUPS.flatMap((group) =>
+  group.items.map((item) => ({ ...item, section: group.label }))
 );
 
-function findItem(id: string) {
-  return ALL_ITEMS.find((i) => i.id === id);
+/** Words a group is found by: its name, description, keywords and the cards it took in. */
+const SEARCH_TEXT: Record<string, string> = Object.fromEntries(
+  ALL_GROUPS.map((group) => {
+    const aliases = SETTINGS_SECTION_ALIASES.filter((alias) => alias.section === group.id);
+    const text = [group.name, group.desc, ...group.keywords, ...aliases.flatMap((alias) => [alias.name, ...alias.keywords])];
+    return [group.id, text.join(" ").toLowerCase()];
+  })
+);
+
+function matches(groupId: string, words: string[]): boolean {
+  return words.every((word) => SEARCH_TEXT[groupId]?.includes(word));
 }
 
-// ─── Alert helpers ───────────────────────────────────────────────────────────
-
-function StatusAlert({ message, success }: { message: string; success: boolean }) {
-  return (
-    <Alert variant={success ? "default" : "destructive"}>
-      <AlertDescription>{message}</AlertDescription>
-    </Alert>
-  );
+function resolveInitial(id: string | null | undefined): { group: string; anchor: string | null } {
+  const resolved = id ? resolveSettingsSection(id) : null;
+  return resolved ? { group: resolved.section.id, anchor: resolved.anchor } : { group: DEFAULT_GROUP, anchor: null };
 }
 
-function InfoAlert({ children }: { children: ReactNode }) {
-  return (
-    <Alert className="border-blue-500/30 bg-blue-500/5 text-blue-700 dark:text-blue-400 [&>svg]:text-blue-500">
-      <AlertDescription>{children}</AlertDescription>
-    </Alert>
-  );
+function scheduleMeta(backups: BackupsSummaryView): string {
+  if (!backups.allowed) return "";
+  const active = backups.destinations.find((destination) => destination.enabled);
+  if (active) return active.schedule.kind.charAt(0).toUpperCase() + active.schedule.kind.slice(1);
+  return backups.destinations.length > 0 ? "Paused" : "Off";
 }
 
-function WarnAlert({ children }: { children: ReactNode }) {
-  return (
-    <Alert className="border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400 [&>svg]:text-amber-500">
-      <AlertDescription>{children}</AlertDescription>
-    </Alert>
-  );
-}
+export default function SettingsClient(props: SettingsClientProps) {
+  const {
+    general,
+    acme,
+    dnsProvider,
+    dnsProviderDefinitions,
+    authentik,
+    forwardAuth,
+    metrics,
+    logging,
+    dns,
+    upstreamDnsResolution,
+    trustedProxies,
+    defaultResponse,
+    globalGeoBlock,
+    globalErrorPages,
+    globalRateLimit,
+    oauthProviders,
+    baseUrl,
+    usagePing,
+    canWriteSettings,
+    canWriteInstances = canWriteSettings,
+    initialSection,
+    restricted,
+    certificateStorage,
+    cluster,
+    instanceSync,
+    geoip = [],
+    analytics = DEFAULT_ANALYTICS,
+    backups = DEFAULT_BACKUPS,
+    branding = DEFAULT_BRANDING,
+    links = { history: false, certificates: false, fleet: false },
+  } = props;
 
-// ─── Layout primitives ───────────────────────────────────────────────────────
+  const initial = resolveInitial(initialSection);
+  const [active, setActive] = useState(initial.group);
+  const [anchor, setAnchor] = useState<string | null>(initial.anchor);
+  const [visited, setVisited] = useState<ReadonlySet<string>>(() => new Set([initial.group]));
+  const [dirty, setDirty] = useState<Record<string, number>>({});
+  const [query, setQuery] = useState("");
 
-function FormCard({
-  title,
-  children,
-  footer,
-}: {
-  title?: string;
-  children: ReactNode;
-  footer?: ReactNode;
-}) {
-  return (
-    <Card className="overflow-hidden">
-      {title && (
-        <div className="px-4 py-3 border-b border-border">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            {title}
-          </span>
-        </div>
-      )}
-      <CardContent className="p-4">{children}</CardContent>
-      {footer && (
-        <div className="flex justify-end gap-2 px-4 py-3 border-t border-border bg-muted/30">
-          {footer}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function FormRow({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-3 py-3 border-b border-border last:border-b-0 items-start">
-      <div className="min-w-0">
-        <div className="text-sm font-medium">{label}</div>
-        {hint && (
-          <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{hint}</div>
-        )}
-      </div>
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
-}
-
-// ─── Cmd-K Palette ───────────────────────────────────────────────────────────
-
-function SettingsCmdK({
-  open,
-  onOpenChange,
-  onSelect,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Jump to a setting..." />
-      <CommandList>
-        <CommandEmpty>No settings match your search.</CommandEmpty>
-        {SETTINGS_GROUPS.map((group) => (
-          <CommandGroup key={group.id} heading={group.label}>
-            {group.items.map((item) => (
-              <CommandItem
-                key={item.id}
-                value={`${item.name} ${item.desc} ${group.label}`}
-                onSelect={() => {
-                  onSelect(item.id);
-                  onOpenChange(false);
-                }}
-                className="gap-3"
-              >
-                <span className="text-muted-foreground">{item.icon}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium">{item.name}</div>
-                  <div className="text-xs text-muted-foreground truncate">{item.desc}</div>
-                </div>
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        ))}
-      </CommandList>
-    </CommandDialog>
-  );
-}
-
-// ─── Settings Sidebar ────────────────────────────────────────────────────────
-
-function SettingsSidebar({
-  active,
-  onSelect,
-  onSearchClick,
-}: {
-  active: string;
-  onSelect: (id: string) => void;
-  onSearchClick: () => void;
-}) {
-  return (
-    <aside aria-label="Settings navigation" className="hidden lg:flex flex-col w-[260px] shrink-0 border-r border-border bg-card">
-      {/* Search trigger */}
-      <div className="p-3 border-b border-border">
-        <button
-          onClick={onSearchClick}
-          className="flex items-center gap-2 w-full h-8 px-2.5 rounded-md border border-border bg-muted/40 text-muted-foreground text-xs hover:bg-muted/60 transition-colors"
-        >
-          <Search className="h-3.5 w-3.5 shrink-0" />
-          <span className="flex-1 text-left">Jump to setting...</span>
-          <kbd className="hidden sm:inline-flex h-5 items-center gap-1 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
-            <span className="text-xs">⌘</span>K
-          </kbd>
-        </button>
-      </div>
-
-      {/* Nav groups */}
-      <ScrollArea className="flex-1">
-        <nav className="p-2">
-          {SETTINGS_GROUPS.map((group) => (
-            <div key={group.id} className="mt-3 first:mt-1">
-              <div className="px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                {group.label}
-              </div>
-              {group.items.map((item) => {
-                const isActive = item.id === active;
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => onSelect(item.id)}
-                    className={cn(
-                      "relative flex items-center gap-2.5 w-full px-2.5 py-[7px] rounded-md text-sm text-left transition-colors",
-                      isActive
-                        ? "bg-primary/10 text-foreground font-medium"
-                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                    )}
-                  >
-                    {isActive && (
-                      <span className="absolute -left-2 top-1.5 bottom-1.5 w-0.5 rounded-full bg-primary" />
-                    )}
-                    <span className={cn(isActive ? "text-primary" : "text-muted-foreground")}>
-                      {item.icon}
-                    </span>
-                    <span className="flex-1 truncate">{item.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ))}
-        </nav>
-      </ScrollArea>
-    </aside>
-  );
-}
-
-// ─── Mobile settings nav ─────────────────────────────────────────────────────
-
-function MobileSettingsNav({
-  active,
-  onSelect,
-  onSearchClick,
-}: {
-  active: string;
-  onSelect: (id: string) => void;
-  onSearchClick: () => void;
-}) {
-  return (
-    <div className="lg:hidden" data-testid="mobile-settings-nav">
-      <div className="flex items-center gap-2 mb-4">
-        <button
-          onClick={onSearchClick}
-          className="flex items-center gap-2 flex-1 h-9 px-3 rounded-md border border-border bg-muted/40 text-muted-foreground text-sm hover:bg-muted/60 transition-colors"
-        >
-          <Search className="h-3.5 w-3.5 shrink-0" />
-          <span>Jump to setting...</span>
-        </button>
-      </div>
-      <div className="flex gap-1.5 overflow-x-auto pb-3 -mx-1 px-1 scrollbar-none">
-        {ALL_ITEMS.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => onSelect(item.id)}
-            className={cn(
-              "flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors",
-              item.id === active
-                ? "bg-primary/10 text-primary border-primary/30"
-                : "bg-muted/40 text-muted-foreground border-border hover:bg-muted/60"
-            )}
-          >
-            {item.name}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── Detail header ───────────────────────────────────────────────────────────
-
-function DetailHeader({ activeId }: { activeId: string }) {
-  const item = findItem(activeId);
-  if (!item) return null;
-  return (
-    <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border px-6 py-4">
-      <div data-testid="settings-breadcrumb" className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
-        <span>Settings</span>
-        <ChevronRight className="h-3 w-3" />
-        <span>{item.groupLabel}</span>
-      </div>
-      <div className="flex items-center gap-3">
-        <h1 className="text-xl font-semibold tracking-tight">{item.name}</h1>
-      </div>
-      <p className="text-sm text-muted-foreground mt-1 max-w-2xl">{item.desc}</p>
-    </div>
-  );
-}
-
-// ─── Props ───────────────────────────────────────────────────────────────────
-
-type Props = {
-  general: GeneralSettings | null;
-  acme: AcmeSettings | null;
-  dnsProvider: DnsProviderApiStatus | null;
-  dnsProviderDefinitions: DnsProviderDefinition[];
-  authentik: AuthentikSettings | null;
-  forwardAuth: ForwardAuthSettings | null;
-  metrics: MetricsSettings | null;
-  logging: LoggingSettings | null;
-  dns: DnsSettings | null;
-  upstreamDnsResolution: UpstreamDnsResolutionSettings | null;
-  trustedProxies: TrustedProxiesSettings | null;
-  defaultResponse: DefaultResponseSettings | null;
-  globalGeoBlock?: GeoBlockSettings | null;
-  globalErrorPages?: ErrorPagesSettings | null;
-  oauthProviders: OAuthProviderView[];
-  baseUrl: string;
-  instanceSync: {
-    mode: "standalone" | "master" | "slave";
-    modeFromEnv: boolean;
-    tokenFromEnv: boolean;
-    overrides: {
-      general: boolean;
-      acme: boolean;
-      dnsProvider: boolean;
-      authentik: boolean;
-      forwardAuth: boolean;
-      metrics: boolean;
-      logging: boolean;
-      dns: boolean;
-      upstreamDnsResolution: boolean;
-      trustedProxies: boolean;
-      defaultResponse: boolean;
-    };
-    slave: {
-      hasToken: boolean;
-      lastSyncAt: string | null;
-      lastSyncError: string | null;
-      /** This instance's own sync key id, which the master pins. */
-      syncKeyId: string;
-      /** This instance's own sync public key (raw X25519, base64). */
-      syncPublicKey: string;
-    } | null;
-    master: {
-      instances: Array<{
-        id: number;
-        name: string;
-        baseUrl: string;
-        enabled: boolean;
-        lastSyncAt: string | null;
-        lastSyncError: string | null;
-        syncKeyPin: SyncKeyPinView | null;
-      }>;
-      envInstances: Array<{
-        name: string;
-        url: string;
-        /** Set in INSTANCE_SLAVES; sync checks it instead of the stored pin. */
-        syncKeyId?: string;
-        /** Set in INSTANCE_SLAVES; sync checks it instead of the stored pin. */
-        syncPublicKey?: string;
-        syncKeyPin: SyncKeyPinView | null;
-      }>;
-      /** Pins of URLs no instance or INSTANCE_SLAVES entry syncs to. */
-      orphanSyncKeyPins: Array<SyncKeyPinView & { url: string }>;
-    } | null;
-  };
-};
-
-type SyncKeyPinView = Pick<SyncKeyPin, "keyId" | "publicKey" | "pinnedAt" | "source">;
-
-type SyncKeyPinTarget = { instanceId: number } | { slaveUrl: string };
-
-// ─── Component ───────────────────────────────────────────────────────────────
-
-export default function SettingsClient({
-  general,
-  acme,
-  dnsProvider,
-  dnsProviderDefinitions,
-  authentik,
-  forwardAuth,
-  metrics,
-  logging,
-  dns,
-  upstreamDnsResolution,
-  trustedProxies,
-  defaultResponse,
-  globalGeoBlock,
-  globalErrorPages,
-  oauthProviders,
-  baseUrl,
-  instanceSync,
-}: Props) {
-  const [active, setActive] = useState("sync");
-  const [cmdkOpen, setCmdkOpen] = useState(false);
-
-  // Cmd-K keyboard shortcut
-  useEffect(() => {
-    function handler(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setCmdkOpen(true);
-      }
-    }
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+  const open = useCallback((group: string, target: string | null = null) => {
+    setActive(group);
+    setAnchor(target);
+    setVisited((previous) => (previous.has(group) ? previous : new Set([...previous, group])));
   }, []);
 
-  // Form action states
-  const [generalState, generalFormAction] = useActionState(updateGeneralSettingsAction, null);
-  const [acmeState, acmeFormAction] = useActionState(updateAcmeSettingsAction, null);
-  const [dnsProviderState, dnsProviderFormAction] = useActionState(updateDnsProviderSettingsAction, null);
-  const [selectedProvider, setSelectedProvider] = useState("none");
-  const configuredProviders = dnsProvider?.providers ? Object.keys(dnsProvider.providers) : [];
-  const [authentikState, authentikFormAction] = useActionState(updateAuthentikSettingsAction, null);
-  const [forwardAuthState, forwardAuthFormAction] = useActionState(updateForwardAuthSettingsAction, null);
-  const [metricsState, metricsFormAction] = useActionState(updateMetricsSettingsAction, null);
-  const [loggingState, loggingFormAction] = useActionState(updateLoggingSettingsAction, null);
-  const [dnsState, dnsFormAction] = useActionState(updateDnsSettingsAction, null);
-  const [upstreamDnsResolutionState, upstreamDnsResolutionFormAction] = useActionState(
-    updateUpstreamDnsResolutionSettingsAction, null
-  );
-  const [instanceModeState, instanceModeFormAction] = useActionState(updateInstanceModeAction, null);
-  const [slaveTokenState, slaveTokenFormAction] = useActionState(updateSlaveMasterTokenAction, null);
-  const [slaveInstanceState, slaveInstanceFormAction] = useActionState(createSlaveInstanceAction, null);
-  const [syncState, syncFormAction] = useActionState(syncSlaveInstancesAction, null);
-  const [geoBlockState, geoBlockFormAction] = useActionState(updateGeoBlockSettingsAction, null);
-  const [errorPagesState, errorPagesFormAction] = useActionState(updateErrorPagesSettingsAction, null);
-  const [trustedProxiesState, trustedProxiesFormAction] = useActionState(updateTrustedProxiesSettingsAction, null);
-  const [defaultResponseState, defaultResponseFormAction] = useActionState(updateDefaultResponseSettingsAction, null);
+  // Follow ?section= while mounted: the command palette navigates here with another group.
+  const sectionParam = useSearchParams()?.get("section") ?? null;
+  const [followedSection, setFollowedSection] = useState(sectionParam);
+  if (sectionParam !== followedSection) {
+    setFollowedSection(sectionParam);
+    const resolved = sectionParam ? resolveSettingsSection(sectionParam) : null;
+    if (resolved) open(resolved.section.id, resolved.anchor);
+  }
+
+  const selectGroup = (id: string) => {
+    open(id);
+    try {
+      window.history.replaceState(null, "", `${window.location.pathname}?section=${encodeURIComponent(id)}`);
+    } catch {
+      // The address bar is a convenience; the group is already shown.
+    }
+  };
+
+  // An old section id opens its group scrolled to the card it became.
+  useEffect(() => {
+    if (!anchor) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById(anchor)?.scrollIntoView({ block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [anchor, active]);
+
+  const anyDirty = Object.values(dirty).some((count) => count > 0);
+  useEffect(() => {
+    if (!anyDirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [anyDirty]);
+
+  const reporters = useMemo(() => {
+    const entries = ALL_GROUPS.map((group) => [
+      group.id,
+      (count: number) => setDirty((previous) => (previous[group.id] === count ? previous : { ...previous, [group.id]: count })),
+    ]);
+    return Object.fromEntries(entries) as Record<string, (count: number) => void>;
+  }, []);
 
   const isSlave = instanceSync.mode === "slave";
-  const isMaster = instanceSync.mode === "master";
-  const [generalOverride, setGeneralOverride] = useState(instanceSync.overrides.general);
-  const [acmeOverride, setAcmeOverride] = useState(instanceSync.overrides.acme);
-  const [dnsProviderOverride, setDnsProviderOverride] = useState(instanceSync.overrides.dnsProvider);
-  const [authentikOverride, setAuthentikOverride] = useState(instanceSync.overrides.authentik);
-  const [forwardAuthOverride, setForwardAuthOverride] = useState(instanceSync.overrides.forwardAuth);
-  const [metricsOverride, setMetricsOverride] = useState(instanceSync.overrides.metrics);
-  const [loggingOverride, setLoggingOverride] = useState(instanceSync.overrides.logging);
-  const [dnsOverride, setDnsOverride] = useState(instanceSync.overrides.dns);
-  const [upstreamDnsResolutionOverride, setUpstreamDnsResolutionOverride] = useState(
-    instanceSync.overrides.upstreamDnsResolution
-  );
-  const [trustedProxiesOverride, setTrustedProxiesOverride] = useState(instanceSync.overrides.trustedProxies);
-  const [defaultResponseOverride, setDefaultResponseOverride] = useState(instanceSync.overrides.defaultResponse);
+  const overrides = instanceSync.overrides;
 
-  return (
-    <div className="flex min-h-[calc(100vh-3rem)] md:min-h-screen">
-      {/* Desktop sidebar */}
-      <SettingsSidebar
-        active={active}
-        onSelect={setActive}
-        onSearchClick={() => setCmdkOpen(true)}
-      />
+  const meta: Record<string, string> = {
+    sync: restricted?.sync ? "" : MODE_LABELS[instanceSync.mode],
+    "high-availability": cluster ? clusterSummaryLabel(cluster.view) : "",
+    backups: scheduleMeta(backups),
+    "usage-ping": usagePing.enabled ? "On" : "Off",
+    analytics: analytics.enabled ? `${analytics.retentionDays} days` : "Off",
+    branding: branding.licensed ? "" : branding.editionLabel,
+  };
 
-      {/* Detail pane */}
-      <div className="flex-1 min-w-0 flex flex-col">
-        <DetailHeader activeId={active} />
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shownGroups = SETTINGS_SECTION_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => matches(item.id, words)),
+  })).filter((group) => group.items.length > 0);
+  const found = shownGroups.reduce((total, group) => total + group.items.length, 0);
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="p-4 md:px-6 md:py-5 max-w-3xl">
-            {/* Mobile nav */}
-            <MobileSettingsNav
-              active={active}
-              onSelect={setActive}
-              onSearchClick={() => setCmdkOpen(true)}
-            />
+  const current = ALL_GROUPS.find((group) => group.id === active) ?? ALL_GROUPS[0];
 
-            <div className="flex flex-col gap-4">
-              {active === "sync" && (
-                <SyncSection
-                  instanceSync={instanceSync}
-                  instanceModeState={instanceModeState}
-                  instanceModeFormAction={instanceModeFormAction}
-                  slaveTokenState={slaveTokenState}
-                  slaveTokenFormAction={slaveTokenFormAction}
-                  slaveInstanceState={slaveInstanceState}
-                  slaveInstanceFormAction={slaveInstanceFormAction}
-                  syncState={syncState}
-                  syncFormAction={syncFormAction}
-                  isSlave={isSlave}
-                  isMaster={isMaster}
+  function renderGroup(id: string): ReactNode {
+    switch (id) {
+      case "general":
+        return (
+          <GeneralGroup
+            general={general}
+            defaultResponse={defaultResponse}
+            baseUrl={baseUrl}
+            isSlave={isSlave}
+            overrides={overrides}
+            canSave={canWriteSettings}
+            onDirtyChange={reporters.general}
+          />
+        );
+      case "acme":
+        return (
+          <CertificatesGroup
+            acme={acme}
+            general={general}
+            dnsProvider={dnsProvider}
+            dnsProviderDefinitions={dnsProviderDefinitions}
+            dns={dns}
+            isSlave={isSlave}
+            overrides={overrides}
+            certificateStorage={certificateStorage ?? null}
+            storageRestricted={Boolean(restricted?.certificateStorage)}
+            canSave={canWriteSettings}
+            canOpenCertificates={links.certificates}
+            onDirtyChange={reporters.acme}
+          />
+        );
+      case "sync":
+        return restricted?.sync ? (
+          <SectionCard title="Instance sync" headingLevel={3} padded>
+            <RestrictedNotice permission="instances:read" />
+          </SectionCard>
+        ) : (
+          <SyncGroup instanceSync={instanceSync} canSave={canWriteInstances} canOpenFleet={links.fleet} onDirtyChange={reporters.sync} />
+        );
+      case "high-availability":
+        return (
+          <div className="flex flex-col gap-4">
+            {restricted?.certificateStorage || !cluster ? (
+              <SectionCard title="Dashboard cluster" headingLevel={3} padded>
+                <RestrictedNotice permission="high_availability:read" />
+              </SectionCard>
+            ) : (
+              <ClusterSection view={cluster.view} editionLabel={cluster.editionLabel} />
+            )}
+            {!restricted?.certificateStorage && certificateStorage?.sharedState && (
+              <div id="settings-shared-state" className="scroll-mt-4">
+                <SharedStateSection
+                  view={certificateStorage.sharedState}
+                  canWrite={certificateStorage.canWrite}
+                  editionLabel={certificateStorage.editionLabel}
+                  save={saveSharedStateAction}
+                  remove={removeSharedStateAction}
+                  loadStatus={sharedStateStatusAction}
                 />
-              )}
-              {active === "general" && (
-                <GeneralSection
-                  general={general}
-                  generalState={generalState}
-                  generalFormAction={generalFormAction}
-                  isSlave={isSlave}
-                  generalOverride={generalOverride}
-                  setGeneralOverride={setGeneralOverride}
-                />
-              )}
-              {active === "acme" && (
-                <AcmeSection
-                  acme={acme}
-                  acmeState={acmeState}
-                  acmeFormAction={acmeFormAction}
-                  isSlave={isSlave}
-                  acmeOverride={acmeOverride}
-                  setAcmeOverride={setAcmeOverride}
-                />
-              )}
-              {active === "default-response" && (
-                <DefaultResponseSection
-                  defaultResponse={defaultResponse}
-                  defaultResponseState={defaultResponseState}
-                  defaultResponseFormAction={defaultResponseFormAction}
-                  isSlave={isSlave}
-                  defaultResponseOverride={defaultResponseOverride}
-                  setDefaultResponseOverride={setDefaultResponseOverride}
-                />
-              )}
-              {active === "dns-providers" && (
-                <DnsProvidersSection
-                  dnsProvider={dnsProvider}
-                  dnsProviderDefinitions={dnsProviderDefinitions}
-                  dnsProviderState={dnsProviderState}
-                  dnsProviderFormAction={dnsProviderFormAction}
-                  selectedProvider={selectedProvider}
-                  setSelectedProvider={setSelectedProvider}
-                  configuredProviders={configuredProviders}
-                  isSlave={isSlave}
-                  dnsProviderOverride={dnsProviderOverride}
-                  setDnsProviderOverride={setDnsProviderOverride}
-                />
-              )}
-              {active === "dns-resolvers" && (
-                <DnsResolversSection
-                  dns={dns}
-                  dnsState={dnsState}
-                  dnsFormAction={dnsFormAction}
-                  isSlave={isSlave}
-                  dnsOverride={dnsOverride}
-                  setDnsOverride={setDnsOverride}
-                />
-              )}
-              {active === "upstream-dns" && (
-                <UpstreamDnsSection
-                  upstreamDnsResolution={upstreamDnsResolution}
-                  upstreamDnsResolutionState={upstreamDnsResolutionState}
-                  upstreamDnsResolutionFormAction={upstreamDnsResolutionFormAction}
-                  isSlave={isSlave}
-                  upstreamDnsResolutionOverride={upstreamDnsResolutionOverride}
-                  setUpstreamDnsResolutionOverride={setUpstreamDnsResolutionOverride}
-                />
-              )}
-              {active === "trusted-proxies" && (
-                <TrustedProxiesSection
-                  trustedProxies={trustedProxies}
-                  trustedProxiesState={trustedProxiesState}
-                  trustedProxiesFormAction={trustedProxiesFormAction}
-                  isSlave={isSlave}
-                  trustedProxiesOverride={trustedProxiesOverride}
-                  setTrustedProxiesOverride={setTrustedProxiesOverride}
-                />
-              )}
-              {active === "geoblock" && (
-                <GeoBlockSection
-                  globalGeoBlock={globalGeoBlock}
-                  geoBlockState={geoBlockState}
-                  geoBlockFormAction={geoBlockFormAction}
-                />
-              )}
-              {active === "error-pages" && (
-                <ErrorPagesSection
-                  globalErrorPages={globalErrorPages}
-                  errorPagesState={errorPagesState}
-                  errorPagesFormAction={errorPagesFormAction}
-                />
-              )}
-              {active === "authentik" && (
-                <AuthentikSection
-                  authentik={authentik}
-                  authentikState={authentikState}
-                  authentikFormAction={authentikFormAction}
-                  isSlave={isSlave}
-                  authentikOverride={authentikOverride}
-                  setAuthentikOverride={setAuthentikOverride}
-                />
-              )}
-              {active === "forward-auth" && (
-                <ForwardAuthSection
-                  forwardAuth={forwardAuth}
-                  forwardAuthState={forwardAuthState}
-                  forwardAuthFormAction={forwardAuthFormAction}
-                  isSlave={isSlave}
-                  forwardAuthOverride={forwardAuthOverride}
-                  setForwardAuthOverride={setForwardAuthOverride}
-                />
-              )}
-              {active === "oauth" && (
-                <OAuthSection
-                  oauthProviders={oauthProviders}
-                  baseUrl={baseUrl}
-                />
-              )}
-              {active === "metrics" && (
-                <MetricsSection
-                  metrics={metrics}
-                  metricsState={metricsState}
-                  metricsFormAction={metricsFormAction}
-                  isSlave={isSlave}
-                  metricsOverride={metricsOverride}
-                  setMetricsOverride={setMetricsOverride}
-                />
-              )}
-              {active === "logging" && (
-                <LoggingSection
-                  logging={logging}
-                  loggingState={loggingState}
-                  loggingFormAction={loggingFormAction}
-                  isSlave={isSlave}
-                  loggingOverride={loggingOverride}
-                  setLoggingOverride={setLoggingOverride}
-                />
-              )}
-            </div>
+              </div>
+            )}
           </div>
-        </div>
-      </div>
+        );
+      case "backups":
+        return <BackupsGroup backups={backups} />;
+      case "usage-ping":
+        return <UsagePingSection initial={usagePing} canWrite={canWriteSettings} />;
+      case "trusted-proxies":
+        return (
+          <TrustedProxiesGroup
+            trustedProxies={trustedProxies}
+            isSlave={isSlave}
+            override={overrides.trustedProxies}
+            canSave={canWriteSettings}
+            onDirtyChange={reporters["trusted-proxies"]}
+          />
+        );
+      case "upstream-dns":
+        return (
+          <UpstreamDnsGroup
+            upstreamDnsResolution={upstreamDnsResolution}
+            isSlave={isSlave}
+            override={overrides.upstreamDnsResolution}
+            canSave={canWriteSettings}
+            onDirtyChange={reporters["upstream-dns"]}
+          />
+        );
+      case "geoblock":
+        return <GeoGroup globalGeoBlock={globalGeoBlock ?? null} geoip={geoip} canSave={canWriteSettings} onDirtyChange={reporters.geoblock} />;
+      case "rate-limit":
+        return <RateLimitGroup globalRateLimit={globalRateLimit ?? null} canSave={canWriteSettings} onDirtyChange={reporters["rate-limit"]} />;
+      case "error-pages":
+        return <ErrorPagesGroup globalErrorPages={globalErrorPages ?? null} canSave={canWriteSettings} onDirtyChange={reporters["error-pages"]} />;
+      case "forward-auth":
+        return (
+          <ForwardAuthGroup
+            authentik={authentik}
+            forwardAuth={forwardAuth}
+            isSlave={isSlave}
+            overrides={overrides}
+            canSave={canWriteSettings}
+            onDirtyChange={reporters["forward-auth"]}
+          />
+        );
+      case "oauth":
+        return restricted?.oauth ? (
+          <SectionCard title="Providers" headingLevel={3} padded>
+            <RestrictedNotice permission="sso:read" />
+          </SectionCard>
+        ) : (
+          <OAuthProvidersSection initialProviders={oauthProviders} baseUrl={baseUrl} />
+        );
+      case "analytics":
+        return (
+          <AnalyticsGroup
+            analytics={analytics}
+            logging={logging}
+            metrics={metrics}
+            isSlave={isSlave}
+            overrides={overrides}
+            canSave={canWriteSettings}
+            onDirtyChange={reporters.analytics}
+          />
+        );
+      case "branding":
+        return <BrandingGroup branding={branding} />;
+      default:
+        return null;
+    }
+  }
 
-      {/* Cmd-K palette */}
-      <SettingsCmdK open={cmdkOpen} onOpenChange={setCmdkOpen} onSelect={setActive} />
-    </div>
-  );
-}
-
-// ─── Section: Instance Sync ──────────────────────────────────────────────────
-
-function SyncSection({
-  instanceSync,
-  instanceModeState,
-  instanceModeFormAction,
-  slaveTokenState,
-  slaveTokenFormAction,
-  slaveInstanceState,
-  slaveInstanceFormAction,
-  syncState,
-  syncFormAction,
-  isSlave,
-  isMaster,
-}: {
-  instanceSync: Props["instanceSync"];
-  instanceModeState: { success: boolean; message?: string } | null;
-  instanceModeFormAction: (payload: FormData) => void;
-  slaveTokenState: { success: boolean; message?: string } | null;
-  slaveTokenFormAction: (payload: FormData) => void;
-  slaveInstanceState: { success: boolean; message?: string } | null;
-  slaveInstanceFormAction: (payload: FormData) => void;
-  syncState: { success: boolean; message?: string } | null;
-  syncFormAction: (payload: FormData) => void;
-  isSlave: boolean;
-  isMaster: boolean;
-}) {
   return (
     <>
-      <FormCard title="Mode">
-        <form action={instanceModeFormAction} className="flex flex-col gap-3">
-          {instanceSync.modeFromEnv && (
-            <InfoAlert>
-              Instance mode is configured via INSTANCE_MODE environment variable and cannot be changed at runtime.
-            </InfoAlert>
-          )}
-          {instanceModeState?.message && (
-            <StatusAlert message={instanceModeState.message} success={instanceModeState.success} />
-          )}
-          <FormRow label="Instance mode" hint="Standalone runs alone. Master pushes config to slaves. Slave pulls from a master.">
-            <Select name="mode" defaultValue={instanceSync.mode} disabled={instanceSync.modeFromEnv}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="standalone">Standalone</SelectItem>
-                <SelectItem value="master">Master</SelectItem>
-                <SelectItem value="slave">Slave</SelectItem>
-              </SelectContent>
-            </Select>
-          </FormRow>
-          <div className="flex justify-end">
-            <Button type="submit" size="sm" disabled={instanceSync.modeFromEnv}>
-              Save instance mode
-            </Button>
-          </div>
-        </form>
-      </FormCard>
-
-      {isSlave && (
-        <FormCard title="Master Connection">
-          <form action={slaveTokenFormAction} className="flex flex-col gap-3">
-            {instanceSync.tokenFromEnv && (
-              <InfoAlert>
-                Sync token is configured via INSTANCE_SYNC_TOKEN environment variable and cannot be changed at runtime.
-              </InfoAlert>
-            )}
-            {slaveTokenState?.message && (
-              <StatusAlert message={slaveTokenState.message} success={slaveTokenState.success} />
-            )}
-            {instanceSync.slave?.hasToken && !instanceSync.tokenFromEnv && (
-              <InfoAlert>
-                A master sync token is configured. Leave the token field blank to keep it, or select &ldquo;Remove existing token&rdquo; to delete it.
-              </InfoAlert>
-            )}
-            <FormRow label="Master sync token">
-              <Input
-                name="masterToken"
-                type="password"
-                autoComplete="new-password"
-                placeholder="Enter new token"
-                disabled={instanceSync.tokenFromEnv}
-                className="h-8 text-sm"
-              />
-            </FormRow>
-            <div className="flex items-center gap-2 px-0.5">
-              <Checkbox
-                id="clearToken"
-                name="clearToken"
-                disabled={!instanceSync.slave?.hasToken || instanceSync.tokenFromEnv}
-              />
-              <Label htmlFor="clearToken">Remove existing token</Label>
-            </div>
-            <div className="flex justify-end">
-              <Button type="submit" size="sm" disabled={instanceSync.tokenFromEnv}>
-                Save master token
+      <div className="flex flex-col gap-5">
+        <PageHeader
+          className="mb-0"
+          breadcrumb={["Settings", current.section, current.name]}
+          title="Settings"
+          description="Defaults for every host and how this install runs. A host's own settings win over these."
+          actions={
+            links.history ? (
+              <Button asChild variant="outline">
+                <Link href="/history">
+                  <History />
+                  Change history
+                </Link>
               </Button>
-            </div>
-          </form>
-          {instanceSync.slave && (
-            <p className="text-xs text-muted-foreground">
-              This instance&rsquo;s sync key id is{" "}
-              <span className="font-mono">{instanceSync.slave.syncKeyId}</span> and its sync public key is{" "}
-              <span className="font-mono break-all">{instanceSync.slave.syncPublicKey}</span>. The master pins
-              this key on the first sync, or an admin pastes it there under Key pin; it changes with SESSION_SECRET.
-              Compare the full key when checking a pin: the key id is only a short fingerprint.
-            </p>
-          )}
-          {instanceSync.slave?.lastSyncError ? (
-            <WarnAlert>
-              {instanceSync.slave?.lastSyncAt
-                ? `Last sync: ${instanceSync.slave.lastSyncAt} (${instanceSync.slave.lastSyncError})`
-                : "No sync payload has been received yet."}
-            </WarnAlert>
-          ) : (
-            <InfoAlert>
-              {instanceSync.slave?.lastSyncAt
-                ? `Last sync: ${instanceSync.slave.lastSyncAt}`
-                : "No sync payload has been received yet."}
-            </InfoAlert>
-          )}
-        </FormCard>
-      )}
-
-      {isMaster && instanceSync.master && (
-        <SlaveInstancesCard
-          master={instanceSync.master}
-          slaveInstanceState={slaveInstanceState}
-          slaveInstanceFormAction={slaveInstanceFormAction}
-          syncState={syncState}
-          syncFormAction={syncFormAction}
+            ) : undefined
+          }
         />
-      )}
-    </>
-  );
-}
 
-function SlaveInstancesCard({
-  master,
-  slaveInstanceState,
-  slaveInstanceFormAction,
-  syncState,
-  syncFormAction,
-}: {
-  master: NonNullable<Props["instanceSync"]["master"]>;
-  slaveInstanceState: { success: boolean; message?: string } | null;
-  slaveInstanceFormAction: (payload: FormData) => void;
-  syncState: { success: boolean; message?: string } | null;
-  syncFormAction: (payload: FormData) => void;
-}) {
-  // What the last key pin or edit dialog did; the dialog itself has closed.
-  const [notice, setNotice] = useState<string | null>(null);
-
-  return (
-    <FormCard title={`Slave Instances (${master.instances.length + master.envInstances.length})`}>
-      <form action={slaveInstanceFormAction} className="flex flex-col gap-3">
-        {slaveInstanceState?.message && (
-          <StatusAlert message={slaveInstanceState.message} success={slaveInstanceState.success} />
-        )}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="inst-name">Instance name</Label>
-            <Input id="inst-name" name="name" placeholder="Edge node EU-1" className="h-8 text-sm" />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="inst-base-url">Base URL</Label>
-            <Input id="inst-base-url" name="baseUrl" placeholder="https://slave-1.example.com" className="h-8 text-sm" />
-          </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="inst-api-token">Slave API token</Label>
-          <Input id="inst-api-token" name="apiToken" type="password" autoComplete="new-password" className="h-8 text-sm" />
-        </div>
-        <div className="flex items-center justify-between gap-2">
-          <form action={syncFormAction}>
-            {syncState?.message && (
-              <StatusAlert message={syncState.message} success={syncState.success} />
+        <div className="flex flex-col items-start gap-5 lg:flex-row">
+          <aside
+            aria-label="Settings navigation"
+            className="hidden w-[260px] shrink-0 flex-col gap-3.5 rounded-2xl border border-line bg-panel p-3 lg:flex"
+          >
+            <div className="relative flex h-9 items-center gap-2 rounded-[10px] border border-line2 bg-background pl-2.5 pr-1.5 text-soft focus-within:border-brand">
+              <Search aria-hidden="true" className="h-[15px] w-[15px] shrink-0" />
+              <label htmlFor="settings-search" className="sr-only">
+                Search settings
+              </label>
+              <input
+                id="settings-search"
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search settings"
+                autoComplete="off"
+                className="h-full min-w-0 flex-1 border-0 bg-transparent text-[13px] text-foreground outline-none placeholder:text-soft [&::-webkit-search-cancel-button]:hidden"
+              />
+              {query && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setQuery("")}
+                  className="grid h-6 w-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-raise hover:text-foreground"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+            {words.length > 0 && (
+              <p role="status" className="-mt-1 mx-1 mb-0 text-xs text-soft">
+                {found === 0 ? "No matches" : found === 1 ? "1 match" : `${found} matches`}
+              </p>
             )}
-            <Button type="submit" variant="outline" size="sm">Sync now</Button>
-          </form>
-          <Button type="submit" size="sm">Add slave instance</Button>
-        </div>
-      </form>
 
-      {notice && (
-        <div className="mt-3">
-          <StatusAlert message={notice} success />
-        </div>
-      )}
-
-      {master.instances.length === 0 && master.envInstances.length === 0 && (
-        <div className="mt-3">
-          <InfoAlert>No slave instances configured yet.</InfoAlert>
-        </div>
-      )}
-
-      {master.envInstances.length > 0 && (
-        <div className="mt-3 flex flex-col gap-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Environment-configured (INSTANCE_SLAVES)
-          </p>
-          {master.envInstances.map((instance, index) => (
-            <div
-              key={`env-${index}`}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 px-4 py-3"
-            >
-              <div>
-                <p className="text-sm font-semibold">{instance.name}</p>
-                <p className="text-xs text-muted-foreground font-mono">{instance.url}</p>
-                <SyncKeyPinStatus
-                  pin={instance.syncKeyPin}
-                  configuredKeyId={instance.syncKeyId}
-                  configuredFullKey={instance.syncPublicKey !== undefined}
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                {!instance.syncKeyId && (
-                  <SyncKeyPinButton
-                    slaveName={instance.name}
-                    slaveUrl={instance.url}
-                    pin={instance.syncKeyPin}
-                    target={{ slaveUrl: instance.url }}
-                    onDone={setNotice}
-                  />
-                )}
-                <StatusChip status="active" label="ENV" />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {master.instances.length > 0 && (
-        <div className="mt-3 flex flex-col gap-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">UI-configured instances</p>
-          {master.instances.map((instance) => (
-            <div
-              key={instance.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-4 py-3"
-            >
-              <div>
-                <p className="text-sm font-semibold">{instance.name}</p>
-                <p className="text-xs text-muted-foreground font-mono">{instance.baseUrl}</p>
-                <span className="text-xs text-muted-foreground">
-                  {instance.lastSyncAt ? `Last sync: ${instance.lastSyncAt}` : "No sync yet"}
-                </span>
-                {instance.lastSyncError && (
-                  <span className="block text-xs text-destructive">{instance.lastSyncError}</span>
-                )}
-                <SyncKeyPinStatus pin={instance.syncKeyPin} />
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <SyncKeyPinButton
-                  slaveName={instance.name}
-                  slaveUrl={instance.baseUrl}
-                  pin={instance.syncKeyPin}
-                  target={{ instanceId: instance.id }}
-                  onDone={setNotice}
-                />
-                <EditSlaveInstanceButton instance={instance} onDone={setNotice} />
-                <form action={toggleSlaveInstanceAction}>
-                  <input type="hidden" name="instanceId" value={instance.id} />
-                  <input type="hidden" name="enabled" value={instance.enabled ? "" : "on"} />
-                  <Button type="submit" variant="outline" size="sm" className={instance.enabled ? "text-amber-600 border-amber-500/50" : "text-emerald-600 border-emerald-500/50"}>
-                    {instance.enabled ? "Disable" : "Enable"}
-                  </Button>
-                </form>
-                <RemoveSlaveInstanceButton instance={instance} />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {master.orphanSyncKeyPins.length > 0 && (
-        <div className="mt-3 flex flex-col gap-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Key pins without a slave</p>
-          <p className="text-xs text-muted-foreground">
-            No instance or INSTANCE_SLAVES entry syncs to these URLs any more. A slave added at one of them
-            inherits its pin, and its syncs fail if it presents another key.
-          </p>
-          {master.orphanSyncKeyPins.map((pin) => (
-            <div
-              key={pin.url}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed px-4 py-3"
-            >
-              <div>
-                <p className="text-xs text-muted-foreground font-mono">{pin.url}</p>
-                <SyncKeyPinStatus pin={pin} />
-              </div>
-              <SyncKeyPinButton
-                slaveName={pin.url}
-                slaveUrl={pin.url}
-                pin={pin}
-                target={{ slaveUrl: pin.url }}
-                onDone={setNotice}
-              />
-            </div>
-          ))}
-        </div>
-      )}
-    </FormCard>
-  );
-}
-
-const SYNC_KEY_PIN_SOURCE_LABELS: Record<string, string> = {
-  "first-use": "first use",
-  rotation: "rotated",
-  manual: "set by an admin",
-};
-
-/** A slave's pinned sync key, or the key its INSTANCE_SLAVES entry sets. */
-function SyncKeyPinStatus({
-  pin,
-  configuredKeyId,
-  configuredFullKey = false,
-}: {
-  pin: SyncKeyPinView | null;
-  configuredKeyId?: string;
-  configuredFullKey?: boolean;
-}) {
-  if (configuredKeyId) {
-    return (
-      <span className="block text-xs text-muted-foreground">
-        Sync key <span className="font-mono">{configuredKeyId}</span> (
-        {configuredFullKey ? "full key set in INSTANCE_SLAVES" : "set in INSTANCE_SLAVES"})
-      </span>
-    );
-  }
-  if (!pin) {
-    return (
-      <span className="block text-xs text-muted-foreground">
-        Sync key not pinned yet: pinned on the next sealed sync, or pin the slave&rsquo;s key now
-      </span>
-    );
-  }
-  if (pin.source === UNREADABLE_SYNC_KEY_PIN_SOURCE) {
-    return (
-      <span className="block text-xs text-destructive">
-        The stored sync key pin cannot be read by this release; syncs fail until the slave&rsquo;s key is pinned
-        or the pin is reset
-      </span>
-    );
-  }
-  const label = SYNC_KEY_PIN_SOURCE_LABELS[pin.source] ?? pin.source;
-  const pinnedAt = Number.isNaN(Date.parse(pin.pinnedAt)) ? null : `${formatDateTimeUtc(pin.pinnedAt)} UTC`;
-  return (
-    <span className="block text-xs text-muted-foreground">
-      Sync key <span className="font-mono">{pin.keyId}</span>, pinned{pinnedAt ? ` ${pinnedAt}` : ""}
-      {` (${label})`}
-    </span>
-  );
-}
-
-function SlaveTargetInput({ target }: { target: SyncKeyPinTarget }) {
-  return "instanceId" in target
-    ? <input type="hidden" name="instanceId" value={target.instanceId} />
-    : <input type="hidden" name="slaveUrl" value={target.slaveUrl} />;
-}
-
-type ActionState = { success: boolean; message?: string } | null;
-
-/** An action for a dialog form that reports success through `onDone` (which closes the dialog). */
-function useDialogAction(
-  action: (prevState: ActionState, formData: FormData) => Promise<{ success: boolean; message?: string }>,
-  onDone: (message: string) => void
-) {
-  return useActionState(async (prevState: ActionState, formData: FormData) => {
-    const result = await action(prevState, formData);
-    if (result.success) onDone(result.message ?? "");
-    return result;
-  }, null);
-}
-
-function SyncKeyPinButton({
-  slaveName,
-  slaveUrl,
-  pin,
-  target,
-  onDone,
-}: {
-  slaveName: string;
-  slaveUrl: string;
-  pin: SyncKeyPinView | null;
-  target: SyncKeyPinTarget;
-  onDone: (message: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
-        Key pin
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-lg">
-          {/* Mounted while open only, so each opening starts without the last result. */}
-          <SyncKeyPinDialogBody
-            slaveName={slaveName}
-            slaveUrl={slaveUrl}
-            pin={pin}
-            target={target}
-            onDone={(message) => {
-              setOpen(false);
-              onDone(message);
-            }}
-            onClose={() => setOpen(false)}
-          />
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-/** Pin a key read from the slave, or reset the pin; the contents of SyncKeyPinButton's dialog. */
-export function SyncKeyPinDialogBody({
-  slaveName,
-  slaveUrl,
-  pin,
-  target,
-  onDone,
-  onClose,
-}: {
-  slaveName: string;
-  slaveUrl: string;
-  pin: SyncKeyPinView | null;
-  target: SyncKeyPinTarget;
-  onDone: (message: string) => void;
-  onClose: () => void;
-}) {
-  const [pinState, pinFormAction, pinPending] = useDialogAction(pinSlaveSyncKeyAction, onDone);
-  const [resetState, resetFormAction, resetPending] = useDialogAction(resetSlaveSyncKeyPinAction, onDone);
-  const unreadable = pin?.source === UNREADABLE_SYNC_KEY_PIN_SOURCE;
-  const pinnedKey = pin && !unreadable ? <span className="font-mono">{pin.keyId}</span> : "the stored pin";
-
-  return (
-    <>
-      <DialogHeader>
-        <DialogTitle>Sync key pin of &ldquo;{slaveName}&rdquo;</DialogTitle>
-        <DialogDescription>
-          The master seals synced certificate private keys and DNS provider credentials only to the key pinned
-          for <span className="font-mono">{slaveUrl}</span>.
-        </DialogDescription>
-      </DialogHeader>
-      <SyncKeyPinStatus pin={pin} />
-      {pin && !unreadable && (
-        <p className="text-xs text-muted-foreground">
-          Pinned public key: <span className="font-mono break-all">{pin.publicKey}</span>. Compare it with the one on
-          the slave&rsquo;s own Instance Sync settings; the key id is only a short fingerprint.
-        </p>
-      )}
-      <form action={pinFormAction} className="flex flex-col gap-2">
-        <SlaveTargetInput target={target} />
-        <Label htmlFor="sync-public-key">Slave&rsquo;s sync public key</Label>
-        <Input
-          id="sync-public-key"
-          name="publicKey"
-          placeholder="44 characters of base64"
-          autoComplete="off"
-          spellCheck={false}
-          className="h-8 font-mono text-xs"
-        />
-        <p className="text-xs text-muted-foreground">
-          Copy it from the slave&rsquo;s own Instance Sync settings, or GET /api/v1/instances/sync-key on the
-          slave, over a channel you trust, not through the connection the master syncs over. Syncs are then sealed
-          to this key only{pin ? ", in place of the current pin" : ""}.
-        </p>
-        {pinState && !pinState.success && pinState.message && (
-          <StatusAlert message={pinState.message} success={false} />
-        )}
-        <div className="flex justify-end">
-          <Button type="submit" size="sm" disabled={pinPending}>
-            Pin key
-          </Button>
-        </div>
-      </form>
-      {pin && (
-        <form action={resetFormAction} className="flex flex-col gap-2 border-t pt-4">
-          <SlaveTargetInput target={target} />
-          <p className="text-sm">
-            Resetting stops trusting {pinnedKey}. The next sync then pins whatever key answers at{" "}
-            <span className="font-mono">{slaveUrl}</span>, with no proof that it belongs to this slave: if that
-            connection is intercepted, the synced secrets are sealed to the interceptor&rsquo;s key. Until a key is
-            pinned again, anything answering there like a slave on v1.12.0 or earlier (HTTP 405) receives the
-            certificate private keys unsealed.
-          </p>
-          <p className="text-sm">
-            Only reset after verifying the slave was re-keyed on purpose, for example its SESSION_SECRET was
-            replaced without keeping the old value in SESSION_SECRET_PREVIOUS; pinning its new key above avoids
-            both risks. After the next sync, check that the pinned key matches the one on the slave&rsquo;s
-            Instance Sync settings.
-          </p>
-          {resetState && !resetState.success && resetState.message && (
-            <StatusAlert message={resetState.message} success={false} />
-          )}
-          <div className="flex justify-end">
-            <Button type="submit" variant="destructive" size="sm" disabled={resetPending}>
-              Reset key pin
-            </Button>
-          </div>
-        </form>
-      )}
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Close
-        </Button>
-      </DialogFooter>
-    </>
-  );
-}
-
-type SlaveInstanceView = NonNullable<Props["instanceSync"]["master"]>["instances"][number];
-
-function EditSlaveInstanceButton({
-  instance,
-  onDone,
-}: {
-  instance: SlaveInstanceView;
-  onDone: (message: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
-        Edit
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
-          <EditSlaveInstanceForm
-            instance={instance}
-            onDone={(message) => {
-              setOpen(false);
-              onDone(message);
-            }}
-            onClose={() => setOpen(false)}
-          />
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-/** Change an instance's name, URL or token without removing it (and its key pin). */
-export function EditSlaveInstanceForm({
-  instance,
-  onDone,
-  onClose,
-}: {
-  instance: SlaveInstanceView;
-  onDone: (message: string) => void;
-  onClose: () => void;
-}) {
-  const [state, formAction, pending] = useDialogAction(updateSlaveInstanceAction, onDone);
-  return (
-    <form action={formAction} className="flex flex-col gap-3">
-      <DialogHeader>
-        <DialogTitle>Edit &ldquo;{instance.name}&rdquo;</DialogTitle>
-        <DialogDescription>
-          A new token keeps the sync key pin. A base URL that reaches another endpoint removes the pin of the old
-          one, unless another slave uses it; the new URL is pinned on its next sync, or pin its key after saving.
-        </DialogDescription>
-      </DialogHeader>
-      <input type="hidden" name="instanceId" value={instance.id} />
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`edit-inst-name-${instance.id}`}>Instance name</Label>
-        <Input id={`edit-inst-name-${instance.id}`} name="name" defaultValue={instance.name} className="h-8 text-sm" />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`edit-inst-base-url-${instance.id}`}>Base URL</Label>
-        <Input id={`edit-inst-base-url-${instance.id}`} name="baseUrl" defaultValue={instance.baseUrl} className="h-8 text-sm" />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`edit-inst-api-token-${instance.id}`}>Slave API token</Label>
-        <Input
-          id={`edit-inst-api-token-${instance.id}`}
-          name="apiToken"
-          type="password"
-          autoComplete="new-password"
-          placeholder="Leave blank to keep the current token"
-          className="h-8 text-sm"
-        />
-      </div>
-      {state && !state.success && state.message && <StatusAlert message={state.message} success={false} />}
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={pending}>
-          Save
-        </Button>
-      </DialogFooter>
-    </form>
-  );
-}
-
-/** Remove an instance; one with a sync key pin only after a confirmation, since the pin goes with it. */
-function RemoveSlaveInstanceButton({ instance }: { instance: SlaveInstanceView }) {
-  const [open, setOpen] = useState(false);
-  const removeForm = (
-    <form action={deleteSlaveInstanceAction}>
-      <input type="hidden" name="instanceId" value={instance.id} />
-      <Button type="submit" variant="outline" size="sm" className="text-destructive border-destructive/50">
-        Remove
-      </Button>
-    </form>
-  );
-  if (!instance.syncKeyPin) return removeForm;
-  return (
-    <>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="text-destructive border-destructive/50"
-        onClick={() => setOpen(true)}
-      >
-        Remove
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
-          <RemovePinnedSlaveConfirmation instance={instance} onClose={() => setOpen(false)} />
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
-export function RemovePinnedSlaveConfirmation({
-  instance,
-  onClose,
-}: {
-  instance: SlaveInstanceView;
-  onClose: () => void;
-}) {
-  return (
-    <form action={deleteSlaveInstanceAction} className="flex flex-col gap-3">
-      <DialogHeader>
-        <DialogTitle>Remove &ldquo;{instance.name}&rdquo;?</DialogTitle>
-        <DialogDescription>
-          This also removes the sync key pin of <span className="font-mono">{instance.baseUrl}</span>, unless
-          another slave uses that URL. Added again, the slave is pinned on its next sync to whatever key answers,
-          and until then anything answering there like a slave on v1.12.0 or earlier (HTTP 405) receives the
-          certificate private keys unsealed.
-        </DialogDescription>
-      </DialogHeader>
-      <p className="text-sm">To change its name or token, use Edit instead: that keeps the pin. A new base URL starts unpinned either way.</p>
-      <input type="hidden" name="instanceId" value={instance.id} />
-      <DialogFooter>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button type="submit" variant="destructive">
-          Remove
-        </Button>
-      </DialogFooter>
-    </form>
-  );
-}
-
-// ─── Section: General ────────────────────────────────────────────────────────
-
-function GeneralSection({
-  general,
-  generalState,
-  generalFormAction,
-  isSlave,
-  generalOverride,
-  setGeneralOverride,
-}: {
-  general: GeneralSettings | null;
-  generalState: { success: boolean; message?: string } | null;
-  generalFormAction: (payload: FormData) => void;
-  isSlave: boolean;
-  generalOverride: boolean;
-  setGeneralOverride: (v: boolean) => void;
-}) {
-  return (
-    <FormCard title="Defaults">
-      <form action={generalFormAction} className="flex flex-col gap-3">
-        {generalState?.message && (
-          <StatusAlert message={generalState.message} success={generalState.success} />
-        )}
-        {isSlave && (
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="general-override"
-              name="overrideEnabled"
-              checked={generalOverride}
-              onCheckedChange={(v) => setGeneralOverride(!!v)}
-            />
-            <Label htmlFor="general-override">Override master settings</Label>
-          </div>
-        )}
-        <FormRow label="Primary domain" hint="Default domain shown when creating new proxy hosts.">
-          <Input
-            name="primaryDomain"
-            defaultValue={general?.primaryDomain ?? "caddyproxymanager.com"}
-            required
-            disabled={isSlave && !generalOverride}
-            className="h-8 text-sm font-mono"
-          />
-        </FormRow>
-        <FormRow label="ACME contact email" hint="Used by Let's Encrypt for expiry notifications.">
-          <Input
-            name="acmeEmail"
-            type="email"
-            defaultValue={general?.acmeEmail ?? ""}
-            disabled={isSlave && !generalOverride}
-            className="h-8 text-sm"
-          />
-        </FormRow>
-        <div className="flex justify-end">
-          <Button type="submit" size="sm">Save general settings</Button>
-        </div>
-      </form>
-    </FormCard>
-  );
-}
-
-// ─── Section: Default Response ──────────────────────────────────────────────
-
-function DefaultResponseSection({
-  defaultResponse,
-  defaultResponseState,
-  defaultResponseFormAction,
-  isSlave,
-  defaultResponseOverride,
-  setDefaultResponseOverride,
-}: {
-  defaultResponse: DefaultResponseSettings | null;
-  defaultResponseState: { success: boolean; message?: string } | null;
-  defaultResponseFormAction: (payload: FormData) => void;
-  isSlave: boolean;
-  defaultResponseOverride: boolean;
-  setDefaultResponseOverride: (v: boolean) => void;
-}) {
-  const [mode, setMode] = useState(defaultResponse?.mode ?? "caddy");
-  const disabled = isSlave && !defaultResponseOverride;
-  const initialHeaders = Object.entries(defaultResponse?.headers ?? {})
-    .map(([name, value]) => `${name}: ${value}`)
-    .join("\n");
-
-  return (
-    <>
-      <FormCard title="Unknown Host Handling">
-        <form action={defaultResponseFormAction} className="flex flex-col gap-3">
-          {defaultResponseState?.message && (
-            <StatusAlert message={defaultResponseState.message} success={defaultResponseState.success} />
-          )}
-          {isSlave && (
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="default-response-override"
-                name="overrideEnabled"
-                checked={defaultResponseOverride}
-                onCheckedChange={(value) => setDefaultResponseOverride(!!value)}
-              />
-              <Label htmlFor="default-response-override">Override master settings</Label>
-            </div>
-          )}
-
-          <FormRow label="Behavior" hint="Applied only when no configured proxy host matches the request.">
-            <Select
-              name="mode"
-              value={mode}
-              onValueChange={(value) => setMode(value as DefaultResponseSettings["mode"])}
-              disabled={disabled}
-            >
-              <SelectTrigger className="w-full sm:w-72" aria-label="Default response behavior">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="caddy">Caddy native behavior</SelectItem>
-                <SelectItem value="respond">Custom HTTP response</SelectItem>
-                <SelectItem value="redirect">Redirect</SelectItem>
-                <SelectItem value="abort">No response (abort connection)</SelectItem>
-              </SelectContent>
-            </Select>
-          </FormRow>
-
-          {mode === "respond" && (
-            <>
-              <FormRow label="Status code" hint="Any final HTTP status from 200 through 599.">
-                <Input
-                  key="default-response-status"
-                  name="status"
-                  type="number"
-                  min={200}
-                  max={599}
-                  defaultValue={defaultResponse?.mode === "respond" ? defaultResponse.status ?? 404 : 404}
-                  required
-                  disabled={disabled}
-                  className="h-8 w-28 font-mono"
-                />
-              </FormRow>
-              <FormRow
-                label="Response body"
-                hint="Plain text, JSON, or custom HTML. Empty is allowed. Request placeholders such as {http.request.host} are expanded; {env.*}, {system.*} and {file.*} are sent literally."
-              >
-                <Textarea
-                  name="body"
-                  defaultValue={defaultResponse?.mode === "respond" ? defaultResponse.body ?? "" : ""}
-                  rows={8}
-                  disabled={disabled}
-                  placeholder="Not Found"
-                  className="font-mono text-sm"
-                />
-              </FormRow>
-            </>
-          )}
-
-          {mode === "redirect" && (
-            <>
-              <FormRow label="Redirect status" hint="307 and 308 preserve the original request method.">
-                <Select
-                  name="status"
-                  defaultValue={String(defaultResponse?.mode === "redirect" ? defaultResponse.status ?? 302 : 302)}
-                  disabled={disabled}
-                >
-                  <SelectTrigger className="w-44" aria-label="Default redirect status">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="301">301 Permanent</SelectItem>
-                    <SelectItem value="302">302 Temporary</SelectItem>
-                    <SelectItem value="303">303 See Other</SelectItem>
-                    <SelectItem value="307">307 Temporary</SelectItem>
-                    <SelectItem value="308">308 Permanent</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormRow>
-              <FormRow
-                label="Redirect URL"
-                hint="Absolute and relative targets are supported. Request placeholders such as {http.request.uri} are expanded; {env.*}, {system.*} and {file.*} are sent literally."
-              >
-                <Input
-                  name="redirectUrl"
-                  defaultValue={defaultResponse?.mode === "redirect" ? defaultResponse.redirectUrl ?? "" : ""}
-                  required
-                  disabled={disabled}
-                  placeholder="https://example.com{http.request.uri}"
-                  className="h-8 font-mono text-sm"
-                />
-              </FormRow>
-            </>
-          )}
-
-          {(mode === "respond" || mode === "redirect") && (
-            <FormRow
-              label="Response headers"
-              hint="Optional Name: value pairs, one per line. For custom HTML, set Content-Type: text/html; charset=utf-8."
-            >
-              <Textarea
-                key={`default-response-headers-${mode}`}
-                name="headers"
-                defaultValue={
-                  defaultResponse?.mode === mode
-                    ? initialHeaders
-                    : mode === "respond"
-                      ? "Content-Type: text/plain; charset=utf-8"
-                      : ""
-                }
-                rows={4}
-                disabled={disabled}
-                placeholder={"Content-Type: text/html; charset=utf-8\nCache-Control: no-store"}
-                className="font-mono text-sm"
-              />
-            </FormRow>
-          )}
-
-          {mode === "abort" && (
-            <WarnAlert>
-              Caddy will close unmatched HTTP connections without writing a status line or body. This is the native
-              equivalent of a “444 / no response” policy.
-            </WarnAlert>
-          )}
-
-          <div className="flex justify-end">
-            <Button type="submit" size="sm">Save default response</Button>
-          </div>
-        </form>
-      </FormCard>
-      <InfoAlert>
-        Configured hosts always run before this catch-all. For HTTPS, the response can only be sent after a TLS
-        certificate successfully completes the handshake; an unknown hostname or direct IP may fail earlier.
-      </InfoAlert>
-    </>
-  );
-}
-
-// ─── Section: ACME Server ────────────────────────────────────────────────────
-
-function AcmeSection({
-  acme,
-  acmeState,
-  acmeFormAction,
-  isSlave,
-  acmeOverride,
-  setAcmeOverride,
-}: {
-  acme: AcmeSettings | null;
-  acmeState: { success: boolean; message?: string } | null;
-  acmeFormAction: (payload: FormData) => void;
-  isSlave: boolean;
-  acmeOverride: boolean;
-  setAcmeOverride: (v: boolean) => void;
-}) {
-  const disabled = isSlave && !acmeOverride;
-  return (
-    <FormCard title="Custom ACME Directory">
-      <form action={acmeFormAction} className="flex flex-col gap-3">
-        {acmeState?.message && (
-          <StatusAlert message={acmeState.message} success={acmeState.success} />
-        )}
-        {isSlave && (
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="acme-override"
-              name="overrideEnabled"
-              checked={acmeOverride}
-              onCheckedChange={(v) => setAcmeOverride(!!v)}
-            />
-            <Label htmlFor="acme-override">Override master settings</Label>
-          </div>
-        )}
-        <FormRow
-          label="ACME directory URL"
-          hint="Leave empty to use the Let's Encrypt default. For an internal CA (OpenBao, Step-CA, Windows ADCS), paste its ACME directory URL — must be HTTPS."
-        >
-          <Input
-            name="caUrl"
-            type="url"
-            placeholder="https://ca.internal.example.com/acme/acme/directory"
-            defaultValue={acme?.caUrl ?? ""}
-            disabled={disabled}
-            className="h-8 text-sm font-mono"
-          />
-        </FormRow>
-        <FormRow
-          label="CA root certificate (PEM)"
-          hint="Optional. If the ACME endpoint's TLS certificate is signed by an internal root not in the system trust store, paste the root (or chain) here so Caddy can connect to it."
-        >
-          <Textarea
-            name="caRootPem"
-            placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
-            defaultValue={acme?.caRootPem ?? ""}
-            disabled={disabled}
-            rows={6}
-            className="text-xs font-mono"
-          />
-        </FormRow>
-        <div className="flex justify-end">
-          <Button type="submit" size="sm" disabled={disabled}>Save ACME settings</Button>
-        </div>
-      </form>
-    </FormCard>
-  );
-}
-
-// ─── Section: DNS Providers ──────────────────────────────────────────────────
-
-function DnsProvidersSection({
-  dnsProvider,
-  dnsProviderDefinitions,
-  dnsProviderState,
-  dnsProviderFormAction,
-  selectedProvider,
-  setSelectedProvider,
-  configuredProviders,
-  isSlave,
-  dnsProviderOverride,
-  setDnsProviderOverride,
-}: {
-  dnsProvider: DnsProviderApiStatus | null;
-  dnsProviderDefinitions: DnsProviderDefinition[];
-  dnsProviderState: { success: boolean; message?: string } | null;
-  dnsProviderFormAction: (payload: FormData) => void;
-  selectedProvider: string;
-  setSelectedProvider: (v: string) => void;
-  configuredProviders: string[];
-  isSlave: boolean;
-  dnsProviderOverride: boolean;
-  setDnsProviderOverride: (v: boolean) => void;
-}) {
-  return (
-    <>
-      {dnsProviderState?.message && (
-        <StatusAlert message={dnsProviderState.message} success={dnsProviderState.success} />
-      )}
-      {isSlave && (
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="dnsprovider-override"
-            name="overrideEnabled"
-            form="dnsp-add-form"
-            checked={dnsProviderOverride}
-            onCheckedChange={(v) => setDnsProviderOverride(!!v)}
-          />
-          <Label htmlFor="dnsprovider-override">Override master settings</Label>
-        </div>
-      )}
-
-      {/* Configured providers */}
-      {configuredProviders.length > 0 && (
-        <FormCard title="Configured providers">
-          <div className="flex flex-col gap-2.5">
-            {configuredProviders.map((name) => {
-              const def = dnsProviderDefinitions.find((p) => p.name === name);
-              const isDefault = dnsProvider?.default === name;
-              return (
-                <div
-                  key={name}
-                  className="flex items-center justify-between gap-3 rounded-lg border px-4 py-3 bg-muted/20"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-sm font-semibold">{def?.displayName ?? name}</span>
-                    {isDefault && <Badge variant="default" className="text-[10px]">Default</Badge>}
+            <nav aria-label="Settings groups" className="flex flex-col gap-3.5">
+              {shownGroups.map((group) => (
+                <div key={group.id} className="flex flex-col gap-0.5">
+                  <div aria-hidden="true" className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-soft">
+                    {group.label}
                   </div>
-                  <div className="flex gap-2">
-                    {!isDefault && (
-                      <form action={dnsProviderFormAction}>
-                        <input type="hidden" name="action" value="set-default" />
-                        <input type="hidden" name="provider" value={name} />
-                        {isSlave && <input type="hidden" name="overrideEnabled" value={dnsProviderOverride ? "on" : ""} />}
-                        <Button type="submit" variant="outline" size="sm">
-                          Set default
-                        </Button>
-                      </form>
-                    )}
-                    <form action={dnsProviderFormAction}>
-                      <input type="hidden" name="action" value="remove" />
-                      <input type="hidden" name="provider" value={name} />
-                      {isSlave && <input type="hidden" name="overrideEnabled" value={dnsProviderOverride ? "on" : ""} />}
-                      <Button type="submit" variant="outline" size="sm" className="text-destructive border-destructive/50">
-                        Remove
-                      </Button>
-                    </form>
-                  </div>
+                  <ul className="m-0 flex list-none flex-col gap-0.5 p-0" aria-label={group.label}>
+                    {group.items.map((item) => {
+                      const Icon = item.id === "branding" && !branding.licensed ? Lock : GROUP_ICONS[item.id] ?? SlidersHorizontal;
+                      const isActive = item.id === active;
+                      const unsaved = (dirty[item.id] ?? 0) > 0;
+                      const itemMeta = unsaved ? "Unsaved" : meta[item.id] ?? "";
+                      return (
+                        <li key={item.id}>
+                          <button
+                            type="button"
+                            onClick={() => selectGroup(item.id)}
+                            aria-current={isActive ? "true" : undefined}
+                            className={cn(
+                              "flex min-h-9 w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
+                              isActive ? "bg-brand-tint font-semibold text-foreground" : "font-medium text-muted-foreground hover:bg-raise hover:text-foreground"
+                            )}
+                          >
+                            <Icon aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.8} />
+                            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                              <span>{item.name}</span>
+                              {words.length > 0 && <span className="text-xs font-normal leading-4 text-soft">{item.desc}</span>}
+                            </span>
+                            {itemMeta && (
+                              <span className={cn("shrink-0 text-xs font-medium", unsaved ? "text-warn" : "text-soft")}>{itemMeta}</span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
-              );
-            })}
-            {dnsProvider?.default && (
-              <form action={dnsProviderFormAction}>
-                <input type="hidden" name="action" value="set-default" />
-                <input type="hidden" name="provider" value="none" />
-                {isSlave && <input type="hidden" name="overrideEnabled" value={dnsProviderOverride ? "on" : ""} />}
-                <Button type="submit" variant="ghost" size="sm" className="text-xs text-muted-foreground">
-                  Clear default (HTTP-01 only)
+              ))}
+            </nav>
+
+            {found === 0 && (
+              <div className="flex flex-col items-start gap-2.5 px-1.5 pb-2">
+                <p className="m-0 text-[13px] text-muted-foreground">No setting matches &ldquo;{query.trim()}&rdquo;.</p>
+                <Button type="button" variant="outline" size="sm" onClick={() => setQuery("")}>
+                  Clear search
                 </Button>
-              </form>
+              </div>
             )}
-          </div>
-        </FormCard>
-      )}
+          </aside>
 
-      {/* Add provider form */}
-      <FormCard
-        title={configuredProviders.length > 0 ? "Add or update provider" : "Add a provider"}
-        footer={
-          <>
-            {isSlave && <input type="hidden" name="overrideEnabled" form="dnsp-add-form" value={dnsProviderOverride ? "on" : ""} />}
-            <Button type="submit" form="dnsp-add-form" size="sm" disabled={!selectedProvider || selectedProvider === "none"}>
-              {selectedProvider && selectedProvider !== "none" && configuredProviders.includes(selectedProvider) ? "Update provider" : "Add provider"}
-            </Button>
-          </>
-        }
-      >
-        <form id="dnsp-add-form" action={dnsProviderFormAction} className="flex flex-col gap-3">
-          <input type="hidden" name="action" value="save" />
-          <FormRow label="Provider" hint={`${dnsProviderDefinitions.length} providers supported`}>
-            <Select
-              name="provider"
-              value={selectedProvider}
-              onValueChange={setSelectedProvider}
-              disabled={isSlave && !dnsProviderOverride}
+          <div className="w-full lg:hidden" data-testid="mobile-settings-nav">
+            <label htmlFor="settings-group-select" className="mb-1.5 block text-[13px] font-medium">
+              Settings group
+            </label>
+            <select
+              id="settings-group-select"
+              value={active}
+              onChange={(event) => selectGroup(event.target.value)}
+              className="h-11 w-full rounded-lg border border-line2 bg-panel px-3 text-base text-foreground md:text-sm"
             >
-              <SelectTrigger>
-                <SelectValue placeholder="Select a DNS provider..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Select...</SelectItem>
-                {dnsProviderDefinitions.map((p) => (
-                  <SelectItem key={p.name} value={p.name}>
-                    {p.displayName}{configuredProviders.includes(p.name) ? " (update)" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FormRow>
-
-          {/* Dynamic credential fields */}
-          {selectedProvider && selectedProvider !== "none" && (() => {
-            const providerDef = dnsProviderDefinitions.find((p) => p.name === selectedProvider);
-            if (!providerDef) return null;
-            const isUpdate = configuredProviders.includes(selectedProvider);
-            return (
-              <>
-                {providerDef.description && (
-                  <p className="text-xs text-muted-foreground">{providerDef.description}</p>
-                )}
-                {providerDef.fields.map((field) => (
-                  <FormRow key={field.key} label={field.label + (field.required ? "" : " (optional)")}>
-                    <div className="flex flex-col gap-1">
-                      <Input
-                        name={`credential_${field.key}`}
-                        type={field.type === "password" ? "password" : "text"}
-                        autoComplete={field.type === "password" ? "new-password" : "off"}
-                        placeholder={field.placeholder ?? ""}
-                        disabled={isSlave && !dnsProviderOverride}
-                        className="h-8 text-sm"
-                      />
-                      {field.description && (
-                        <p className="text-xs text-muted-foreground">{field.description}</p>
-                      )}
-                    </div>
-                  </FormRow>
-                ))}
-                {isUpdate && (
-                  <InfoAlert>
-                    Credentials are already configured. Leave fields blank to keep existing values.
-                  </InfoAlert>
-                )}
-                {providerDef.docsUrl && (
-                  <p className="text-xs text-muted-foreground">
-                    <a href={providerDef.docsUrl} target="_blank" rel="noopener noreferrer" className="underline">
-                      Provider documentation
-                    </a>
-                  </p>
-                )}
-              </>
-            );
-          })()}
-          {isSlave && <input type="hidden" name="overrideEnabled" value={dnsProviderOverride ? "on" : ""} />}
-        </form>
-      </FormCard>
-    </>
-  );
-}
-
-// ─── Section: DNS Resolvers ──────────────────────────────────────────────────
-
-function DnsResolversSection({
-  dns,
-  dnsState,
-  dnsFormAction,
-  isSlave,
-  dnsOverride,
-  setDnsOverride,
-}: {
-  dns: DnsSettings | null;
-  dnsState: { success: boolean; message?: string } | null;
-  dnsFormAction: (payload: FormData) => void;
-  isSlave: boolean;
-  dnsOverride: boolean;
-  setDnsOverride: (v: boolean) => void;
-}) {
-  return (
-    <>
-      <FormCard>
-        <form action={dnsFormAction} className="flex flex-col gap-3">
-          {dnsState?.message && (
-            <StatusAlert message={dnsState.message} success={dnsState.success} />
-          )}
-          {isSlave && (
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="dns-override"
-                name="overrideEnabled"
-                checked={dnsOverride}
-                onCheckedChange={(v) => setDnsOverride(!!v)}
-              />
-              <Label htmlFor="dns-override">Override master settings</Label>
-            </div>
-          )}
-          <FormRow label="Custom resolvers">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="dns-enabled"
-                name="enabled"
-                defaultChecked={dns?.enabled ?? false}
-                disabled={isSlave && !dnsOverride}
-              />
-              <Label htmlFor="dns-enabled">Enable custom DNS resolvers</Label>
-            </div>
-          </FormRow>
-          <FormRow label="Primary resolvers">
-            <textarea
-              name="resolvers"
-              placeholder={"1.1.1.1\n8.8.8.8"}
-              defaultValue={dns?.resolvers?.join("\n") ?? ""}
-              rows={2}
-              disabled={isSlave && !dnsOverride}
-              className="flex min-h-[56px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm font-mono shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none"
-            />
-          </FormRow>
-          <FormRow label="Fallback resolvers">
-            <textarea
-              name="fallbacks"
-              placeholder={"8.8.4.4\n1.0.0.1"}
-              defaultValue={dns?.fallbacks?.join("\n") ?? ""}
-              rows={2}
-              disabled={isSlave && !dnsOverride}
-              className="flex min-h-[56px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm font-mono shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none"
-            />
-          </FormRow>
-          <FormRow label="Query timeout" hint="e.g. 5s, 10s">
-            <Input
-              name="timeout"
-              placeholder="5s"
-              defaultValue={dns?.timeout ?? ""}
-              disabled={isSlave && !dnsOverride}
-              className="h-8 text-sm w-32"
-            />
-          </FormRow>
-          <div className="flex justify-end">
-            <Button type="submit" size="sm">Save DNS settings</Button>
+              {SETTINGS_SECTION_GROUPS.map((group) => (
+                <optgroup key={group.id} label={group.label}>
+                  {group.items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                      {(dirty[item.id] ?? 0) > 0 ? " (unsaved)" : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
           </div>
-        </form>
-      </FormCard>
-      <InfoAlert>
-        Custom DNS resolvers are useful when your DNS provider has slow propagation or when using split-horizon DNS.
-        Common public resolvers: 1.1.1.1 (Cloudflare), 8.8.8.8 (Google), 9.9.9.9 (Quad9).
-      </InfoAlert>
-    </>
-  );
-}
 
-// ─── Section: Upstream DNS Pinning ───────────────────────────────────────────
-
-function UpstreamDnsSection({
-  upstreamDnsResolution,
-  upstreamDnsResolutionState,
-  upstreamDnsResolutionFormAction,
-  isSlave,
-  upstreamDnsResolutionOverride,
-  setUpstreamDnsResolutionOverride,
-}: {
-  upstreamDnsResolution: UpstreamDnsResolutionSettings | null;
-  upstreamDnsResolutionState: { success: boolean; message?: string } | null;
-  upstreamDnsResolutionFormAction: (payload: FormData) => void;
-  isSlave: boolean;
-  upstreamDnsResolutionOverride: boolean;
-  setUpstreamDnsResolutionOverride: (v: boolean) => void;
-}) {
-  return (
-    <>
-      <FormCard>
-        <form action={upstreamDnsResolutionFormAction} className="flex flex-col gap-3">
-          {upstreamDnsResolutionState?.message && (
-            <StatusAlert message={upstreamDnsResolutionState.message} success={upstreamDnsResolutionState.success} />
-          )}
-          {isSlave && (
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="udns-override"
-                name="overrideEnabled"
-                checked={upstreamDnsResolutionOverride}
-                onCheckedChange={(v) => setUpstreamDnsResolutionOverride(!!v)}
-              />
-              <Label htmlFor="udns-override">Override master settings</Label>
-            </div>
-          )}
-          <FormRow label="Pin upstream IPs" hint="Resolves upstream hostnames at config-apply time and writes IPs into Caddy's active config.">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="udns-enabled"
-                name="enabled"
-                defaultChecked={upstreamDnsResolution?.enabled ?? false}
-                disabled={isSlave && !upstreamDnsResolutionOverride}
-              />
-              <Label htmlFor="udns-enabled">Enable upstream DNS pinning</Label>
-            </div>
-          </FormRow>
-          <FormRow label="Address family" hint="Both resolves AAAA + A with IPv6 preferred ordering.">
-            <Select
-              name="family"
-              defaultValue={upstreamDnsResolution?.family ?? "both"}
-              disabled={isSlave && !upstreamDnsResolutionOverride}
-            >
-              <SelectTrigger className="w-56">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="both">Both (Prefer IPv6)</SelectItem>
-                <SelectItem value="ipv6">IPv6 only</SelectItem>
-                <SelectItem value="ipv4">IPv4 only</SelectItem>
-              </SelectContent>
-            </Select>
-          </FormRow>
-          <div className="flex justify-end">
-            <Button type="submit" size="sm">Save upstream DNS pinning settings</Button>
+          <div className="flex w-full min-w-0 flex-1 flex-col">
+            {ALL_GROUPS.filter((group) => visited.has(group.id)).map((group) => (
+              <section
+                key={group.id}
+                hidden={group.id !== active}
+                aria-labelledby={`settings-group-${group.id}`}
+                data-settings-group={group.id}
+                className="flex min-w-0 flex-col gap-4"
+              >
+                <div className="flex flex-col gap-1">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <h2 id={`settings-group-${group.id}`} className="m-0 text-lg leading-[26px] font-semibold">
+                      {group.name}
+                    </h2>
+                    {group.id === "branding" && !branding.licensed && (
+                      <span className="inline-flex h-[22px] items-center rounded-full border border-line2 px-2 text-xs text-muted-foreground">
+                        {branding.editionLabel} edition
+                      </span>
+                    )}
+                  </div>
+                  <p className="m-0 max-w-[720px] text-[13px] text-muted-foreground [text-wrap:pretty]">{group.desc}</p>
+                </div>
+                {renderGroup(group.id)}
+              </section>
+            ))}
           </div>
-        </form>
-      </FormCard>
-      <InfoAlert>
-        Host-level settings can override this default. Resolution happens at config save/reload time and resolved IPs are written into
-        Caddy&apos;s active config. If one handler has multiple different HTTPS upstream hostnames, HTTPS pinning is skipped for those
-        HTTPS upstreams to avoid SNI mismatch.
-      </InfoAlert>
-    </>
-  );
-}
-
-// ─── Section: Trusted Proxies ────────────────────────────────────────────────
-
-function TrustedProxiesSection({
-  trustedProxies,
-  trustedProxiesState,
-  trustedProxiesFormAction,
-  isSlave,
-  trustedProxiesOverride,
-  setTrustedProxiesOverride,
-}: {
-  trustedProxies: TrustedProxiesSettings | null;
-  trustedProxiesState: { success: boolean; message?: string } | null;
-  trustedProxiesFormAction: (payload: FormData) => void;
-  isSlave: boolean;
-  trustedProxiesOverride: boolean;
-  setTrustedProxiesOverride: (v: boolean) => void;
-}) {
-  const disabled = isSlave && !trustedProxiesOverride;
-  return (
-    <>
-      <FormCard>
-        <form action={trustedProxiesFormAction} className="flex flex-col gap-3">
-          {trustedProxiesState?.message && (
-            <StatusAlert message={trustedProxiesState.message} success={trustedProxiesState.success} />
-          )}
-          {isSlave && (
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="trusted-proxies-override"
-                name="overrideEnabled"
-                checked={trustedProxiesOverride}
-                onCheckedChange={(v) => setTrustedProxiesOverride(!!v)}
-              />
-              <Label htmlFor="trusted-proxies-override">Override master settings</Label>
-            </div>
-          )}
-          <FormRow
-            label="Trusted proxy ranges"
-            hint="CIDRs, IPs, or the private_ranges shorthand — one per line. When CPM runs behind another proxy, Caddy resolves the real client IP from these. Leave empty to keep the current behaviour."
-          >
-            <Textarea
-              name="ranges"
-              defaultValue={(trustedProxies?.ranges ?? []).join("\n")}
-              disabled={disabled}
-              rows={3}
-              placeholder={"private_ranges\n172.21.0.1/32"}
-              className="font-mono text-sm"
-            />
-          </FormRow>
-          <FormRow
-            label="Client IP headers"
-            hint="Headers Caddy reads the client IP from — one per line. Empty defaults to X-Forwarded-For. Set Cf-Connecting-Ip for Cloudflare, etc."
-          >
-            <Textarea
-              name="clientIpHeaders"
-              defaultValue={(trustedProxies?.client_ip_headers ?? []).join("\n")}
-              disabled={disabled}
-              rows={2}
-              placeholder="X-Forwarded-For"
-              className="font-mono text-sm"
-            />
-          </FormRow>
-          <FormRow label="Strict mode" hint="Only trust the client IP headers from the configured proxies, rejecting spoofed values from untrusted peers.">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="trusted-proxies-strict"
-                name="strict"
-                defaultChecked={trustedProxies?.strict ?? false}
-                disabled={disabled}
-              />
-              <Label htmlFor="trusted-proxies-strict">Enable strict trusted proxies</Label>
-            </div>
-          </FormRow>
-          <FormRow label="Apply to geoblocking" hint="Use these ranges as the default trusted-proxy list for global geoblocking so the two can't silently disagree. A geoblock list set explicitly wins.">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="trusted-proxies-geoblock"
-                name="defaultGeoblock"
-                defaultChecked={trustedProxies?.default_geoblock ?? false}
-                disabled={disabled}
-              />
-              <Label htmlFor="trusted-proxies-geoblock">Default geoblock trusted proxies from this list</Label>
-            </div>
-          </FormRow>
-          <div className="flex justify-end">
-            <Button type="submit" size="sm">Save trusted proxies settings</Button>
-          </div>
-        </form>
-      </FormCard>
-      <InfoAlert>
-        Applied to the main HTTP server, so it fixes client-IP attribution everywhere at once — access logs, analytics,
-        the country map, and any downstream handler using <code className="text-xs font-mono">{"{http.request.client_ip}"}</code>.
-      </InfoAlert>
-    </>
-  );
-}
-
-// ─── Section: Global Geoblocking ─────────────────────────────────────────────
-
-function GeoBlockSection({
-  globalGeoBlock,
-  geoBlockState,
-  geoBlockFormAction,
-}: {
-  globalGeoBlock?: GeoBlockSettings | null;
-  geoBlockState: { success: boolean; message?: string } | null;
-  geoBlockFormAction: (payload: FormData) => void;
-}) {
-  return (
-    <FormCard>
-      <form action={geoBlockFormAction} className="flex flex-col gap-3">
-        {geoBlockState?.message && (
-          <StatusAlert message={geoBlockState.message} success={geoBlockState.success} />
-        )}
-        <GeoBlockFields
-          initialValues={{ geoblock: globalGeoBlock ?? null, geoblock_mode: "merge" }}
-          showModeSelector={false}
-        />
-        <div className="flex justify-end">
-          <Button type="submit" size="sm">Save geoblocking settings</Button>
         </div>
-      </form>
-    </FormCard>
-  );
-}
-
-// ─── Section: Error Pages ────────────────────────────────────────────────────
-
-function ErrorPagesSection({
-  globalErrorPages,
-  errorPagesState,
-  errorPagesFormAction,
-}: {
-  globalErrorPages?: ErrorPagesSettings | null;
-  errorPagesState: { success: boolean; message?: string } | null;
-  errorPagesFormAction: (payload: FormData) => void;
-}) {
-  return (
-    <FormCard>
-      <form action={errorPagesFormAction} className="flex flex-col gap-3">
-        {errorPagesState?.message && (
-          <StatusAlert message={errorPagesState.message} success={errorPagesState.success} />
-        )}
-        <p className="text-sm text-muted-foreground">
-          These error pages apply to every proxy host as a fallback. A per-host error page for the
-          same status code takes precedence.
-        </p>
-        <ErrorPagesFields initialData={globalErrorPages?.rules ?? []} />
-        <div className="flex justify-end">
-          <Button type="submit" size="sm">Save error pages</Button>
-        </div>
-      </form>
-    </FormCard>
-  );
-}
-
-// ─── Section: Authentik Defaults ─────────────────────────────────────────────
-
-function AuthentikSection({
-  authentik,
-  authentikState,
-  authentikFormAction,
-  isSlave,
-  authentikOverride,
-  setAuthentikOverride,
-}: {
-  authentik: AuthentikSettings | null;
-  authentikState: { success: boolean; message?: string } | null;
-  authentikFormAction: (payload: FormData) => void;
-  isSlave: boolean;
-  authentikOverride: boolean;
-  setAuthentikOverride: (v: boolean) => void;
-}) {
-  return (
-    <FormCard>
-      <form action={authentikFormAction} className="flex flex-col gap-3">
-        {authentikState?.message && (
-          <StatusAlert message={authentikState.message} success={authentikState.success} />
-        )}
-        {isSlave && (
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="authentik-override"
-              name="overrideEnabled"
-              checked={authentikOverride}
-              onCheckedChange={(v) => setAuthentikOverride(!!v)}
-            />
-            <Label htmlFor="authentik-override">Override master settings</Label>
-          </div>
-        )}
-        <FormRow label="Outpost domain">
-          <Input
-            name="outpostDomain"
-            placeholder="outpost.goauthentik.io"
-            defaultValue={authentik?.outpostDomain ?? ""}
-            required
-            disabled={isSlave && !authentikOverride}
-            className="h-8 text-sm font-mono"
-          />
-        </FormRow>
-        <FormRow label="Outpost upstream">
-          <Input
-            name="outpostUpstream"
-            placeholder="http://authentik-server:9000"
-            defaultValue={authentik?.outpostUpstream ?? ""}
-            required
-            disabled={isSlave && !authentikOverride}
-            className="h-8 text-sm font-mono"
-          />
-        </FormRow>
-        <FormRow label="Auth endpoint">
-          <Input
-            name="authEndpoint"
-            placeholder="/outpost.goauthentik.io/auth/caddy"
-            defaultValue={authentik?.authEndpoint ?? ""}
-            disabled={isSlave && !authentikOverride}
-            className="h-8 text-sm font-mono"
-          />
-        </FormRow>
-        <div className="flex justify-end">
-          <Button type="submit" size="sm">Save Authentik defaults</Button>
-        </div>
-      </form>
-    </FormCard>
-  );
-}
-
-// ─── Section: Forward Auth Defaults (generic / Authelia) ─────────────────────
-
-function ForwardAuthSection({
-  forwardAuth,
-  forwardAuthState,
-  forwardAuthFormAction,
-  isSlave,
-  forwardAuthOverride,
-  setForwardAuthOverride,
-}: {
-  forwardAuth: ForwardAuthSettings | null;
-  forwardAuthState: { success: boolean; message?: string } | null;
-  forwardAuthFormAction: (payload: FormData) => void;
-  isSlave: boolean;
-  forwardAuthOverride: boolean;
-  setForwardAuthOverride: (v: boolean) => void;
-}) {
-  return (
-    <FormCard>
-      <form action={forwardAuthFormAction} className="flex flex-col gap-3">
-        {forwardAuthState?.message && (
-          <StatusAlert message={forwardAuthState.message} success={forwardAuthState.success} />
-        )}
-        {isSlave && (
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="forward-auth-override"
-              name="overrideEnabled"
-              checked={forwardAuthOverride}
-              onCheckedChange={(v) => setForwardAuthOverride(!!v)}
-            />
-            <Label htmlFor="forward-auth-override">Override master settings</Label>
-          </div>
-        )}
-        <FormRow label="Provider preset">
-          <select
-            name="provider"
-            defaultValue={forwardAuth?.provider ?? "authelia"}
-            disabled={isSlave && !forwardAuthOverride}
-            className="h-8 rounded-md border bg-background px-2 text-sm"
-          >
-            <option value="authelia">Authelia</option>
-            <option value="custom">Custom (generic forward auth)</option>
-          </select>
-        </FormRow>
-        <FormRow label="Auth server URL">
-          <Input
-            name="authUpstream"
-            placeholder="http://authelia:9091"
-            defaultValue={forwardAuth?.authUpstream ?? ""}
-            required
-            disabled={isSlave && !forwardAuthOverride}
-            className="h-8 text-sm font-mono"
-          />
-        </FormRow>
-        <FormRow label="Auth endpoint">
-          <Input
-            name="authEndpoint"
-            placeholder="/api/authz/forward-auth"
-            defaultValue={forwardAuth?.authEndpoint ?? ""}
-            disabled={isSlave && !forwardAuthOverride}
-            className="h-8 text-sm font-mono"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            Optional. Authelia hosts are prefilled with /api/authz/forward-auth when blank.
-          </p>
-        </FormRow>
-        <div className="flex justify-end">
-          <Button type="submit" size="sm">Save Forward Auth defaults</Button>
-        </div>
-      </form>
-    </FormCard>
-  );
-}
-
-// ─── Section: OAuth Providers ────────────────────────────────────────────────
-
-function OAuthSection({
-  oauthProviders,
-  baseUrl,
-}: {
-  oauthProviders: OAuthProviderView[];
-  baseUrl: string;
-}) {
-  return (
-    <FormCard>
-      <OAuthProvidersSection initialProviders={oauthProviders} baseUrl={baseUrl} />
-    </FormCard>
-  );
-}
-
-// ─── Section: Metrics & Monitoring ───────────────────────────────────────────
-
-function MetricsSection({
-  metrics,
-  metricsState,
-  metricsFormAction,
-  isSlave,
-  metricsOverride,
-  setMetricsOverride,
-}: {
-  metrics: MetricsSettings | null;
-  metricsState: { success: boolean; message?: string } | null;
-  metricsFormAction: (payload: FormData) => void;
-  isSlave: boolean;
-  metricsOverride: boolean;
-  setMetricsOverride: (v: boolean) => void;
-}) {
-  return (
-    <>
-      <FormCard>
-        <form action={metricsFormAction} className="flex flex-col gap-3">
-          {metricsState?.message && (
-            <StatusAlert message={metricsState.message} success={metricsState.success} />
-          )}
-          {isSlave && (
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="metrics-override"
-                name="overrideEnabled"
-                checked={metricsOverride}
-                onCheckedChange={(v) => setMetricsOverride(!!v)}
-              />
-              <Label htmlFor="metrics-override">Override master settings</Label>
-            </div>
-          )}
-          <FormRow label="Metrics endpoint" hint="Prometheus-compatible scrape endpoint, exposed on a dedicated port.">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="metrics-enabled"
-                name="enabled"
-                defaultChecked={metrics?.enabled ?? false}
-                disabled={isSlave && !metricsOverride}
-              />
-              <Label htmlFor="metrics-enabled">Enable metrics endpoint</Label>
-            </div>
-          </FormRow>
-          <FormRow label="Port" hint="Separate from admin API on port 2019.">
-            <Input
-              name="port"
-              type="number"
-              defaultValue={metrics?.port ?? 9090}
-              disabled={isSlave && !metricsOverride}
-              className="h-8 text-sm w-32 font-mono"
-            />
-          </FormRow>
-          <div className="flex justify-end">
-            <Button type="submit" size="sm">Save metrics settings</Button>
-          </div>
-        </form>
-      </FormCard>
-      <InfoAlert>
-        Configure your monitoring tool to scrape <code className="text-xs font-mono">http://caddy-proxy-manager-caddy:{metrics?.port ?? 9090}/metrics</code> from within the Docker network.
-      </InfoAlert>
-    </>
-  );
-}
-
-// ─── Section: Access Logging ─────────────────────────────────────────────────
-
-function LoggingSection({
-  logging,
-  loggingState,
-  loggingFormAction,
-  isSlave,
-  loggingOverride,
-  setLoggingOverride,
-}: {
-  logging: LoggingSettings | null;
-  loggingState: { success: boolean; message?: string } | null;
-  loggingFormAction: (payload: FormData) => void;
-  isSlave: boolean;
-  loggingOverride: boolean;
-  setLoggingOverride: (v: boolean) => void;
-}) {
-  return (
-    <>
-      <FormCard>
-        <form action={loggingFormAction} className="flex flex-col gap-3">
-          {loggingState?.message && (
-            <StatusAlert message={loggingState.message} success={loggingState.success} />
-          )}
-          {isSlave && (
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="logging-override"
-                name="overrideEnabled"
-                checked={loggingOverride}
-                onCheckedChange={(v) => setLoggingOverride(!!v)}
-              />
-              <Label htmlFor="logging-override">Override master settings</Label>
-            </div>
-          )}
-          <FormRow label="Access logging">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="logging-enabled"
-                name="enabled"
-                defaultChecked={logging?.enabled ?? false}
-                disabled={isSlave && !loggingOverride}
-              />
-              <Label htmlFor="logging-enabled">Enable access logging</Label>
-            </div>
-          </FormRow>
-          <FormRow label="Format">
-            <Select
-              name="format"
-              defaultValue={logging?.format ?? "json"}
-              disabled={isSlave && !loggingOverride}
-            >
-              <SelectTrigger className="w-56">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="json">JSON</SelectItem>
-                <SelectItem value="console">Console (Common Log Format)</SelectItem>
-              </SelectContent>
-            </Select>
-          </FormRow>
-          <div className="flex justify-end">
-            <Button type="submit" size="sm">Save logging settings</Button>
-          </div>
-        </form>
-      </FormCard>
-      <InfoAlert>
-        Access logs are stored in the caddy-logs Docker volume.
-        View with: <code className="text-xs font-mono">docker exec caddy-proxy-manager-caddy tail -f /logs/access.log</code>
-      </InfoAlert>
+      </div>
     </>
   );
 }

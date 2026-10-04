@@ -9,7 +9,7 @@
  * 127.0.0.1:80 with a custom Host header, which Caddy routes by hostname).
  */
 import { test, expect } from '@playwright/test';
-import { createProxyHost } from '../../helpers/proxy-api';
+import { createProxyHost, findHostRow } from '../../helpers/proxy-api';
 import { httpGet, waitForRoute } from '../../helpers/http';
 
 const DOMAIN = 'func-proxy.test';
@@ -45,10 +45,10 @@ test.describe.serial('Proxy Routing', () => {
   });
 
   test('disabled proxy host stops routing traffic', async ({ page }) => {
-    await page.goto('/proxy-hosts');
-    const row = page.locator('tr', { hasText: 'Functional Proxy Test' });
-    // Toggle the enabled switch (shadcn Switch renders as button with role="switch")
-    await row.getByRole('switch').click();
+    // Disable the host from its row menu.
+    let row = await findHostRow(page, 'Functional Proxy Test');
+    await row.getByRole('button', { name: /^more actions for/i }).click();
+    await page.getByRole('menuitem', { name: 'Disable' }).click();
     // Give Caddy time to reload config
     await page.waitForTimeout(3_000);
 
@@ -62,7 +62,9 @@ test.describe.serial('Proxy Routing', () => {
     }
 
     // Re-enable
-    await row.getByRole('switch').click();
+    row = await findHostRow(page, 'Functional Proxy Test');
+    await row.getByRole('button', { name: /^more actions for/i }).click();
+    await page.getByRole('menuitem', { name: 'Enable' }).click();
     await page.waitForTimeout(2_000);
   });
 });

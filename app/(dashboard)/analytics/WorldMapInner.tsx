@@ -1,20 +1,29 @@
-'use client';
+"use client";
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
-import MapGL, { Layer, Popup, Source, type MapLayerMouseEvent } from 'react-map-gl/maplibre';
-import { feature } from 'topojson-client';
-import type { Topology, GeometryCollection } from 'topojson-specification';
-import { setWorkerUrl, type ExpressionSpecification, type FillLayerSpecification, type LineLayerSpecification } from 'maplibre-gl';
-import { Skeleton } from '@/components/ui/skeleton';
-import 'maplibre-gl/dist/maplibre-gl.css';
+/**
+ * The countries map of the analytics page (the "Map" view of the countries
+ * panel): each country shaded by its share of the requests, with a popup
+ * of its requests and mitigated requests. Colours come from the theme's
+ * tokens, read when the theme changes.
+ */
+import { useCallback, useEffect, useMemo, useState } from "react";
+import MapGL, { Layer, Popup, Source, type MapLayerMouseEvent } from "react-map-gl/maplibre";
+import { feature } from "topojson-client";
+import type { GeometryCollection, Topology } from "topojson-specification";
+import { setWorkerUrl, type ExpressionSpecification, type FillLayerSpecification, type LineLayerSpecification } from "maplibre-gl";
+import { useTheme } from "next-themes";
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatCount } from "@/components/ui/chart-format";
+import { countryName } from "./present";
+import "maplibre-gl/dist/maplibre-gl.css";
 
 // maplibre-gl v6 loads its tile worker from a separate file resolved at runtime
 // from `import.meta.url`. Under Turbopack that lookup does not survive bundling,
 // so the worker never starts and the map renders as an empty ocean. The worker
 // is staged under public/ at build time (scripts/copy-maplibre-worker.mjs) and
-// pointed at explicitly here. Requires `worker-src 'self'` in the CSP (proxy.ts) —
+// pointed at explicitly here. Requires `worker-src 'self'` in the CSP (proxy.ts):
 // the worker is a same-origin URL now, not the blob: URL v5 used.
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   setWorkerUrl('/maplibre/maplibre-gl-worker.mjs');
 }
 
@@ -50,50 +59,9 @@ const A2N: Record<string, string> = {
 };
 const N2A: Record<string, string> = Object.fromEntries(Object.entries(A2N).map(([a, n]) => [n, a]));
 
-const NAMES: Record<string, string> = {
-  AF:'Afghanistan',AL:'Albania',DZ:'Algeria',AD:'Andorra',AO:'Angola',AG:'Antigua & Barbuda',
-  AR:'Argentina',AM:'Armenia',AU:'Australia',AT:'Austria',AZ:'Azerbaijan',BS:'Bahamas',
-  BH:'Bahrain',BD:'Bangladesh',BB:'Barbados',BY:'Belarus',BE:'Belgium',BZ:'Belize',
-  BJ:'Benin',BT:'Bhutan',BO:'Bolivia',BA:'Bosnia & Herzegovina',BW:'Botswana',BR:'Brazil',
-  BN:'Brunei',BG:'Bulgaria',BF:'Burkina Faso',BI:'Burundi',CV:'Cape Verde',KH:'Cambodia',
-  CM:'Cameroon',CA:'Canada',CF:'Central African Rep.',TD:'Chad',CL:'Chile',CN:'China',
-  CO:'Colombia',KM:'Comoros',CG:'Congo',CD:'DR Congo',CR:'Costa Rica',CI:"Côte d'Ivoire",
-  HR:'Croatia',CU:'Cuba',CY:'Cyprus',CZ:'Czech Republic',DK:'Denmark',DJ:'Djibouti',
-  DM:'Dominica',DO:'Dominican Republic',EC:'Ecuador',EG:'Egypt',SV:'El Salvador',
-  GQ:'Equatorial Guinea',ER:'Eritrea',EE:'Estonia',SZ:'Eswatini',ET:'Ethiopia',
-  FJ:'Fiji',FI:'Finland',FR:'France',GA:'Gabon',GM:'Gambia',GE:'Georgia',DE:'Germany',
-  GH:'Ghana',GR:'Greece',GD:'Grenada',GT:'Guatemala',GN:'Guinea',GW:'Guinea-Bissau',
-  GY:'Guyana',HT:'Haiti',HN:'Honduras',HU:'Hungary',IS:'Iceland',IN:'India',ID:'Indonesia',
-  IR:'Iran',IQ:'Iraq',IE:'Ireland',IL:'Israel',IT:'Italy',JM:'Jamaica',JP:'Japan',
-  JO:'Jordan',KZ:'Kazakhstan',KE:'Kenya',KI:'Kiribati',KP:'North Korea',KR:'South Korea',
-  KW:'Kuwait',KG:'Kyrgyzstan',LA:'Laos',LV:'Latvia',LB:'Lebanon',LS:'Lesotho',LR:'Liberia',
-  LY:'Libya',LI:'Liechtenstein',LT:'Lithuania',LU:'Luxembourg',MG:'Madagascar',MW:'Malawi',
-  MY:'Malaysia',MV:'Maldives',ML:'Mali',MT:'Malta',MH:'Marshall Islands',MR:'Mauritania',
-  MU:'Mauritius',MX:'Mexico',FM:'Micronesia',MD:'Moldova',MC:'Monaco',MN:'Mongolia',
-  ME:'Montenegro',MA:'Morocco',MZ:'Mozambique',MM:'Myanmar',NA:'Namibia',NR:'Nauru',
-  NP:'Nepal',NL:'Netherlands',NZ:'New Zealand',NI:'Nicaragua',NE:'Niger',NG:'Nigeria',
-  NO:'Norway',OM:'Oman',PK:'Pakistan',PW:'Palau',PA:'Panama',PG:'Papua New Guinea',
-  PY:'Paraguay',PE:'Peru',PH:'Philippines',PL:'Poland',PT:'Portugal',QA:'Qatar',
-  RO:'Romania',RU:'Russia',RW:'Rwanda',KN:'Saint Kitts & Nevis',LC:'Saint Lucia',
-  VC:'Saint Vincent',WS:'Samoa',SM:'San Marino',ST:'São Tomé & Príncipe',SA:'Saudi Arabia',
-  SN:'Senegal',RS:'Serbia',SC:'Seychelles',SL:'Sierra Leone',SG:'Singapore',SK:'Slovakia',
-  SI:'Slovenia',SB:'Solomon Islands',SO:'Somalia',ZA:'South Africa',SS:'South Sudan',
-  ES:'Spain',LK:'Sri Lanka',SD:'Sudan',SR:'Suriname',SE:'Sweden',CH:'Switzerland',
-  SY:'Syria',TW:'Taiwan',TJ:'Tajikistan',TZ:'Tanzania',TH:'Thailand',TL:'Timor-Leste',
-  TG:'Togo',TO:'Tonga',TT:'Trinidad & Tobago',TN:'Tunisia',TR:'Turkey',TM:'Turkmenistan',
-  TV:'Tuvalu',UG:'Uganda',UA:'Ukraine',AE:'United Arab Emirates',GB:'United Kingdom',
-  US:'United States',UY:'Uruguay',UZ:'Uzbekistan',VU:'Vanuatu',VE:'Venezuela',
-  VN:'Vietnam',YE:'Yemen',ZM:'Zambia',ZW:'Zimbabwe',PS:'Palestine',
-};
-
-function flag(code: string): string {
-  if (!code || code.length !== 2) return '🌐';
-  return String.fromCodePoint(...[...code.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
-}
-
 // Unwrap polygon rings so consecutive vertices never jump more than 180° in longitude.
 // This prevents MapLibre from drawing giant artifacts for countries crossing ±180° (Russia, Fiji, etc.).
-// Coordinates outside [-180, 180] are intentional — MapLibre renders them via world-copy tiling.
+// Coordinates outside [-180, 180] are intentional: MapLibre renders them via world-copy tiling.
 function cutAntimeridian(fc: GeoJSON.FeatureCollection): GeoJSON.FeatureCollection {
   function unwrapRing(ring: GeoJSON.Position[]): GeoJSON.Position[] {
     if (ring.length === 0) return ring;
@@ -109,75 +77,42 @@ function cutAntimeridian(fc: GeoJSON.FeatureCollection): GeoJSON.FeatureCollecti
   }
 
   function fixGeometry(geom: GeoJSON.Geometry): GeoJSON.Geometry {
-    if (geom.type === 'Polygon') {
-      return { ...geom, coordinates: geom.coordinates.map(unwrapRing) };
-    }
-    if (geom.type === 'MultiPolygon') {
-      return { ...geom, coordinates: geom.coordinates.map(p => p.map(unwrapRing)) };
-    }
+    if (geom.type === "Polygon") return { ...geom, coordinates: geom.coordinates.map(unwrapRing) };
+    if (geom.type === "MultiPolygon") return { ...geom, coordinates: geom.coordinates.map((p) => p.map(unwrapRing)) };
     return geom;
   }
 
   return {
     ...fc,
-    features: fc.features.map(f => f.geometry ? { ...f, geometry: fixGeometry(f.geometry) } : f),
+    features: fc.features.map((f) => (f.geometry ? { ...f, geometry: fixGeometry(f.geometry) } : f)),
   };
 }
 
-const OCEAN = '#0a1628';
+type MapColors = { water: string; land: string; low: string; high: string; outline: string; selected: string };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const MAP_STYLE: any = {
-  version: 8,
-  name: 'blank',
-  sources: {},
-  layers: [{ id: 'bg', type: 'background', paint: { 'background-color': OCEAN } }],
-};
+/** Token colours as MapLibre needs them (it cannot read CSS variables). */
+const FALLBACK_COLORS: MapColors = { water: "#15181E", land: "#262B35", low: "#A5C4FF", high: "#4D8EFF", outline: "#343B48", selected: "#A194FF" };
 
-const FILL_LAYER: Omit<FillLayerSpecification, 'source'> = {
-  id: 'countries-fill',
-  type: 'fill',
-  paint: {
-    'fill-color': [
-      'interpolate', ['linear'],
-      ['coalesce', ['get', 'norm'], 0],
-      0,     '#1e293b',  // no traffic — slate-800, clearly distinct from ocean
-      0.001, '#1e3a8a',  // any traffic
-      0.4,   '#3b82f6',
-      1,     '#93c5fd',
-    ] as ExpressionSpecification,
-    'fill-opacity': 1,
-  },
-};
+function readColors(): MapColors {
+  if (typeof window === "undefined") return FALLBACK_COLORS;
+  const style = getComputedStyle(document.documentElement);
+  const read = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
+  return {
+    water: read("--panel", FALLBACK_COLORS.water),
+    land: read("--raise", FALLBACK_COLORS.land),
+    low: read("--served2", FALLBACK_COLORS.low),
+    high: read("--served", FALLBACK_COLORS.high),
+    outline: read("--line2", FALLBACK_COLORS.outline),
+    selected: read("--brand", FALLBACK_COLORS.selected),
+  };
+}
 
-const SELECTED_LAYER: Omit<FillLayerSpecification, 'source'> = {
-  id: 'countries-selected',
-  type: 'fill',
-  paint: {
-    'fill-color': '#7dd3fc',
-    'fill-opacity': 0.45,
-  },
-};
-
-const HOVER_LAYER: Omit<FillLayerSpecification, 'source'> = {
-  id: 'countries-hover',
-  type: 'fill',
-  paint: {
-    'fill-color': '#7dd3fc',
-    'fill-opacity': 0.30,
-  },
-};
-
-const OUTLINE_LAYER: Omit<LineLayerSpecification, 'source'> = {
-  id: 'countries-outline',
-  type: 'line',
-  paint: {
-    'line-color': 'rgba(148,163,184,0.18)',
-    'line-width': 0.6,
-  },
-};
-
-export interface CountryStats { countryCode: string; total: number; blocked: number; }
+export interface CountryStats {
+  countryCode: string;
+  total: number;
+  /** Mitigated requests. */
+  blocked: number;
+}
 
 interface HoverInfo {
   longitude: number;
@@ -187,22 +122,34 @@ interface HoverInfo {
   blocked: number;
 }
 
-export default function WorldMapInner({ data, selectedCountry }: { data: CountryStats[]; selectedCountry?: string | null }) {
+export default function WorldMapInner({ data }: { data: CountryStats[] }) {
   const [baseGeojson, setBaseGeojson] = useState<GeoJSON.FeatureCollection | null>(null);
   const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
+  const { resolvedTheme } = useTheme();
+  const [colors, setColors] = useState<MapColors>(FALLBACK_COLORS);
 
-  const countMap = useMemo(() => new Map(data.map(d => [d.countryCode, d.total])), [data]);
-  const blockedMap = useMemo(() => new Map(data.map(d => [d.countryCode, d.blocked])), [data]);
+  useEffect(() => {
+    setColors(readColors());
+  }, [resolvedTheme]);
+
+  const countMap = useMemo(() => new Map(data.map((d) => [d.countryCode, d.total])), [data]);
+  const blockedMap = useMemo(() => new Map(data.map((d) => [d.countryCode, d.blocked])), [data]);
   const max = useMemo(() => data.reduce((m, d) => Math.max(m, d.total), 0), [data]);
 
   useEffect(() => {
-    fetch('/geo/countries-50m.json')
-      .then(r => r.json())
+    let active = true;
+    fetch("/geo/countries-50m.json")
+      .then((r) => r.json())
       .then((topo: Topology) => {
         const fc = feature(topo, topo.objects.countries as GeometryCollection) as GeoJSON.FeatureCollection;
-        setBaseGeojson(cutAntimeridian(fc));
+        if (active) setBaseGeojson(cutAntimeridian(fc));
       })
-      .catch(() => setBaseGeojson({ type: 'FeatureCollection', features: [] }));
+      .catch(() => {
+        if (active) setBaseGeojson({ type: "FeatureCollection", features: [] });
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const geojson = useMemo<GeoJSON.FeatureCollection | null>(() => {
@@ -210,162 +157,153 @@ export default function WorldMapInner({ data, selectedCountry }: { data: Country
     const safeMax = Math.max(max, 1);
     return {
       ...baseGeojson,
-      features: baseGeojson.features.map(f => {
+      features: baseGeojson.features.map((f) => {
         const alpha2 = N2A[String(Number(f.id ?? 0))] ?? null;
         const total = alpha2 ? (countMap.get(alpha2) ?? 0) : 0;
         const blocked = alpha2 ? (blockedMap.get(alpha2) ?? 0) : 0;
-        const isSelected = alpha2 !== null && alpha2 === selectedCountry;
-        return { ...f, properties: { ...f.properties, alpha2, total, blocked, norm: total / safeMax, isSelected } };
+        // Square root: small countries stay visible next to the busiest one.
+        return { ...f, properties: { ...f.properties, alpha2, total, blocked, norm: Math.sqrt(total / safeMax) } };
       }),
     };
-  }, [baseGeojson, countMap, blockedMap, max, selectedCountry]);
+  }, [baseGeojson, countMap, blockedMap, max]);
+
+  const mapStyle = useMemo(
+    () => ({
+      version: 8 as const,
+      name: "blank",
+      sources: {},
+      layers: [{ id: "bg", type: "background" as const, paint: { "background-color": colors.water } }],
+    }),
+    [colors.water]
+  );
+
+  const fillLayer = useMemo<Omit<FillLayerSpecification, "source">>(
+    () => ({
+      id: "countries-fill",
+      type: "fill",
+      paint: {
+        "fill-color": [
+          "interpolate",
+          ["linear"],
+          ["coalesce", ["get", "norm"], 0],
+          0,
+          colors.land,
+          0.001,
+          colors.low,
+          1,
+          colors.high,
+        ] as ExpressionSpecification,
+        "fill-opacity": 1,
+      },
+    }),
+    [colors.land, colors.low, colors.high]
+  );
+
+  const hoverLayer = useMemo<Omit<FillLayerSpecification, "source">>(
+    () => ({ id: "countries-hover", type: "fill", paint: { "fill-color": colors.selected, "fill-opacity": 0.35 } }),
+    [colors.selected]
+  );
+
+  const outlineLayer = useMemo<Omit<LineLayerSpecification, "source">>(
+    () => ({ id: "countries-outline", type: "line", paint: { "line-color": colors.outline, "line-width": 0.6 } }),
+    [colors.outline]
+  );
 
   const onHover = useCallback((event: MapLayerMouseEvent) => {
     const f = event.features?.[0];
-    if (!f) { setHoverInfo(null); return; }
-    const alpha2 = (f.properties?.alpha2 as string | null) ?? null;
+    if (!f) {
+      setHoverInfo(null);
+      return;
+    }
     setHoverInfo({
       longitude: event.lngLat.lng,
       latitude: event.lngLat.lat,
-      alpha2,
+      alpha2: (f.properties?.alpha2 as string | null) ?? null,
       total: (f.properties?.total as number) ?? 0,
       blocked: (f.properties?.blocked as number) ?? 0,
     });
   }, []);
 
-  // Hover filter: only tracks mouse position, changes on every mousemove
   const hoverFilter = useMemo<ExpressionSpecification>(() => {
     const a2 = hoverInfo?.alpha2 ?? null;
-    return a2 ? ['==', ['get', 'alpha2'], a2] : ['boolean', false];
+    return a2 ? ["==", ["get", "alpha2"], a2] : ["boolean", false];
   }, [hoverInfo?.alpha2]);
 
-  // Centroid popup for the table-selected country (shown when not hovering)
-  const selectedInfo = useMemo(() => {
-    if (!selectedCountry || !geojson) return null;
-    const feat = geojson.features.find(f => f.properties?.alpha2 === selectedCountry);
-    if (!feat?.geometry) return null;
-
-    const positions: GeoJSON.Position[] = [];
-    const collect = (geom: GeoJSON.Geometry) => {
-      if (geom.type === 'Polygon') geom.coordinates.forEach(r => positions.push(...r));
-      else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(p => p.forEach(r => positions.push(...r)));
-    };
-    collect(feat.geometry);
-    if (positions.length === 0) return null;
-
-    const lngs = positions.map(c => c[0]);
-    const lats = positions.map(c => c[1]);
-    // Clamp longitude to [-180, 180] for the popup anchor
-    const rawLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
-    const longitude = ((rawLng + 180) % 360 + 360) % 360 - 180;
-    const latitude = Math.max(-85, Math.min(85, (Math.min(...lats) + Math.max(...lats)) / 2));
-
-    return {
-      longitude,
-      latitude,
-      alpha2: selectedCountry,
-      total: (feat.properties?.total as number) ?? 0,
-      blocked: (feat.properties?.blocked as number) ?? 0,
-    };
-  }, [selectedCountry, geojson]);
-
-  if (!geojson) {
-    return (
-      <div className="flex justify-center items-center h-[300px]">
-        <Skeleton className="w-full h-[400px] rounded-lg" />
-      </div>
-    );
-  }
+  if (!geojson) return <Skeleton className="h-[300px] w-full rounded-lg" />;
 
   return (
-    <div className="relative h-full flex flex-col">
-      {/* Override MapLibre popup chrome to match dark theme */}
+    <div className="relative flex flex-col gap-1.5">
+      {/* MapLibre's popup frame, in the theme's colours. */}
       <style>{`
         .wm-popup .maplibregl-popup-content {
-          background: rgba(8,16,30,0.96) !important;
-          border: 1px solid rgba(148,163,184,0.15) !important;
-          border-radius: 10px !important;
-          padding: 10px 14px !important;
-          box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
-          backdrop-filter: blur(12px) !important;
-          min-width: 152px;
+          background: var(--panel);
+          color: var(--foreground);
+          border: 1px solid var(--line2);
+          border-radius: 10px;
+          padding: 10px 12px;
+          box-shadow: var(--shadow-overlay);
+          min-width: 160px;
         }
-        .wm-popup .maplibregl-popup-tip { display: none !important; }
+        .wm-popup .maplibregl-popup-tip { display: none; }
       `}</style>
 
-      <div className="rounded-lg overflow-hidden border border-white/[0.08] flex-1 min-h-[280px] min-w-[400px] w-full">
+      <div className="h-[300px] w-full overflow-hidden rounded-lg border border-line">
         <MapGL
-          mapStyle={MAP_STYLE}
-          initialViewState={{
-            bounds: [[-168, -56], [168, 74]],
-            fitBoundsOptions: { padding: 4 },
-          }}
+          mapStyle={mapStyle}
+          initialViewState={{ bounds: [[-168, -56], [168, 74]], fitBoundsOptions: { padding: 4 } }}
           minZoom={0.5}
-          interactiveLayerIds={['countries-fill']}
+          interactiveLayerIds={["countries-fill"]}
           onMouseMove={onHover}
           onMouseLeave={() => setHoverInfo(null)}
-          style={{ width: '100%', height: '100%' }}
+          style={{ width: "100%", height: "100%" }}
           attributionControl={false}
           dragRotate={false}
           pitchWithRotate={false}
-          cursor={hoverInfo ? 'crosshair' : 'grab'}
+          cursor={hoverInfo ? "crosshair" : "grab"}
         >
           <Source id="countries" type="geojson" data={geojson}>
-            <Layer {...FILL_LAYER} source="countries" />
-            {/* Selected: data-driven via isSelected property baked into geojson — reliable on click */}
-            <Layer {...SELECTED_LAYER} source="countries" filter={['==', ['get', 'isSelected'], true]} />
-            {/* Hover: filter-driven, changes on mousemove */}
-            <Layer {...HOVER_LAYER} source="countries" filter={hoverFilter} />
-            <Layer {...OUTLINE_LAYER} source="countries" />
+            <Layer {...fillLayer} source="countries" />
+            <Layer {...hoverLayer} source="countries" filter={hoverFilter} />
+            <Layer {...outlineLayer} source="countries" />
           </Source>
 
-          {/* Hover popup (takes precedence) or selected-country popup */}
-          {(hoverInfo ?? selectedInfo) && (() => {
-            const info = hoverInfo ?? selectedInfo!;
-            return (
-              <Popup
-                longitude={info.longitude}
-                latitude={info.latitude}
-                offset={[0, -6] as [number, number]}
-                closeButton={false}
-                closeOnClick={false}
-                anchor="bottom"
-                className="wm-popup"
-              >
-                <div style={{ color: '#f1f5f9', fontFamily: 'inherit', fontSize: 13 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7, fontWeight: 600, fontSize: 14 }}>
-                    <span style={{ fontSize: 20, lineHeight: 1 }}>{info.alpha2 ? flag(info.alpha2) : '🌐'}</span>
-                    <span>{info.alpha2 ? (NAMES[info.alpha2] ?? info.alpha2) : 'Territory'}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20 }}>
-                    <span style={{ color: '#94a3b8' }}>Requests</span>
-                    <span style={{ color: '#60a5fa', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                      {info.total.toLocaleString()}
-                    </span>
-                  </div>
-                  {info.blocked > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 20, marginTop: 3 }}>
-                      <span style={{ color: '#94a3b8' }}>Blocked</span>
-                      <span style={{ color: '#f87171', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                        {info.blocked.toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-                  {info.total === 0 && (
-                    <div style={{ color: '#475569', marginTop: 3, fontSize: 12 }}>No traffic recorded</div>
-                  )}
+          {hoverInfo && (
+            <Popup
+              longitude={hoverInfo.longitude}
+              latitude={hoverInfo.latitude}
+              offset={[0, -6] as [number, number]}
+              closeButton={false}
+              closeOnClick={false}
+              anchor="bottom"
+              className="wm-popup"
+            >
+              <div className="flex flex-col gap-1 text-[13px]">
+                <div className="mb-1 flex items-center gap-2 font-semibold">
+                  {hoverInfo.alpha2 && <span className="num rounded bg-raise px-1.5 text-[11px] leading-[18px] text-muted-foreground">{hoverInfo.alpha2}</span>}
+                  <span>{hoverInfo.alpha2 ? countryName(hoverInfo.alpha2) : "Territory"}</span>
                 </div>
-              </Popup>
-            );
-          })()}
+                <div className="flex justify-between gap-5">
+                  <span className="text-muted-foreground">Requests</span>
+                  <span className="num font-semibold">{formatCount(hoverInfo.total)}</span>
+                </div>
+                {hoverInfo.blocked > 0 && (
+                  <div className="flex justify-between gap-5">
+                    <span className="text-muted-foreground">Mitigated</span>
+                    <span className="num font-semibold text-waf-ink">{formatCount(hoverInfo.blocked)}</span>
+                  </div>
+                )}
+                {hoverInfo.total === 0 && <div className="text-xs text-soft">No requests in this period</div>}
+              </div>
+            </Popup>
+          )}
         </MapGL>
       </div>
 
       {max > 0 && (
-        <div className="flex items-center gap-2 mt-1.5 px-0.5">
-          <p className="text-xs text-muted-foreground">Low</p>
-          <div className="flex-1 h-[5px] rounded-full" style={{ background: 'linear-gradient(to right, #1e3a8a, #3b82f6, #93c5fd)' }} />
-          <p className="text-xs text-muted-foreground">High</p>
+        <div className="flex items-center gap-2 px-0.5" aria-hidden="true">
+          <span className="text-xs text-soft">Fewer</span>
+          <span className="h-[5px] flex-1 rounded-full" style={{ background: "linear-gradient(to right, var(--served2), var(--served))" }} />
+          <span className="text-xs text-soft">More requests</span>
         </div>
       )}
     </div>

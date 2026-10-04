@@ -2,6 +2,9 @@ import { isIP } from "node:net";
 import { bodyLimitRangeMessage, customDirectivesError, isValidBodyLimit } from "./caddy-waf";
 import { normalizeDefaultResponseSettings } from "./caddy-default-response";
 import { getProviderDefinition, isValidDnsDuration } from "./dns-providers";
+import { normalizeRateLimitSettings } from "./caddy-rate-limit";
+import { ApiValidationError } from "./api-errors";
+import { WAF_TUNING_KEYS, wafTuningError } from "./waf-tuning";
 
 export class SettingsValidationError extends Error {
   constructor(message: string) {
@@ -336,6 +339,7 @@ function validateWaf(value: Record<string, unknown>, previous: PreviousWafSettin
       "request_body_limit",
       "request_body_in_memory_limit",
       "request_body_limit_action",
+      ...WAF_TUNING_KEYS,
     ],
     "WAF settings"
   );
@@ -344,6 +348,8 @@ function validateWaf(value: Record<string, unknown>, previous: PreviousWafSettin
   if (mode !== "Off" && mode !== "On" && mode !== "DetectionOnly") {
     invalid("waf.mode must be Off, On, or DetectionOnly");
   }
+  const tuningError = wafTuningError(value);
+  if (tuningError) invalid(tuningError);
   booleanValue(required(value, "load_owasp_crs", "WAF settings"), "waf.load_owasp_crs");
   const directives = stringValue(required(value, "custom_directives", "WAF settings"), "waf.custom_directives", { max: 100_000, controls: true });
   // Only lines this update newly drops are rejected, as in the dashboard form:
@@ -357,7 +363,12 @@ function validateWaf(value: Record<string, unknown>, previous: PreviousWafSettin
       : undefined
   );
   if (directiveError) invalid(directiveError);
-  if (value.excluded_rule_ids !== undefined) validateNumberList(value.excluded_rule_ids, "waf.excluded_rule_ids");
+  // Each listed id becomes an exclusion record (src/lib/models/waf-exclusions.ts), whose ids are Int32.
+  if (value.excluded_rule_ids !== undefined) {
+    const ids = value.excluded_rule_ids;
+    if (!Array.isArray(ids) || ids.length > MAX_LIST_ITEMS) invalid("waf.excluded_rule_ids must be an array");
+    ids.forEach((item, index) => integerValue(item, `waf.excluded_rule_ids[${index}]`, 1, 2_147_483_647));
+  }
   validateBodyLimits(value, "waf");
 }
 
@@ -397,6 +408,16 @@ function validateErrorPages(value: Record<string, unknown>): void {
     stringValue(required(rule, "body", label), `${label}.body`, { min: 1, max: 65_536, controls: true });
     optionalString(rule, "contentType", label, 128);
   });
+}
+
+/** Strict, like every other group; saveRateLimitSettings stores the normalized form. */
+function validateRateLimit(value: Record<string, unknown>): void {
+  try {
+    normalizeRateLimitSettings(value, "rate-limit");
+  } catch (error) {
+    if (error instanceof ApiValidationError) invalid(error.message);
+    throw error;
+  }
 }
 
 function validateDefaultResponse(value: Record<string, unknown>): void {
@@ -441,6 +462,7 @@ export function validateSettingsGroup(
     case "waf": validateWaf(value, previousWaf); break;
     case "error-pages": validateErrorPages(value); break;
     case "default-response": validateDefaultResponse(value); break;
+    case "rate-limit": validateRateLimit(value); break;
     default: invalid("Unknown settings group");
   }
   return input;

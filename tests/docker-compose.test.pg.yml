@@ -1,0 +1,47 @@
+# The E2E test stack with the dashboard on PostgreSQL
+# (tests/playwright.pg.config.ts). Applied on top of docker-compose.yml and
+# tests/docker-compose.test.yml: the main web service keeps its data in the
+# postgres service below, everything else is the SQLite test stack (the
+# registration, master and slave dashboards keep their own SQLite files).
+services:
+  postgres:
+    container_name: ingressi-postgres
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ingressi
+      POSTGRES_PASSWORD: "test-postgres-password-2026"
+      POSTGRES_DB: ingressi
+      # Ingressi refuses a database without UTF8 and the C collation and
+      # character classification (src/lib/db/pg-startup.ts): the cluster,
+      # and so the database created at init, gets them.
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - postgres-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ingressi -d ingressi"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  web:
+    environment:
+      DATABASE_URL: "postgres://ingressi:test-postgres-password-2026@postgres:5432/ingressi"
+    networks:
+      - caddy-network
+      - postgres-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  # The dashboard and its database only.
+  postgres-network:
+    driver: bridge
+    internal: true
+
+volumes:
+  postgres-data:
+    name: postgres-data-test

@@ -7,7 +7,7 @@
  *
  *  - Moonraker enforces its OWN api key (v0.11 stores a per-instance key in
  *    its database; the setup fetches it via a trusted localhost call inside
- *    the container). The X-Api-Key bypass header lets requests skip CPM
+ *    the container). The X-Api-Key bypass header lets requests skip Ingressi
  *    forward auth, and Moonraker itself rejects keys it does not accept —
  *    proving the bypass-header delegation end-to-end (the negative test
  *    recommended in docs/forward-auth-generic-security-analysis.md).
@@ -127,7 +127,7 @@ test.describe.serial('Generic Forward Auth — Real Moonraker', () => {
   });
 
   test('X-Api-Key bypass does not bypass Moonraker: a wrong key is rejected by the upstream', async () => {
-    // The bypass header skips CPM forward auth entirely — this request never
+    // The bypass header skips Ingressi forward auth entirely — this request never
     // touches Authelia. Moonraker itself must reject the bad key.
     const res = await httpsGet(DOMAIN, '/server/info', {}, { 'X-Api-Key': 'wrong-key' });
     expect(res.status).toBe(401);

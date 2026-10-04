@@ -22,18 +22,8 @@ const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    sqlite: undefined,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null => {
-      if (!value) return null;
-      return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-    },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 // Keep the real buildCaddyDocument (pure config builder) but stub the network
@@ -440,7 +430,7 @@ describe('generic forward auth: model behavior', () => {
           domains: ['conflict.example.com'],
           upstreams: [UPSTREAM],
           forwardAuth: { enabled: true, authUpstream: 'http://authelia:9091' },
-          cpmForwardAuth: { enabled: true },
+          ingressiForwardAuth: { enabled: true },
         },
         1
       )

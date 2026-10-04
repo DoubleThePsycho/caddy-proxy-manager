@@ -64,7 +64,7 @@ export function CaCertDrawer({ open, cert, onClose }: Props) {
     <Sheet open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
       <SheetContent side="right" className="w-full sm:w-[480px] sm:max-w-[480px] flex flex-col gap-6 overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>{isEdit ? "Edit CA Certificate" : "Add CA Certificate"}</SheetTitle>
+          <SheetTitle>{isEdit ? "Edit certificate authority" : "Add certificate authority"}</SheetTitle>
         </SheetHeader>
 
         {isEdit ? (
@@ -101,7 +101,7 @@ export function CaCertDrawer({ open, cert, onClose }: Props) {
                 Cancel
               </Button>
               <Button type="submit" disabled={isPending}>
-                {isPending ? "Saving..." : "Save"}
+                {isPending ? "Saving…" : "Save"}
               </Button>
             </div>
           </form>
@@ -126,16 +126,16 @@ export function CaCertDrawer({ open, cert, onClose }: Props) {
                     name="name"
                     required
                     autoFocus
-                    placeholder="My Client CA"
+                    placeholder="Staff client CA"
                   />
-                  <p className="text-xs text-muted-foreground">Display name in this UI</p>
+                  <p className="text-xs text-muted-foreground">How the dashboard names it</p>
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="gen-cn">Common Name (CN)</Label>
+                  <Label htmlFor="gen-cn">Common name (CN)</Label>
                   <Input
                     id="gen-cn"
                     name="common_name"
-                    placeholder="My Client CA"
+                    placeholder="Staff client CA"
                   />
                   <p className="text-xs text-muted-foreground">CN field in the certificate. Defaults to the name above if left blank.</p>
                 </div>
@@ -159,7 +159,7 @@ export function CaCertDrawer({ open, cert, onClose }: Props) {
                     Cancel
                   </Button>
                   <Button type="submit" disabled={isPending}>
-                    {isPending ? "Generating..." : "Generate CA Certificate"}
+                    {isPending ? "Generating…" : "Generate certificate authority"}
                   </Button>
                 </div>
               </form>
@@ -178,7 +178,7 @@ export function CaCertDrawer({ open, cert, onClose }: Props) {
                     name="name"
                     required
                     autoFocus
-                    placeholder="My Client CA"
+                    placeholder="Staff client CA"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -191,14 +191,14 @@ export function CaCertDrawer({ open, cert, onClose }: Props) {
                     placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
                     className="font-mono text-xs"
                   />
-                  <p className="text-xs text-muted-foreground">PEM-encoded X.509 CA certificate (no private key needed)</p>
+                  <p className="text-xs text-muted-foreground">The CA's PEM certificate; no private key is needed</p>
                 </div>
                 <div className="flex gap-2 justify-end mt-auto pt-2">
                   <Button type="button" variant="outline" onClick={handleClose} disabled={isPending}>
                     Cancel
                   </Button>
                   <Button type="submit" disabled={isPending}>
-                    {isPending ? "Adding..." : "Add CA Certificate"}
+                    {isPending ? "Adding…" : "Add certificate authority"}
                   </Button>
                 </div>
               </form>

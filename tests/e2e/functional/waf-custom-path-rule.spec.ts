@@ -9,6 +9,7 @@
 import { test, expect } from '@playwright/test';
 import { createProxyHost } from '../../helpers/proxy-api';
 import { httpGet, waitForRoute } from '../../helpers/http';
+import { enableGlobalWafWithCrs } from '../../helpers/waf-ui';
 
 const DOMAIN = 'func-waf-custom-path.test';
 const ECHO_BODY = 'echo-ok';
@@ -16,24 +17,7 @@ const BLOCK_RULE = 'SecRule REQUEST_URI "@contains /admin" "id:1001,phase:1,deny
 
 test.describe.serial('WAF Custom Path Rule', () => {
   test('setup: enable global WAF and create merge-mode host with custom path rule', async ({ page }) => {
-    await page.goto('/waf');
-    await page.getByRole('tab', { name: /settings/i }).click();
-    await expect(page.getByRole('button', { name: /save waf settings/i })).toBeVisible();
-
-    const wafSwitch = page.locator('#waf_enabled');
-    const owaspCheckbox = page.locator('#waf_load_owasp_crs');
-
-    if (await wafSwitch.getAttribute('data-state') !== 'checked') {
-      await wafSwitch.click();
-      await expect(wafSwitch).toHaveAttribute('data-state', 'checked');
-    }
-    if (await owaspCheckbox.getAttribute('data-state') !== 'checked') {
-      await owaspCheckbox.click();
-      await expect(owaspCheckbox).toHaveAttribute('data-state', 'checked');
-    }
-
-    await page.getByRole('button', { name: /save waf settings/i }).click();
-    await expect(page.getByRole('button', { name: /save waf settings/i })).toBeEnabled({ timeout: 10_000 });
+    await enableGlobalWafWithCrs(page);
 
     await createProxyHost(page, {
       name: 'Functional WAF Custom Path Rule Test',

@@ -15,11 +15,7 @@ import { eq } from 'drizzle-orm';
 
 let db: TestDb;
 
-vi.mock('../../src/lib/db', async () => ({
-  get default() { return db; },
-  nowIso: () => new Date().toISOString(),
-  toIso: (v: string | null) => v,
-}));
+vi.mock('../../src/lib/db', async () => (await import('../helpers/db-module')).mockDbModule(() => db));
 vi.mock('../../src/lib/caddy', () => ({ applyCaddyConfig: vi.fn() }));
 vi.mock('../../src/lib/audit', () => ({ logAuditEvent: vi.fn() }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
@@ -27,7 +23,7 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 const { requireAdminMock } = vi.hoisted(() => ({
   requireAdminMock: vi.fn(async () => ({ user: { id: '1' } })),
 }));
-vi.mock('@/src/lib/auth', () => ({ requireAdmin: requireAdminMock }));
+vi.mock('@/src/lib/auth', () => ({ requirePermission: vi.fn(() => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireAdmin())), requireAdmin: requireAdminMock }));
 
 const { generateCaCertificateAction, issueClientCertificateAction } =
   await import('../../app/(dashboard)/certificates/ca-actions');

@@ -1,47 +1,74 @@
 import { test, expect } from '@playwright/test';
+import { createProxyHost } from '../helpers/proxy-api';
 
 test.describe('Audit Log', () => {
   test('audit log page loads without redirecting to login', async ({ page }) => {
     await page.goto('/audit-log');
     await expect(page).not.toHaveURL(/login/);
-    await expect(page.locator('body')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Audit log', level: 1 })).toBeVisible();
   });
 
-  test('audit log page has a table or list', async ({ page }) => {
+  test('audit log page lists events in a table', async ({ page }) => {
     await page.goto('/audit-log');
-    // Should have table or list structure
-    const hasTable = await page.locator('table, [role="grid"], [role="table"]').count() > 0;
-    const hasList = await page.locator('ul, ol').count() > 0;
-    const hasRows = await page.locator('tr').count() > 0;
-    expect(hasTable || hasList || hasRows).toBe(true);
+    await expect(page.getByRole('heading', { name: 'Events' })).toBeVisible();
+    await expect(page.getByRole('table')).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Summary' })).toBeVisible();
   });
 
   test('creating a proxy host creates audit log entry', async ({ page }) => {
-    // Create a proxy host
-    await page.goto('/proxy-hosts');
-    await page.getByRole('button', { name: /create host/i }).click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    // Create a proxy host in the host editor
+    await createProxyHost(page, { name: 'Audit Test Host', domain: 'audit-test.local', upstream: 'localhost:8888' });
 
-    await page.getByLabel('Name').fill('Audit Test Host');
-    await page.getByLabel(/domains/i).fill('audit-test.local');
-    await page.getByPlaceholder('10.0.0.5:8080').fill('localhost:8888');
-
-    await page.getByRole('button', { name: /^create$/i }).click();
-    await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 10000 });
-    await expect(page.getByRole('table').getByText('Audit Test Host')).toBeVisible({ timeout: 10000 });
-
-    // Check audit log
-    await page.goto('/audit-log');
-    // Should show some entry related to proxy_host or create
-    await expect(page.locator('body')).toBeVisible();
+    // The audit log finds it by its entity type and text.
+    await page.goto('/audit-log?entityType=proxy_host&q=Audit%20Test%20Host');
+    await expect(page.getByRole('table').getByText('Created proxy host Audit Test Host').first()).toBeVisible();
   });
 
-  test('audit log page has search functionality', async ({ page }) => {
+  test('audit log page has search functionality held in the URL', async ({ page }) => {
     await page.goto('/audit-log');
-    // Should have a search input
-    const hasSearch = await page.getByRole('searchbox').count() > 0
-      || await page.getByPlaceholder(/search/i).count() > 0
-      || await page.getByLabel(/search/i).count() > 0;
-    expect(hasSearch).toBe(true);
+    const search = page.getByRole('searchbox', { name: 'Search the audit log' });
+    await expect(search).toBeVisible();
+    await search.fill('no-such-event-text-e2e');
+    await expect(page).toHaveURL(/[?&]q=no-such-event-text-e2e/);
+    await expect(page.getByText('No events match these filters.')).toBeVisible();
+    await page.getByRole('button', { name: 'Clear filters' }).first().click();
+    await expect(page).not.toHaveURL(/q=/);
+  });
+
+  test('filters by actor, action, entity and time range', async ({ page }) => {
+    await page.goto('/audit-log');
+    await expect(page.getByRole('combobox', { name: /Actor/ })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: /Action/ })).toBeVisible();
+    await expect(page.getByRole('combobox', { name: /Entity/ })).toBeVisible();
+    const range = page.getByRole('group', { name: 'Time range' });
+    await range.getByRole('button', { name: '7d' }).click();
+    await expect(page).toHaveURL(/range=7d/);
+    await expect(range.getByRole('button', { name: '7d' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('expanding an event shows its hash', async ({ page }) => {
+    await page.goto('/audit-log');
+    // The button's name turns into "Hide …" once open, so find it again by its event.
+    const toggle = page.getByRole('button', { name: /^(Show diff|Details), event \d+$/ }).first();
+    const id = (await toggle.getAttribute('aria-label'))?.match(/event (\d+)$/)?.[1];
+    expect(id).toBeTruthy();
+    await toggle.click();
+    await expect(page.getByRole('button', { name: new RegExp(`^Hide (diff|details), event ${id}$`) })).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('table').getByText('Hash', { exact: true })).toBeVisible();
+  });
+
+  test('shows the hash chain and the license notice without a license', async ({ page }) => {
+    await page.goto('/audit-log');
+    await expect(page.getByRole('button', { name: 'Verify now' })).toBeDisabled();
+    await expect(page.getByText('Export, integrity verification, streaming and retention need a Business license.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Export CSV or JSON' })).toBeDisabled();
+  });
+
+  test('links to streaming and retention', async ({ page }) => {
+    await page.goto('/audit-log');
+    await page.getByRole('link', { name: 'Streaming and retention' }).click();
+    await expect(page).toHaveURL(/\/audit-log\/streaming/);
+    await expect(page.getByRole('heading', { name: 'Audit streaming', level: 1 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Retention' })).toBeVisible();
   });
 });

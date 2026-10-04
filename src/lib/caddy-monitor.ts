@@ -1,20 +1,23 @@
 /**
  * Caddy health monitoring service
  * Monitors Caddy for restarts/recreations and automatically reapplies the
- * configuration Caddy Proxy Manager last pushed.
+ * configuration Ingressi last pushed.
  *
  * Detection is content-based: after every successful apply, `applyCaddyConfig`
- * records a fingerprint (sha256) of the config Caddy is actually serving.
- * Each health check re-fetches the live config and compares — any difference
- * means Caddy is no longer running our configuration (container recreated
- * with a missing/stale autosave, restarted onto the image's default
- * Caddyfile, or externally modified) and the applied config is pushed again.
+ * records a fingerprint (sha256) of the config Caddy is actually serving, in
+ * the database (caddy-apply-status.ts), so an apply by another replica is
+ * the expected configuration too. Each health check re-fetches the live
+ * config and compares — any difference means Caddy is no longer running our
+ * configuration (container recreated with a missing/stale autosave,
+ * restarted onto the image's default Caddyfile, externally modified, or an
+ * apply that lost its cluster lock pushed an older document last) and the
+ * configuration is applied again.
  * A hash comparison is the only reliable signal: Caddy may come back with a
  * non-empty config (the default Caddyfile defines an `http` app), so checks
  * like "is the config empty" or "did the ETag disappear" miss real drift.
  */
 
-import { applyCaddyConfig, getCaddyLiveConfigHash, getLastAppliedConfigHash } from "./caddy";
+import { applyCaddyConfig, getAppliedConfigHash, getCaddyLiveConfigHash } from "./caddy";
 import { config } from "./config";
 
 type CaddyMonitorState = {
@@ -68,7 +71,7 @@ async function checkCaddyHealth(): Promise<void> {
   monitorState.isHealthy = true;
   monitorState.lastConfigId = liveConfigId;
 
-  const expectedConfigId = getLastAppliedConfigHash();
+  const expectedConfigId = await getAppliedConfigHash();
   const hasDrifted = expectedConfigId !== null && liveConfigId !== expectedConfigId;
 
   if (hasDrifted) {
@@ -79,7 +82,7 @@ async function checkCaddyHealth(): Promise<void> {
     console.log("[CaddyMonitor] Caddy configuration drift detected (restart or external change)! Waiting before reapplying...");
 
     // Wait a bit for Caddy to fully initialize
-    setTimeout(async () => {
+    setTimeout(() => void (async () => {
       try {
         console.log("[CaddyMonitor] Reapplying Caddy configuration after drift...");
         await applyCaddyConfig();
@@ -90,7 +93,7 @@ async function checkCaddyHealth(): Promise<void> {
       } finally {
         reapplyPending = false;
       }
-    }, REAPPLY_DELAY);
+    })(), REAPPLY_DELAY);
   }
 }
 

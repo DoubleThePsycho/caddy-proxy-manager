@@ -47,6 +47,36 @@ const KNOWN_CADDY_REJECTIONS: ReadonlyArray<{ pattern: RegExp; reason: string }>
     pattern: /body limit should be bigger than 0/i,
     reason: "a WAF body limit is zero",
   },
+  {
+    pattern: /unknown module: http\.handlers\.rate_limit/i,
+    reason: "the Caddy image has no rate limit plugin; update it to the image of this release",
+  },
+  // Shared certificate storage (ee/high-availability): the redis module
+  // connects and signs in while the configuration loads.
+  {
+    pattern: /loading storage module: .*(module not registered|unknown module)/i,
+    reason: "this Caddy build has no Redis storage module; update the Caddy image",
+  },
+  {
+    pattern: /loading storage module: .*(WRONGPASS|NOAUTH|invalid username-password|invalid password|AUTH <password>)/i,
+    reason: "the certificate storage server did not accept the user name or password",
+  },
+  {
+    pattern: /loading storage module: .*encryption_key/i,
+    reason: "the certificate storage encryption key is missing or shorter than 32 bytes on this node (check its CADDY_STORAGE_* variables)",
+  },
+  {
+    pattern: /loading storage module: .*(x509|tls:|certificate)/i,
+    reason: "the TLS connection to the certificate storage server failed",
+  },
+  {
+    pattern: /loading storage module: .*(no such host|connection refused|i\/o timeout|deadline exceeded|no route to host|network is unreachable|EOF)/i,
+    reason: "Caddy could not reach the certificate storage server",
+  },
+  {
+    pattern: /loading storage module:/i,
+    reason: "Caddy could not set up the certificate storage",
+  },
 ];
 
 /** Known, safe-to-report explanation for a Caddy config rejection, if any. */

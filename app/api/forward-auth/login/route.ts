@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import db from "@/src/lib/db";
+import { appDb } from "@/src/lib/db";
 import { config } from "@/src/lib/config";
+import { FORWARD_AUTH_CALLBACK_PATH } from "@/src/lib/forward-auth-trust";
 import {
   createForwardAuthSession,
   createExchangeCode,
@@ -13,6 +14,7 @@ import { logAuditEvent } from "@/src/lib/audit";
 import { getClientIp } from "@/src/lib/client-ip";
 import { getUserPasswordHash } from "@/src/lib/models/user";
 import { beginPortalLoginAttempt } from "@/src/lib/forward-auth-login-limiter";
+import { isUserOrganizationBlocked } from "@/ee/multi-tenancy/store";
 
 // Compared against when the account does not exist, is inactive or has no
 // password, so those cases take as long to reject as a wrong password. A cost-12
@@ -51,10 +53,12 @@ async function readBodyText(request: NextRequest): Promise<string | null> {
  */
 async function checkCredentials(username: string, password: string) {
   const email = `${username}@localhost`;
-  const user = await db.query.users.findFirst({
+  const user = await appDb.query.users.findFirst({
     where: (table, operators) => operators.eq(table.email, email)
   });
-  const passwordHash = user && user.status === "active" ? await getUserPasswordHash(user) : null;
+  // A disabled organisation's users (ee/multi-tenancy) are refused like inactive accounts.
+  const usable = user && user.status === "active" && !await isUserOrganizationBlocked(appDb, user.id);
+  const passwordHash = usable ? await getUserPasswordHash(user) : null;
   const isValid = await bcrypt.compare(password, passwordHash ?? DUMMY_PASSWORD_HASH);
   return { user, valid: Boolean(passwordHash) && isValid };
 }
@@ -65,7 +69,7 @@ async function checkCredentials(username: string, password: string) {
  */
 export async function POST(request: NextRequest) {
   try {
-    // CSRF: verify the request originates from the CPM portal
+    // CSRF: verify the request originates from the dashboard portal
     const origin = request.headers.get("origin");
     const baseOrigin = new URL(config.baseUrl).origin;
     if (!origin || origin !== baseOrigin) {
@@ -107,7 +111,7 @@ export async function POST(request: NextRequest) {
     // ceiling); any one blocks. The attempt holds its place in each limit
     // until its outcome is recorded, so concurrent requests cannot all slip
     // past the check.
-    const attempt = beginPortalLoginAttempt(username, getClientIp(request.headers));
+    const attempt = await beginPortalLoginAttempt(username, getClientIp(request.headers));
     if (!attempt) {
       return NextResponse.json(
         { error: "Too many login attempts. Please try again later." },
@@ -119,13 +123,13 @@ export async function POST(request: NextRequest) {
     try {
       credentials = await checkCredentials(username, password);
     } catch (error) {
-      attempt.release();
+      await attempt.release();
       throw error;
     }
     const { user, valid } = credentials;
     if (!user || !valid) {
-      attempt.fail();
-      logAuditEvent({
+      await attempt.fail();
+      await logAuditEvent({
         userId: user?.id ?? null,
         action: "forward_auth_login_failed",
         entityType: "user",
@@ -134,7 +138,7 @@ export async function POST(request: NextRequest) {
       });
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
-    attempt.succeed();
+    await attempt.succeed();
 
     // Consume the redirect intent — returns the server-stored redirect URI.
     // This is a one-time operation: the intent is deleted after consumption.
@@ -150,7 +154,7 @@ export async function POST(request: NextRequest) {
     // to silently change the authorization target mid-flow.
     const hasAccess = await checkHostAccess(user.id, intent.audience.proxyHostId);
     if (!hasAccess) {
-      logAuditEvent({
+      await logAuditEvent({
         userId: user.id,
         action: "forward_auth_access_denied",
         entityType: "proxy_host",
@@ -170,7 +174,7 @@ export async function POST(request: NextRequest) {
       intent.audience,
     );
 
-    logAuditEvent({
+    await logAuditEvent({
       userId: user.id,
       action: "forward_auth_login",
       entityType: "user",
@@ -179,7 +183,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Build callback URL on the target domain
-    const callbackUrl = new URL("/.cpm-auth/callback", intent.audience.origin);
+    const callbackUrl = new URL(FORWARD_AUTH_CALLBACK_PATH, intent.audience.origin);
     callbackUrl.searchParams.set("code", rawCode);
 
     return NextResponse.json({ redirectTo: callbackUrl.toString() });

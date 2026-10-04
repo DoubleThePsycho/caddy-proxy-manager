@@ -17,18 +17,8 @@ const ctx = vi.hoisted(() => {
 
 vi.mock('../../src/lib/db', async () => {
   const { createTestDb } = await import('../helpers/db');
-  const schemaModule = await import('../../src/lib/db/schema');
   ctx.db = createTestDb();
-  return {
-    default: ctx.db,
-    sqlite: undefined,
-    schema: schemaModule,
-    nowIso: () => new Date().toISOString(),
-    toIso: (value: string | Date | null | undefined): string | null => {
-      if (!value) return null;
-      return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-    },
-  };
+  return (await import('../helpers/db-module')).mockDbModule(() => ctx.db);
 });
 
 vi.mock('../../src/lib/audit', () => ({ logAuditEvent: vi.fn() }));
@@ -153,7 +143,7 @@ describe('forward-auth login', () => {
       loginRequest({ username: 'bob', password: PASSWORD, rid: await createRedirectIntent('https://app.example.com/x') })
     );
     expect(ok.status).toBe(200);
-    expect((await ok.json()).redirectTo).toMatch(/^https:\/\/app\.example\.com\/\.cpm-auth\/callback\?code=/);
+    expect((await ok.json()).redirectTo).toMatch(/^https:\/\/app\.example\.com\/\.ingressi-auth\/callback\?code=/);
   });
 
   it('accepts a password kept only on the credential account (self-registered users)', async () => {

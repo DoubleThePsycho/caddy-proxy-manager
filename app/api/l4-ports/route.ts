@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiAdmin, apiErrorResponse } from "@/src/lib/api-auth";
+import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { getL4PortsDiff, getL4PortsStatus, applyL4Ports } from "@/src/lib/l4-ports";
 
 /**
@@ -7,11 +7,9 @@ import { getL4PortsDiff, getL4PortsStatus, applyL4Ports } from "@/src/lib/l4-por
  */
 export async function GET(request: NextRequest) {
   try {
-    await requireApiAdmin(request);
-    const [diff, status] = await Promise.all([
-      getL4PortsDiff(),
-      getL4PortsStatus(),
-    ]);
+    await requireApiPermission(request, "l4_proxy_hosts:read");
+    const diff = await getL4PortsDiff();
+    const status = getL4PortsStatus();
     return NextResponse.json({ diff, status });
   } catch (error) {
     return apiErrorResponse(error);
@@ -23,7 +21,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    await requireApiAdmin(request);
+    await requireApiPermission(request, "l4_proxy_hosts:write");
     const status = await applyL4Ports();
     return NextResponse.json({ status });
   } catch (error) {

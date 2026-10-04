@@ -1,8 +1,9 @@
 import { eq } from "drizzle-orm";
-import db, { nowIso } from "./db";
+import { appDb, nowIso } from "./db";
 import { settings } from "./db/schema";
 import { decodeSyncPublicKey, isSyncKeyId, syncKeyId } from "./sync-crypto";
-import { UNREADABLE_SYNC_KEY_PIN_SOURCE } from "./instance-sync-view";
+import { PULL_REPLICA_IDENTITY_PREFIX, UNREADABLE_SYNC_KEY_PIN_SOURCE } from "./instance-sync-view";
+import { first } from "@/src/lib/db/ops";
 
 /**
  * The sync keys a master has pinned for its slaves (trust on first use).
@@ -61,10 +62,14 @@ export function isUnreadableSyncKeyPin(pin: SyncKeyPin): boolean {
  * segments resolved) without trailing slashes. Instance sync requests go to
  * this value + "/api/instances/sync" (see slaveSyncUrl in instance-sync.ts),
  * so two base URLs share a pin exactly when they reach the same endpoint.
- * The identity of an identity is itself.
+ * The identity of an identity is itself. A pull replica's base URL
+ * ("pull:" and a random id, see PULL_REPLICA_IDENTITY_PREFIX) is its own
+ * identity: no request is ever sent to it, and it cannot collide with an
+ * http(s) URL.
  */
 export function syncKeyPinIdentity(baseUrl: string): string {
   const trimmed = baseUrl.trim();
+  if (trimmed.startsWith(PULL_REPLICA_IDENTITY_PREFIX)) return trimmed;
   try {
     const url = new URL(trimmed);
     return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
@@ -143,7 +148,7 @@ function toPin(input: SyncKeyPinInput): SyncKeyPin {
 }
 
 async function readPins(): Promise<Map<string, SyncKeyPin>> {
-  const [row] = await db.select({ value: settings.value }).from(settings).where(eq(settings.key, SYNC_KEY_PINS_SETTING));
+  const [row] = await appDb.select({ value: settings.value }).from(settings).where(eq(settings.key, SYNC_KEY_PINS_SETTING));
   return parsePins(row?.value);
 }
 
@@ -160,43 +165,45 @@ export async function getSyncKeyPin(baseUrl: string): Promise<SyncKeyPin | null>
 }
 
 /**
- * Run `change` on the stored pins inside one synchronous transaction and
- * store the result when it differs, so concurrent syncs (one per slave, in
- * parallel) never overwrite each other's pins.
+ * Run `change` on the stored pins inside one transaction and store the result
+ * when it differs, so concurrent syncs (one per slave, in parallel) never
+ * overwrite each other's pins. `change` runs inside the transaction: its
+ * database queries join it, and it must not wait for anything else (no
+ * network, no Caddy).
  */
-function changePins<T>(change: (pins: Map<string, SyncKeyPin>) => T): T {
-  return db.transaction((tx) => {
-    const row = tx.select({ value: settings.value }).from(settings).where(eq(settings.key, SYNC_KEY_PINS_SETTING)).get();
+async function changePins<T>(change: (pins: Map<string, SyncKeyPin>) => Promise<T>): Promise<T> {
+  return await appDb.transaction(async (tx) => {
+    const row = await first(tx.select({ value: settings.value }).from(settings).where(eq(settings.key, SYNC_KEY_PINS_SETTING)).limit(1));
     const pins = parsePins(row?.value);
     const before = serializePins(pins);
-    const result = change(pins);
+    const result = await change(pins);
     const value = serializePins(pins);
     if (value === before) return result;
     if (pins.size === 0) {
-      tx.delete(settings).where(eq(settings.key, SYNC_KEY_PINS_SETTING)).run();
+      await tx.delete(settings).where(eq(settings.key, SYNC_KEY_PINS_SETTING));
     } else {
       const updatedAt = nowIso();
-      tx.insert(settings)
+      await tx.insert(settings)
         .values({ key: SYNC_KEY_PINS_SETTING, value, updatedAt })
-        .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt } })
-        .run();
+        .onConflictDoUpdate({ target: settings.key, set: { value, updatedAt } });
     }
     return result;
-  });
+  }, { behavior: "immediate" });
 }
 
 /**
  * Read the pin of the slave at `baseUrl` and, when `decide` returns a `pin`,
  * replace it, in one transaction. Returns `decide`'s `result`. `decide` runs
- * inside the transaction and must not await.
+ * inside the transaction: it may query the database (the queries join the
+ * transaction) but must not wait for anything else.
  */
-export function updateSyncKeyPin<T>(
+export async function updateSyncKeyPin<T>(
   baseUrl: string,
-  decide: (current: SyncKeyPin | null) => { result: T; pin?: SyncKeyPinInput }
-): T {
+  decide: (current: SyncKeyPin | null) => Promise<{ result: T; pin?: SyncKeyPinInput }>
+): Promise<T> {
   const identity = syncKeyPinIdentity(baseUrl);
-  return changePins((pins) => {
-    const { result, pin } = decide(pins.get(identity) ?? null);
+  return await changePins(async (pins) => {
+    const { result, pin } = await decide(pins.get(identity) ?? null);
     if (pin) pins.set(identity, toPin(pin));
     return result;
   });
@@ -213,7 +220,7 @@ export async function replaceSyncKeyPin(
 ): Promise<{ pin: SyncKeyPin; replaced: SyncKeyPin | null }> {
   const identity = syncKeyPinIdentity(baseUrl);
   const pin = toPin(input);
-  const replaced = changePins((pins) => {
+  const replaced = await changePins(async (pins) => {
     const previous = pins.get(identity) ?? null;
     pins.set(identity, pin);
     return previous;
@@ -238,17 +245,17 @@ export async function deleteSyncKeyPin(baseUrl: string): Promise<boolean> {
  * Remove the pin of the slave at `baseUrl`, like deleteSyncKeyPin, and return
  * the pin that was removed, or null when there was none. When `keep` returns
  * true for the identity the pin stays and null is returned; `keep` runs inside
- * the store's transaction (it must not await), so it decides on the state the
- * removal is made against.
+ * the store's transaction (its queries join it; it must not wait for anything
+ * else), so it decides on the state the removal is made against.
  */
 export async function takeSyncKeyPin(
   baseUrl: string,
-  keep?: (identity: string) => boolean
+  keep?: (identity: string) => Promise<boolean>
 ): Promise<SyncKeyPin | null> {
   const identity = syncKeyPinIdentity(baseUrl);
-  return changePins((pins) => {
+  return await changePins(async (pins) => {
     const pin = pins.get(identity) ?? null;
-    if (!pin || keep?.(identity)) return null;
+    if (!pin || await keep?.(identity)) return null;
     pins.delete(identity);
     return pin;
   });

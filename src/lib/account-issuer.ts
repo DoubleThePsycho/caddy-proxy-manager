@@ -1,11 +1,11 @@
 /**
- * Account namespace ("issuer") helpers for CPM's `accounts` table.
+ * Account namespace ("issuer") helpers for Ingressi's `accounts` table.
  *
  * Better Auth 1.7 namespaced external identities by `(issuer, accountId)` and
  * exposed `createLocalAccountIssuer` / `createOAuthAccountIssuer` to build those
  * synthetic issuers. Starting with Better Auth 1.7.4 the account key is
  * `(providerId, accountId)` and the issuer helpers were removed from
- * `better-auth/db`; CPM keeps its own `accounts.issuer` column for its internal
+ * `better-auth/db`; Ingressi keeps its own `accounts.issuer` column for its internal
  * identity bookkeeping, so the namespace strings are computed here and are
  * deliberately identical to the values Better Auth 1.7.x produced. A provider
  * with its own issuer stays pinned to it (trusted config wins); providers
@@ -33,7 +33,7 @@ export function createOAuthAccountIssuer(providerId: string): string {
   return `local:oauth:${encodeIssuerProviderId(providerId)}`;
 }
 
-/** CPM's stable namespace for password-backed (credential) accounts. */
+/** Ingressi's stable namespace for password-backed (credential) accounts. */
 export const CREDENTIAL_ACCOUNT_ISSUER = createLocalAccountIssuer("credential");
 
 /**

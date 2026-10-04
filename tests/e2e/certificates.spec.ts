@@ -56,14 +56,13 @@ test.describe('Certificates', () => {
     const host = await hostRes.json();
 
     try {
-      // 3. Visit certificates page — the subdomain host should NOT appear in the ACME tab
+      // 3. Visit certificates page — the subdomain host is listed under the
+      // wildcard certificate, not as a certificate of its own.
       await page.goto('/certificates');
-      await expect(page.getByRole('tab', { name: /acme/i })).toBeVisible();
-      await page.getByRole('tab', { name: /acme/i }).click();
-
-      // The subdomain should not be listed as a separate ACME entry
-      const acmeTab = page.locator('[role="tabpanel"]');
-      await expect(acmeTab.getByText(`sub.${domain}`)).not.toBeVisible({ timeout: 5_000 });
+      await expect(page.getByRole('tab', { name: /^certificates/i })).toHaveAttribute('aria-selected', 'true');
+      const table = page.getByRole('region', { name: 'Certificates', exact: true }).getByRole('table');
+      await expect(table.getByRole('rowheader').filter({ hasText: domain }).first()).toBeVisible({ timeout: 10_000 });
+      await expect(table.getByRole('rowheader').filter({ hasText: `sub.${domain}` })).toHaveCount(0);
     } finally {
       // Cleanup: delete the proxy host and certificate
       await page.request.delete(`${API}/proxy-hosts/${host.id}`, { headers });
@@ -115,15 +114,14 @@ test.describe('Certificates', () => {
 
       // 3. Visit certificates page — subdomain should be collapsed under the wildcard
       await page.goto('/certificates');
-      await expect(page.getByRole('tab', { name: /acme/i })).toBeVisible();
-      await page.getByRole('tab', { name: /acme/i }).click();
-
-      const acmeTab = page.locator('[role="tabpanel"]');
-      // DataTable renders both a hidden mobile card and a visible desktop table row.
-      // Mobile card is first in the DOM (block md:hidden) — use .last() to get the visible desktop row.
-      await expect(acmeTab.getByText(`*.${domain}`).last()).toBeVisible({ timeout: 5_000 });
-      // The subdomain host should NOT appear as a separate entry
-      await expect(acmeTab.getByText(`sub.${domain}`)).not.toBeVisible({ timeout: 5_000 });
+      const table = page.getByRole('region', { name: 'Certificates', exact: true }).getByRole('table');
+      const wildcardRow = table.getByRole('row').filter({ has: page.getByRole('rowheader').filter({ hasText: `*.${domain}` }) });
+      await expect(wildcardRow).toBeVisible({ timeout: 10_000 });
+      // ACME with a DNS provider: DNS-01
+      await expect(wildcardRow.getByText('DNS-01')).toBeVisible();
+      // The subdomain host should NOT appear as a separate entry; it is one of the wildcard's hosts
+      await expect(table.getByRole('rowheader').filter({ hasText: `sub.${domain}` })).toHaveCount(0);
+      await expect(wildcardRow.getByRole('button', { name: /2 hosts/i })).toBeVisible();
     } finally {
       if (subHostId) await page.request.delete(`${API}/proxy-hosts/${subHostId}`, { headers });
       if (wcHostId) await page.request.delete(`${API}/proxy-hosts/${wcHostId}`, { headers });
@@ -134,7 +132,7 @@ test.describe('Certificates', () => {
     }
   });
 
-  test('deletes an imported certificate from the Imported tab (#151)', async ({ page }) => {
+  test('deletes an imported certificate from the certificate list (#151)', async ({ page }) => {
     const BASE_URL = 'http://localhost:3000';
     const API = `${BASE_URL}/api/v1`;
     const headers = { 'Content-Type': 'application/json', 'Origin': BASE_URL };
@@ -158,11 +156,13 @@ test.describe('Certificates', () => {
 
     try {
       await page.goto('/certificates');
-      await page.getByRole('tab', { name: /imported/i }).click();
 
-      await expect(page.getByText(certName).last()).toBeVisible({ timeout: 10_000 });
+      const row = page.getByRole('row').filter({ hasText: certName });
+      await expect(row).toBeVisible({ timeout: 10_000 });
+      // Imported: the expiry comes from the PEM and the row says how it is obtained.
+      await expect(row.getByText('Imported', { exact: true })).toBeVisible();
 
-      await page.getByRole('button', { name: `Actions for certificate ${certName}` }).last().click();
+      await row.getByRole('button', { name: `More actions for ${certName}` }).click();
       await page.getByRole('menuitem', { name: /^delete$/i }).click();
 
       const dialog = page.getByRole('dialog', { name: /delete imported certificate/i });
@@ -170,9 +170,6 @@ test.describe('Certificates', () => {
       await dialog.getByRole('button', { name: /delete certificate/i }).click();
 
       await expect(dialog).not.toBeVisible({ timeout: 10_000 });
-      // toHaveCount(0), not not.toBeVisible(): the row is rendered twice
-      // (hidden mobile card + desktop row) and a strict visibility assertion
-      // fails transiently while the post-delete revalidation is in flight.
       await expect(page.getByText(certName)).toHaveCount(0, { timeout: 10_000 });
 
       const getRes = await page.request.get(`${API}/certificates/${cert.id}`, { headers: { Origin: BASE_URL } });
@@ -200,11 +197,9 @@ test.describe('Certificates', () => {
     let createdId: number | null = null;
     try {
       await page.goto('/certificates');
-      await page.getByRole('tab', { name: /imported/i }).click();
 
-      // Open the Import drawer. The "Add"/"Import" trigger varies by viewport,
-      // so match any button that opens the import flow.
-      await page.getByRole('button', { name: /import certificate|add certificate|^import$|^add$/i }).first().click();
+      // Open the Import drawer from the page header.
+      await page.getByRole('button', { name: /^import certificate$/i }).click();
 
       const drawer = page.getByRole('dialog');
       await expect(drawer).toBeVisible();
@@ -244,5 +239,85 @@ test.describe('Certificates', () => {
         await page.request.delete(`${API}/certificates/${createdId}`, { headers }).catch(() => undefined);
       }
     }
+  });
+
+  test('shows the expiry timeline and marks the row a marker picks', async ({ page }) => {
+    const BASE_URL = 'http://localhost:3000';
+    const API = `${BASE_URL}/api/v1`;
+    const headers = { 'Content-Type': 'application/json', 'Origin': BASE_URL };
+    const domain = `timeline-${Date.now()}.example`;
+    const certName = `Timeline ${domain}`;
+    // 20 days left: inside the 30-day renewal band.
+    const { certificatePem, privateKeyPem } = createSelfSignedServerCertificate(domain, [domain], 20);
+    const certRes = await page.request.post(`${API}/certificates`, {
+      data: { name: certName, type: 'imported', domainNames: [domain], autoRenew: false, certificatePem, privateKeyPem },
+      headers,
+    });
+    expect(certRes.status()).toBe(201);
+    const cert = await certRes.json() as { id: number };
+
+    try {
+      await page.goto('/certificates');
+      const timeline = page.getByRole('list', { name: /expiry, next 90 days/i });
+      // Each marker is a toggle named after the domain and its time left.
+      const escaped = domain.replace(/\./g, '\\.');
+      const marker = timeline.getByRole('button', { name: new RegExp(`^${escaped}: \\d+ days left`) });
+      await expect(marker).toBeVisible({ timeout: 10_000 });
+      await marker.click();
+      await expect(marker).toHaveAttribute('aria-pressed', 'true');
+
+      const row = page.getByRole('row').filter({ hasText: certName });
+      await expect(row.getByText('Replace soon')).toBeVisible();
+
+      // The status filter keeps it under "Due for renewal".
+      await page.getByRole('group', { name: 'Status' }).getByRole('button', { name: /due for renewal/i }).click();
+      await expect(row).toBeVisible();
+      await page.getByRole('group', { name: 'Status' }).getByRole('button', { name: /healthy/i }).click();
+      await expect(row).toHaveCount(0);
+    } finally {
+      await page.request.delete(`${API}/certificates/${cert.id}`, { headers }).catch(() => undefined);
+    }
+  });
+
+  test('deleting a certificate in use moves its hosts to automatic TLS', async ({ page }) => {
+    const BASE_URL = 'http://localhost:3000';
+    const API = `${BASE_URL}/api/v1`;
+    const headers = { 'Content-Type': 'application/json', 'Origin': BASE_URL };
+    const domain = `in-use-${Date.now()}.example`;
+
+    const certRes = await page.request.post(`${API}/certificates`, {
+      data: { name: `In use ${domain}`, type: 'managed', domainNames: [domain], autoRenew: true },
+      headers,
+    });
+    expect(certRes.status()).toBe(201);
+    const cert = await certRes.json() as { id: number };
+    const hostRes = await page.request.post(`${API}/proxy-hosts`, {
+      data: { name: `In use ${domain}`, domains: [domain], upstreams: ['127.0.0.1:8080'], certificateId: cert.id },
+      headers,
+    });
+    expect(hostRes.status()).toBe(201);
+    const host = await hostRes.json() as { id: number; certificateId: number | null };
+    expect(host.certificateId).toBe(cert.id);
+
+    try {
+      expect((await page.request.delete(`${API}/certificates/${cert.id}`, { headers })).ok()).toBe(true);
+      const after = await page.request.get(`${API}/proxy-hosts/${host.id}`, { headers: { Origin: BASE_URL } });
+      expect(after.status()).toBe(200);
+      expect((await after.json() as { certificateId: number | null }).certificateId).toBeNull();
+    } finally {
+      await page.request.delete(`${API}/proxy-hosts/${host.id}`, { headers }).catch(() => undefined);
+      await page.request.delete(`${API}/certificates/${cert.id}`, { headers }).catch(() => undefined);
+    }
+  });
+
+  test('has certificate authority and client certificate tabs', async ({ page }) => {
+    await page.goto('/certificates');
+    await page.getByRole('tab', { name: /^certificate authorities/i }).click();
+    await expect(page.getByRole('heading', { name: /certificate authorities for client certificates/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /add certificate authority/i }).first()).toBeVisible();
+
+    await page.getByRole('tab', { name: /^client certificates/i }).click();
+    await expect(page.getByRole('heading', { name: /^roles/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^client certificates/i })).toBeVisible();
   });
 });

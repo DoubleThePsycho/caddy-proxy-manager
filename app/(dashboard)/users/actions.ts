@@ -1,11 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/src/lib/auth";
+import { requirePermission } from "@/src/lib/auth";
 import {
   createUser,
   updateUserAccount,
-  updateUserRole,
   updateUserStatus,
   deleteUser,
   type User,
@@ -13,8 +12,19 @@ import {
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError } from "@/src/lib/api-errors";
 import { passwordPolicyMessage } from "@/src/lib/password-policy";
+import {
+  assertActiveAdminRemainsFor,
+  assertCanAssignOnCreate,
+  assertCanManageUserId,
+  assignRole,
+  auditUserCreated,
+  parseRoleChoice,
+} from "@/ee/custom-roles/service";
+import { tenantOf } from "@/src/lib/permissions";
+import { organizationForNewRow } from "@/ee/multi-tenancy/scope";
+import { dashboardCreateOrganization } from "@/ee/multi-tenancy/view";
+import { isUniqueViolation } from "@/src/lib/db/ops";
 
-const VALID_ROLES = new Set<User["role"]>(["admin", "user", "viewer"]);
 const VALID_STATUSES = new Set(["active", "disabled"]);
 
 /**
@@ -26,16 +36,6 @@ export type UserActionResult = { ok: true } | { ok: false; error: string };
 
 function failure(error: string): UserActionResult {
   return { ok: false, error };
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  // Drizzle wraps the driver error, so look through the cause chain.
-  let current: unknown = error;
-  for (let depth = 0; depth < 5 && current instanceof Error; depth++) {
-    if (/UNIQUE constraint failed/i.test(current.message)) return true;
-    current = current.cause;
-  }
-  return false;
 }
 
 /**
@@ -56,13 +56,12 @@ function storageFailure(error: unknown, action: string): UserActionResult {
 }
 
 export async function createUserAction(formData: FormData): Promise<UserActionResult> {
-  const session = await requireAdmin();
-  const actorId = Number(session.user.id);
+  const session = await requirePermission("users:write");
 
   const email = String(formData.get("email") ?? "").trim();
   const name = formData.get("name") ? String(formData.get("name")).trim() : null;
-  const requestedRole = String(formData.get("role") ?? "user");
-  const role = VALID_ROLES.has(requestedRole as User["role"]) ? (requestedRole as User["role"]) : "user";
+  // "admin", "user", "viewer" or "custom:<id>"; anything else is "user".
+  const assignment = parseRoleChoice(String(formData.get("role") ?? "user")) ?? { role: "user", customRoleId: null };
   const password = String(formData.get("password") ?? "");
 
   if (!email || !password) {
@@ -73,6 +72,21 @@ export async function createUserAction(formData: FormData): Promise<UserActionRe
     return failure(policyError);
   }
 
+  // The new user's organisation (ee/multi-tenancy): an organisation user's
+  // own, or the one a provider-level user is looking at.
+  let organizationId: number | null;
+  try {
+    const requested = tenantOf(session.access) === null ? await dashboardCreateOrganization(session.access) : undefined;
+    organizationId =
+      tenantOf(session.access) === null && requested === undefined
+        ? null
+        : await organizationForNewRow(Number(session.user.id), requested);
+    // Only roles the actor may grant and that fit the organisation; a custom role needs the license.
+    await assertCanAssignOnCreate(session.access, assignment, organizationId);
+  } catch (error) {
+    return storageFailure(error, "create user");
+  }
+
   const bcrypt = await import("bcryptjs");
   const passwordHash = await bcrypt.default.hash(password, 12);
 
@@ -81,7 +95,9 @@ export async function createUserAction(formData: FormData): Promise<UserActionRe
     user = await createUser({
       email,
       name,
-      role,
+      role: assignment.role,
+      customRoleId: assignment.customRoleId,
+      organizationId,
       provider: "credentials",
       subject: email,
       passwordHash,
@@ -90,50 +106,42 @@ export async function createUserAction(formData: FormData): Promise<UserActionRe
     return storageFailure(error, "create user");
   }
 
-  logAuditEvent({
-    userId: actorId,
-    action: "create",
-    entityType: "user",
-    entityId: user.id,
-    summary: `Created user ${user.id} (${email}) with role ${role}`,
-  });
+  await auditUserCreated(session.access, user);
 
   revalidatePath("/users");
   return { ok: true };
 }
 
-export async function updateUserRoleAction(userId: number, role: User["role"]): Promise<UserActionResult> {
-  const session = await requireAdmin();
+/**
+ * Changes a user's role: "admin", "user", "viewer" or "custom:<id>" (the role
+ * picker's values). assignRole applies the escalation guards and the license
+ * check for custom roles and records the change in the audit log.
+ */
+export async function updateUserRoleAction(userId: number, role: string): Promise<UserActionResult> {
+  const session = await requirePermission("users:write");
   const actorId = Number(session.user.id);
 
   if (actorId === userId) {
     return failure("Cannot change your own role");
   }
   // Server Action arguments come from the client; accept only known roles.
-  if (!VALID_ROLES.has(role)) {
+  const assignment = parseRoleChoice(role);
+  if (!assignment) {
     return failure("Invalid role");
   }
 
   try {
-    await updateUserRole(userId, role);
+    await assignRole(session.access, userId, assignment);
   } catch (error) {
     return storageFailure(error, "update user role");
   }
-
-  logAuditEvent({
-    userId: actorId,
-    action: "update",
-    entityType: "user",
-    entityId: userId,
-    summary: `Changed user ${userId} role to ${role}`,
-  });
 
   revalidatePath("/users");
   return { ok: true };
 }
 
 export async function updateUserStatusAction(userId: number, status: string): Promise<UserActionResult> {
-  const session = await requireAdmin();
+  const session = await requirePermission("users:write");
   const actorId = Number(session.user.id);
 
   if (actorId === userId) {
@@ -144,12 +152,14 @@ export async function updateUserStatusAction(userId: number, status: string): Pr
   }
 
   try {
+    await assertCanManageUserId(session.access, userId);
+    await assertActiveAdminRemainsFor(session.access, { userId, status });
     await updateUserStatus(userId, status);
   } catch (error) {
     return storageFailure(error, "update user status");
   }
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorId,
     action: "update",
     entityType: "user",
@@ -168,8 +178,13 @@ export async function updateUserStatusAction(userId: number, status: string): Pr
  * back as the error. A form without a username field leaves it alone.
  */
 export async function updateUserInfoAction(userId: number, formData: FormData): Promise<UserActionResult> {
-  const session = await requireAdmin();
+  const session = await requirePermission("users:write");
   const actorId = Number(session.user.id);
+  try {
+    await assertCanManageUserId(session.access, userId);
+  } catch (error) {
+    return storageFailure(error, "update user");
+  }
 
   const name = formData.get("name") ? String(formData.get("name")).trim() : undefined;
   const email = formData.get("email") ? String(formData.get("email")).trim() : undefined;
@@ -185,7 +200,7 @@ export async function updateUserInfoAction(userId: number, formData: FormData): 
     return failure("User not found");
   }
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorId,
     action: "update",
     entityType: "user",
@@ -193,7 +208,7 @@ export async function updateUserInfoAction(userId: number, formData: FormData): 
     summary: `Updated user ${userId} profile`,
   });
   if (changed.user.username !== changed.previousUsername) {
-    logAuditEvent({
+    await logAuditEvent({
       userId: actorId,
       action: "update",
       entityType: "user",
@@ -208,7 +223,7 @@ export async function updateUserInfoAction(userId: number, formData: FormData): 
 }
 
 export async function deleteUserAction(userId: number): Promise<UserActionResult> {
-  const session = await requireAdmin();
+  const session = await requirePermission("users:write");
   const actorId = Number(session.user.id);
 
   if (actorId === userId) {
@@ -216,12 +231,14 @@ export async function deleteUserAction(userId: number): Promise<UserActionResult
   }
 
   try {
+    await assertCanManageUserId(session.access, userId);
+    await assertActiveAdminRemainsFor(session.access, { userId, deleted: true });
     await deleteUser(userId);
   } catch (error) {
     return storageFailure(error, "delete user");
   }
 
-  logAuditEvent({
+  await logAuditEvent({
     userId: actorId,
     action: "delete",
     entityType: "user",

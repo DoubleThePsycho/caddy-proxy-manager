@@ -10,16 +10,22 @@ const mocks = vi.hoisted(() => ({
   createUser: vi.fn(),
   updateUserAccount: vi.fn(),
   updateUserRole: vi.fn(),
+  setUserRoleAssignment: vi.fn(),
   updateUserStatus: vi.fn(),
   deleteUser: vi.fn(),
 }));
 
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
-vi.mock('@/src/lib/auth', () => ({ requireAdmin: mocks.requireAdmin }));
+vi.mock('@/src/lib/auth', () => ({
+  requireAdmin: mocks.requireAdmin,
+  // Answers like the requireAdmin mock, with the caller's access.
+  requirePermission: () => import('@/tests/helpers/permission-mocks').then((m) => m.viaRequireAdmin()),
+}));
 vi.mock('@/src/lib/models/user', () => ({
   createUser: mocks.createUser,
   updateUserAccount: mocks.updateUserAccount,
   updateUserRole: mocks.updateUserRole,
+  setUserRoleAssignment: mocks.setUserRoleAssignment,
   updateUserStatus: mocks.updateUserStatus,
   deleteUser: mocks.deleteUser,
 }));
@@ -66,9 +72,11 @@ describe('users actions', () => {
   });
 
   it('accepts known roles and statuses', async () => {
+    mocks.setUserRoleAssignment.mockResolvedValue({ id: 2, role: 'viewer', customRoleId: null });
     expect(await updateUserRoleAction(2, 'viewer')).toEqual({ ok: true });
     expect(await updateUserStatusAction(2, 'disabled')).toEqual({ ok: true });
-    expect(mocks.updateUserRole).toHaveBeenCalledWith(2, 'viewer');
+    // A built-in role also takes a custom role away (customRoleId null).
+    expect(mocks.setUserRoleAssignment).toHaveBeenCalledWith(2, { role: 'viewer', customRoleId: null }, expect.any(Function));
     expect(mocks.updateUserStatus).toHaveBeenCalledWith(2, 'disabled');
   });
 

@@ -1,13 +1,23 @@
 /**
  * Startup logging of the SESSION_SECRET rotation pass in instrumentation.ts.
+ * The server starts on a new, empty database: on PostgreSQL the one-time
+ * data migrations run there (an in-memory SQLite database skips them) and
+ * have nothing to report.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createTestDb, type TestDb } from '../helpers/db';
+import { settings } from '../../src/lib/db/schema';
 
 const mocks = vi.hoisted(() => ({
   reencryptStoredSecrets: vi.fn(),
 }));
 
+let db: TestDb;
+
+vi.mock('../../src/lib/db', async () => (await import('../helpers/db-module')).mockDbModule(() => db));
 vi.mock('../../src/lib/config', () => ({ validateProductionConfig: () => {} }));
+// The values requests read from memory (src/lib/db/cached-value.ts) are not loaded here.
+vi.mock('../../src/lib/startup-caches', () => ({ loadStartupCaches: async () => {} }));
 vi.mock('../../src/lib/init-db', () => ({ ensureAdminUser: async () => {} }));
 vi.mock('../../src/lib/models/certificates', () => ({ migrateLegacyCertificateStorage: async () => 0 }));
 vi.mock('../../src/lib/models/ca-certificates', () => ({ migrateLegacyCaPrivateKeys: async () => 0 }));
@@ -33,6 +43,7 @@ vi.mock('../../src/lib/instance-sync', () => ({
 }));
 
 import { register } from '../../src/instrumentation';
+import { stopBackgroundJobs } from '../../src/lib/background-jobs';
 
 function logged(spy: { mock: { calls: unknown[][] } }): string {
   return spy.mock.calls.map((call) => call.map(String).join(' ')).join('\n');
@@ -41,14 +52,25 @@ function logged(spy: { mock: { calls: unknown[][] } }): string {
 describe('instrumentation secret rotation logging', () => {
   const originalRuntime = process.env.NEXT_RUNTIME;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env.NEXT_RUNTIME = 'nodejs';
+    // On PostgreSQL the server starts as a replica (src/lib/background-jobs.ts): its id, not one in ./data.
+    vi.stubEnv('INGRESSI_NODE_ID', 'instrumentation-test');
+    db = createTestDb();
+    // On PostgreSQL the first query waits until the database is emptied.
+    await db.select().from(settings);
   });
 
   afterEach(() => {
     if (originalRuntime === undefined) delete process.env.NEXT_RUNTIME;
     else process.env.NEXT_RUNTIME = originalRuntime;
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  // On PostgreSQL: the replica's leader election connection and heartbeat.
+  afterAll(async () => {
+    await stopBackgroundJobs();
   });
 
   it('summarizes cleared OAuth tokens in one informational line, not as failures', async () => {

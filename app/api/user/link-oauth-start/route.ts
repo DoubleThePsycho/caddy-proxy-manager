@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth, checkSameOrigin } from "@/src/lib/auth";
-import db, { nowIso } from "@/src/lib/db";
+import { appDb, nowIso } from "@/src/lib/db";
 import { pendingOAuthLinks } from "@/src/lib/db/schema";
 import { eq, and, lt } from "drizzle-orm";
 import { registerFailedAttempt } from "@/src/lib/rate-limit";
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     // Rate limiting: prevent OAuth linking spam
     const rateLimitKey = `oauth-link:${userId}`;
-    const rateLimitResult = registerFailedAttempt(rateLimitKey);
+    const rateLimitResult = await registerFailedAttempt(rateLimitKey);
     if (rateLimitResult.blocked) {
       return NextResponse.json(
         { error: "Too many OAuth linking attempts. Please try again later." },
@@ -44,11 +44,11 @@ export async function POST(request: NextRequest) {
     const expiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes from now
 
     // Clean up old expired entries for all users
-    await db.delete(pendingOAuthLinks).where(lt(pendingOAuthLinks.expiresAt, nowIso()));
+    await appDb.delete(pendingOAuthLinks).where(lt(pendingOAuthLinks.expiresAt, nowIso()));
 
     // Delete any existing pending link for THIS USER and this provider
     // (unique index will prevent duplicates, but we delete explicitly for clarity)
-    await db.delete(pendingOAuthLinks).where(
+    await appDb.delete(pendingOAuthLinks).where(
       and(
         eq(pendingOAuthLinks.userId, userId),
         eq(pendingOAuthLinks.provider, provider)
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     );
 
     // Insert new pending link record for THIS USER only
-    await db.insert(pendingOAuthLinks).values({
+    await appDb.insert(pendingOAuthLinks).values({
       userId,
       provider,
       userEmail,

@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redeemExchangeCode } from "@/src/lib/models/forward-auth";
-import { resolveTrustedForwardAuthAudience } from "@/src/lib/forward-auth-trust";
+import {
+  FORWARD_AUTH_COOKIE_NAME,
+  LEGACY_FORWARD_AUTH_COOKIE_NAME,
+  resolveTrustedForwardAuthAudience,
+} from "@/src/lib/forward-auth-trust";
 
-const COOKIE_NAME = "_cpm_fa";
 const COOKIE_MAX_AGE = 7 * 24 * 60 * 60; // 7 days
 
 /**
  * Forward auth callback — redeems an exchange code and sets the session cookie.
- * Caddy routes /.cpm-auth/callback on proxied domains to this endpoint.
+ * Caddy routes /.ingressi-auth/callback (and the legacy /.cpm-auth/callback)
+ * on proxied domains to this endpoint.
  */
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
@@ -26,7 +30,13 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const result = await redeemExchangeCode(code, audience);
+  let result: Awaited<ReturnType<typeof redeemExchangeCode>>;
+  try {
+    result = await redeemExchangeCode(code, audience);
+  } catch {
+    // High availability shared state cannot be reached.
+    return new NextResponse("Sign-in is temporarily unavailable. Please try again shortly.", { status: 503, headers: { "Retry-After": "5" } });
+  }
   if (!result) {
     return new NextResponse(
       "Invalid or expired authorization code. Please try logging in again.",
@@ -37,13 +47,24 @@ export async function GET(request: NextRequest) {
   // Redirect back to original URL with the session cookie set
   const response = NextResponse.redirect(result.redirectUri, 302);
 
-  response.cookies.set(COOKIE_NAME, result.rawSessionToken, {
+  response.cookies.set(FORWARD_AUTH_COOKIE_NAME, result.rawSessionToken, {
     path: "/",
     httpOnly: true,
     secure: true,
     sameSite: "lax",
     maxAge: COOKIE_MAX_AGE
   });
+  // A session cookie under the pre-rename name would otherwise keep being
+  // sent next to the new one until it expires.
+  if (request.cookies.has(LEGACY_FORWARD_AUTH_COOKIE_NAME)) {
+    response.cookies.set(LEGACY_FORWARD_AUTH_COOKIE_NAME, "", {
+      path: "/",
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: 0
+    });
+  }
 
   return response;
 }
