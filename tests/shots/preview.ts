@@ -52,7 +52,7 @@ export async function dashboardFonts(request: APIRequestContext): Promise<Previe
 }
 
 /** The brand mark of the website's header. */
-const MARK = `<svg viewBox="0 0 28 28" width="56" height="56" aria-hidden="true"><rect width="28" height="28" rx="7" fill="#5B49DC"/><path d="M10 8v12M18 8v12M5 14h10M12 11l3 3-3 3" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const MARK = `<svg viewBox="0 0 28 28" width="56" height="56" aria-hidden="true"><rect width="28" height="28" rx="7" fill="#5B49DC"/><path d="M11 8v3M11 17v3M22 8v12M6 14h12M15 11l3 3-3 3" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 /**
  * `crop`: screenshot pixels hidden above and left of the frame (the analytics

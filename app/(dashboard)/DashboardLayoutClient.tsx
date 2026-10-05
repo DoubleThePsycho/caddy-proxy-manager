@@ -193,7 +193,7 @@ function BrandRow({ edition }: { edition: string | null }) {
       ) : (
         <span aria-hidden="true" className="grid h-7 w-7 shrink-0 place-items-center rounded-[7px] bg-primary text-primary-foreground">
           <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <path d="M10 8v12M18 8v12M5 14h10M12 11l3 3-3 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M11 8v3M11 17v3M22 8v12M6 14h12M15 11l3 3-3 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </span>
       )}

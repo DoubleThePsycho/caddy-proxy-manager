@@ -10,7 +10,7 @@ function ProductMark() {
     <svg width="36" height="36" viewBox="0 0 28 28" aria-hidden="true" className="flex-none">
       <rect width="28" height="28" rx="7" className="fill-primary" />
       <path
-        d="M10 8v12M18 8v12M5 14h10M12 11l3 3-3 3"
+        d="M11 8v3M11 17v3M22 8v12M6 14h12M15 11l3 3-3 3"
         fill="none"
         stroke="currentColor"
         strokeWidth="2"
