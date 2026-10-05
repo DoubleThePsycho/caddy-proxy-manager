@@ -44,4 +44,7 @@ jobs:
           DATABASE_URL: file:/tmp/ingressi-build.db
           SESSION_SECRET: ci-build-session-secret-at-least-32-chars
           ADMIN_PASSWORD: ci-build-admin-password
-        run: bun run build
+        # --bun runs Next.js under Bun, as the web image does (it has no
+        # Node): under Node, next.config.mjs falls back to better-sqlite3,
+        # which the middleware bundle cannot load.
+        run: bun --bun run build
