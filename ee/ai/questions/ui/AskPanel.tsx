@@ -19,13 +19,17 @@ import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Pagination } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { Skeleton } from "@/components/ui/skeleton";
+import { paginate } from "@/src/lib/pagination";
 import { MAX_QUESTION_LENGTH, type QuestionAnswer, type QuestionAvailability, type SavedQuestionView } from "../types";
 import { AnswerView } from "./AnswerView";
 
 const ASK_URL = "/api/v1/analytics/questions";
 const SAVED_URL = "/api/v1/analytics/questions/saved";
+/** Saved questions per page of the list under the Ask box. */
+const SAVED_PER_PAGE = 10;
 
 export const EXAMPLE_QUESTIONS = [
   "Which countries were blocked most in the last 7 days?",
@@ -65,12 +69,12 @@ export type AskPanelProps = {
 
 function Unavailable({ availability, canOpenAiSettings }: Pick<AskPanelProps, "availability" | "canOpenAiSettings">) {
   if (!availability.analyticsEnabled) {
-    return <Banner tone="info" title="Traffic analytics is off.">Questions are answered from ClickHouse analytics, which is not configured.</Banner>;
+    return <Banner tone="info" title="Traffic analytics is off." />;
   }
   if (!availability.licensed) {
     return (
       <Banner tone="info" title="Read-only without a license.">
-        Asking questions in plain language needs a license that includes the AI analyst. Saved questions stay listed and can be deleted.{" "}
+        Asking needs a license that includes the AI analyst.{" "}
         <Link href="/license" className="text-brand underline-offset-4 hover:underline">
           Licensing
         </Link>
@@ -92,9 +96,7 @@ function Unavailable({ availability, canOpenAiSettings }: Pick<AskPanelProps, "a
             </Button>
           ) : undefined
         }
-      >
-        Questions are read by your own model: Anthropic, or an OpenAI-compatible server on your network.
-      </Banner>
+      />
     );
   }
   return null;
@@ -117,12 +119,14 @@ function SavedList({
   onShare: (question: SavedQuestionView, shared: boolean) => void;
   onDelete: (question: SavedQuestionView) => void;
 }) {
+  const [page, setPage] = useState(1);
   if (saved.length === 0) return null;
+  const shown = paginate(saved, page, SAVED_PER_PAGE);
   return (
     <div className="flex flex-col gap-1.5">
       <h3 className="m-0 text-[13px] font-semibold">Saved questions</h3>
       <ul className="m-0 flex list-none flex-col divide-y divide-line rounded-xl border border-line p-0" aria-label="Saved questions">
-        {saved.map((question) => (
+        {shown.items.map((question) => (
           <li key={question.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
             <span className="flex min-w-0 flex-[1_1_280px] flex-col">
               <span className="text-[13px] [overflow-wrap:anywhere]">{question.question}</span>
@@ -160,6 +164,7 @@ function SavedList({
           </li>
         ))}
       </ul>
+      <Pagination page={shown.page} perPage={SAVED_PER_PAGE} total={shown.total} noun="questions" label="Pages of saved questions" onPageChange={setPage} />
     </div>
   );
 }
@@ -306,7 +311,7 @@ export function AskPanel({ availability, isAdmin, canOpenAiSettings, variant = "
       {asking && (
         <div className="flex flex-col gap-2" aria-live="polite" aria-busy="true">
           <span className="text-[13px] text-muted-foreground">
-            {availability.provider ? `Asking ${availability.provider.name} (${availability.provider.model}) to read the question, then running it here…` : "Running the question…"}
+            {availability.provider ? `Asking ${availability.provider.name}…` : "Running the question…"}
           </span>
           <Skeleton className="h-[120px] w-full rounded-xl" />
         </div>
@@ -326,10 +331,7 @@ export function AskPanel({ availability, isAdmin, canOpenAiSettings, variant = "
         onShare={(item, shared) => void change(() => send("PATCH", `${SAVED_URL}/${item.id}`, { shared }), shared ? "Question shared" : "Question no longer shared")}
         onDelete={(item) => void change(() => send("DELETE", `${SAVED_URL}/${item.id}`), "Question deleted")}
       />
-      <p className="m-0 text-xs text-soft">
-        Your question goes to the AI provider set up on Alerts → AI, which turns it into a query; the query runs here, on your analytics, and
-        only aggregated figures are used for the summary. Every question is recorded in the audit log.
-      </p>
+      <p className="m-0 text-xs text-soft">Your question is sent to the AI provider set up on Alerts → AI.</p>
     </div>
   );
 
@@ -338,7 +340,6 @@ export function AskPanel({ availability, isAdmin, canOpenAiSettings, variant = "
     <SectionCard
       id="ask"
       title="Ask about your traffic"
-      description="Plain-language questions, answered from your analytics."
       padded
       divided={false}
       contentClassName="pt-0"

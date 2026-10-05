@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -151,7 +152,7 @@ function IncidentDetail({
             )}
           </div>
           <span className="text-xs text-soft">
-            Entries people added, and figures collected by {productName}: aggregated only, never log lines, client addresses or request contents.
+            Figures {productName} collected are aggregated: never log lines, client addresses or request contents.
           </span>
           <ol className="m-0 flex list-none flex-col p-0">
             {incident.timeline.map((entry, index) => (
@@ -260,14 +261,15 @@ function IncidentDetail({
 
 /** The incident register: every security event, significant or not, with its NIS2 Article 23 assessment. */
 export default function IncidentRegister({
-  incidents,
+  page,
   sources,
   canWrite,
   configurable,
   initialOpenId,
   now,
 }: {
-  incidents: IncidentSummaryView[];
+  /** A page of the register, newest first. */
+  page: { incidents: IncidentSummaryView[]; total: number; page: number; perPage: number };
   sources: DraftSources;
   canWrite: boolean;
   configurable: boolean;
@@ -278,6 +280,8 @@ export default function IncidentRegister({
   const format = useFormat();
   const [openId, setOpenId] = useState<number | null>(initialOpenId);
   const [recording, setRecording] = useState(false);
+  const { hrefFor } = useUrlPage("incidentPage");
+  const incidents = page.incidents;
 
   useEffect(() => {
     if (initialOpenId !== null) document.getElementById(`incident-row-${initialOpenId}`)?.scrollIntoView({ block: "center" });
@@ -287,8 +291,13 @@ export default function IncidentRegister({
     <SectionCard
       id="incidents"
       title="Incident register"
-      count={incidents.length}
-      description="Every event is assessed against NIS2 Article 23. A significant incident gets a notification draft with its 24-hour, 72-hour and one-month deadlines."
+      count={page.total}
+      description="Significant incidents get notification drafts with their 24-hour, 72-hour and one-month deadlines."
+      footer={
+        page.total > page.perPage ? (
+          <Pagination page={page.page} perPage={page.perPage} total={page.total} noun="incidents" label="Pages of incidents" hrefFor={hrefFor} />
+        ) : undefined
+      }
       actions={
         canWrite && (
           <Button variant="secondary" size="sm" onClick={() => setRecording(true)} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
@@ -302,7 +311,7 @@ export default function IncidentRegister({
         <EmptyState
           compact
           title="No incident recorded"
-          description="Record security events here, significant or not: the window, a timeline, the significance assessment and the cause. Significant ones get their notification drafts."
+          description="Record security events here, significant or not."
         />
       ) : (
         <Table className="min-w-[1000px]">

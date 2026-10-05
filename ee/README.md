@@ -38,12 +38,12 @@ Every paid feature, the `ee/` module that implements it and the files in `app/` 
 | Alerting (`alerting`) | Homelab | `alerting/` | `(dashboard)/alerts/`, `api/v1/alert-channels/`, `api/v1/alert-events/`, `api/v1/alert-rules/` |
 | Change approvals (`approvals`) | Enterprise | `approvals/` | `(dashboard)/approvals/`, `api/v1/approval-policies/`, `api/v1/change-requests/` |
 | Audit streaming and export (`audit_streaming`) | Business | `audit/` | `(dashboard)/audit-log/streaming/`, `api/v1/audit-sinks/`, `api/v1/audit-log/export/`, `api/v1/audit-log/retention/`, `api/v1/audit-log/verify/` |
-| Scheduled backups (`scheduled_backups`) | Business | `backups/` | `api/v1/backup-destinations/`, `api/v1/backup-runs/` |
+| Scheduled backups (`scheduled_backups`) | Business | `backups/` | `(dashboard)/backups/`, `api/v1/backup-destinations/`, `api/v1/backup-runs/` |
 | Compliance reports (`compliance_reports`) | Enterprise | `compliance/` | `(dashboard)/compliance/`, `print/compliance/`, `api/v1/compliance/` |
 | Configuration history and rollback (`config_history`) | Homelab | `config-history/` | `(dashboard)/history/`, `api/v1/config-history/` |
 | Custom roles (`custom_roles`) | Business | `custom-roles/` | `api/v1/roles/`, `api/v1/permissions/` |
 | Fleet management (`fleet`) | Enterprise | `fleet/` | `(dashboard)/fleet/`, `api/v1/fleet/`, `api/instances/pull/` |
-| High availability (`high_availability`) | Enterprise | `high-availability/` | `api/v1/high-availability/`, `api/v1/cluster/` |
+| High availability (`high_availability`) | Enterprise | `high-availability/` | `(dashboard)/high-availability/`, `api/v1/high-availability/`, `api/v1/cluster/` |
 | LDAP / Active Directory (`ldap`) | Enterprise | `ldap/` | `(dashboard)/ldap/`, `api/v1/ldap-directories/` |
 | License keys (no feature: the key itself) | all | `licensing/` | `(dashboard)/license/`, `api/v1/license/` |
 | API monetization (`api_monetization`) | Enterprise | `monetization/` | `(dashboard)/api-monetization/`, `api-portal/`, `api/monetization/`, `api/v1/monetization/` |
@@ -76,7 +76,8 @@ Free pages that show a paid section import its component from `ee/`; the page it
 | Audit log | Export dialog and hash chain check (`audit/ui/AuditLogTools.tsx`, `audit/ui/actions.ts`), streaming strip (`audit/ui/StreamingStrip.tsx`) |
 | Analytics | Questions to the AI analyst (`ai/questions/ui/AskPanel.tsx`) |
 | Security events | WAF tuning suggestions (`ai/ui/TuningSuggestions.tsx`) |
-| Settings | Certificate storage, cluster, shared state and PostgreSQL replicas (`high-availability/ui/`), pull replicas (`fleet/ui/PullReplicasPanel.tsx`, `fleet/ui/PullAgentCard.tsx`), backups and branding summaries (`backups/ui/BackupsSummaryGroup.tsx`, `white-label/ui/BrandingSummaryGroup.tsx`) |
+| Certificate settings | Certificate storage (`high-availability/ui/CertificateStorageSection.tsx`) |
+| Instance sync | Pull replicas (`fleet/ui/PullReplicasPanel.tsx`, `fleet/ui/PullAgentCard.tsx`) |
 | Users and groups | Roles tab (`custom-roles/ui/RolesTabSection.tsx`, `custom-roles/ui/RolesTab.tsx`) |
 | Proxy hosts and L4 hosts | Change approval notices (`approvals/ui/ProtectedChangeNotice.tsx`) |
 | Sign-in page | LDAP and SAML sign-in (`ldap/ui/sign-in-client.ts`, `saml/ui/sign-in-client.ts`) |

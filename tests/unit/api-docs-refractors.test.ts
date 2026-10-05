@@ -4,6 +4,8 @@
  * registration ran, and when it did not (Turbopack drops it), refractors that
  * turn our own OpenAPI document into the same ApiDOM as ApiDOM's.
  */
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@/src/lib/api-auth', () => ({
@@ -51,5 +53,16 @@ describe('OpenAPI 3.1 refractors for Swagger UI', () => {
     const schema = refractOf(SchemaElement)({ type: 'object', properties: { id: { type: 'integer' } } });
     expect(schema.element).toBe('schema');
     expect(toValue(schema)).toEqual(expectedSchema);
+  });
+
+  it('patches the copy of ApiDOM that Swagger UI uses', () => {
+    // The fix only reaches swagger-client when both load one copy: our versions must be the ones it pins.
+    const ours = JSON.parse(readFileSync('package.json', 'utf8')).dependencies as Record<string, string>;
+    const swaggerClient = JSON.parse(readFileSync(createRequire(import.meta.url).resolve('swagger-client/package.json'), 'utf8')) as {
+      dependencies: Record<string, string>;
+    };
+    for (const name of ['@swagger-api/apidom-core', '@swagger-api/apidom-ns-openapi-3-1']) {
+      expect(ours[name], name).toBe(swaggerClient.dependencies[name]);
+    }
   });
 });

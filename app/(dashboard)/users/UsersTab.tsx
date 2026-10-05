@@ -7,6 +7,7 @@ import { MoreHorizontal, Search, UserRound } from "lucide-react";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -18,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useFormat } from "@/src/components/preferences/PreferencesProvider";
 import { isUsableSignInUsername } from "@/src/lib/login-username";
+import { paginate } from "@/src/lib/pagination";
 import type { UserOverviewEntry } from "@/src/lib/users-overview";
 import { cn } from "@/lib/utils";
 import { MfaPolicyPanel, type MfaPolicySummary } from "./MfaPolicyCard";
@@ -74,6 +76,7 @@ export default function UsersTab({
 }: Props) {
   const router = useRouter();
   const format = useFormat();
+  const { page, hrefFor } = useUrlPage();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [openId, setOpenId] = useState<number | null>(
@@ -84,9 +87,10 @@ export default function UsersTab({
   const [notice, setNotice] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
 
   const customRoles = useMemo(() => new Map(roleOptions.customRoles.map((role) => [role.id, role])), [roleOptions.customRoles]);
+  // Newest accounts first, so one just added is on the first page.
   const rows = useMemo(
     () =>
-      users.map((user) => {
+      [...users].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id).map((user) => {
         const role = roleSummary(user, customRoles, totalPermissions);
         const organization = user.organizationId != null ? organizationNames[user.organizationId] ?? null : null;
         return { user, role, organization, text: searchText(user, role, organization) };
@@ -95,6 +99,7 @@ export default function UsersTab({
   );
   const needle = query.trim().toLowerCase();
   const shown = rows.filter((row) => FILTERS[filter](row.user) && (!needle || row.text.includes(needle)));
+  const slice = paginate(shown, page);
   const counts = Object.fromEntries(
     (Object.keys(FILTERS) as Filter[]).map((key) => [key, users.filter(FILTERS[key]).length])
   ) as Record<Filter, number>;
@@ -103,6 +108,19 @@ export default function UsersTab({
   const exposedAdmins = users.filter(
     (user) => user.administrator && user.status === "active" && user.secondFactor.state === "none"
   );
+
+  /** A new search or filter starts again at the first page. */
+  const firstPage = () => {
+    if (page > 1) window.history.replaceState(null, "", hrefFor(1));
+  };
+  const search = (value: string) => {
+    setQuery(value);
+    firstPage();
+  };
+  const show = (value: Filter) => {
+    setFilter(value);
+    firstPage();
+  };
 
   const openUser = (id: number, edit = false) => {
     setEditOnOpen(edit);
@@ -177,7 +195,7 @@ export default function UsersTab({
           tone="warn"
           title={`${exposedAdmins.length} administrators have no second factor.`}
           actions={
-            <Button variant="outline" size="sm" onClick={() => setFilter("admins")}>
+            <Button variant="outline" size="sm" onClick={() => show("admins")}>
               Show administrators
             </Button>
           }
@@ -196,7 +214,7 @@ export default function UsersTab({
           <input
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => search(event.target.value)}
             placeholder="Name, e-mail, role or source"
             className="h-full min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-soft"
           />
@@ -204,7 +222,7 @@ export default function UsersTab({
         <SegmentedControl<Filter>
           label="Show"
           value={filter}
-          onChange={setFilter}
+          onChange={show}
           options={[
             { value: "all", label: <>All <span className="num text-muted-foreground">{counts.all}</span></> },
             { value: "admins", label: <>Administrators <span className="num text-muted-foreground">{counts.admins}</span></> },
@@ -219,7 +237,6 @@ export default function UsersTab({
           <EmptyState
             icon={UserRound}
             title="No users yet"
-            description="Add a local account, or let people sign in through an identity provider or directory."
             action={onAddUser ? <Button onClick={onAddUser}>Add user</Button> : undefined}
           />
         ) : (
@@ -237,7 +254,7 @@ export default function UsersTab({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {shown.map(({ user, role, organization }) => {
+                {slice.items.map(({ user, role, organization }) => {
                   const name = displayName(user);
                   const self = user.id === currentUserId;
                   const factor = secondFactorSummary(user, format.date);
@@ -331,25 +348,23 @@ export default function UsersTab({
                   variant="secondary"
                   size="sm"
                   onClick={() => {
-                    setQuery("");
-                    setFilter("all");
+                    search("");
+                    show("all");
                   }}
                 >
                   Clear filters
                 </Button>
               </div>
             )}
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-[18px] py-3 text-xs text-soft">
-              <span>
-                {shown.length === users.length
-                  ? `${users.length} user${users.length === 1 ? "" : "s"}`
-                  : `${shown.length} of ${users.length} users`}
-              </span>
-              <span className="ml-auto">
-                Last sign-in is recorded when a dashboard sign-in completes.{" "}
-                <Link href="/profile" className="text-brand underline-offset-4 hover:underline">Time zone</Link>
-              </span>
-            </div>
+            <Pagination
+              page={slice.page}
+              perPage={slice.perPage}
+              total={slice.total}
+              noun="users"
+              label="Pages of users"
+              hrefFor={hrefFor}
+              className="border-t border-line px-[18px] py-3"
+            />
           </>
         )}
       </section>

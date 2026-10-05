@@ -63,13 +63,7 @@ function copyLabel(node: NodeReport): ReactNode {
   return node.follow.ready ? <StatusDot tone="ok" label="Ready" /> : <StatusDot tone="info" label="Restoring" />;
 }
 
-/** The short state Settings shows next to the High availability group. */
-export function clusterSummaryLabel(view: ClusterView): string {
-  if (view.postgres) return "PostgreSQL mode";
-  return view.enabled && view.node ? ROLE_LABELS[view.node.role] : "Off";
-}
-
-/** The dashboard cluster on Settings → High availability: read-only, configured with environment variables. */
+/** The dashboard cluster on the High availability page: read-only, configured with environment variables. */
 export default function ClusterSection({ view, editionLabel }: { view: ClusterView; editionLabel: string }) {
   if (view.postgres) {
     return <PostgresReplicasSection view={view.postgres} configurable={view.configurable} editionLabel={editionLabel} />;
@@ -97,9 +91,7 @@ function LitestreamClusterSection({ view, editionLabel }: { view: ClusterView; e
     return (
       <SectionCard
         title="Dashboard cluster"
-        description="One leader serves the dashboard and runs the background jobs; standbys take over when it stops."
-        descriptionPlacement="below"
-        headingLevel={3}
+        headingLevel={2}
         actions={actions}
       >
         <EmptyState
@@ -109,8 +101,7 @@ function LitestreamClusterSection({ view, editionLabel }: { view: ClusterView; e
           title="High availability is off on this node"
           description={
             <>
-              Run two or more web containers with HA_ENABLED and the HA_* variables: Redis or Valkey for the leader lease and
-              S3-compatible storage for the database replica. Setting a cluster up needs an active {editionLabel} license
+              Run two or more web containers with HA_ENABLED. It needs an active {editionLabel} license
               {view.configurable ? ", which this install has." : "."}
             </>
           }
@@ -133,9 +124,9 @@ function LitestreamClusterSection({ view, editionLabel }: { view: ClusterView; e
   return (
     <SectionCard
       title="Dashboard cluster"
-      description="One leader serves the dashboard and runs the background jobs; standbys take over when it stops. Configured with environment variables."
+      description="One leader serves the dashboard; a standby takes over when it stops."
       descriptionPlacement="below"
-      headingLevel={3}
+      headingLevel={2}
       actions={actions}
       padded
       contentClassName="flex flex-col gap-4"
@@ -192,20 +183,9 @@ function LitestreamClusterSection({ view, editionLabel }: { view: ClusterView; e
 
       <div className="flex flex-col">
         <Row label="Leader lease">
-          {lease?.holder ? `Held by ${lease.holder}, fencing epoch ${lease.epoch}. ` : "Nobody holds it. "}
-          Renewed every {Math.max(1, Math.floor((lease?.ttlSeconds ?? 0) / 3))} s; a leader that cannot renew it within{" "}
-          {lease?.ttlSeconds ?? 0} s stops and a standby takes over.
+          {lease?.holder ? `Held by ${lease.holder}, fencing epoch ${lease.epoch}` : "Nobody holds it"}
         </Row>
-        <Row label="Replica">
-          {replication ? (
-            <>
-              <span className="num text-foreground">{replication.replicaId}</span>, sent by Litestream every{" "}
-              {config?.syncIntervalSeconds ?? 1} s
-            </>
-          ) : (
-            "None"
-          )}
-        </Row>
+        <Row label="Replica">{replication ? <span className="num text-foreground">{replication.replicaId}</span> : "None"}</Row>
         <Row label="Last restore">
           {lastRestore ? (
             <>

@@ -10,10 +10,12 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusDot, type StatusTone } from "@/components/ui/StatusDot";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateTimeUtc } from "@/src/lib/date-format";
+import { paginate } from "@/src/lib/pagination";
 import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import type { IssuedPullCredential, PullCheckIn, PullReplicaView } from "@/ee/fleet/types";
 
@@ -91,10 +93,7 @@ function IssuedCredentialDialog({ issued, onClose }: { issued: IssuedPullCredent
     >
       {issued && (
         <div className="space-y-3 text-sm">
-          <Banner tone="warn">
-            Copy it now: it is shown only this once, and the master keeps only its hash. Set these variables on the replica and
-            restart it; it then polls this master.
-          </Banner>
+          <Banner tone="warn">Copy it now: it is not shown again. Set these variables on the replica and restart it.</Banner>
           <div className="space-y-1.5">
             <Label htmlFor="pull-credential">Credential (INSTANCE_PULL_TOKEN)</Label>
             <div className="flex gap-2">
@@ -107,10 +106,7 @@ function IssuedCredentialDialog({ issued, onClose }: { issued: IssuedPullCredent
             <Textarea id="pull-env" readOnly value={issued.env} rows={7} className="font-mono text-xs" />
             <CopyButton text={issued.env} label="Copy all" />
           </div>
-          <p className="text-xs text-soft">
-            The replica keeps its own SESSION_SECRET. The first sync key it proves is pinned, unless you pinned one; secrets it
-            receives are sealed to that key.
-          </p>
+          <p className="text-xs text-soft">The replica keeps its own SESSION_SECRET.</p>
         </div>
       )}
     </AppDialog>
@@ -120,7 +116,7 @@ function IssuedCredentialDialog({ issued, onClose }: { issued: IssuedPullCredent
 /**
  * Pull replicas on the master: adding one (its credential and environment
  * are shown once), their last check-in, and rotating or revoking the
- * credential. Used on the Fleet page and in Settings → Instance Sync.
+ * credential. Used on the Fleet page and on the Instance sync page.
  */
 export default function PullReplicasPanel({
   replicas,
@@ -139,6 +135,8 @@ export default function PullReplicasPanel({
   const [local, setLocal] = useState({ source: replicas, items: replicas });
   if (local.source !== replicas) setLocal({ source: replicas, items: replicas });
   const items = local.source === replicas ? local.items : replicas;
+  const { page, hrefFor } = useUrlPage("replicas");
+  const shown = paginate(items, page);
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [ownAdding, setOwnAdding] = useState(false);
@@ -239,13 +237,6 @@ export default function PullReplicasPanel({
       count={items.length}
       actions={addButton}
       className={className}
-      footer={
-        <p className="m-0 text-xs text-soft">
-          A pull replica polls this master over HTTPS with a credential of its own and proves its sync key on every poll, so the master
-          never has to reach it (behind NAT or a firewall). Secrets it receives are sealed to that key. It joins environments and rollouts
-          like any replica.
-        </p>
-      }
     >
       <div className="flex flex-col">
         {(!configurable && canManage) || !isMaster || message ? (
@@ -269,11 +260,11 @@ export default function PullReplicasPanel({
             compact
             icon={Satellite}
             title="No pull replicas"
-            description="Add one for a node this master cannot reach. It gets a credential of its own and polls for its configuration."
+            description="Add one for a node this master cannot reach, for example behind NAT."
           />
         ) : (
           <ul className="m-0 flex list-none flex-col divide-y divide-line p-0">
-            {items.map((replica) => {
+            {shown.items.map((replica) => {
               const checkIn = CHECK_IN_LABELS[replica.checkIn];
               return (
                 <li key={replica.id} className="flex flex-col gap-3 px-[18px] py-3.5">
@@ -375,6 +366,9 @@ export default function PullReplicasPanel({
             })}
           </ul>
         )}
+        <div className="border-t border-line px-[18px] py-3 empty:hidden">
+          <Pagination page={shown.page} perPage={shown.perPage} total={shown.total} noun="pull replicas" label="Pages of pull replicas" hrefFor={hrefFor} />
+        </div>
       </div>
 
       <AppDialog open={adding} onClose={closeAdd} title="Add pull replica" submitLabel="Add" onSubmit={add} isSubmitting={pending}>

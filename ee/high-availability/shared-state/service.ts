@@ -189,7 +189,7 @@ export async function saveSharedState(body: unknown, actorUserId: number): Promi
       const redis = await certificateStorageRedis();
       if (!redis) {
         throw new ApiValidationError(
-          "Shared state uses the Redis or Valkey settings of the certificate storage: save them first (Settings → Certificates and ACME), enabled or not"
+          "Shared state uses the Redis or Valkey settings of the certificate storage: save them first (Certificate settings, Certificate storage), enabled or not"
         );
       }
       await checkServer(redis);

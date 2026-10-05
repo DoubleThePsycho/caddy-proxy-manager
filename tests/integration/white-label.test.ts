@@ -173,6 +173,8 @@ const BRANDED = {
 };
 
 beforeEach(async () => {
+  // A background refresh the previous test started must not land in this one's cache.
+  await cachedValuesSettled();
   ctx.db = createTestDb();
   await disableForeignKeys(ctx.db);
   resetBrandingCache();
@@ -686,7 +688,7 @@ describe('where the branding shows', () => {
     const html = renderToStaticMarkup(
       branded(createElement(LicenseClient, { license }))
     );
-    expect(html).toContain('Paid features of Ingressi');
+    expect(html).toContain('This install runs Ingressi');
     expect(html).not.toContain('Example Edge');
     expect(new LicenseRequiredError('white_label').message).toBe('White-label needs an active Ingressi MSP license or higher');
   });

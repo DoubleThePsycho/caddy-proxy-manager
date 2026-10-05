@@ -1,7 +1,7 @@
 /**
  * Managing the sync key pins a master holds for its slaves: the pins in the
  * instances API and model, pinning a key read from the slave and resetting
- * pins (REST and the Settings page), editing an instance without losing its
+ * pins (REST and the Instance sync page), editing an instance without losing its
  * pin, and releasing an instance's pin when it is deleted or moved to
  * another URL.
  */
@@ -58,12 +58,12 @@ import {
   resetSlaveSyncKeyPinAction,
   updateSlaveInstanceAction,
 } from '../../app/(dashboard)/settings/actions';
-import SettingsPage from '../../app/(dashboard)/settings/page';
-import SettingsClient, {
+import InstancesPage from '../../app/(dashboard)/instances/page';
+import InstancesClient, {
   EditSlaveInstanceForm,
   RemovePinnedSlaveConfirmation,
   SyncKeyPinDialogBody,
-} from '../../app/(dashboard)/settings/SettingsClient';
+} from '../../app/(dashboard)/instances/InstancesClient';
 import { Dialog } from '../../src/components/ui/dialog';
 import {
   createInstance,
@@ -201,7 +201,7 @@ describe('instances carry their sync key pin', () => {
     expect((await updateInstance(created.id, { name: 'Renamed' })).syncKeyPin).toEqual(pin);
   });
 
-  it('adds the pin of their URL to INSTANCE_SLAVES entries for the Settings page', async () => {
+  it('adds the pin of their URL to INSTANCE_SLAVES entries for the Instance sync page', async () => {
     const key = slaveKey();
     const pin = await setSyncKeyPin(SLAVE_URL, { publicKey: key.raw, source: 'first-use' });
     const views = [
@@ -438,7 +438,7 @@ describe('an instance releases its pin', () => {
   });
 });
 
-describe('Settings page actions', () => {
+describe('Instance sync page actions', () => {
   it('reset an instance pin as the signed-in admin', async () => {
     const key = slaveKey();
     const instance = await addInstance('Replica', SLAVE_URL);
@@ -452,7 +452,7 @@ describe('Settings page actions', () => {
         "then check the new key id against the replica's.",
     });
     expect(await getSyncKeyPin(SLAVE_URL)).toBeNull();
-    expect(revalidatePath).toHaveBeenCalledWith('/settings');
+    expect(revalidatePath).toHaveBeenCalledWith('/instances');
     expect(await unpinEvents()).toEqual([
       expect.objectContaining({ userId: ADMIN_ID, entityId: instance.id, data: expect.objectContaining({ reason: 'reset' }) }),
     ]);
@@ -522,12 +522,12 @@ describe('Settings page actions', () => {
   });
 });
 
-describe('Settings page', () => {
-  type SettingsProps = Parameters<typeof SettingsClient>[0];
+describe('Instance sync page', () => {
+  type InstancesProps = Parameters<typeof InstancesClient>[0];
 
   async function renderSettings() {
-    const element = (await SettingsPage({ searchParams: Promise.resolve({ section: 'sync' }) })) as { props: SettingsProps };
-    return { props: element.props, html: renderToStaticMarkup(createElement(SettingsClient, element.props)) };
+    const element = (await InstancesPage()) as { props: InstancesProps };
+    return { props: element.props, html: renderToStaticMarkup(createElement(InstancesClient, element.props)) };
   }
 
   it("shows each slave's pinned key with its key pin button, the key INSTANCE_SLAVES sets, and pins without a slave", async () => {
@@ -550,7 +550,7 @@ describe('Settings page', () => {
 
     const { props, html } = await renderSettings();
 
-    expect(props.instanceSync.master).toEqual({
+    expect(props.instanceSync?.master).toEqual({
       instances: [
         expect.objectContaining({ id: pinned.id, syncKeyPin: pin }),
         expect.objectContaining({ id: unpinned.id, syncKeyPin: null }),
@@ -584,8 +584,7 @@ describe('Settings page', () => {
     expect(html).toContain(`${orphanPin.keyId}</span>, pinned ${formatDateTimeUtc(orphanPin.pinnedAt)} UTC (set by an administrator)`);
     expect(html).toContain(`${explicitKey.keyId}</span> (set in INSTANCE_SLAVES)`);
     expect(html).toContain(`${fullKey.keyId}</span> (full key set in INSTANCE_SLAVES)`);
-    expect(html.match(/Sync key not pinned yet: pinned on the next sealed sync, or pin the replica(’|&rsquo;|&#x27;)s key now/g))
-      .toHaveLength(2);
+    expect(html.match(/Sync key not pinned yet</g)).toHaveLength(2);
     expect(html).toContain('Key pins without a replica');
     // Every slave whose pin the master keeps, pinned or not, and the pin without a slave.
     expect(html.match(/>Key pin</g)).toHaveLength(5);
@@ -617,7 +616,7 @@ describe('Settings page', () => {
 
     const { props, html } = await renderSettings();
 
-    expect(props.instanceSync.master?.instances[0].syncKeyPin).toMatchObject({ keyId: '', source: 'unreadable' });
+    expect(props.instanceSync?.master?.instances[0].syncKeyPin).toMatchObject({ keyId: '', source: 'unreadable' });
     expect(html).toContain('The stored sync key pin cannot be read by this release');
   });
 
@@ -627,13 +626,13 @@ describe('Settings page', () => {
     const { props, html } = await renderSettings();
 
     const own = getSyncPublicKey();
-    expect(props.instanceSync.slave).toMatchObject({ syncKeyId: own.keyId, syncPublicKey: own.publicKey.toString('base64') });
-    expect(html).toContain(`sync key id is <span class="num">${own.keyId}</span>`);
+    expect(props.instanceSync?.slave).toMatchObject({ syncKeyId: own.keyId, syncPublicKey: own.publicKey.toString('base64') });
+    expect(html).toContain(`Id <span class="num">${own.keyId}</span>`);
     expect(html).toContain(`<span class="num break-all">${own.publicKey.toString('base64')}</span>`);
   });
 });
 
-describe('Settings page dialogs', () => {
+describe('Instance sync page dialogs', () => {
   const noop = () => {};
 
   /** Dialog contents as they render once opened. */
@@ -849,7 +848,7 @@ describe('PUT /api/v1/instances/{id}', () => {
   });
 });
 
-describe('Settings page actions for editing and pinning', () => {
+describe('Instance sync page actions for editing and pinning', () => {
   it('edit an instance, keeping its token when the field is left blank', async () => {
     const key = slaveKey();
     const instance = await addInstance('Replica', SLAVE_URL);
@@ -862,7 +861,7 @@ describe('Settings page actions for editing and pinning', () => {
     expect(await getInstance(instance.id)).toMatchObject({ name: 'Renamed', baseUrl: SLAVE_URL });
     expect(decryptSecret((await getInstance(instance.id))!.apiToken)).toBe(TOKEN);
     expect(await getSyncKeyPin(SLAVE_URL)).toEqual(pin);
-    expect(revalidatePath).toHaveBeenCalledWith('/settings');
+    expect(revalidatePath).toHaveBeenCalledWith('/instances');
 
     // A new token; a new URL releases the pin, audited as the signed-in admin.
     expect((await updateSlaveInstanceAction(null, form({
@@ -905,7 +904,7 @@ describe('Settings page actions for editing and pinning', () => {
       expect.objectContaining({ userId: ADMIN_ID, entityId: instance.id }),
       expect.objectContaining({ userId: ADMIN_ID, entityId: null }),
     ]);
-    expect(revalidatePath).toHaveBeenCalledWith('/settings');
+    expect(revalidatePath).toHaveBeenCalledWith('/instances');
   });
 
   it('refuse to pin an unusable key, outside master mode, or without admin rights', async () => {

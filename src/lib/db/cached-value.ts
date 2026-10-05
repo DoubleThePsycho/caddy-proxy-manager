@@ -27,6 +27,7 @@
  */
 import { subscribe, publish, type BusEvent } from "./events";
 import { inTransaction, outsideTransaction } from "./executor";
+import { afterTransactionEnds } from "./executor-core";
 
 export interface CachedValueOptions<T> {
   /**
@@ -109,8 +110,9 @@ async function load(name: string, slot: Slot, background = false): Promise<unkno
     slot.loadedAt = Date.now();
   }
   // Read inside a transaction: read again once it has ended (committed or
-  // rolled back), from outside it.
-  if (inTransaction()) refreshInBackground(name, slot);
+  // rolled back), from outside it. Not before: on PostgreSQL a read outside
+  // the transaction does not wait for it, and would put the old value back.
+  if (inTransaction()) afterTransactionEnds(() => refreshInBackground(name, slot));
   return slot.value;
 }
 

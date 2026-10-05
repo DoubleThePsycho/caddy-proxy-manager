@@ -284,9 +284,6 @@ export default function ProfileClient({
             <span>Profile</span>
           </nav>
           <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            Your account, how you sign in, where you are signed in and your API tokens. Nothing here changes anyone else&apos;s account.
-          </p>
         </div>
         <form action="/api/auth/logout" method="POST">
           <Button type="submit" variant="outline">
@@ -377,9 +374,7 @@ export default function ProfileClient({
               )}
             </dd>
           </dl>
-          <p className="text-xs text-muted-foreground">
-            Your name and e-mail show in the audit log and on approvals. An administrator changes them on Users and groups.
-          </p>
+          <p className="text-xs text-muted-foreground">Only an administrator can change your name and e-mail.</p>
 
           {(enabledProviders.length > 0 || hasOAuth) && (
             <div className="flex flex-col gap-3 border-t pt-4">
@@ -405,7 +400,6 @@ export default function ProfileClient({
               )}
               {!hasOAuth && unlinkedProviders.length > 0 && (
                 <div className="flex flex-col gap-2">
-                  <p className="text-sm text-muted-foreground">Link an OAuth provider to enable single sign-on.</p>
                   {unlinkedProviders.map((provider) => (
                     <div key={provider.id} className="flex flex-col gap-1">
                       <Button
@@ -420,7 +414,7 @@ export default function ProfileClient({
                       </Button>
                       {!provider.autoLink && (
                         <p className="text-xs text-muted-foreground">
-                          Enable &quot;Auto-link accounts&quot; for {provider.name} in Settings → OAuth Providers to allow linking.
+                          Enable &quot;Auto-link accounts&quot; for {provider.name} in Sign-in and directories → OAuth providers to allow linking.
                         </p>
                       )}
                     </div>

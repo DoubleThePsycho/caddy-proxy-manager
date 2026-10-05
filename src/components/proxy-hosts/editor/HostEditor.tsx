@@ -378,7 +378,7 @@ export function HostEditor({ data }: { data: HostEditorData }) {
         return;
       }
       setSaved(form);
-      setDone({ kind: "saved", title: "Saved", text: `${result.message} Caddy has the new configuration.`, href: `/proxy-hosts/${result.hostId}`, link: "Open host" });
+      setDone({ kind: "saved", title: "Saved", text: result.message, href: `/proxy-hosts/${result.hostId}`, link: "Open host" });
       setAnnouncement(result.message);
       router.refresh();
       return;
@@ -388,7 +388,7 @@ export function HostEditor({ data }: { data: HostEditorData }) {
       setDone({
         kind: "saved",
         title: "Applied as an emergency change",
-        text: "Caddy has the new configuration. The audit log records the change with your reason.",
+        text: "The audit log records your reason.",
         href: "/audit-log",
         link: "Open the audit log",
       });
@@ -431,15 +431,8 @@ export function HostEditor({ data }: { data: HostEditorData }) {
 
   const count = changes.length;
   const barTitle = creating ? (count > 0 ? `New host · ${plural(count, "setting")} set` : "New host") : count === 0 ? "No unsaved changes" : plural(count, "unsaved change");
-  const barText = creating
-    ? covering.length > 0
-      ? "Creating it sends a change request for approval."
-      : "Review the settings, then create it."
-    : count === 0
-      ? "Everything matches the saved host."
-      : covering.length > 0
-        ? "Saving sends them for approval."
-        : "Saving applies them at once.";
+  // Said only when saving does not apply the change at once.
+  const barText = covering.length > 0 && (creating || count > 0) ? (creating ? "Creating it sends a change request for approval." : "Saving sends them for approval.") : null;
 
   return (
     <EditorProvider value={context}>
@@ -455,11 +448,8 @@ export function HostEditor({ data }: { data: HostEditorData }) {
           actions={
             <>
               <span className="flex h-[38px] items-center gap-2.5 rounded-[10px] border border-line bg-panel px-3 text-[13px]">
-                <span className="flex flex-col leading-4">
-                  <span id="f-enabled-label" className="font-semibold">
-                    {form.enabled ? "Enabled" : "Paused"}
-                  </span>
-                  <span className="text-xs text-soft">{form.enabled ? "Routing traffic" : "Not answering requests"}</span>
+                <span id="f-enabled-label" className="font-semibold">
+                  {form.enabled ? "Enabled" : "Disabled"}
                 </span>
                 <Switch id="f-enabled" aria-label="Host enabled" checked={form.enabled} onCheckedChange={(enabled) => update((f) => ({ ...f, enabled }))} />
               </span>
@@ -594,6 +584,7 @@ export function HostEditor({ data }: { data: HostEditorData }) {
             }}
             onUndo={(change: FormChange) => setForm((current) => change.group.restore(current, saved))}
             hostLabel={hostName}
+            policiesExist={Boolean(data.approval && data.approval.policies.length > 0)}
           />
         )}
         <div
@@ -625,22 +616,24 @@ export function HostEditor({ data }: { data: HostEditorData }) {
                 <span aria-hidden="true" className={cn("h-2 w-2 shrink-0 rounded-full", errorCount > 0 && showAllErrors ? "bg-bad" : count > 0 || creating ? "bg-brand" : "bg-ok")} />
                 <span className="flex min-w-0 flex-col">
                   <span className="font-semibold">{barTitle}</span>
-                  <span className="text-[13px] text-soft">
-                    {showAllErrors && errorCount > 0 ? (
-                      <button
-                        type="button"
-                        className="text-bad underline-offset-4 hover:underline"
-                        onClick={() => {
-                          const first = firstError();
-                          if (first) goToSection(first.section, first.id);
-                        }}
-                      >
-                        {plural(errorCount, "problem")} to fix before saving. Show the first
-                      </button>
-                    ) : (
-                      barText
-                    )}
-                  </span>
+                  {(barText || (showAllErrors && errorCount > 0)) && (
+                    <span className="text-[13px] text-soft">
+                      {showAllErrors && errorCount > 0 ? (
+                        <button
+                          type="button"
+                          className="text-bad underline-offset-4 hover:underline"
+                          onClick={() => {
+                            const first = firstError();
+                            if (first) goToSection(first.section, first.id);
+                          }}
+                        >
+                          {plural(errorCount, "problem")} to fix before saving. Show the first
+                        </button>
+                      ) : (
+                        barText
+                      )}
+                    </span>
+                  )}
                 </span>
               </span>
               <span className="flex flex-wrap gap-2">

@@ -152,21 +152,20 @@ export function LbFields({ lb, onChange, idPrefix }: { lb: LbForm; onChange: (lb
             type="password"
             value={lb.cookieSecret}
             onChange={(value) => set({ cookieSecret: value })}
-            placeholder="Used to sign the cookie"
             autoComplete="new-password"
           />
         </div>
       )}
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(180px,100%),1fr))] gap-x-4 gap-y-3">
-        <TextField id={`${idPrefix}-try-duration`} label="Keep trying for" value={lb.tryDuration} onChange={(value) => set({ tryDuration: value })} placeholder="5s" hint="Try other upstreams this long" mono />
-        <TextField id={`${idPrefix}-try-interval`} label="Wait between tries" value={lb.tryInterval} onChange={(value) => set({ tryInterval: value })} placeholder="250ms" hint="Pause before the next attempt" mono />
-        <TextField id={`${idPrefix}-retries`} label="Max retries" value={lb.retries} onChange={(value) => set({ retries: value })} inputMode="numeric" hint="After the first attempt" mono />
+        <TextField id={`${idPrefix}-try-duration`} label="Keep trying for" value={lb.tryDuration} onChange={(value) => set({ tryDuration: value })} placeholder="5s" mono />
+        <TextField id={`${idPrefix}-try-interval`} label="Wait between tries" value={lb.tryInterval} onChange={(value) => set({ tryInterval: value })} placeholder="250ms" mono />
+        <TextField id={`${idPrefix}-retries`} label="Max retries" value={lb.retries} onChange={(value) => set({ retries: value })} inputMode="numeric" mono />
       </div>
       <div className="border-t border-line">
         <ToggleRow
           id={`${idPrefix}-active`}
           label="Active health checks"
-          description="Probe each upstream on a schedule and stop sending to the ones that fail."
+          description="Probe each upstream on a schedule."
           checked={lb.active.enabled}
           onChange={(enabled) => set({ active: { ...lb.active, enabled } })}
         />
@@ -185,7 +184,7 @@ export function LbFields({ lb, onChange, idPrefix }: { lb: LbForm; onChange: (lb
         <ToggleRow
           id={`${idPrefix}-passive`}
           label="Passive health checks"
-          description="Mark an upstream unhealthy when its real responses fail or are slow."
+          description="Judge each upstream by its real responses."
           checked={lb.passive.enabled}
           onChange={(enabled) =>
             set({ passive: { ...lb.passive, enabled, failDuration: enabled && !lb.passive.failDuration ? DEFAULT_PASSIVE_FAIL_DURATION : lb.passive.failDuration } })

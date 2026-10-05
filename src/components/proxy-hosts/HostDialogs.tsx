@@ -78,7 +78,7 @@ export function DeleteHostDialog({
         <AppDialog
             open={open}
             onClose={onClose}
-            title="Delete Proxy Host"
+            title="Delete proxy host"
             maxWidth="sm"
             submitLabel="Delete"
             onSubmit={() => {
@@ -92,17 +92,10 @@ export function DeleteHostDialog({
                     </Alert>
                 )}
                 <p className="text-sm">
-                    Are you sure you want to delete the proxy host <strong>{host.name}</strong>?
+                    <strong>{host.name}</strong> stops serving <span className="num [overflow-wrap:anywhere]">{host.domains.join(", ")}</span>.
                 </p>
-                <p className="text-sm text-muted-foreground">
-                    This will remove the configuration for:
-                </p>
-                <div className="pl-4">
-                    <p className="text-sm text-muted-foreground">• Domains: {host.domains.join(", ")}</p>
-                    <p className="text-sm text-muted-foreground">• Upstreams: {host.upstreams.join(", ")}</p>
-                </div>
                 <p className="text-sm text-destructive font-medium">
-                    This action cannot be undone.
+                    This cannot be undone.
                 </p>
                 <ProtectedChangeNotice approval={approval} targetType="proxy_host" tags={host.tags} operations={["delete"]} />
             </form>

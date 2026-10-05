@@ -35,7 +35,7 @@ export function NameAndTagsCard() {
             hint={
               scope.length > 0
                 ? `Your role manages hosts tagged ${scope.join(", ")}: keep at least one of these tags.`
-                : "Letters, digits and . _ : / -. Custom roles and approval policies can be limited to tagged hosts."
+                : "Letters, digits and . _ : / -"
             }
           />
         </div>
@@ -63,7 +63,6 @@ function RouteEditor({ rule, index, onChange, onRemove }: { rule: LocationRuleRo
         <ToggleRow
           id={`f-route-${index}-lb-enabled`}
           label="Own load balancing"
-          description="Off: Caddy picks any healthy upstream of this route at random, without health checks."
           checked={rule.lb.enabled}
           onChange={(enabled) => onChange({ ...rule, lb: { ...rule.lb, enabled } })}
         />
@@ -100,7 +99,6 @@ function PathRoutesCard() {
     <EditorCard
       id="f-routes"
       title="Path-based routes"
-      description="Requests whose path matches go to these upstreams instead of the ones above."
       was="locationRules"
       actions={
         <AddButton
@@ -116,7 +114,7 @@ function PathRoutesCard() {
       flush
     >
       {form.locationRules.length === 0 ? (
-        <p className="m-0 px-5 py-4 text-[13px] text-muted-foreground">No routes: every path goes to the upstreams above.</p>
+        <p className="m-0 px-5 py-4 text-[13px] text-muted-foreground">No path-based routes.</p>
       ) : (
         <ul className="m-0 list-none p-0">
           {form.locationRules.map((rule, index) => {
@@ -181,7 +179,7 @@ export function RoutingSection() {
         was="domains"
         description={
           <>
-            Requests for these names reach this host. Wildcards like <span className="num">*.example.com</span> work.
+            Wildcards like <span className="num">*.example.com</span> work.
           </>
         }
       >
@@ -194,11 +192,10 @@ export function RoutingSection() {
           placeholder="Add a domain, e.g. app.example.com"
           normalize={normalizeDomainInput}
           isNew={(domain) => data.mode === "edit" && !saved.domains.includes(domain)}
-          hint="Press Enter or comma after each one; pasted lists are split."
         />
       </EditorCard>
 
-      <EditorCard id="upstreams" title="Upstreams" was="upstreams" description="Where requests go. Use http:// or https:// and a host and port, such as 10.0.0.5:8080.">
+      <EditorCard id="upstreams" title="Upstreams" was="upstreams" description="A host and port, such as 10.0.0.5:8080.">
         <UpstreamRows rows={form.upstreams} onChange={(upstreams) => update((f) => ({ ...f, upstreams }))} idOf={(index) => `f-up-${index}`} />
       </EditorCard>
 
@@ -206,11 +203,7 @@ export function RoutingSection() {
         id="load-balancing"
         title="Load balancing"
         was="lb"
-        description={
-          form.lb.enabled
-            ? "How requests are spread over the upstreams, how failed ones are retried and which upstreams are healthy."
-            : "Off: Caddy picks any healthy upstream at random, without health checks or retries."
-        }
+        description={form.lb.enabled ? undefined : "Off: a random upstream, without health checks or retries."}
         actions={
           <span className="flex items-center gap-2 text-[13px]">
             <span id="f-lb-enabled-label">Custom load balancing</span>
@@ -232,7 +225,7 @@ export function RoutingSection() {
             id="f-ws"
             label="WebSockets"
             was="allowWebsocket"
-            description="The WAF lets WebSocket upgrade requests through without inspecting them, so long-lived streams are not cut. Caddy proxies WebSockets either way."
+            description="The WAF lets WebSocket upgrades through uninspected. WebSockets are proxied either way."
             checked={form.allowWebsocket}
             onChange={(allowWebsocket) => update((f) => ({ ...f, allowWebsocket }))}
           />
@@ -240,7 +233,6 @@ export function RoutingSection() {
             id="f-preserve-host"
             label="Preserve Host header"
             was="preserveHostHeader"
-            description="Send the Host the client asked for, instead of the upstream's address."
             checked={form.preserveHostHeader}
             onChange={(preserveHostHeader) => update((f) => ({ ...f, preserveHostHeader }))}
           />
@@ -248,7 +240,7 @@ export function RoutingSection() {
             id="f-skip-verify"
             label="Skip upstream certificate check"
             was="skipHttpsHostnameValidation"
-            description="Accept an https:// upstream whose certificate does not match its address. Leave off unless the upstream uses a self-signed certificate."
+            description="Only for an https:// upstream with a self-signed certificate."
             checked={form.skipHttpsHostnameValidation}
             onChange={(skipHttpsHostnameValidation) => update((f) => ({ ...f, skipHttpsHostnameValidation }))}
           />

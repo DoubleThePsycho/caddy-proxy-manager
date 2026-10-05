@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState, useState, useTransition } from "react";
-import Link from "next/link";
 import { Plus, RefreshCw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Banner } from "@/components/ui/Banner";
@@ -10,10 +9,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Pagination } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { UNREADABLE_SYNC_KEY_PIN_SOURCE } from "@/src/lib/instance-sync-view";
 import { formatDateTimeUtc } from "@/src/lib/date-format";
+import { paginate } from "@/src/lib/pagination";
 import PullReplicasPanel from "@/ee/fleet/ui/PullReplicasPanel";
 import { PullAgentCard } from "@/ee/fleet/ui/PullAgentCard";
 import {
@@ -26,9 +27,9 @@ import {
   updateInstanceModeAction,
   updateSlaveInstanceAction,
   updateSlaveMasterTokenAction,
-} from "../actions";
-import { CardNote, ChoiceField, SettingRow, SettingRows, SettingsForm, SettingsGroupForms, ToggleField, type ActionResult } from "@/src/components/settings/settings-form";
-import type { InstanceSyncProps, ReplicaInstanceView, SyncKeyPinTarget, SyncKeyPinView } from "../types";
+} from "../settings/actions";
+import { ChoiceField, SettingRow, SettingRows, SettingsForm, SettingsGroupForms, ToggleField, type ActionResult } from "@/src/components/settings/settings-form";
+import type { InstanceSyncProps, ReplicaInstanceView, SyncKeyPinTarget, SyncKeyPinView } from "./types";
 
 type Mode = InstanceSyncProps["mode"];
 
@@ -42,12 +43,10 @@ function at(value: string | null): string {
 export default function SyncGroup({
   instanceSync,
   canSave,
-  canOpenFleet,
   onDirtyChange,
 }: {
   instanceSync: InstanceSyncProps;
   canSave: boolean;
-  canOpenFleet: boolean;
   onDirtyChange: (count: number) => void;
 }) {
   const isSlave = instanceSync.mode === "slave";
@@ -72,14 +71,14 @@ export default function SyncGroup({
         </>
       }
     >
-      <ModeCard instanceSync={instanceSync} canWrite={canSave} canOpenFleet={canOpenFleet} />
+      <ModeCard instanceSync={instanceSync} canWrite={canSave} />
       {isSlave && instanceSync.slave?.pull && <PullAgentCard pull={instanceSync.slave.pull} slave={instanceSync.slave} />}
       {isSlave && !instanceSync.slave?.pull && <MasterConnectionCard instanceSync={instanceSync} />}
     </SettingsGroupForms>
   );
 }
 
-function ModeCard({ instanceSync, canWrite, canOpenFleet }: { instanceSync: InstanceSyncProps; canWrite: boolean; canOpenFleet: boolean }) {
+function ModeCard({ instanceSync, canWrite }: { instanceSync: InstanceSyncProps; canWrite: boolean }) {
   const [mode, setMode] = useState<Mode>(instanceSync.mode);
   const [syncResult, setSyncResult] = useState<ActionResult | null>(null);
   const [syncing, startSync] = useTransition();
@@ -108,13 +107,13 @@ function ModeCard({ instanceSync, canWrite, canOpenFleet }: { instanceSync: Inst
   }
 
   return (
-    <SectionCard title="Mode" headingLevel={3} divided={false}>
+    <SectionCard title="Mode" headingLevel={2} divided={false}>
       <SettingsForm action={updateInstanceModeAction} order={0}>
         <SettingRows>
           <SettingRow
             label="Instance mode"
             labelId="settings-instance-mode"
-            hint="A master pushes its configuration to replicas. A replica takes it from a master."
+            hint="A master pushes its configuration to replicas."
             note={instanceSync.modeFromEnv ? "Set by INSTANCE_MODE in the environment, so it cannot be changed here." : undefined}
           >
             <ChoiceField
@@ -157,11 +156,6 @@ function ModeCard({ instanceSync, canWrite, canOpenFleet }: { instanceSync: Inst
                 </Button>
               )}
             </span>
-            {canOpenFleet && (
-              <Link href="/fleet" className="text-[13px] text-brand underline-offset-4 hover:text-foreground hover:underline">
-                Nodes and environments in Fleet
-              </Link>
-            )}
           </SettingRow>
         </SettingRows>
       )}
@@ -181,7 +175,7 @@ function MasterConnectionCard({ instanceSync }: { instanceSync: InstanceSyncProp
   const slave = instanceSync.slave;
   const [clearToken, setClearToken] = useState(false);
   return (
-    <SectionCard title="Master connection" headingLevel={3} divided={false}>
+    <SectionCard title="Master connection" headingLevel={2} divided={false}>
       <SettingsForm action={updateSlaveMasterTokenAction} order={1}>
         <SettingRows>
           <SettingRow
@@ -218,26 +212,28 @@ function MasterConnectionCard({ instanceSync }: { instanceSync: InstanceSyncProp
             </SettingRow>
           )}
           {slave && (
+            <SettingRow label="Sync key" note="The master pins this key. Compare the full key, not only the id, when you check a pin.">
+              <span className="flex min-h-9 flex-col justify-center gap-0.5 text-[13px]">
+                <span>
+                  Id <span className="num">{slave.syncKeyId}</span>
+                </span>
+                <span className="num break-all">{slave.syncPublicKey}</span>
+              </span>
+            </SettingRow>
+          )}
+          {slave && (
             <SettingRow label="Last sync">
               <span className="flex min-h-9 items-center">
                 {slave.lastSyncError ? (
-                  <StatusDot tone="warn" label={slave.lastSyncAt ? `${slave.lastSyncAt} (${slave.lastSyncError})` : "No sync payload has been received yet."} />
+                  <StatusDot tone="warn" label={slave.lastSyncAt ? `${slave.lastSyncAt} (${slave.lastSyncError})` : "No sync yet"} />
                 ) : (
-                  <StatusDot tone={slave.lastSyncAt ? "ok" : "off"} label={slave.lastSyncAt ?? "No sync payload has been received yet."} />
+                  <StatusDot tone={slave.lastSyncAt ? "ok" : "off"} label={slave.lastSyncAt ?? "No sync yet"} />
                 )}
               </span>
             </SettingRow>
           )}
         </SettingRows>
       </SettingsForm>
-      {slave && (
-        <CardNote>
-          This instance&rsquo;s sync key id is <span className="num">{slave.syncKeyId}</span> and its sync public key is{" "}
-          <span className="num break-all">{slave.syncPublicKey}</span>. The master pins this key on the first sync, or an
-          administrator pastes it there under Key pin; it changes with SESSION_SECRET. Compare the full key when checking a pin:
-          the key id is only a short fingerprint.
-        </CardNote>
-      )}
     </SectionCard>
   );
 }
@@ -246,16 +242,17 @@ function ReplicasCard({ master, canWrite }: { master: NonNullable<InstanceSyncPr
   // What the last key pin, edit or add dialog did; the dialog itself has closed.
   const [notice, setNotice] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [page, setPage] = useState(1);
   const count = master.instances.length + master.envInstances.length;
+  const added = paginate(master.instances, page);
 
   return (
     <SectionCard
       title="Replicas"
       count={count}
-      description="Instances this master pushes its configuration to."
-      headingLevel={3}
+      headingLevel={2}
       actions={
-        canWrite ? (
+        canWrite && count > 0 ? (
           <Button type="button" variant="outline" size="sm" onClick={() => setAdding(true)}>
             <Plus /> Add replica
           </Button>
@@ -273,9 +270,9 @@ function ReplicasCard({ master, canWrite }: { master: NonNullable<InstanceSyncPr
       {count === 0 && (
         <EmptyState
           compact
-          headingLevel={4}
+          headingLevel={3}
           title="No replicas yet"
-          description="Add a replica with its base URL and API token, or list replicas in INSTANCE_SLAVES."
+          description="Add one, or list them in INSTANCE_SLAVES."
           action={
             canWrite ? (
               <Button type="button" variant="outline" size="sm" onClick={() => setAdding(true)}>
@@ -327,7 +324,7 @@ function ReplicasCard({ master, canWrite }: { master: NonNullable<InstanceSyncPr
             </p>
           )}
           <ul className="m-0 list-none divide-y divide-line p-0">
-            {master.instances.map((instance) => (
+            {added.items.map((instance) => (
               <li key={instance.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
                 <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="flex flex-wrap items-center gap-2">
@@ -335,7 +332,7 @@ function ReplicasCard({ master, canWrite }: { master: NonNullable<InstanceSyncPr
                     {!instance.enabled && <Badge variant="muted">Disabled</Badge>}
                   </span>
                   {instance.syncMode === "pull" ? (
-                    <span className="text-xs text-muted-foreground">Pull replica: polls this master (see Pull replicas)</span>
+                    <span className="text-xs text-muted-foreground">Pull replica</span>
                   ) : (
                     <span className="num text-xs text-muted-foreground [overflow-wrap:anywhere]">{instance.baseUrl}</span>
                   )}
@@ -366,16 +363,22 @@ function ReplicasCard({ master, canWrite }: { master: NonNullable<InstanceSyncPr
               </li>
             ))}
           </ul>
+          <Pagination
+            page={added.page}
+            perPage={added.perPage}
+            total={added.total}
+            noun="replicas"
+            label="Pages of replicas"
+            onPageChange={setPage}
+            className="border-t border-line px-5 py-3"
+          />
         </div>
       )}
 
       {master.orphanSyncKeyPins.length > 0 && (
         <div className="flex flex-col border-t border-line">
           <p className="m-0 px-5 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-[0.06em] text-soft">Key pins without a replica</p>
-          <p className="m-0 px-5 pb-2 text-xs text-muted-foreground">
-            No instance or INSTANCE_SLAVES entry syncs to these URLs any more. A replica added at one of them inherits its pin, and its
-            syncs fail if it presents another key.
-          </p>
+          <p className="m-0 px-5 pb-2 text-xs text-muted-foreground">A replica added at one of these URLs inherits its pin.</p>
           <ul className="m-0 list-none divide-y divide-line p-0">
             {master.orphanSyncKeyPins.map((pin) => (
               <li key={pin.url} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
@@ -414,10 +417,7 @@ function AddReplicaForm({ onDone, onClose }: { onDone: (message: string) => void
     <form action={formAction} className="flex flex-col gap-3">
       <DialogHeader>
         <DialogTitle>Add a replica</DialogTitle>
-        <DialogDescription>
-          The master pushes its configuration to the replica&rsquo;s base URL with this API token. The replica&rsquo;s sync key is
-          pinned on the first sealed sync; pin it now from the replica&rsquo;s own settings with Key pin after adding it.
-        </DialogDescription>
+        <DialogDescription>Its sync key is pinned on the first sync. To pin it now, use Key pin after adding it.</DialogDescription>
       </DialogHeader>
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="inst-name">Instance name</Label>
@@ -475,7 +475,7 @@ function SyncKeyPinStatus({
   if (!pin) {
     return (
       <span className="block text-xs text-muted-foreground">
-        Sync key not pinned yet: pinned on the next sealed sync, or pin the replica&rsquo;s key now
+        Sync key not pinned yet
       </span>
     );
   }
@@ -589,8 +589,8 @@ export function SyncKeyPinDialogBody({
       <SyncKeyPinStatus pin={pin} />
       {pin && !unreadable && (
         <p className="text-xs text-muted-foreground">
-          Pinned public key: <span className="num break-all">{pin.publicKey}</span>. Compare it with the one in the replica&rsquo;s
-          own Instance sync settings; the key id is only a short fingerprint.
+          Pinned public key: <span className="num break-all">{pin.publicKey}</span>. Compare it with the one on the replica&rsquo;s
+          Instance sync page; the key id is only a short fingerprint.
         </p>
       )}
       <form action={pinFormAction} className="flex flex-col gap-2">
@@ -605,7 +605,7 @@ export function SyncKeyPinDialogBody({
           className="num text-xs"
         />
         <p className="text-xs text-muted-foreground">
-          Copy it from the replica&rsquo;s own Instance sync settings, or GET /api/v1/instances/sync-key on the replica, over a
+          Copy it from the replica&rsquo;s Instance sync page, or GET /api/v1/instances/sync-key on the replica, over a
           channel you trust, not through the connection the master syncs over. Syncs are then sealed to this key only
           {pin ? ", in place of the current pin" : ""}.
         </p>
@@ -628,7 +628,7 @@ export function SyncKeyPinDialogBody({
           <p className="text-sm">
             Only reset after verifying the replica was re-keyed on purpose, for example its SESSION_SECRET was replaced without
             keeping the old value in SESSION_SECRET_PREVIOUS; pinning its new key above avoids both risks. After the next sync,
-            check that the pinned key matches the one in the replica&rsquo;s Instance sync settings.
+            check that the pinned key matches the one on the replica&rsquo;s Instance sync page.
           </p>
           {resetState && !resetState.success && resetState.message && <Banner tone="bad">{resetState.message}</Banner>}
           <div className="flex justify-end">

@@ -114,7 +114,7 @@ export async function postgresSettingsRows(config: pg.ClientConfig): Promise<Set
 export async function runBreakGlass(action: BreakGlassAction, rows: SettingsRows, now: Date = new Date()): Promise<string> {
   if (action === "remove-mfa-policy") {
     return (await rows.remove(MFA_POLICY_KEY))
-      ? "MFA policy removed: no account is required to use MFA. Set the policy again under Settings when you can sign in."
+      ? "MFA policy removed: no account is required to use MFA. Set the policy again on the Users page when you can sign in."
       : "There was no MFA policy: no account is required to use MFA.";
   }
 

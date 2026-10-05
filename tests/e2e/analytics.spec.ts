@@ -21,7 +21,6 @@ test.describe('Analytics', () => {
     await expect(page.getByRole('heading', { level: 2, name: 'Requests by outcome' })).toBeVisible();
     await expect(page.getByRole('heading', { level: 2, name: 'Top dimensions' })).toBeVisible();
     await expect(page.getByRole('heading', { level: 2, name: 'Requests', exact: true })).toBeVisible();
-    await expect(page.getByText('every request is logged, nothing is sampled')).toBeVisible();
   });
 
   test('does not say analytics is off when ClickHouse is configured', async ({ page }) => {

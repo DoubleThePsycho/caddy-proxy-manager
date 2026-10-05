@@ -11,6 +11,8 @@ import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Label } from "@/components/ui/label";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
+import { SearchField } from "@/components/ui/SearchField";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { StatusDot, type StatusTone } from "@/components/ui/StatusDot";
@@ -27,9 +29,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { DEFAULT_PAGE_SIZE, paginate } from "@/src/lib/pagination";
 import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import type { RevisionDiff } from "@/ee/fleet/revisions";
-import type { EnvironmentView, FleetInstanceView, FleetOverview, PullReplicaView, RolloutView } from "@/ee/fleet/types";
+import type { EnvironmentView, FleetInstanceView, FleetOverview, PullReplicaView, RevisionView, RolloutView } from "@/ee/fleet/types";
 import PullReplicasPanel from "@/ee/fleet/ui/PullReplicasPanel";
 import { DiffView, EnvironmentDialog, PromoteDialog, jsonInit, readError, requestJson } from "./FleetDialogs";
 import { RolloutPanel } from "./RolloutPanel";
@@ -37,7 +40,6 @@ import {
   PHASE_LABELS,
   compareVersions,
   formatClock,
-  formatDuration,
   formatVersion,
   formatWhen,
   isBehind,
@@ -54,8 +56,15 @@ import {
   storageLabel,
 } from "./fleet-view";
 
+/** One page of a list the server pages (rollouts, revisions). */
+export type ServerPage<T> = { items: T[]; total: number; page: number };
+
 type Props = {
   overview: FleetOverview;
+  /** The page of rollouts the table shows (?rollouts=); the overview's latest ones when omitted. */
+  rolloutPage?: ServerPage<RolloutView>;
+  /** The page of revisions the table shows (?revisions=); the overview's latest ones when omitted. */
+  revisionPage?: ServerPage<RevisionView>;
   /** The license allows setting fleet management up and changing it. */
   configurable: boolean;
   editionLabel: string;
@@ -70,8 +79,8 @@ type Message = { ok: boolean; text: string };
 const NO_ENVIRONMENT = "none";
 const ALL = "all";
 const POLL_INTERVAL_MS = 5000;
-/** Revisions listed before "Show all". */
-const REVISIONS_SHOWN = 8;
+/** Nodes shown in an environment card before "N more". */
+const MEMBERS_SHOWN = 12;
 
 const ROLLOUT_OUTCOME: Record<RolloutView["status"], { tone: StatusTone; label: string }> = {
   running: { tone: "info", label: "Running" },
@@ -101,7 +110,15 @@ function Cell({ children, note, noteClassName }: { children: ReactNode; note?: R
 const TH = "border-y border-line px-2.5 py-2 text-left text-xs font-medium text-soft first:pl-[18px] last:pr-[18px]";
 const TD = "px-2.5 py-3 align-middle first:pl-[18px] last:pr-[18px]";
 
-export default function FleetClient({ overview, configurable, editionLabel, allowed = { write: true, promote: true, replicas: true }, now: renderedAt }: Props) {
+export default function FleetClient({
+  overview,
+  rolloutPage,
+  revisionPage,
+  configurable,
+  editionLabel,
+  allowed = { write: true, promote: true, replicas: true },
+  now: renderedAt,
+}: Props) {
   const router = useRouter();
   const { productName } = useBranding();
   const [pending, startTransition] = useTransition();
@@ -112,11 +129,14 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
   const [promoting, setPromoting] = useState<EnvironmentView | null>(null);
   const [addingReplica, setAddingReplica] = useState(false);
   const [nodeFilter, setNodeFilter] = useState<string>(ALL);
+  const [nodeSearch, setNodeSearch] = useState("");
+  const nodePages = useUrlPage("nodes");
+  const rolloutPages = useUrlPage("rollouts");
+  const revisionPages = useUrlPage("revisions");
   const [selectedRevision, setSelectedRevision] = useState<number | null>(null);
   const [against, setAgainst] = useState("previous");
   const [revisionDiff, setRevisionDiff] = useState<RevisionDiff | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
-  const [showAllRevisions, setShowAllRevisions] = useState(false);
   const [now, setNow] = useState(() => (renderedAt ? Date.parse(renderedAt) : Date.now()));
 
   const isMaster = overview.mode === "master";
@@ -251,20 +271,8 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
   function showDiff(revisionId: number, base: string) {
     setAgainst(base);
     setSelectedRevision(revisionId);
-    setShowAllRevisions(true);
     requestAnimationFrame(() => document.getElementById("revisions")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
-
-  const description = (() => {
-    if (!isMaster) return "Environments of replicas in promotion order, with drift and staged rollouts.";
-    if (environments.length === 0) {
-      return "This dashboard is the master: changes made here reach every replica at once. Group replicas into environments to promote changes stage by stage.";
-    }
-    const everyChange = environments.filter((environment) => !environment.promotionOnly).map((environment) => environment.name);
-    const promoted = environments.filter((environment) => environment.promotionOnly).map((environment) => environment.name);
-    const atOnce = everyChange.length > 0 ? joinNames(everyChange) : "replicas without an environment";
-    return `This dashboard is the master. Changes made here reach ${atOnce} at once${promoted.length > 0 ? ` and the ${joinNames(promoted)} replicas by promotion` : ""}.`;
-  })();
 
   const drifted = instances.filter((instance) => instance.enabled && instance.drift.status === "drifted");
 
@@ -299,9 +307,26 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
       : []),
   ];
   const filter = filterOptions.some((option) => option.value === nodeFilter) ? nodeFilter : ALL;
-  const shownInstances = instances.filter((instance) =>
-    filter === ALL ? true : filter === NO_ENVIRONMENT ? instance.environmentId === null : instance.environmentId === Number(filter)
+  const nodeNeedle = nodeSearch.trim().toLowerCase();
+  const shownInstances = instances.filter(
+    (instance) =>
+      (filter === ALL ? true : filter === NO_ENVIRONMENT ? instance.environmentId === null : instance.environmentId === Number(filter)) &&
+      (!nodeNeedle || instance.name.toLowerCase().includes(nodeNeedle) || hostOf(instance.baseUrl).toLowerCase().includes(nodeNeedle))
   );
+  const nodePage = paginate(shownInstances, nodePages.page);
+
+  /** A new filter or search starts the nodes on their first page. */
+  function firstNodePage() {
+    if (nodePages.page > 1) router.replace(nodePages.hrefFor(1), { scroll: false });
+  }
+
+  /** Shows the nodes of one environment in the table (the "N more" of an environment card). */
+  function showNodesOf(value: string) {
+    setNodeFilter(value);
+    setNodeSearch("");
+    firstNodePage();
+    requestAnimationFrame(() => document.getElementById("nodes")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
 
   function nodeRow(instance: FleetInstanceView) {
     const environment = instance.environmentId === null ? null : (environmentById.get(instance.environmentId) ?? null);
@@ -572,7 +597,6 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
     const active = runningByEnvironment.get(environment.id) ?? null;
     const latest = latestByEnvironment.get(environment.id) ?? null;
     const source = index > 0 ? environments[index - 1] : null;
-    const next = environments[index + 1];
     const headingId = `environment-${environment.id}-title`;
     const pinnedSince =
       environment.revisionId === null
@@ -584,13 +608,6 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
       (latestSync, instance) => (instance.lastSyncAt && (!latestSync || instance.lastSyncAt > latestSync) ? instance.lastSyncAt : latestSync),
       null
     );
-    const describe = environment.promotionOnly
-      ? `Replicas stay on the pinned revision until someone promotes ${source ? `what ${source.name} runs` : "the master's configuration"}.${
-          environment.canary.enabled
-            ? ` Canary first, observed for ${formatDuration(environment.canary.waitSeconds)}${environment.canary.checkCaddyStatus ? " with the Caddy status check" : ""}.`
-            : " Every replica at once, without a canary."
-        }`
-      : `Receives every change at once.${next?.promotionOnly ? ` ${next.name} promotes from what it runs.` : ""}`;
     return (
       <section
         key={environment.id}
@@ -652,10 +669,7 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
             )}
           </span>
         </div>
-        <p className="m-0 text-[13px] text-muted-foreground">
-          {environment.description ? <>{environment.description} · </> : null}
-          {describe}
-        </p>
+        {environment.description && <p className="m-0 text-[13px] text-muted-foreground [overflow-wrap:anywhere]">{environment.description}</p>}
         <dl className="m-0 grid grid-cols-[repeat(auto-fit,minmax(min(110px,100%),1fr))] gap-2.5">
           <div className="flex flex-col gap-0.5">
             <dt className="text-xs text-soft">Nodes</dt>
@@ -716,7 +730,14 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
             <p className="m-0 text-[13px] text-soft">No nodes. Move replicas here from the nodes table.</p>
           ) : (
             <ul aria-label={`Nodes in ${environment.name}`} className="m-0 flex list-none flex-wrap gap-1.5 p-0">
-              {members.map((instance) => memberChip(instance, environment))}
+              {members.slice(0, MEMBERS_SHOWN).map((instance) => memberChip(instance, environment))}
+              {members.length > MEMBERS_SHOWN && (
+                <li>
+                  <Button variant="link" size="sm" className="h-[26px] px-1 text-xs" onClick={() => showNodesOf(String(environment.id))}>
+                    {members.length - MEMBERS_SHOWN} more
+                  </Button>
+                </li>
+              )}
             </ul>
           )}
         </div>
@@ -724,7 +745,8 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
     );
   }
 
-  const revisionsShown = showAllRevisions ? overview.revisions : overview.revisions.slice(0, REVISIONS_SHOWN);
+  const revisionList = revisionPage ?? { items: overview.revisions, total: overview.revisions.length, page: 1 };
+  const rolloutList = rolloutPage ?? { items: rollouts, total: rollouts.length, page: 1 };
   const againstOptions = [
     { value: "previous", label: "The previous revision" },
     { value: "current", label: "The master's current configuration" },
@@ -736,7 +758,6 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
       <PageHeader
         breadcrumb={["Platform", "Fleet"]}
         title="Fleet"
-        description={description}
         className="mb-0"
         actions={
           <>
@@ -817,14 +838,13 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
             Environments
           </h2>
           <span className="text-[13px] text-soft">
-            In promotion order · drift checked every {formatDuration(overview.master.driftCheckIntervalSeconds)}
+            In promotion order
             {lastCheck ? (
               <>
-                , last at <span className="num">{formatClock(lastCheck)}</span>
+                {" "}
+                · last drift check <span className="num">{formatClock(lastCheck)}</span>
               </>
-            ) : (
-              " once an environment exists"
-            )}
+            ) : null}
           </span>
         </div>
         {environments.length === 0 ? (
@@ -832,7 +852,7 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
             <EmptyState
               icon={Server}
               title="No environments yet"
-              description="Create one for each stage, for example staging and then production, and move the replicas into them. Make the later ones promotion-only so they take changes only when you promote them."
+              description="Create one per stage, for example staging and production."
               action={
                 allowed.write && configurable && isMaster ? (
                   <Button onClick={() => setEditing("new")}>
@@ -868,9 +888,15 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
                     Every change
                   </Badge>
                 </div>
-                <p className="m-0 text-[13px] text-muted-foreground">They receive every change at once, as before fleet management.</p>
                 <ul aria-label="Nodes without an environment" className="m-0 flex list-none flex-wrap gap-1.5 border-t border-line p-0 pt-2.5">
-                  {unassigned.map((instance) => memberChip(instance, null))}
+                  {unassigned.slice(0, MEMBERS_SHOWN).map((instance) => memberChip(instance, null))}
+                  {unassigned.length > MEMBERS_SHOWN && (
+                    <li>
+                      <Button variant="link" size="sm" className="h-[26px] px-1 text-xs" onClick={() => showNodesOf(NO_ENVIRONMENT)}>
+                        {unassigned.length - MEMBERS_SHOWN} more
+                      </Button>
+                    </li>
+                  )}
                 </ul>
               </section>
             )}
@@ -889,7 +915,6 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
             sourceName={source}
             instances={instances}
             revision={overview.revisions.find((revision) => revision.id === rollout.revisionId)}
-            stepSeconds={overview.master.rolloutStepSeconds}
             now={now}
             canAbort={allowed.promote}
             pending={pending}
@@ -899,21 +924,39 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
         );
       })}
 
-      <SectionCard
-        title="Nodes"
-        count={instances.length + (isMaster ? 1 : 0)}
-        actions={
-          <span className="text-[13px] text-soft">
-            Master <span className="num">{formatVersion(overview.master.version)}</span> · configuration as reported by each node
-          </span>
-        }
-      >
-        {instances.length > 0 && environments.length > 0 && (
-          <div className="overflow-x-auto px-[18px] py-3">
-            <SegmentedControl label="Environment" size="sm" value={filter} onChange={setNodeFilter} options={filterOptions} />
+      <SectionCard id="nodes" title="Nodes" count={instances.length + (isMaster ? 1 : 0)} className="scroll-mt-6">
+        {(instances.length > DEFAULT_PAGE_SIZE || (instances.length > 0 && environments.length > 0)) && (
+          <div className="flex flex-wrap items-center gap-2.5 px-[18px] py-3">
+            {instances.length > DEFAULT_PAGE_SIZE && (
+              <SearchField
+                aria-label="Filter nodes"
+                type="search"
+                placeholder="Name or address"
+                value={nodeSearch}
+                onChange={(event) => {
+                  setNodeSearch(event.target.value);
+                  firstNodePage();
+                }}
+                className="min-w-0 max-w-none flex-[1_1_240px] sm:max-w-xs"
+              />
+            )}
+            {instances.length > 0 && environments.length > 0 && (
+              <div className="relative max-w-full overflow-x-auto">
+                <SegmentedControl
+                  label="Environment"
+                  size="sm"
+                  value={filter}
+                  onChange={(value) => {
+                    setNodeFilter(value);
+                    firstNodePage();
+                  }}
+                  options={filterOptions}
+                />
+              </div>
+            )}
           </div>
         )}
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[1100px] border-collapse text-[13px]">
             <thead>
               <tr>
@@ -932,7 +975,7 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
               </tr>
             </thead>
             <tbody>
-              {isMaster && filter === ALL && (
+              {isMaster && filter === ALL && !nodeNeedle && nodePage.page === 1 && (
                 <tr className="border-b border-line last:border-b-0 hover:bg-panel2">
                   <td className={TD}>
                     <Cell note="this dashboard">
@@ -968,19 +1011,36 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
                   <td className={TD} />
                 </tr>
               )}
-              {shownInstances.map((instance) => nodeRow(instance))}
+              {nodePage.items.map((instance) => nodeRow(instance))}
+              {instances.length > 0 && shownInstances.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="px-[18px] py-6 text-center text-muted-foreground">
+                    No nodes match.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
+        </div>
+        <div className="border-t border-line px-[18px] py-3 empty:hidden">
+          <Pagination
+            page={nodePage.page}
+            perPage={nodePage.perPage}
+            total={nodePage.total}
+            noun="nodes"
+            label="Pages of nodes"
+            hrefFor={nodePages.hrefFor}
+          />
         </div>
         {instances.length === 0 && (
           <EmptyState
             compact
             icon={Server}
             title="No replicas yet"
-            description="Add replicas this master pushes to in the instance sync settings, or add a pull replica for a node this master cannot reach."
+            description="Add replicas on the Instance sync page, or add a pull replica for a node this master cannot reach."
             action={
               <Button asChild variant="outline" size="sm">
-                <Link href="/settings?section=instance-sync">Instance sync settings</Link>
+                <Link href="/instances">Instance sync</Link>
               </Button>
             }
           />
@@ -988,11 +1048,16 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
       </SectionCard>
 
       <div className="flex flex-wrap items-start gap-5">
-        <SectionCard title="Recent rollouts" link={{ label: "Revisions", href: "#revisions" }} className="flex-[2_1_560px]">
-          {rollouts.length === 0 ? (
-            <EmptyState compact title="No rollouts yet" description="Promoting to a promotion-only environment starts one, canary first." />
+        <SectionCard
+          title="Rollouts"
+          count={rolloutList.total > 0 ? rolloutList.total : null}
+          link={{ label: "Revisions", href: "#revisions" }}
+          className="flex-[2_1_560px]"
+        >
+          {rolloutList.total === 0 ? (
+            <EmptyState compact title="No rollouts yet" description="Promoting to a promotion-only environment starts one." />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full min-w-[640px] border-collapse text-[13px]">
                 <thead>
                   <tr>
@@ -1006,7 +1071,7 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
                   </tr>
                 </thead>
                 <tbody>
-                  {rollouts.map((rollout) => {
+                  {rolloutList.items.map((rollout) => {
                     const outcome = ROLLOUT_OUTCOME[rollout.status];
                     const canRollback =
                       rollout.status !== "running" &&
@@ -1070,6 +1135,16 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
               </table>
             </div>
           )}
+          <div className="border-t border-line px-[18px] py-3 empty:hidden">
+            <Pagination
+              page={rolloutList.page}
+              perPage={DEFAULT_PAGE_SIZE}
+              total={rolloutList.total}
+              noun="rollouts"
+              label="Pages of rollouts"
+              hrefFor={rolloutPages.hrefFor}
+            />
+          </div>
         </SectionCard>
 
         <PullReplicasPanel
@@ -1089,14 +1164,13 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
       <SectionCard
         id="revisions"
         title="Revisions"
-        count={overview.revisions.length}
-        description="Configurations captured when they were promoted. Secrets stay encrypted and are never shown."
+        count={revisionList.total}
         className="scroll-mt-6"
       >
-        {overview.revisions.length === 0 ? (
+        {revisionList.total === 0 ? (
           <EmptyState compact title="No revisions yet" description="The first promotion captures one." />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-[13px]">
               <thead>
                 <tr>
@@ -1110,7 +1184,7 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
                 </tr>
               </thead>
               <tbody>
-                {revisionsShown.map((revision) => (
+                {revisionList.items.map((revision) => (
                   <tr
                     key={revision.id}
                     className={cn("border-b border-line last:border-b-0", selectedRevision === revision.id ? "bg-brand-tint" : "hover:bg-panel2")}
@@ -1138,13 +1212,16 @@ export default function FleetClient({ overview, configurable, editionLabel, allo
             </table>
           </div>
         )}
-        {overview.revisions.length > REVISIONS_SHOWN && (
-          <div className="border-t border-line px-[18px] py-2.5">
-            <Button variant="link" size="sm" className="h-auto px-0" onClick={() => setShowAllRevisions((value) => !value)}>
-              {showAllRevisions ? "Show fewer" : `Show all ${overview.revisions.length}`}
-            </Button>
-          </div>
-        )}
+        <div className="border-t border-line px-[18px] py-3 empty:hidden">
+          <Pagination
+            page={revisionList.page}
+            perPage={DEFAULT_PAGE_SIZE}
+            total={revisionList.total}
+            noun="revisions"
+            label="Pages of revisions"
+            hrefFor={revisionPages.hrefFor}
+          />
+        </div>
         {selectedRevision !== null && (
           <div className="flex flex-col gap-3 border-t border-line px-[18px] py-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">

@@ -45,8 +45,7 @@ function NoMoneyHeld() {
   const { productName } = useBranding();
   return (
     <p className="m-0 text-xs leading-[18px] text-soft">
-      {productName} never holds money: Stripe pays you, and a balance is credited when Stripe confirms the payment. Refunds made in Stripe
-      are not taken off balances; adjust them here.
+      {productName} never holds money: Stripe pays you. Refunds made in Stripe are not taken off balances; adjust them here.
     </p>
   );
 }
@@ -206,7 +205,6 @@ export default function StripeTab({
           Stripe <StripeStatus settings={settings} />
         </span>
       }
-      description="Consumers top up, save cards and pay through Stripe Checkout in your own Stripe account"
       padded
       contentClassName="flex flex-col gap-4"
       footer={
@@ -224,15 +222,8 @@ export default function StripeTab({
         ) : undefined
       }
     >
-      <p className="m-0 text-[13px] text-muted-foreground">
-        The money goes to you, and the balance is credited when Stripe confirms the payment. Keys are stored encrypted and never shown
-        again.
-      </p>
       <WebhookBox settings={settings} />
-      <p className="m-0 text-[13px] text-muted-foreground">
-        Add that endpoint in Stripe with these events, then paste its signing secret here. Postpaid consumers also need the key to create
-        Customers and PaymentIntents and read SetupIntents and PaymentMethods.
-      </p>
+      <p className="m-0 text-[13px] text-muted-foreground">Add that endpoint in Stripe with these events, then paste its signing secret here.</p>
       {error && (
         <Alert variant="destructive">
           <AlertDescription>{error}</AlertDescription>

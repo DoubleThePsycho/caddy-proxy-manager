@@ -1,43 +1,57 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { MoreHorizontal, Network, Plus, Search } from "lucide-react";
-import type { L4ProxyHost } from "@/src/lib/models/l4-proxy-hosts";
-import { toggleL4ProxyHostAction } from "./actions";
+import { ArrowDown, ArrowUp, ArrowUpDown, MoreHorizontal, Network, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
+import type { L4ProxyHost } from "@/src/lib/models/l4-proxy-hosts";
 import type { HostApprovalContext } from "@/ee/approvals/types";
-import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
+import { toggleL4ProxyHostAction } from "./actions";
+import { bulkL4ProxyHostsAction, type L4BulkOperation } from "./bulk-actions";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { StatusDot, type StatusTone } from "@/components/ui/StatusDot";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
+import { AppDialog } from "@/components/ui/AppDialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { CreateL4HostDialog, EditL4HostDialog, DeleteL4HostDialog } from "@/components/l4-proxy-hosts/L4HostDialogs";
 import { L4PortsApplyBanner, portMappingFor, type PortsDiff } from "@/components/l4-proxy-hosts/L4PortsApplyBanner";
-import { HostTagBadges } from "@/components/hosts/HostTags";
-import { matcherText, proxyProtocolText, tlsView, type L4ProtocolFilter } from "./list";
-import { L4HostDetail } from "./L4HostDetail";
+import {
+  L4_DEFAULT_SORT_DIR,
+  L4_SORT_LABELS,
+  serverNameSummary,
+  type L4ListQuery,
+  type L4ProtocolFilter,
+  type L4SortKey,
+  type L4StatusFilter,
+} from "./list";
+import { L4HostDetailSheet } from "./L4HostDetail";
 
 type Props = {
+  /** The hosts on this page of the list. */
   hosts: L4ProxyHost[];
   /** Every L4 host the user may see, before filters. */
   totalHosts: number;
   pagination: { total: number; page: number; perPage: number };
-  initialSearch: string;
-  protocol: L4ProtocolFilter;
+  query: L4ListQuery;
+  /** Hosts per protocol, after the search and the status filter. */
   protocolCounts: Record<L4ProtocolFilter, number>;
-  initialSort?: { sortBy: string; sortDir: "asc" | "desc" };
+  /** Hosts per status, after the search and the protocol filter. */
+  statusCounts: Record<L4StatusFilter, number>;
+  /** Some host has tags: the list gets a Tags column. */
+  showTags?: boolean;
   /** The user may create, change and delete hosts (l4_proxy_hosts:write); true when omitted. */
   canWrite?: boolean;
   /** The tags the user's role is limited to, if any. */
@@ -58,9 +72,91 @@ export function l4HostStatus(host: L4ProxyHost, portsDiff: PortsDiff | null): L4
   return { tone: "ok", label: "Active" };
 }
 
+function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+}
+
+function SortHeader({
+  label,
+  sortKey,
+  query,
+  onSort,
+  className,
+}: {
+  label: string;
+  sortKey: L4SortKey;
+  query: L4ListQuery;
+  onSort: (key: L4SortKey) => void;
+  className?: string;
+}) {
+  const active = query.sortBy === sortKey;
+  const Icon = active ? (query.sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  return (
+    <th
+      scope="col"
+      aria-sort={active ? (query.sortDir === "asc" ? "ascending" : "descending") : "none"}
+      className={cn("border-b border-line px-2.5 py-2 font-medium", className)}
+    >
+      <button type="button" onClick={() => onSort(sortKey)} className="inline-flex items-center gap-1 rounded hover:text-foreground">
+        {label}
+        <Icon aria-hidden="true" className={cn("h-3.5 w-3.5", !active && "opacity-50")} />
+      </button>
+    </th>
+  );
+}
+
 function ProtocolChip({ protocol }: { protocol: string }) {
   return (
-    <span className="num rounded bg-raise px-[5px] text-[11px] leading-[18px] text-muted-foreground">{protocol.toUpperCase()}</span>
+    <span data-chip className="num shrink-0 rounded bg-raise px-[5px] text-[11px] leading-[18px] text-muted-foreground">{protocol.toUpperCase()}</span>
+  );
+}
+
+function Listen({ host, className }: { host: L4ProxyHost; className?: string }) {
+  return (
+    <span className={cn("flex min-w-0 items-center gap-1.5 whitespace-nowrap", className)}>
+      <ProtocolChip protocol={host.protocol} />
+      <span className="num min-w-0 truncate">{host.listenAddress}</span>
+    </span>
+  );
+}
+
+/** The first of a list, cut short when it does not fit, and how many more; all of them in the tooltip. */
+function FirstAndMore({ items, className }: { items: readonly string[]; className?: string }) {
+  if (items.length === 0) return null;
+  return (
+    <span className={cn("num flex min-w-0 items-baseline whitespace-nowrap", className)} title={items.length > 1 ? items.join("\n") : items[0]}>
+      <span className="min-w-0 truncate">{items[0]}</span>
+      {items.length > 1 && <span className="ml-1 shrink-0 text-soft">+{items.length - 1}</span>}
+    </span>
+  );
+}
+
+/** The SNI or HTTP Host names an L4 host matches: the first and how many more. */
+function ServerNames({ host, className }: { host: L4ProxyHost; className?: string }) {
+  if (!serverNameSummary(host)) return null;
+  return <FirstAndMore items={host.matcherValue} className={cn("text-xs text-soft", className)} />;
+}
+
+/** Up to two tags on one line, then "+N". */
+function TagChips({ tags }: { tags: readonly string[] }) {
+  if (tags.length === 0) return <span className="text-soft">–</span>;
+  return (
+    <span className="flex min-w-0 items-center gap-1 whitespace-nowrap" data-testid="host-tag-badges" title={tags.length > 2 ? tags.join(", ") : undefined}>
+      {tags.slice(0, 2).map((tag) => (
+        <span key={tag} data-chip className="num min-w-0 truncate rounded bg-raise px-1.5 text-[11px] leading-[18px] text-muted-foreground">
+          {tag}
+        </span>
+      ))}
+      {tags.length > 2 && <span className="shrink-0 text-[11px] text-soft">+{tags.length - 2}</span>}
+    </span>
+  );
+}
+
+function CountLabel({ label, count }: { label: string; count: number }): ReactNode {
+  return (
+    <>
+      {label} <span className="num text-muted-foreground">{count}</span>
+    </>
   );
 }
 
@@ -68,42 +164,60 @@ export default function L4ProxyHostsClient({
   hosts,
   totalHosts,
   pagination,
-  initialSearch,
-  protocol,
+  query,
   protocolCounts,
-  initialSort,
+  statusCounts,
+  showTags = false,
   canWrite = true,
   scopeTags = [],
   approval = null,
 }: Props) {
-  const { productName } = useBranding();
   const [createOpen, setCreateOpen] = useState(false);
   const [duplicateHost, setDuplicateHost] = useState<L4ProxyHost | null>(null);
   const [editHost, setEditHost] = useState<L4ProxyHost | null>(null);
   const [deleteHost, setDeleteHost] = useState<L4ProxyHost | null>(null);
   // Counter forces CreateL4HostDialog to remount on each open, resetting useFormState
   const [dialogKey, setDialogKey] = useState(0);
-  const [searchTerm, setSearchTerm] = useState(initialSearch);
+  const [searchTerm, setSearchTerm] = useState(query.search);
   const [bannerRefresh, setBannerRefresh] = useState(0);
   const [portsDiff, setPortsDiff] = useState<PortsDiff | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(hosts[0]?.id ?? null);
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [selected, setSelected] = useState<ReadonlySet<number>>(() => new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkPending, startBulk] = useTransition();
 
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { hrefFor } = useUrlPage();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const signalBannerRefresh = () => setBannerRefresh(n => n + 1);
 
-  useEffect(() => { setSearchTerm(initialSearch); }, [initialSearch]);
+  useEffect(() => {
+    setSearchTerm(query.search);
+  }, [query.search]);
 
-  const selected = hosts.find((host) => host.id === selectedId) ?? hosts[0] ?? null;
+  // Keep only selected (and shown) hosts that are still on the page.
+  useEffect(() => {
+    const onPage = new Set(hosts.map((host) => host.id));
+    setSelected((current) => {
+      const kept = [...current].filter((id) => onPage.has(id));
+      return kept.length === current.size ? current : new Set(kept);
+    });
+    setDetailId((id) => (id !== null && !onPage.has(id) ? null : id));
+  }, [hosts]);
+
+  const statusById = useMemo(() => new Map(hosts.map((host) => [host.id, l4HostStatus(host, portsDiff)])), [hosts, portsDiff]);
+  const detailHost = detailId === null ? null : hosts.find((host) => host.id === detailId) ?? null;
 
   function pushParams(update: (params: URLSearchParams) => void) {
     const params = new URLSearchParams(searchParams.toString());
     update(params);
-    params.set("page", "1");
-    router.push(`${pathname}?${params.toString()}`);
+    // A new search, filter or sort starts on the first page.
+    params.delete("page");
+    const rest = params.toString();
+    router.push(rest ? `${pathname}?${rest}` : pathname);
   }
 
   function handleSearchChange(value: string) {
@@ -124,11 +238,25 @@ export default function L4ProxyHostsClient({
     });
   }
 
+  function handleStatusChange(value: L4StatusFilter) {
+    pushParams((params) => {
+      if (value === "all") params.delete("status");
+      else params.set("status", value);
+    });
+  }
+
+  function handleSort(key: L4SortKey) {
+    const dir = query.sortBy === key ? (query.sortDir === "asc" ? "desc" : "asc") : L4_DEFAULT_SORT_DIR[key];
+    pushParams((params) => {
+      params.set("sortBy", key);
+      params.set("sortDir", dir);
+    });
+  }
+
   function clearFilters() {
     setSearchTerm("");
     pushParams((params) => {
-      params.delete("search");
-      params.delete("protocol");
+      for (const key of ["search", "protocol", "status"]) params.delete(key);
     });
   }
 
@@ -142,7 +270,45 @@ export default function L4ProxyHostsClient({
   };
 
   const openCreate = () => { setDuplicateHost(null); setDialogKey(k => k + 1); setCreateOpen(true); };
-  const openDuplicate = (host: L4ProxyHost) => { setDuplicateHost(host); setDialogKey(k => k + 1); setCreateOpen(true); };
+  const openDuplicate = (host: L4ProxyHost) => { setDetailId(null); setDuplicateHost(host); setDialogKey(k => k + 1); setCreateOpen(true); };
+  const openEdit = (host: L4ProxyHost) => { setDetailId(null); setEditHost(host); };
+
+  // ── Selection and bulk actions ──
+  const selectedHosts = hosts.filter((host) => selected.has(host.id));
+  const allSelected = hosts.length > 0 && selectedHosts.length === hosts.length;
+  const someSelected = selectedHosts.length > 0 && !allSelected;
+  const anyEnabled = selectedHosts.some((host) => host.enabled);
+  const anyDisabled = selectedHosts.some((host) => !host.enabled);
+
+  function toggleRow(id: number, checked: boolean) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleAll(checked: boolean) {
+    setSelected(checked ? new Set(hosts.map((host) => host.id)) : new Set());
+  }
+
+  function runBulk(operation: L4BulkOperation) {
+    const ids = selectedHosts.map((host) => host.id);
+    startBulk(async () => {
+      try {
+        const result = await bulkL4ProxyHostsAction(ids, operation);
+        if (result.ok) toast.success(result.message);
+        else toast.error(result.message, { duration: 10000 });
+        if (result.changed + result.submitted + result.unchanged > 0) setSelected(new Set());
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "The bulk action failed.");
+      }
+      setBulkDeleteOpen(false);
+      signalBannerRefresh();
+      router.refresh();
+    });
+  }
 
   const actionsMenu = (host: L4ProxyHost) => (
     <DropdownMenu>
@@ -152,146 +318,41 @@ export default function L4ProxyHostsClient({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => setEditHost(host)}>Edit</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => openDuplicate(host)}>Duplicate</DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-bad focus:text-bad" onSelect={() => setDeleteHost(host)}>
-          Delete
-        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => setDetailId(host.id)}>Details</DropdownMenuItem>
+        {canWrite && (
+          <>
+            <DropdownMenuItem onSelect={() => openEdit(host)}>Edit</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => openDuplicate(host)}>Duplicate</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="text-bad focus:text-bad" onSelect={() => setDeleteHost(host)}>
+              Delete
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
 
-  const nameButton = (host: L4ProxyHost) => (
+  const enabledSwitch = (host: L4ProxyHost) =>
+    canWrite && (
+      <Switch
+        checked={host.enabled}
+        aria-label={`${host.enabled ? "Disable" : "Enable"} ${host.name}`}
+        onCheckedChange={(checked) => handleToggleEnabled(host.id, checked)}
+      />
+    );
+
+  const nameButton = (host: L4ProxyHost, className?: string) => (
     <button
       type="button"
-      onClick={() => setSelectedId(host.id)}
-      aria-pressed={selected?.id === host.id}
-      className="text-left font-semibold text-foreground underline-offset-4 hover:underline"
+      onClick={() => setDetailId(host.id)}
+      className={cn("min-w-0 truncate text-left font-semibold text-foreground underline-offset-4 hover:underline", className)}
     >
       {host.name}
     </button>
   );
 
-  const columns = [
-    {
-      id: "name",
-      label: "Name",
-      sortKey: "name",
-      render: (host: L4ProxyHost) => (
-        <span className="flex min-w-0 flex-col gap-px">
-          {nameButton(host)}
-          <span className="text-xs text-soft">{matcherText(host)}</span>
-          <HostTagBadges tags={host.tags} />
-        </span>
-      ),
-    },
-    {
-      id: "listen",
-      label: "Listen",
-      sortKey: "listenAddress",
-      render: (host: L4ProxyHost) => (
-        <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-          <span className="num">{host.listenAddress}</span>
-          <ProtocolChip protocol={host.protocol} />
-        </span>
-      ),
-    },
-    {
-      id: "upstreams",
-      label: "Upstream",
-      sortKey: "upstreams",
-      render: (host: L4ProxyHost) => (
-        <span className="num whitespace-nowrap">
-          {host.upstreams[0]}
-          {host.upstreams.length > 1 && <span className="ml-1 text-soft">+{host.upstreams.length - 1}</span>}
-        </span>
-      ),
-    },
-    {
-      id: "tls",
-      label: "TLS",
-      render: (host: L4ProxyHost) => {
-        const tls = tlsView(host);
-        return (
-          <span className="flex flex-col">
-            <span className={cn(tls.muted && "text-soft")}>{tls.label}</span>
-            {tls.detail && <span className={cn("text-xs text-soft", tls.label === "Terminate" && "num")}>{tls.detail}</span>}
-          </span>
-        );
-      },
-    },
-    {
-      id: "proxyProtocol",
-      label: "PROXY protocol",
-      render: (host: L4ProxyHost) => {
-        const text = proxyProtocolText(host);
-        return <span className={cn(text === "Off" && "text-soft")}>{text}</span>;
-      },
-    },
-    {
-      id: "status",
-      label: "Status",
-      sortKey: "enabled",
-      render: (host: L4ProxyHost) => {
-        const status = l4HostStatus(host, portsDiff);
-        return <StatusDot tone={status.tone} label={status.label} className="whitespace-nowrap" />;
-      },
-    },
-    {
-      id: "actions",
-      label: "",
-      align: "right" as const,
-      width: 96,
-      render: (host: L4ProxyHost) => canWrite && (
-        <div className="flex items-center justify-end gap-2">
-          <Switch
-            checked={host.enabled}
-            aria-label={`${host.enabled ? "Disable" : "Enable"} ${host.name}`}
-            onCheckedChange={(checked) => handleToggleEnabled(host.id, checked)}
-          />
-          {actionsMenu(host)}
-        </div>
-      ),
-    },
-  ];
-
-  const mobileCard = (host: L4ProxyHost) => {
-    const status = l4HostStatus(host, portsDiff);
-    return (
-      <div
-        className={cn(
-          "flex items-start justify-between gap-3 rounded-xl border border-line bg-panel p-4",
-          selected?.id === host.id && "border-brand bg-brand-tint"
-        )}
-      >
-        <div className="flex min-w-0 flex-col gap-1">
-          <span className="flex flex-wrap items-center gap-2">
-            {nameButton(host)}
-            <ProtocolChip protocol={host.protocol} />
-          </span>
-          <span className="num truncate text-xs text-muted-foreground">
-            {host.listenAddress} → {host.upstreams[0]}
-            {host.upstreams.length > 1 ? ` +${host.upstreams.length - 1}` : ""}
-          </span>
-          <HostTagBadges tags={host.tags} />
-          <StatusDot tone={status.tone} label={status.label} className="mt-1" />
-        </div>
-        {canWrite && (
-          <div className="flex shrink-0 items-center gap-1">
-            <Switch
-              checked={host.enabled}
-              aria-label={`${host.enabled ? "Disable" : "Enable"} ${host.name}`}
-              onCheckedChange={(checked) => handleToggleEnabled(host.id, checked)}
-            />
-            {actionsMenu(host)}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const filtering = Boolean(initialSearch) || protocol !== "all";
+  const filtering = Boolean(query.search) || query.protocol !== "all" || query.status !== "all";
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -300,7 +361,6 @@ export default function L4ProxyHostsClient({
         breadcrumb={["Traffic", "L4 hosts"]}
         title="L4 hosts"
         count={totalHosts}
-        description={`TCP and UDP proxies for traffic that is not HTTP. ${productName} publishes their ports on the Caddy container.`}
         actions={
           canWrite ? (
             <Button onClick={openCreate}>
@@ -318,7 +378,7 @@ export default function L4ProxyHostsClient({
           <EmptyState
             icon={Network}
             title="No L4 hosts yet"
-            description="An L4 host forwards TCP or UDP traffic on a port of its own, for protocols that are not HTTP: SSH, mail, DNS over TLS, WireGuard."
+            description="Forward TCP or UDP traffic, such as SSH, mail or WireGuard, to a service on your network."
             action={
               canWrite ? (
                 <Button onClick={openCreate}>
@@ -339,56 +399,251 @@ export default function L4ProxyHostsClient({
                 type="search"
                 value={searchTerm}
                 onChange={(e) => handleSearchChange(e.target.value)}
-                placeholder="Name, port or upstream"
+                placeholder="Name, port, upstream or server name"
                 className="h-full min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-soft"
               />
             </label>
             <SegmentedControl<L4ProtocolFilter>
               label="Protocol"
-              value={protocol}
+              className="max-md:order-3"
+              value={query.protocol}
               onChange={handleProtocolChange}
               options={[
-                { value: "all", label: <>All <span className="num text-muted-foreground">{protocolCounts.all}</span></> },
-                { value: "tcp", label: <>TCP <span className="num text-muted-foreground">{protocolCounts.tcp}</span></> },
-                { value: "udp", label: <>UDP <span className="num text-muted-foreground">{protocolCounts.udp}</span></> },
+                { value: "all", label: <CountLabel label="All" count={protocolCounts.all} /> },
+                { value: "tcp", label: <CountLabel label="TCP" count={protocolCounts.tcp} /> },
+                { value: "udp", label: <CountLabel label="UDP" count={protocolCounts.udp} /> },
               ]}
             />
+            <SegmentedControl<L4StatusFilter>
+              label="Status"
+              className="max-md:order-1"
+              value={query.status}
+              onChange={handleStatusChange}
+              options={[
+                { value: "all", label: <CountLabel label="All" count={statusCounts.all} /> },
+                { value: "enabled", label: <CountLabel label="Enabled" count={statusCounts.enabled} /> },
+                { value: "disabled", label: <CountLabel label="Disabled" count={statusCounts.disabled} /> },
+              ]}
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" className="h-[38px] w-[38px] max-md:order-2 md:hidden" title={`Sort: ${L4_SORT_LABELS[query.sortBy]}`}>
+                  <ArrowUpDown aria-hidden="true" />
+                  <span className="sr-only">Sort: {L4_SORT_LABELS[query.sortBy]}</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48">
+                <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+                {(Object.keys(L4_SORT_LABELS) as L4SortKey[]).map((key) => (
+                  <DropdownMenuItem key={key} onSelect={() => handleSort(key)} className="justify-between">
+                    {L4_SORT_LABELS[key]}
+                    {query.sortBy === key &&
+                      (query.sortDir === "asc" ? (
+                        <ArrowUp aria-label="ascending" className="h-3.5 w-3.5" />
+                      ) : (
+                        <ArrowDown aria-label="descending" className="h-3.5 w-3.5" />
+                      ))}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {filtering && hosts.length > 0 && (
+              <Button variant="ghost" size="sm" className="max-md:order-4" onClick={clearFilters}>
+                Clear filters
+              </Button>
+            )}
           </div>
 
-          <section aria-label="L4 hosts" className="min-w-0">
-            <DataTable
-              columns={columns}
-              data={hosts}
-              keyField="id"
-              emptyMessage="No L4 host matches these filters."
-              pagination={pagination}
-              sort={initialSort}
-              mobileCard={mobileCard}
-              rowClassName={(host) =>
-                cn(selected?.id === host.id && "bg-brand-tint hover:bg-brand-tint", !host.enabled && "text-muted-foreground")
-              }
-            />
-            {hosts.length === 0 && filtering && (
-              <div className="mt-3 flex justify-center">
-                <Button variant="secondary" size="sm" onClick={clearFilters}>
-                  Clear filters
+          <section aria-label="L4 hosts" className="min-w-0 overflow-hidden rounded-2xl border border-line bg-panel">
+            {canWrite && selectedHosts.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 border-b border-line bg-brand-tint px-[18px] py-2.5">
+                <span className="mr-2 font-semibold" aria-live="polite">
+                  {plural(selectedHosts.length, "host")} selected
+                </span>
+                {anyDisabled && (
+                  <Button variant="outline" size="sm" disabled={bulkPending} onClick={() => runBulk({ type: "enable" })}>
+                    Enable
+                  </Button>
+                )}
+                {anyEnabled && (
+                  <Button variant="outline" size="sm" disabled={bulkPending} onClick={() => runBulk({ type: "disable" })}>
+                    Disable
+                  </Button>
+                )}
+                <Button variant="danger" size="sm" disabled={bulkPending} onClick={() => setBulkDeleteOpen(true)}>
+                  Delete
+                </Button>
+                <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setSelected(new Set())}>
+                  Clear selection
                 </Button>
               </div>
             )}
-          </section>
 
-          {selected && (
-            <L4HostDetail
-              host={selected}
-              status={l4HostStatus(selected, portsDiff)}
-              canWrite={canWrite}
-              onToggle={() => handleToggleEnabled(selected.id, !selected.enabled)}
-              onDuplicate={() => openDuplicate(selected)}
-              onEdit={() => setEditHost(selected)}
+            {hosts.length === 0 ? (
+              <EmptyState
+                compact
+                icon={null}
+                title="No L4 host matches these filters."
+                action={
+                  <Button variant="secondary" size="sm" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                }
+              />
+            ) : (
+              <>
+                <div className="hidden overflow-x-auto md:block">
+                  {/* Fixed column widths: long names, upstreams and tags are cut short instead of widening the table. */}
+                  <table className="w-full min-w-[880px] table-fixed border-collapse text-[13px]">
+                    <colgroup>
+                      {canWrite && <col className="w-[44px]" />}
+                      <col />
+                      <col className="w-[170px]" />
+                      <col className="w-[20%]" />
+                      {showTags && <col className="w-[160px]" />}
+                      <col className="w-[170px]" />
+                      <col className={canWrite ? "w-[104px]" : "w-[64px]"} />
+                    </colgroup>
+                    <thead>
+                      <tr className="text-left text-xs text-soft">
+                        {canWrite && (
+                          <th scope="col" className="border-b border-line py-2 pl-[18px] pr-2">
+                            <Checkbox
+                              aria-label="Select every host on this page"
+                              checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                              onCheckedChange={(checked) => toggleAll(checked === true)}
+                            />
+                          </th>
+                        )}
+                        <SortHeader label="Name" sortKey="name" query={query} onSort={handleSort} className={cn(!canWrite && "pl-[18px]")} />
+                        <SortHeader label="Listen" sortKey="listenAddress" query={query} onSort={handleSort} />
+                        <SortHeader label="Upstream" sortKey="upstreams" query={query} onSort={handleSort} />
+                        {showTags && (
+                          <th scope="col" className="border-b border-line px-2.5 py-2 font-medium">
+                            Tags
+                          </th>
+                        )}
+                        <SortHeader label="Status" sortKey="enabled" query={query} onSort={handleSort} />
+                        <th scope="col" className="border-b border-line py-2 pl-1.5 pr-[18px]">
+                          <span className="sr-only">Actions</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hosts.map((host) => {
+                        const isSelected = selected.has(host.id);
+                        const status = statusById.get(host.id)!;
+                        return (
+                          <tr
+                            key={host.id}
+                            className={cn(
+                              "border-b border-line last:border-b-0 hover:bg-panel2",
+                              // Chips keep their contrast on the tint.
+                              isSelected && "bg-brand-tint hover:bg-brand-tint [&_[data-chip]]:bg-panel",
+                              !host.enabled && "text-muted-foreground"
+                            )}
+                          >
+                            {canWrite && (
+                              <td className="py-2.5 pl-[18px] pr-2">
+                                <Checkbox
+                                  aria-label={`Select ${host.name}`}
+                                  checked={isSelected}
+                                  onCheckedChange={(checked) => toggleRow(host.id, checked === true)}
+                                />
+                              </td>
+                            )}
+                            <td className={cn("px-2.5 py-2.5", !canWrite && "pl-[18px]")}>
+                              <span className="flex min-w-0 items-baseline gap-2">
+                                {nameButton(host, "max-w-full shrink-0")}
+                                <ServerNames host={host} />
+                              </span>
+                            </td>
+                            <td className="px-2.5 py-2.5">
+                              <Listen host={host} />
+                            </td>
+                            <td className="px-2.5 py-2.5">
+                              <FirstAndMore items={host.upstreams} />
+                            </td>
+                            {showTags && (
+                              <td className="px-2.5 py-2.5">
+                                <TagChips tags={host.tags} />
+                              </td>
+                            )}
+                            <td className="px-2.5 py-2.5">
+                              <StatusDot tone={status.tone} label={status.label} className="whitespace-nowrap" />
+                            </td>
+                            <td className="py-2 pl-1.5 pr-[18px]">
+                              <span className="flex items-center justify-end gap-2">
+                                {enabledSwitch(host)}
+                                {actionsMenu(host)}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <ul className="flex flex-col md:hidden" aria-label="L4 hosts">
+                  {hosts.map((host) => {
+                    const status = statusById.get(host.id)!;
+                    return (
+                      <li
+                        key={host.id}
+                        className={cn("flex items-start gap-3 border-b border-line px-4 py-3 last:border-b-0", selected.has(host.id) && "bg-brand-tint [&_[data-chip]]:bg-panel")}
+                      >
+                        {canWrite && (
+                          <Checkbox
+                            className="mt-1"
+                            aria-label={`Select ${host.name}`}
+                            checked={selected.has(host.id)}
+                            onCheckedChange={(checked) => toggleRow(host.id, checked === true)}
+                          />
+                        )}
+                        <div className="flex min-w-0 flex-1 flex-col gap-1">
+                          {nameButton(host)}
+                          <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                            <Listen host={host} className="shrink-0" />
+                            <span aria-hidden="true" className="text-soft">→</span>
+                            <FirstAndMore items={host.upstreams} />
+                          </span>
+                          <ServerNames host={host} />
+                          <StatusDot tone={status.tone} label={status.label} className="text-xs" />
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          {enabledSwitch(host)}
+                          {actionsMenu(host)}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+
+            <Pagination
+              page={pagination.page}
+              perPage={pagination.perPage}
+              total={pagination.total}
+              noun="hosts"
+              label="Pages of L4 hosts"
+              hrefFor={hrefFor}
+              className="border-t border-line px-[18px] py-3"
             />
-          )}
+          </section>
         </>
       )}
+
+      <L4HostDetailSheet
+        host={detailHost}
+        status={detailHost ? statusById.get(detailHost.id) ?? null : null}
+        canWrite={canWrite}
+        onClose={() => setDetailId(null)}
+        onToggle={(host) => handleToggleEnabled(host.id, !host.enabled)}
+        onDuplicate={openDuplicate}
+        onEdit={openEdit}
+      />
 
       <CreateL4HostDialog
         key={dialogKey}
@@ -417,6 +672,34 @@ export default function L4ProxyHostsClient({
           approval={approval}
         />
       )}
+
+      <AppDialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        title={`Delete ${plural(selectedHosts.length, "L4 host")}`}
+        maxWidth="md"
+        submitLabel="Delete"
+        isSubmitting={bulkPending}
+        onSubmit={() => runBulk({ type: "delete" })}
+      >
+        <div className="flex flex-col gap-3 text-sm">
+          <p>These hosts stop forwarding traffic on their ports:</p>
+          <ul className="flex max-h-48 flex-col gap-1 overflow-y-auto rounded-lg border border-line bg-panel2 px-3 py-2">
+            {selectedHosts.map((host) => (
+              <li key={host.id} className="flex min-w-0 items-baseline gap-2">
+                <span className="truncate">{host.name}</span>
+                <span className="num shrink-0 text-xs text-soft">
+                  {host.listenAddress}/{host.protocol}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {approval && approval.policies.length > 0 && (
+            <p className="text-muted-foreground">Hosts a change approval policy protects get a change request instead.</p>
+          )}
+          <p className="font-medium text-bad">This cannot be undone.</p>
+        </div>
+      </AppDialog>
     </div>
   );
 }

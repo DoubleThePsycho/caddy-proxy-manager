@@ -10,8 +10,10 @@
  *   the dashboard shows them). Rows are read with only the columns a result
  *   needs: never certificate keys or password hashes.
  * - Actions need the write permission of the page they open; pages, the
- *   permission of their page guard (src/lib/navigation.ts); settings
- *   sections, settings:read plus the section's own permission.
+ *   permission of their page guard (src/lib/navigation.ts); the sections of
+ *   the settings pages (src/lib/settings-sections.ts), settings:read plus the
+ *   section's own permission. A section at the top of its page is found as
+ *   that page.
  * - The query is matched literally (LIKE wildcards are escaped), case
  *   insensitively, and cut to MAX_SEARCH_QUERY_LENGTH characters.
  */
@@ -23,7 +25,7 @@ import { can, listHeldPermissions, scopeTagsFor, tenantOf, type Access, type Per
 import { tagsMatchAny } from "./host-tag-filter";
 import { certificateIdsInScope } from "./access-scope";
 import { NAV_ACCOUNT, NAV_FOOTER, NAV_GROUPS, visibleNavPages, type NavEntryKey } from "./navigation";
-import { SETTINGS_SECTIONS, settingsSectionHref } from "./settings-sections";
+import { SETTINGS_SECTIONS } from "./settings-sections";
 import { BRAND_NAME, documentationUrl } from "./brand";
 import { normalizeSearchQuery, SEARCH_LIMITS, type SearchResponse, type SearchResult, type SearchRunAction } from "./search-results";
 import { organizationCondition, type OrganizationFilter } from "@/ee/multi-tenancy/scope";
@@ -284,9 +286,17 @@ const ENTRY_LABEL = new Map<NavEntryKey, string>(
   [...NAV_GROUPS.flatMap((group) => group.entries), ...NAV_FOOTER, ...NAV_ACCOUNT].map((entry) => [entry.key, entry.label])
 );
 
+/** A settings section at the top of its page (no anchor) is found as the page, by its words. */
+const PAGE_SECTIONS = SETTINGS_SECTIONS.filter((section) => !section.href.includes("#"));
+/** Sections further down a page are settings results of their own. */
+const CARD_SECTIONS = SETTINGS_SECTIONS.filter((section) => section.href.includes("#"));
+
 /** Words that also find a page; a page that took over another keeps the old page's name here. */
 const PAGE_KEYWORDS: Readonly<Record<string, readonly string[]>> = {
   "/security": ["waf events", "blocked requests", "attacks", "block an address", "firewall"],
+  ...Object.fromEntries(
+    PAGE_SECTIONS.map((section) => [section.href, [section.name, section.desc, ...section.keywords]] as [string, readonly string[]])
+  ),
 };
 
 function pageResults(access: Access): (SearchResult & { keywords: string[] })[] {
@@ -306,29 +316,48 @@ function pageResults(access: Access): (SearchResult & { keywords: string[] })[] 
   });
 }
 
-/** Settings that live on other pages, shown with the settings sections. */
-const OTHER_SETTINGS: readonly { id: string; title: string; subtitle: string; keywords: readonly string[]; href: string; permission: Permission | null }[] = [
+/** Settings that live on other pages, shown with the settings sections; providerOnly ones not to client organisations. */
+const OTHER_SETTINGS: readonly {
+  id: string;
+  title: string;
+  subtitle: string;
+  keywords: readonly string[];
+  href: string;
+  permission: Permission | null;
+  providerOnly?: boolean;
+}[] = [
   { id: "api-tokens", title: "API tokens", subtitle: "Profile · Bearer tokens for /api/v1", keywords: ["token", "bearer", "rest", "api key"], href: "/profile", permission: null },
   { id: "mfa", title: "Multi-factor authentication", subtitle: "Profile · authenticator app and backup codes", keywords: ["mfa", "totp", "2fa", "two-factor"], href: "/profile", permission: null },
   { id: "waf", title: "WAF settings", subtitle: "WAF · global mode, rules and exclusions", keywords: ["waf", "coraza", "crs", "owasp", "firewall", "exclusion"], href: "/waf", permission: "waf:read" },
+  {
+    id: "blocked-sources",
+    title: "Blocked sources",
+    subtitle: "Access lists · addresses and countries every host refuses",
+    keywords: ["block", "ban", "blocklist", "deny", "ip", "address", "country", "blocked sources"],
+    href: "/access-lists?tab=blocked-sources",
+    permission: "access_lists:read",
+    providerOnly: true,
+  },
   { id: "branding", title: "Branding", subtitle: "Product name, logos and colours", keywords: ["white label", "logo", "colour", "color", "theme"], href: "/branding", permission: "branding:read" },
 ];
 
 function settingsResults(access: Access): (SearchResult & { keywords: readonly string[] })[] {
   const sections = can(access, "settings:read")
-    ? SETTINGS_SECTIONS.filter((section) => !section.permission || can(access, section.permission)).map((section) => ({
+    ? CARD_SECTIONS.filter((section) => !section.permission || can(access, section.permission)).map((section) => ({
         ...result({
           group: "settings",
           kind: "setting",
           id: `setting:${section.id}`,
           title: section.name,
-          subtitle: `Settings · ${section.groupLabel} · ${section.desc}`,
-          href: settingsSectionHref(section.id),
+          subtitle: `${section.page} · ${section.desc}`,
+          href: section.href,
         }),
         keywords: section.keywords,
       }))
     : [];
-  const others = OTHER_SETTINGS.filter((item) => item.permission === null || can(access, item.permission)).map((item) => ({
+  const others = OTHER_SETTINGS.filter(
+    (item) => (item.permission === null || can(access, item.permission)) && (!item.providerOnly || tenantOf(access) === null)
+  ).map((item) => ({
     ...result({ group: "settings", kind: "setting", id: `setting:${item.id}`, title: item.title, subtitle: item.subtitle, href: item.href }),
     keywords: item.keywords,
   }));
@@ -344,7 +373,7 @@ const DOCS: readonly { id: string; title: string; subtitle: string; keywords: re
   { id: "waf", title: "Web application firewall", subtitle: "Modes, the Core Rule Set, exclusions and custom rules", keywords: ["waf", "coraza", "owasp", "crs", "exclusions", "false positive"], path: "documentation/waf.md" },
   { id: "audit-log", title: "Audit log", subtitle: "Every change and sign-in, with filters and diffs", keywords: ["audit", "events", "changes", "who did"], path: "documentation/audit-log.md" },
   { id: "profile", title: "Profile, sessions and API tokens", subtitle: "Your account, how you sign in, sessions and tokens", keywords: ["profile", "password", "passkey", "sessions", "api token", "bearer"], path: "documentation/profile.md" },
-  { id: "settings", title: "Settings", subtitle: "Defaults for every host and how this install runs", keywords: ["settings", "defaults", "configuration"], path: "documentation/settings.md" },
+  { id: "settings", title: "Settings", subtitle: "Where each setting is, and the general settings", keywords: ["settings", "defaults", "configuration"], path: "documentation/settings.md" },
   { id: "postgresql", title: "PostgreSQL", subtitle: "Run on PostgreSQL, and move an install from SQLite", keywords: ["postgres", "postgresql", "database", "sqlite", "migrate", "copy", "docker compose", "backup"], path: "documentation/postgresql.md" },
   { id: "setup-checklist", title: "Setup checklist", subtitle: "The first steps on a fresh install", keywords: ["setup", "onboarding", "getting started", "checklist"], path: "documentation/setup-checklist.md" },
   { id: "needs-attention", title: "Needs attention", subtitle: "What the overview flags, and who sees it", keywords: ["attention", "overview", "problems", "warnings"], path: "documentation/needs-attention.md" },

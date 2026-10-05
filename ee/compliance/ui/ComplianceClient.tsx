@@ -40,7 +40,8 @@ type Props = {
   /** An incident to open in the register (?incident=). */
   initialIncidentId?: number | null;
   reports: ReportListPage;
-  incidents: IncidentSummaryView[];
+  /** A page of the incident register, newest first (?incidentPage=). */
+  incidents: { incidents: IncidentSummaryView[]; total: number; page: number; perPage: number };
   controls: ControlStatusView;
   schedules: ReportScheduleView[];
   restoreTests: { tests: RestoreTestView[]; total: number; page: number; perPage: number };
@@ -89,7 +90,7 @@ export default function ComplianceClient(props: Props) {
   function changeTab(value: string) {
     const next = value as ComplianceTab;
     setTab(next);
-    replaceQuery({ tab: next === "overview" ? null : next, page: null, incident: null });
+    replaceQuery({ tab: next === "overview" ? null : next, page: null, incident: null, incidentPage: null, restorePage: null });
   }
 
   function changeFramework(value: ComplianceFramework) {
@@ -148,13 +149,12 @@ export default function ComplianceClient(props: Props) {
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-line bg-panel px-3.5 py-2.5 text-[13px] text-muted-foreground">
           <span className="text-foreground">{info.name}</span>
           <span>{info.note}</span>
-          <span>Every report is hashed and recorded in the audit log</span>
         </div>
 
         {!props.configurable && (
           <Banner tone="info" title="Read-only without a license.">
             {`Generating reports and creating incidents, schedules and test restores needs a license with compliance reports (${props.editionLabel} edition). ` +
-              "Stored reports and drafts stay readable, downloadable and deletable, and incidents can still be assessed, classified and closed. "}
+              "Incidents can still be assessed, classified and closed. "}
             <Link href="/license" className="text-brand underline-offset-4 hover:underline">Licensing</Link>
           </Banner>
         )}
@@ -167,7 +167,7 @@ export default function ComplianceClient(props: Props) {
           <ControlsTable controls={props.controls} framework={framework} />
           <RestoreTests initial={props.restoreTests} destinations={props.destinations} canWrite={props.canWrite} configurable={props.configurable} />
           <IncidentRegister
-            incidents={props.incidents}
+            page={props.incidents}
             sources={props.sources}
             canWrite={props.canWrite}
             configurable={props.configurable}
@@ -205,9 +205,6 @@ export default function ComplianceClient(props: Props) {
             canOpenAiSettings={props.ask.canOpenAiSettings}
             onSavedChange={() => router.refresh()}
           />
-          {props.canWrite && (
-            <p className="m-0 mt-3 text-xs text-soft">Saved questions can be added to a report schedule on the Reports tab; each run re-runs them for its period.</p>
-          )}
         </AppDialog>
       )}
     </div>

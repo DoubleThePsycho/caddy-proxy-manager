@@ -6,11 +6,13 @@ import { Fragment, useMemo, useState } from "react";
 import { BellRing, ChevronRight, Info, OctagonAlert, TriangleAlert, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Pagination } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useFormat } from "@/components/preferences/PreferencesProvider";
 import { cn } from "@/lib/utils";
+import { paginate } from "@/src/lib/pagination";
 import type { AlertEventView, AlertRuleView, FiringAlertView, Severity } from "@/ee/alerting/types";
 import { auditLogAround, formatDuration, subjectLink, type AlertEpisode } from "./format";
 import { DeliveryChip, SeverityPill } from "./parts";
@@ -197,30 +199,20 @@ function EpisodeDetail({ episode, hostNames }: { episode: AlertEpisode; hostName
 export default function FiringTab({ firing, episodes, rules, hostNames, now, canEditRule, onEditRule }: Props) {
   const format = useFormat();
   const [open, setOpen] = useState<number | null>(null);
+  const [page, setPage] = useState(1);
+  const shown = paginate(episodes, page);
   const ruleById = useMemo(() => new Map(rules.map((rule) => [rule.id, rule])), [rules]);
   const pending = rules.filter((rule) => rule.enabled).flatMap((rule) => rule.pending.map((item) => ({ rule, item })));
 
   return (
     <div className="flex flex-col gap-5">
       <section aria-labelledby="firing-now-title" className="flex flex-col gap-2.5">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1.5">
-          <h2 id="firing-now-title" className="m-0 text-base leading-6 font-semibold">
-            Firing now
-          </h2>
-          {firing.length > 0 && (
-            <span className="text-[13px] text-soft">
-              <span className="num">{firing.length}</span> alert{firing.length === 1 ? "" : "s"}. Nothing is sent again while it keeps firing; you hear once more when it clears.
-            </span>
-          )}
-        </div>
+        <h2 id="firing-now-title" className="m-0 text-base leading-6 font-semibold">
+          Firing now
+        </h2>
         {firing.length === 0 ? (
           <div className="rounded-2xl border border-line bg-panel">
-            <EmptyState
-              compact
-              icon={BellRing}
-              title="Nothing is firing"
-              description="Alerts show here while their condition holds. Rules are checked every minute."
-            />
+            <EmptyState compact icon={BellRing} title="Nothing is firing" />
           </div>
         ) : (
           firing.map((alert) => (
@@ -252,18 +244,23 @@ export default function FiringTab({ firing, episodes, rules, hostNames, now, can
 
       <SectionCard
         title="Last 7 days"
-        description={
-          episodes.length > 0 ? (
-            <>
-              <span className="num">{episodes.length}</span> alert{episodes.length === 1 ? "" : "s"} · select one for what happened and who was told
-            </>
+        count={episodes.length > 0 ? episodes.length : null}
+        link={{ label: "Full history", href: "/alerts?tab=history" }}
+        footer={
+          shown.pageCount > 1 ? (
+            <Pagination
+              page={shown.page}
+              perPage={shown.perPage}
+              total={shown.total}
+              noun="alerts"
+              label="Pages of the last 7 days"
+              onPageChange={setPage}
+            />
           ) : undefined
         }
-        link={{ label: "Full history", href: "/alerts?tab=history" }}
-        footer={<span className="text-xs text-soft">History is kept for 90 days. Times in {format.timeZone}.</span>}
       >
         {episodes.length === 0 ? (
-          <EmptyState compact title="No alerts in the last 7 days" description="Fired and resolved alerts are listed here for a week." />
+          <EmptyState compact title="No alerts in the last 7 days" />
         ) : (
           <Table className="min-w-[980px]">
             <TableHeader>
@@ -277,7 +274,7 @@ export default function FiringTab({ firing, episodes, rules, hostNames, now, can
               </TableRow>
             </TableHeader>
             <TableBody>
-              {episodes.map((episode) => {
+              {shown.items.map((episode) => {
                 const expanded = open === episode.id;
                 const detailId = `alert-episode-${episode.id}`;
                 return (

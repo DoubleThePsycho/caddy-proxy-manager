@@ -108,15 +108,15 @@ Deleting an organisation is refused while it owns proxy hosts, certificates, acc
 
 ## The Organisations page
 
-The list shows each organisation's proxy hosts and users against its limits (a bar turns amber at 80% of a limit), its allowed upstreams, its requests in the last full calendar month and whether it is enabled (a disabled one says since when, from the audit log). **Near a limit** narrows the list to organisations at 80% or more of either limit; a limit of 0 counts as reached. The footer counts the hosts and users that belong to no organisation.
+The list shows each organisation's proxy hosts and users against its limits (a bar turns amber at 80% of a limit), its allowed upstreams, its requests in the last full calendar month and whether it is enabled (a disabled one says since when, from the audit log). **Near a limit** narrows the list to organisations at 80% or more of either limit; a limit of 0 counts as reached. The search matches names, slugs and allowed upstreams. The list shows 25 organisations a page (`?page=` in the address); a new search or filter starts on the first page, and opening an organisation keeps the list's page. The footer counts the hosts and users that belong to no organisation.
 
-Opening an organisation (its name in the list, or `/organizations?organization=<id>`) shows its limits, its allowed upstreams with what each entry admits, its usage for the last full month with a CSV link and the current month so far, its hosts with their protections and its members with their role and last sign-in. **Show only this organisation** sets the organisation switcher to it; **Open in proxy hosts** and **Add user** do the same and open that page.
+Opening an organisation (its name in the list, or `/organizations?organization=<id>`) shows its limits, its allowed upstreams with what each entry admits, its usage for the last full month with a CSV link and the current month so far, its hosts with their protections and its members with their role and last sign-in. Hosts (up to 50, the rest in Proxy hosts) and members show 25 a page (`?hosts=`, `?members=`); with more than 25 members a search over e-mail, name and role appears. **Show only this organisation** sets the organisation switcher to it; **Open in proxy hosts** and **Add user** do the same and open that page.
 
 What the page shows follows the viewer's permissions: usage figures need `usage_reports:read`, and the host list needs `proxy_hosts:read` (a role scoped to tags sees only its tagged hosts).
 
 ## Usage reports
 
-**Usage** (and `GET /api/v1/usage-reports`, `?format=csv` for billing) shows, per organisation and period (a calendar month, or `from`/`to`): proxy hosts (and how many are enabled) and users now, requests, bytes served and WAF blocks in the period. Traffic is counted over the host names the organisation serves now (exact domains and names its wildcards cover, port and case ignored), from ClickHouse, so only as far back as analytics retention (90 days by default) and nothing when analytics are off. Traffic of a domain counts for its current owner.
+**Usage** (and `GET /api/v1/usage-reports`, `?format=csv` for billing) shows, per organisation and period (a calendar month, or `from`/`to`): proxy hosts (and how many are enabled) and users now, requests, bytes served and WAF blocks in the period. The page lists 25 rows a page, with a search over names and slugs once there are more; the tiles add up every row. Traffic is counted over the host names the organisation serves now (exact domains and names its wildcards cover, port and case ignored), from ClickHouse, so only as far back as analytics retention (90 days by default) and nothing when analytics are off. Traffic of a domain counts for its current owner.
 
 ## License
 

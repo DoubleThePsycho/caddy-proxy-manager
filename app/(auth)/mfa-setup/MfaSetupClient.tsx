@@ -113,24 +113,18 @@ export default function MfaSetupClient({
         <AuthBrand />
 
         <section aria-labelledby="mfa-setup-title" className="flex flex-col gap-5 rounded-2xl border border-line bg-panel p-7 text-card-foreground max-sm:p-5">
-          <div className="flex flex-col gap-1">
-            <h1 id="mfa-setup-title" className="m-0 text-2xl font-semibold leading-8 tracking-tight">
-              Set up multi-factor authentication
-            </h1>
-            <p className="m-0 text-muted-foreground [text-wrap:pretty]">
-              A code from an authenticator app, or a passkey, as a second step when you sign in to {branding.productName}.
-            </p>
-          </div>
+          <h1 id="mfa-setup-title" className="m-0 text-2xl font-semibold leading-8 tracking-tight">
+            Set up multi-factor authentication
+          </h1>
 
           {!enabled && gate === "required" && (
             <Banner tone="bad" layout="stacked" title="Required for your account">
-              Your administrator requires multi-factor authentication for your account. Set it up to continue.
+              Set it up to continue.
             </Banner>
           )}
           {!enabled && gate === "prompt" && (
             <Banner tone="warn" layout="stacked" title="Required for your account">
-              Your administrator requires multi-factor authentication for your account
-              {deadline ? `. Set it up by ${formatDeadline(deadline)}; after that you cannot use the dashboard without it.` : "."}
+              {deadline ? `Set it up by ${formatDeadline(deadline)}; after that you cannot use the dashboard without it.` : null}
             </Banner>
           )}
 

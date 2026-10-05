@@ -160,7 +160,7 @@ function MitigatedSummary({ data }: { data: SecurityPageData }) {
                     {data.permissions.canReadSettings && (
                       <>
                         {" · "}
-                        <Link href="/settings?section=rate-limit" className="text-brand hover:text-foreground">
+                        <Link href="/rate-limiting" className="text-brand hover:text-foreground">
                           Add one
                         </Link>
                       </>
@@ -203,10 +203,7 @@ function MitigatedSummary({ data }: { data: SecurityPageData }) {
             </span>
           </>
         ) : (
-          <>
-            <span className="text-lg leading-8 text-soft">None</span>
-            <span className="text-xs text-soft">No host had events in this range.</span>
-          </>
+          <span className="text-lg leading-8 text-soft">None</span>
         )}
       </div>
     </div>
@@ -252,7 +249,7 @@ function MitigationChart({ data }: { data: SecurityPageData }) {
   const series = data.series.map((entry) => ({ key: entry.key, label: SOURCE_LABELS[entry.key], color: SOURCE_COLORS[entry.key], values: entry.values }));
   const title = `Mitigated requests by source, ${range.label}`;
   return (
-    <SectionCard title={title} divided={false} contentClassName="flex flex-col gap-3 px-5 pb-3.5">
+    <SectionCard title={title} divided={false} className="relative" contentClassName="flex flex-col gap-3 px-5 pb-3.5">
       <PeakNote data={data} />
       <StackedBarChart
         title={title}
@@ -299,7 +296,6 @@ function TopRules({
           compact
           icon={ShieldOff}
           title="No WAF rule matched"
-          description="Rules that match requests in this range are listed here, with where they matched."
           action={
             <Button asChild size="sm" variant="outline">
               <Link href="/waf">WAF settings</Link>
@@ -395,7 +391,6 @@ function TopSources({ data, blocked, onBlock }: { data: SecurityPageData; blocke
         <EmptyState
           compact
           title="No source addresses"
-          description="Addresses whose requests were stopped in this range are listed here."
           action={
             data.range.preset !== "30d" ? (
               <Button asChild size="sm" variant="outline">
@@ -526,8 +521,7 @@ export default function SecurityClient({ data }: { data: SecurityPageData }) {
       )}
       {disabled && (
         <Banner tone="info" title="Analytics is off.">
-          Security events are read from ClickHouse, which is not configured (CLICKHOUSE_PASSWORD is not set). The WAF and your access rules still
-          stop requests; their events are not stored.
+          The WAF and your access rules still stop requests; their events are not stored.
         </Banner>
       )}
       {data.status === "unavailable" && (
@@ -539,9 +533,7 @@ export default function SecurityClient({ data }: { data: SecurityPageData }) {
               Try again
             </Button>
           }
-        >
-          The numbers and events below stay empty until it does.
-        </Banner>
+        />
       )}
 
       <RuleSetStrip ruleSet={data.ruleSet} />
@@ -550,7 +542,13 @@ export default function SecurityClient({ data }: { data: SecurityPageData }) {
         <SectionCard title="Events" padded>
           <EmptyState
             title="No events without analytics"
-            description="Set CLICKHOUSE_PASSWORD and start the ClickHouse service to keep WAF events and the requests your rules stop."
+            description={
+              <>
+                To keep them, add <span className="num">clickhouse</span> to <span className="num">COMPOSE_PROFILES</span> and set{" "}
+                <span className="num">CLICKHOUSE_PASSWORD</span> in <span className="num">.env</span>, then run{" "}
+                <span className="num">docker compose up -d</span>.
+              </>
+            }
             action={
               <Button asChild variant="outline">
                 <Link href="/waf">WAF settings</Link>
@@ -600,7 +598,7 @@ export default function SecurityClient({ data }: { data: SecurityPageData }) {
         onOpenChange={(open) => setExclusion((current) => ({ ...current, open }))}
         hosts={data.exclusionHosts}
         initial={exclusion.draft}
-        description="Skip one rule for requests in scope. Every other rule still checks them. Narrow it to the host, path and variable that need it."
+        description="Skip one rule for the requests in scope. Narrow it to the host, path and variable that need it."
         onCreated={() => router.refresh()}
       />
       <BlockSourceDialog target={blockTarget} onClose={() => setBlockTarget(null)} onBlocked={() => router.refresh()} />

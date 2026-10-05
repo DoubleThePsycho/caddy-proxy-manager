@@ -94,7 +94,6 @@ export function CaCertDrawer({ open, cert, onClose }: Props) {
                 rows={8}
                 className="font-mono text-xs"
               />
-              <p className="text-xs text-muted-foreground">PEM-encoded X.509 CA certificate</p>
             </div>
             <div className="flex gap-2 justify-end mt-auto pt-2">
               <Button type="button" variant="outline" onClick={handleClose} disabled={isPending}>
@@ -128,7 +127,6 @@ export function CaCertDrawer({ open, cert, onClose }: Props) {
                     autoFocus
                     placeholder="Staff client CA"
                   />
-                  <p className="text-xs text-muted-foreground">How the dashboard names it</p>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="gen-cn">Common name (CN)</Label>
@@ -137,7 +135,7 @@ export function CaCertDrawer({ open, cert, onClose }: Props) {
                     name="common_name"
                     placeholder="Staff client CA"
                   />
-                  <p className="text-xs text-muted-foreground">CN field in the certificate. Defaults to the name above if left blank.</p>
+                  <p className="text-xs text-muted-foreground">Defaults to the name.</p>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="gen-validity">Validity</Label>
@@ -191,7 +189,7 @@ export function CaCertDrawer({ open, cert, onClose }: Props) {
                     placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
                     className="font-mono text-xs"
                   />
-                  <p className="text-xs text-muted-foreground">The CA's PEM certificate; no private key is needed</p>
+                  <p className="text-xs text-muted-foreground">No private key needed.</p>
                 </div>
                 <div className="flex gap-2 justify-end mt-auto pt-2">
                   <Button type="button" variant="outline" onClick={handleClose} disabled={isPending}>

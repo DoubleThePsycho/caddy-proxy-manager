@@ -655,6 +655,6 @@ describe('UI', () => {
     const buttonClass = (label: string) => html.match(new RegExp(`<button[^>]*class="([^"]*)"[^>]*>${label}</button>`))?.[1];
     expect(buttonClass('Yes, share')).toBeTruthy();
     expect(buttonClass('Yes, share')).toBe(buttonClass("No, don't share"));
-    expect(html).toContain('/settings?section=usage-ping');
+    expect(html).toContain('href="/settings#usage-ping"');
   });
 });

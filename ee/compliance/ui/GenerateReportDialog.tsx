@@ -127,7 +127,7 @@ export default function GenerateReportDialog({ open, onClose, configurable }: { 
             />
           </Field>
         </div>
-        <p className="m-0 text-xs text-soft">The report is stored until you delete it, with its SHA-256 recorded in the audit log. Periods span at most 366 days.</p>
+        <p className="m-0 text-xs text-soft">Periods span at most 366 days.</p>
         {error && (
           <Banner tone="bad" live>
             {error}

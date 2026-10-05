@@ -100,10 +100,6 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
         padded
         contentClassName="flex flex-col gap-4"
       >
-          <p className="m-0 text-[13px] text-muted-foreground">
-            Rules with AI explanations get 2-4 sentences on what the alert means and what to do next, written by your own
-            model from the alert&apos;s facts only.
-          </p>
           {!canConfigure && (
             <Banner tone="info">
               Setting up the AI analyst needs a license that includes it; a provider already set up keeps working and can
@@ -144,9 +140,6 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
                 onChange={(event) => setModel(event.target.value)}
                 placeholder={provider === "anthropic" ? settings.defaultModel : "llama3.1"}
               />
-              {provider === "anthropic" && (
-                <p className="text-xs text-muted-foreground">Default {settings.defaultModel}. Requests use low effort and are capped at 1024 output tokens.</p>
-              )}
             </div>
             {provider === "openai_compatible" && (
               <div className="space-y-1.5">
@@ -172,9 +165,7 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
                   Remove the stored key
                 </label>
               )}
-              <p className="text-xs text-muted-foreground">
-                Stored encrypted and only sent to this provider; changing the provider or base URL asks for it again.
-              </p>
+              <p className="text-xs text-muted-foreground">Changing the provider or base URL asks for it again.</p>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <Switch checked={enabled} onCheckedChange={setEnabled} disabled={!canConfigure} />
@@ -213,30 +204,11 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
             ))}
       </SectionCard>
 
-      <SectionCard
-        title="What the model sees"
-        description="Only structured facts about the alert, never logs or raw requests."
-        padded
-        contentClassName="flex flex-col gap-2 text-[13px] text-muted-foreground"
-      >
-          <p>
-            For each alert the model receives its type, severity and aggregated facts (for example a certificate&apos;s name
-            and expiry date, or blocked-request counts and the top WAF rules). Values that can come from requests or logs, such
-            as host names and rule messages, are passed as data the model is told never to follow, and it has no tools.
-          </p>
-          <p>
-            The explanation is appended to the notification, labeled as AI-generated. If the model fails, refuses or takes
-            longer than 15 seconds, the alert is sent without it.
-          </p>
-          <p>
-            The daily digest&apos;s summary is written the same way from the digest&apos;s aggregated figures; without it, or
-            when the model fails, the plain digest is sent.
-          </p>
-          <p>
-            For analytics questions the model gets the question and the query schema, never SQL to run; the query is checked
-            and run here. The summary is written from aggregated figures, with client addresses, user agents and paths as
-            placeholders unless you allow them below.
-          </p>
+      <SectionCard title="What the model sees" padded contentClassName="text-[13px] text-muted-foreground">
+        <p className="m-0">
+          Aggregated facts about the alert, the digest or the question, never logs or raw requests.
+          {questions && " Client addresses, user agents and paths stay hidden unless you allow them below."}
+        </p>
       </SectionCard>
 
       {digest && <DigestSection settings={digest} channels={channels} canConfigure={canConfigure} aiConfigured={settings.configured} />}

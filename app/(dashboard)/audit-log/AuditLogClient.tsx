@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Download, RadioTower, Search, X } from "lucide-react";
+import { Download, RadioTower, Search, X } from "lucide-react";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Pagination } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { useFormat } from "@/components/preferences/PreferencesProvider";
@@ -150,8 +151,6 @@ export default function AuditLogClient({
     narrowed && totalInRange !== null
       ? `${format.number(total)} of ${eventsWord(totalInRange)}${rangeText ? ` ${rangeText}` : ""} match`
       : `${eventsWord(total)}${rangeText ? ` ${rangeText}` : ""}`;
-  const firstShown = total === 0 ? 0 : (page - 1) * perPage + 1;
-  const lastShown = Math.min(total, (page - 1) * perPage + events.length);
   const pages = Math.max(1, Math.ceil(total / perPage));
   const anyFilter = narrowed || customPeriod;
 
@@ -161,7 +160,6 @@ export default function AuditLogClient({
         className="mb-0"
         breadcrumb={["Observe", "Audit log"]}
         title="Audit log"
-        description="Every change, sign-in and check, linked into a tamper-evident hash chain."
         actions={
           <>
             {sinks !== null && (
@@ -298,50 +296,16 @@ export default function AuditLogClient({
           ) : undefined
         }
         footer={
-          <div className="flex flex-wrap items-center gap-2.5 text-muted-foreground">
-            <span>
-              {total === 0 ? (
-                "Nothing to show"
-              ) : (
-                <>
-                  <span className="num">{format.number(firstShown)}</span> to <span className="num">{format.number(lastShown)}</span> of{" "}
-                  <span className="num">{format.number(total)}</span>
-                </>
-              )}
-            </span>
-            {pages > 1 && (
-              <span className="flex items-center gap-1.5">
-                {page > 1 ? (
-                  <Button asChild variant="outline" size="icon-sm" aria-label="Newer events">
-                    <Link href={auditLogHref({ ...filters, page: page - 1 }, pathname)} scroll={false}>
-                      <ChevronLeft />
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="icon-sm" aria-label="Newer events" disabled>
-                    <ChevronLeft />
-                  </Button>
-                )}
-                <span className="text-[13px]">
-                  Page <span className="num">{page}</span> of <span className="num">{format.number(pages)}</span>
-                </span>
-                {page < pages ? (
-                  <Button asChild variant="outline" size="icon-sm" aria-label="Older events">
-                    <Link href={auditLogHref({ ...filters, page: page + 1 }, pathname)} scroll={false}>
-                      <ChevronRight />
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="icon-sm" aria-label="Older events" disabled>
-                    <ChevronRight />
-                  </Button>
-                )}
-              </span>
-            )}
-            <span className="ml-auto text-xs text-soft">
-              Each node keeps its own log and chain. Times in <span className="num">{format.timeZone}</span>.
-            </span>
-          </div>
+          pages > 1 ? (
+            <Pagination
+              page={page}
+              perPage={perPage}
+              total={total}
+              noun="events"
+              label="Pages of events"
+              hrefFor={(target) => auditLogHref({ ...filters, page: target }, pathname)}
+            />
+          ) : undefined
         }
       >
         {events.length > 0 ? (
@@ -358,7 +322,7 @@ export default function AuditLogClient({
                 </Button>
               </>
             ) : (
-              <span>No audit events yet. Changes, sign-ins and checks appear here as they happen.</span>
+              <span>No audit events yet.</span>
             )}
           </div>
         )}

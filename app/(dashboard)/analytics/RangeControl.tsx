@@ -117,7 +117,7 @@ export function RangeControl({
                   required
                 />
               </div>
-              <p className="m-0 text-xs text-soft">Up to 92 days. Times are in UTC.</p>
+              <p className="m-0 text-xs text-soft">Up to 92 days.</p>
               {error && (
                 <p role="alert" className="m-0 text-xs text-bad">
                   {error}

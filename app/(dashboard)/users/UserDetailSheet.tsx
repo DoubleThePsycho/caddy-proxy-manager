@@ -288,7 +288,6 @@ function SheetBody({
             }}
             className="flex flex-col gap-3"
           >
-            <p className="m-0 text-xs text-soft">Editing {name}</p>
             {editError && <Banner tone="bad" live>{editError}</Banner>}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
@@ -311,7 +310,7 @@ function SheetBody({
                   spellCheck={false}
                   className="num"
                 />
-                <p className="text-xs text-muted-foreground">What the user types on the login page: lowercase letters, digits and _ . @ -</p>
+                <p className="text-xs text-muted-foreground">Lowercase letters, digits and _ . @ -</p>
               </div>
             </div>
             <div className="flex gap-2">
@@ -424,9 +423,6 @@ function SheetBody({
             )}
             <Button variant="danger" size="sm" onClick={() => onCommand({ kind: "delete", user })}>Delete user</Button>
           </div>
-          <p className="m-0 text-xs text-soft">
-            Disabling ends their sessions and stops their API tokens until you enable the account again. Every change is recorded in the audit log.
-          </p>
         </Section>
       )}
     </>

@@ -88,10 +88,10 @@ The web container needs read access to `waf-rules.log` for WAF outcomes, as it a
 
 - **Header**: the range (last hour, 24 hours, 7 days, 30 days, or a custom start and end in UTC), **Compare to previous period** (off, with the date the data starts, when the retention window holds no previous period), **Export CSV** (the chart's numbers: one row per bucket with each series, the total and the previous period) and **Views** (saved views, below).
 - **Filters**: **Add filter** picks a dimension, `is` or `is not`, and a value, with the busiest values and your proxy hosts' names as suggestions. On a top list, hover a row (on a touch screen the buttons are always shown) and press **Only** to show just that value or **Exclude** to hide it; a message says what the page shows now and **Undo** takes the filter away again. Every number on the page follows the filters. Each filter is a chip in the filter bar: its **×** removes it, **Clear filters** removes them all, and the browser's back button steps back through them.
-- **Headline numbers**: requests, bandwidth, unique addresses, mitigated requests (with their share) and the 5xx error rate, each with its change and a trend line. Selecting one shows it on the chart.
+- **Headline numbers**: requests, bandwidth, unique addresses, mitigated requests (with their share) and the 5xx error rate, each with its change and a trend line ("No earlier data" when the retention window holds no previous period). Selecting one shows it on the chart.
 - **Chart**: the selected number over time, grouped where that adds up: requests by outcome, status class or host; bytes in total or by host; mitigated requests by source or host; error responses by status class or host; unique addresses in total only (one address can appear in many buckets). The dashed line is the previous period; the legend hides and shows series; the busiest moment of mitigation links to the Security events list for the same range and filters.
 - **Top dimensions**: hosts, paths, countries (as a list or a map), source networks, status codes, source addresses, user agents, methods, HTTP versions and, when the WAF blocked anything, WAF rules. Rows whose requests were often mitigated say so. **View all** lists up to 100 values.
-- **Requests**: the latest requests matching the filters, newest first, or only the mitigated ones. Every request is stored; nothing is sampled.
+- **Requests**: the latest requests matching the filters, newest first, or only the mitigated ones, with **Show more** for older ones. Every request is stored; nothing is sampled. Times are in UTC.
 
 The last hour and 24 hours refresh every 30 seconds while the page is visible. Everything the page shows is in its address, so a link opens the same view and the browser's back button undoes a change:
 
@@ -106,7 +106,7 @@ The last hour and 24 hours refresh every 30 seconds while the page is visible. E
 
 For example `/analytics?range=7d&metric=errors&filter=host:app.example.com`.
 
-When ClickHouse is not configured the page explains how to turn analytics on; when it does not answer, the page says so and offers to retry. With access logging off (Settings › Analytics and logs) no new requests are recorded, and the page says that too.
+When ClickHouse is not configured the page explains how to turn analytics on; when it does not answer, the page says so and offers to retry. With access logging off (**Analytics settings**) no new requests are recorded, and the page says that too.
 
 ## Filters, metrics and grouping
 
@@ -136,7 +136,7 @@ The overview lists, at most five of each:
 
 ## Saved views
 
-A saved view is a name for a range, filters, metric and grouping. On the Analytics page, **Save view** stores the current settings and **Views** opens a saved view or manages them: rename, share, save the current settings to it, copy its link, or delete it. It belongs to the user who saved it. Shared, it is listed for everyone of the same organisation (or of the provider level) who can read analytics. Only the owner changes a view; the owner, or an administrator for a shared view, deletes it. A user can save up to 100 views. Saving, changing and deleting a view is recorded in the audit log (`analytics_view`). Views are not synced to slave instances and are deleted with their owner.
+A saved view is a name for a range, filters, metric and grouping. On the Analytics page, **Save view** stores the current settings and **Views** opens a saved view or manages them: rename, share, save the current settings to it, copy its link, or delete it (ten a page, with a search by name or owner once there are more). It belongs to the user who saved it. Shared, it is listed for everyone of the same organisation (or of the provider level) who can read analytics. Only the owner changes a view; the owner, or an administrator for a shared view, deletes it. A user can save up to 100 views. Saving, changing and deleting a view is recorded in the audit log (`analytics_view`). Views are not synced to slave instances and are deleted with their owner.
 
 ## Asking in plain language
 

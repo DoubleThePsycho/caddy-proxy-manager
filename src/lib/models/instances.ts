@@ -290,7 +290,7 @@ function parsePinnedPublicKey(publicKey: unknown): Buffer {
   const raw = decodeSyncPublicKey(publicKey);
   if (!raw) {
     throw new ApiValidationError(
-      "publicKey must be a slave's sync public key: 32 bytes, base64 (as its Settings page and GET /api/v1/instances/sync-key show it)"
+      "publicKey must be a slave's sync public key: 32 bytes, base64 (as its Instance sync page and GET /api/v1/instances/sync-key show it)"
     );
   }
   return raw;

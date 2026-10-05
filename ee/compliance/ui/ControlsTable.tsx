@@ -10,10 +10,10 @@ import type { ControlEvidence, ControlStatusView } from "../control-status";
 import type { ComplianceFramework } from "../types";
 import { CONTROL_TONE, FRAMEWORK_INFO } from "./format";
 
-/** Evidence that points at this page or at the history page goes to the matching section. */
+/** Evidence that points at this page goes to its section; backup runs (on History in older reports) to Backups. */
 function evidenceHref(evidence: ControlEvidence): string {
   if (evidence.route === "/compliance") return "#restore-tests";
-  if (evidence.route === "/history" && evidence.label === "Backup runs") return "/history?tab=backups";
+  if (evidence.route === "/history" && evidence.label === "Backup runs") return "/backups";
   return evidence.route;
 }
 

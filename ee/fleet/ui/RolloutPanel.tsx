@@ -41,6 +41,15 @@ const TARGET_TONE: Record<RolloutTargetView["status"], StatusTone> = {
 
 /** Lines of the compact "what changes" summary before it says how many more there are. */
 const SUMMARY_LINES = 12;
+/** Targets listed before "Show all". */
+const TARGETS_SHOWN = 12;
+/** Nodes named in a step before it gives their number instead. */
+const NAMES_SHOWN = 5;
+
+/** "a, b and c", or "45 nodes" when there are many. */
+function nodeNames(names: readonly string[]): string {
+  return names.length <= NAMES_SHOWN ? joinNames(names) : `${names.length} nodes`;
+}
 
 type SummaryLine = { kind: "head" | "add" | "remove" | "note"; text: string };
 
@@ -116,13 +125,7 @@ function targetText(target: RolloutTargetView, rollout: RolloutView, pull: boole
   }
 }
 
-function buildSteps(
-  rollout: RolloutView,
-  environment: EnvironmentView | undefined,
-  pullIds: ReadonlySet<number>,
-  stepSeconds: number,
-  now: number
-): Step[] {
+function buildSteps(rollout: RolloutView, environment: EnvironmentView | undefined, pullIds: ReadonlySet<number>, now: number): Step[] {
   const to = `#${rollout.revisionId}`;
   const from = revisionLabel(rollout.fromRevisionId);
   const canary = rollout.targets.find((target) => target.role === "canary") ?? null;
@@ -130,9 +133,7 @@ function buildSteps(
   const order = ["canary", "observing", "rolling", "done"] as const;
   const phaseIndex = order.indexOf(rollout.phase);
   const failed = rollout.status === "failed";
-  const checks = rollout.canary.checkCaddyStatus
-    ? `its health endpoint, Caddy's apply status, fingerprint ${to} and no local changes`
-    : "its health endpoint";
+  const checks = rollout.canary.checkCaddyStatus ? "health, Caddy status, fingerprint and local changes" : "health";
 
   const canaryStep: Step = (() => {
     if (!canary) return { key: "canary", title: "Canary", state: "skipped", status: "Skipped", detail: "No canary: every node takes the revision at once." };
@@ -154,9 +155,7 @@ function buildSteps(
       title: "Canary",
       state: "current",
       status: "Running",
-      detail: pull
-        ? `${canary.instanceName} is a pull replica: it takes ${to} with its next poll and must confirm it.`
-        : `Pushing ${to} to ${canary.instanceName}.`,
+      detail: pull ? `${canary.instanceName} is a pull replica: it takes ${to} with its next poll.` : `Pushing ${to} to ${canary.instanceName}.`,
     };
   })();
 
@@ -172,7 +171,7 @@ function buildSteps(
         title,
         state: failed ? "failed" : "current",
         status: left > 0 ? `${formatDuration(left)} left of ${formatDuration(total)}` : "Last check",
-        detail: `Every ${stepSeconds} s: ${checks}. One failure stops the rollout.`,
+        detail: `Checks ${checks}. One failure stops the rollout.`,
         progress: { elapsed: Math.max(0, total - left), total },
       };
     }
@@ -184,7 +183,7 @@ function buildSteps(
       title,
       state: "waiting",
       status: "Waiting",
-      detail: `For ${formatDuration(total)}, every ${stepSeconds} s: ${checks}. One failure stops the rollout.`,
+      detail: `For ${formatDuration(total)}, checks ${checks}. One failure stops the rollout.`,
     };
   })();
 
@@ -192,22 +191,23 @@ function buildSteps(
     const title = "Roll out to the rest";
     if (rest.length === 0) return { key: "rest", title, state: "skipped", status: "Nothing else", detail: "The canary is the only node in the environment." };
     const synced = rest.filter((target) => target.status === "synced").length;
-    const names = joinNames(rest.map((target) => target.instanceName));
+    const names = nodeNames(rest.map((target) => target.instanceName));
     const pulls = rest.filter((target) => pullIds.has(target.instanceId)).map((target) => target.instanceName);
-    const pullNote = pulls.length > 0 ? ` ${joinNames(pulls)} ${pulls.length === 1 ? "is a pull replica: it takes" : "are pull replicas: they take"} ${to} with the next poll and must confirm it.` : "";
+    const pullNote = pulls.length > 0 ? ` ${nodeNames(pulls)} ${pulls.length === 1 ? "is a pull replica: it takes" : "are pull replicas: they take"} ${to} with the next poll.` : "";
+    const take = rest.length === 1 ? "takes" : "take";
     if (rollout.phase === "rolling") {
       return {
         key: "rest",
         title,
         state: failed ? "failed" : "current",
         status: `${synced} of ${rest.length} done`,
-        detail: `Up to four nodes at a time.${pullNote}`,
+        detail: `${names} ${take} ${to}.${pullNote}`,
       };
     }
     if (phaseIndex > order.indexOf("rolling")) {
       return { key: "rest", title, state: "done", status: "Done", detail: `${names} took ${to}.` };
     }
-    return { key: "rest", title, state: "waiting", status: "Waiting", detail: `${names} ${rest.length === 1 ? "takes" : "take"} ${to}, up to four nodes at a time.${pullNote}` };
+    return { key: "rest", title, state: "waiting", status: "Waiting", detail: `${names} ${take} ${to}.${pullNote}` };
   })();
 
   const envName = environment?.name ?? rollout.environmentName ?? "the environment";
@@ -232,7 +232,6 @@ type Props = {
   sourceName: string | null;
   instances: readonly FleetInstanceView[];
   revision: RevisionView | undefined;
-  stepSeconds: number;
   now: number;
   canAbort: boolean;
   pending: boolean;
@@ -245,12 +244,13 @@ type Props = {
  * with an inline confirmation to abort it, what it changes and where each
  * target stands.
  */
-export function RolloutPanel({ rollout, environment, sourceName, instances, revision, stepSeconds, now, canAbort, pending, onAbort, onShowDiff }: Props) {
+export function RolloutPanel({ rollout, environment, sourceName, instances, revision, now, canAbort, pending, onAbort, onShowDiff }: Props) {
   const [confirmAbort, setConfirmAbort] = useState(false);
+  const [allTargets, setAllTargets] = useState(false);
   const [diff, setDiff] = useState<ConfigDiff | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
   const pullIds = new Set(instances.filter((instance) => instance.syncMode === "pull").map((instance) => instance.id));
-  const steps = buildSteps(rollout, environment, pullIds, stepSeconds, now);
+  const steps = buildSteps(rollout, environment, pullIds, now);
   const headingId = `rollout-${rollout.id}-title`;
   const envName = environment?.name ?? rollout.environmentName ?? "a deleted environment";
   const against = rollout.fromRevisionId === null ? "previous" : String(rollout.fromRevisionId);
@@ -270,6 +270,7 @@ export function RolloutPanel({ rollout, environment, sourceName, instances, revi
   }, [rollout.revisionId, against]);
 
   const synced = rollout.targets.filter((target) => target.status === "synced").map((target) => target.instanceName);
+  const targetsShown = allTargets ? rollout.targets : rollout.targets.slice(0, TARGETS_SHOWN);
   const notReached = rollout.targets.filter((target) => target.status === "pending").map((target) => target.instanceName);
   const lines = diff ? summarizeConfigDiff(diff) : [];
   const source = rollout.kind === "rollback" ? `rolls back to what ${envName} ran before` : sourceName ? `source: what ${sourceName} runs` : "source: the master's configuration";
@@ -311,9 +312,9 @@ export function RolloutPanel({ rollout, environment, sourceName, instances, revi
             <span className="font-semibold">Abort rollout #{rollout.id}?</span>{" "}
             <span className="text-muted-foreground">
               Nothing else is pushed.
-              {synced.length > 0 ? ` ${joinNames(synced)} ${synced.length === 1 ? "keeps" : "keep"} #${rollout.revisionId}.` : ""}
+              {synced.length > 0 ? ` ${nodeNames(synced)} ${synced.length === 1 ? "keeps" : "keep"} #${rollout.revisionId}.` : ""}
               {notReached.length > 0
-                ? ` ${joinNames(notReached)} and the environment stay on ${revisionLabel(rollout.fromRevisionId)}.`
+                ? ` ${nodeNames(notReached)} and the environment stay on ${revisionLabel(rollout.fromRevisionId)}.`
                 : ` The environment stays on ${revisionLabel(rollout.fromRevisionId)}.`}
             </span>
           </p>
@@ -389,7 +390,7 @@ export function RolloutPanel({ rollout, environment, sourceName, instances, revi
           ) : lines.length === 0 ? (
             <p className="m-0 text-[13px] text-muted-foreground">The configuration does not change.</p>
           ) : (
-            <div className="num overflow-x-auto rounded-lg border border-line bg-background px-3 py-2.5 text-xs leading-[19px]">
+            <div className="num relative overflow-x-auto rounded-lg border border-line bg-background px-3 py-2.5 text-xs leading-[19px]">
               <ul className="m-0 list-none p-0">
                 {lines.slice(0, SUMMARY_LINES).map((line, index) => (
                   <li
@@ -431,7 +432,7 @@ export function RolloutPanel({ rollout, environment, sourceName, instances, revi
             <p className="m-0">No nodes in the environment.</p>
           ) : (
             <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
-              {rollout.targets.map((target) => (
+              {targetsShown.map((target) => (
                 <li key={target.instanceId} className="flex items-start gap-2">
                   <StatusDot tone={TARGET_TONE[target.status]} className="mt-1.5" />
                   <span className="min-w-0 [overflow-wrap:anywhere]">
@@ -442,7 +443,11 @@ export function RolloutPanel({ rollout, environment, sourceName, instances, revi
               ))}
             </ul>
           )}
-          <p className="m-0 text-xs text-soft">This dashboard is the master and already runs its own configuration; rollouts only reach replicas.</p>
+          {rollout.targets.length > TARGETS_SHOWN && (
+            <Button variant="link" size="sm" className="h-auto self-start px-0" aria-expanded={allTargets} onClick={() => setAllTargets((value) => !value)}>
+              {allTargets ? "Show fewer" : `Show all ${rollout.targets.length}`}
+            </Button>
+          )}
         </div>
       </div>
     </section>

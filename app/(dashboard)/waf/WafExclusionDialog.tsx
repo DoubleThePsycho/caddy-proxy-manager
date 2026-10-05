@@ -32,7 +32,7 @@ export function WafExclusionDialog({
   onOpenChange,
   hosts,
   initial = EMPTY_EXCLUSION_DRAFT,
-  description = "Skip one rule for requests in scope. Every other rule still checks them.",
+  description = "Skip one rule for the requests in scope.",
   onCreated,
 }: {
   open: boolean;
@@ -129,7 +129,7 @@ export function WafExclusionDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="global">Every host that follows or merges with the global settings</SelectItem>
+                <SelectItem value="global">Global: hosts that follow or merge with the global settings</SelectItem>
                 {hosts.map((host) => (
                   <SelectItem key={host.id} value={String(host.id)}>
                     {host.name}
@@ -160,7 +160,7 @@ export function WafExclusionDialog({
                 ]}
               />
             </div>
-            <span className="text-xs text-muted-foreground">The decoded path, without the query string. Empty: every path.</span>
+            <span className="text-xs text-muted-foreground">Without the query string. Empty: every path.</span>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="waf-ex-variable">Variable <span className="font-normal text-muted-foreground">(optional)</span></Label>
@@ -172,7 +172,7 @@ export function WafExclusionDialog({
               onChange={(event) => setField("variable", event.target.value)}
             />
             <span className="text-xs text-muted-foreground">
-              Only skip the rule on this variable, such as <span className="font-mono">ARGS:name</span>,{" "}
+              Such as <span className="font-mono">ARGS:name</span>,{" "}
               <span className="font-mono">REQUEST_HEADERS:name</span> or <span className="font-mono">REQUEST_COOKIES:name</span>. Empty: every variable.
             </span>
           </div>

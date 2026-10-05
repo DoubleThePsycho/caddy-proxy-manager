@@ -24,12 +24,12 @@ import {
   type HostListRow,
   type StatusFilter,
 } from "@/src/lib/proxy-host-view";
+import { paginate } from "@/src/lib/pagination";
 import { getHostApprovalContext } from "@/ee/approvals/requests";
 import { dashboardOrganizationFilter } from "@/ee/multi-tenancy/view";
 
 export const metadata = { title: "Proxy hosts" };
 
-const PER_PAGE = 25;
 /** How long the list waits for certificate checks not cached yet; the rest show on the next visit. */
 const CERTIFICATE_WAIT_MS = 1500;
 
@@ -83,9 +83,7 @@ export default async function ProxyHostsPage({ searchParams }: PageProps) {
     disabled: filtered.filter((row) => matchesStatus(row, "disabled")).length,
   };
   const matching = sortHostRows(filtered.filter((row) => matchesStatus(row, query.status)), query.sortBy, query.sortDir);
-  const pageCount = Math.max(1, Math.ceil(matching.length / PER_PAGE));
-  const page = Math.min(pageCount, query.page);
-  const pageRows: HostListRow[] = matching.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const { items: pageRows, page, perPage } = paginate<HostListRow>(matching, query.page);
   const byId = new Map(allHosts.map((host) => [host.id, host]));
   const hosts = pageRows.map((row) => byId.get(row.id)!);
   // ?edit=<id> opens the edit dialog for a host the user may see, on any page of the list.
@@ -136,7 +134,7 @@ export default async function ProxyHostsPage({ searchParams }: PageProps) {
       accessLists={visibleAccessLists}
       authentikDefaults={authentikDefaults}
       forwardAuthDefaults={forwardAuthDefaults}
-      pagination={{ total: matching.length, page, perPage: PER_PAGE }}
+      pagination={{ total: matching.length, page, perPage }}
       mtlsRoles={picker.trustAnchors ? mtlsRoles : []}
       issuedClientCerts={picker.trustAnchors ? issuedClientCerts : []}
       forwardAuthUsers={can(access, "users:read") ? forwardAuthUsers : []}

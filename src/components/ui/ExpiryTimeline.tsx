@@ -169,8 +169,8 @@ export function ExpiryTimeline({
           ))}
         </div>
       )}
-      <div className="relative overflow-x-auto overflow-y-hidden">
-        <div className="relative mx-2 min-w-[600px]" style={{ height: plotHeight }} onMouseLeave={() => setFocused(null)}>
+      <div className="@container relative overflow-x-clip">
+        <div className="relative mx-2" style={{ height: plotHeight }} onMouseLeave={() => setFocused(null)}>
           <div aria-hidden="true" className="absolute left-0 top-0 rounded-t-lg bg-warn-tint" style={{ width: pct(band), bottom: AXIS_BOTTOM }} />
           <div className="pointer-events-none absolute left-2.5 top-2 flex flex-col text-xs">
             <span className="font-semibold text-warn">{renewalLabel}</span>
@@ -182,16 +182,26 @@ export function ExpiryTimeline({
             )}
           </div>
           <div aria-hidden="true" className="absolute inset-x-0 border-t border-line2" style={{ bottom: AXIS_BOTTOM }} />
-          {ticks.map((d) => {
+          {ticks.map((d, index) => {
             const p = d / maxDays;
+            // On a narrow plot every other label (never the first or last) gives way, so neighbours do not overlap.
+            const thin = ticks.length > 5 && index % 2 === 1 && index !== ticks.length - 1;
             return (
               <div key={d} aria-hidden="true">
                 <div className="absolute h-2 border-l border-line2" style={{ left: pct(p), bottom: AXIS_BOTTOM - 8 }} />
                 <span
-                  className="num absolute bottom-0 whitespace-nowrap text-[11px] text-soft"
+                  className={cn("num absolute bottom-0 whitespace-nowrap text-[11px] text-soft", thin && "@max-[40rem]:hidden")}
                   style={{ left: pct(p), transform: d === 0 ? "none" : d === maxDays ? "translateX(-100%)" : "translateX(-50%)" }}
                 >
-                  {tickLabel(d)}
+                  {d === 0 && nowMs !== null && !formatTick ? (
+                    // On a narrow plot the date gives way, so today does not run into the next label.
+                    <>
+                      <span className="@max-[40rem]:hidden">{tickLabel(d)}</span>
+                      <span className="hidden @max-[40rem]:inline">Today</span>
+                    </>
+                  ) : (
+                    tickLabel(d)
+                  )}
                 </span>
               </div>
             );
@@ -243,11 +253,14 @@ export function ExpiryTimeline({
           {hovered && (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute z-10 flex w-[236px] flex-col gap-1 rounded-[10px] border border-line2 bg-panel px-3 py-2.5 shadow-overlay"
+              className="pointer-events-none absolute z-10 flex w-[236px] flex-col gap-1 rounded-[10px] border border-line2 bg-panel px-3 py-2.5 shadow-overlay @max-sm:left-0! @max-sm:w-full!"
               style={{
-                left: pct(hovered.position),
+                // Beside the marker, kept inside the plot.
+                left:
+                  hovered.position > 2 / 3
+                    ? `max(0px, calc(${pct(hovered.position)} - 250px))`
+                    : `min(calc(${pct(hovered.position)} + 14px), calc(100% - 236px))`,
                 bottom: AXIS_BOTTOM + 4 + (hovered.stack + 1) * STACK_STEP + 6,
-                transform: hovered.position > 2 / 3 ? "translateX(calc(-100% - 14px))" : "translateX(14px)",
               }}
               data-testid="expiry-tooltip"
             >

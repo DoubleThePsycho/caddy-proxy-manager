@@ -393,7 +393,7 @@ export default function LdapClient({ directories, configurable, canWrite, ssoEnf
         className="mb-0"
         breadcrumb={["Identity", canReadSignIn ? { label: "Sign-in and directories", href: "/sign-in" } : "Sign-in and directories", "LDAP directories"]}
         title="LDAP directories"
-        description={`Let people sign in to ${productName} with their LDAP or Active Directory account. Groups can decide their role. This covers the dashboard only; the forward-auth portal is not affected.`}
+        description={`Sign in to ${productName} with an LDAP or Active Directory account. The forward-auth portal is not affected.`}
         actions={canWrite ? (
           <Button onClick={openCreate} disabled={!canChange || pending} title={configurable ? undefined : LOCKED_HINT}>
             <Plus /> Add directory
@@ -403,8 +403,8 @@ export default function LdapClient({ directories, configurable, canWrite, ssoEnf
 
       {!configurable && (
         <Banner tone="info" title="Read-only without a license.">
-          Setting up and changing directories needs an active {productName} {editionLabel} license or higher. Enabled
-          directories keep working for sign-in, and you can still test, disable and delete them.{" "}
+          Setting up and changing directories needs an active {productName} {editionLabel} license or higher. You can still test, disable
+          and delete them.{" "}
           <Link href="/license" className="text-brand underline-offset-4 hover:underline">Manage the license</Link>
         </Banner>
       )}
@@ -414,21 +414,12 @@ export default function LdapClient({ directories, configurable, canWrite, ssoEnf
         </Banner>
       )}
 
-      <SectionCard
-        title="LDAP and Active Directory"
-        count={directories.length}
-        description="Checked every 5 minutes; a failing directory shows here and on the overview."
-      >
-        <p className="m-0 border-b border-line px-[18px] py-3 text-[13px] text-muted-foreground">
-          Sign-in searches the directory with a service account, then checks the password by binding as the entry it found.
-          Accounts are linked by the entry&apos;s stable unique id, so renaming or moving an entry keeps its link.
-        </p>
+      <SectionCard title="LDAP and Active Directory" count={directories.length}>
         {directories.length === 0 ? (
           <EmptyState
             compact
             icon={BookUser}
             title="No directories yet"
-            description="Add a directory with a read-only service account; test it before you turn it on."
             action={canWrite ? (
               <Button size="sm" onClick={openCreate} disabled={!canChange || pending}>
                 <Plus /> Add directory
@@ -551,7 +542,7 @@ export default function LdapClient({ directories, configurable, canWrite, ssoEnf
             <Field label="Name" htmlFor="ldap-name" hint="Shown on the login page.">
               <Input id="ldap-name" value={form.name} maxLength={100} onChange={(event) => set("name", event.target.value)} />
             </Field>
-            <Field label="Server type" hint="Fills in filters and attributes; every field stays editable.">
+            <Field label="Server type" hint="Fills in filters and attributes.">
               <Select onValueChange={(value) => setForm((previous) => ({ ...previous, ...PRESETS[value as "ad" | "openldap"] }))}>
                 <SelectTrigger aria-label="Server type">
                   <SelectValue placeholder="Choose (optional)" />
@@ -585,7 +576,7 @@ export default function LdapClient({ directories, configurable, canWrite, ssoEnf
               </Banner>
             )}
             <Field label="CA certificate (PEM, optional)" htmlFor="ldap-ca"
-              hint="The server certificate must chain to it. Leave empty to use the system trust store. Certificates are always verified.">
+              hint="Empty: the system trust store.">
               <Textarea id="ldap-ca" rows={3} className="num text-xs" value={form.caCertificate}
                 placeholder="-----BEGIN CERTIFICATE-----" onChange={(event) => set("caCertificate", event.target.value)} />
             </Field>
@@ -676,9 +667,8 @@ export default function LdapClient({ directories, configurable, canWrite, ssoEnf
                 <div className="space-y-2">
                   <Label>Group-to-role mapping</Label>
                   <p className="text-xs text-muted-foreground">
-                    The only way a directory grants a role. With at least one mapping, every sign-in sets the role (the
-                    highest of the matched groups, otherwise the default role), demoting as well as promoting. Without
-                    mappings, roles are managed on the Users page.
+                    With a mapping, every sign-in sets the role, demoting as well as promoting: the highest matched group, otherwise
+                    the default role. Without mappings, roles are set on the Users page.
                   </p>
                   {form.groupRoleMappings.map((mapping, index) => (
                     <div key={index} className="flex items-center gap-2">
@@ -759,9 +749,7 @@ export default function LdapClient({ directories, configurable, canWrite, ssoEnf
       >
         <div className="flex flex-col gap-4">
           <p className="text-sm text-muted-foreground">
-            Checks a username and password against the directory and shows what a sign-in would do. Nobody is signed in
-            and no account is created or changed. The attempt counts towards the sign-in limits and is recorded in the
-            audit log.
+            Shows what a sign-in would do. Nobody is signed in and no account changes. The attempt counts towards the sign-in limits.
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Username" htmlFor="ldap-test-username">

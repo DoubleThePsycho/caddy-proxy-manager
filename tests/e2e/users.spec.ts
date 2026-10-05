@@ -85,7 +85,7 @@ test.describe('Users page', () => {
   });
 
   test('displays at least one user (the admin)', async ({ page }) => {
-    await expect(page.getByText(/^\d+ users?$/)).toBeVisible({ timeout: 5000 });
+    await expect(page.getByRole('region', { name: 'Users' }).getByRole('row').nth(1)).toBeVisible({ timeout: 5000 });
     for (const header of ['User', 'Role', 'Comes from', 'Second factor', 'Last sign-in', 'Status']) {
       await expect(page.getByRole('columnheader', { name: header, exact: true })).toBeVisible();
     }
@@ -94,7 +94,8 @@ test.describe('Users page', () => {
   test('search input filters users', async ({ page }) => {
     const search = page.getByPlaceholder('Name, e-mail, role or source');
     await search.fill('testadmin');
-    await expect(page.getByText(/^1 of \d+ users$/)).toBeVisible({ timeout: 5000 });
+    // The header row and the one match.
+    await expect(page.getByRole('region', { name: 'Users' }).getByRole('row')).toHaveCount(2, { timeout: 5000 });
 
     await search.fill('nonexistent-zzz');
     await expect(page.getByText('No user matches these filters.')).toBeVisible({ timeout: 5000 });
@@ -108,10 +109,12 @@ test.describe('Users page', () => {
   });
 
   test('admin user shows the Admin role', async ({ page }) => {
-    await expect(page.getByText('Admin', { exact: true }).first()).toBeVisible();
+    await page.getByPlaceholder('Name, e-mail, role or source').fill('testadmin');
+    await expect(page.getByRole('row').filter({ hasText: 'testadmin' }).getByText('Admin', { exact: true })).toBeVisible();
   });
 
   test('opening a user shows the panel with role, MFA and sessions', async ({ page }) => {
+    await page.getByPlaceholder('Name, e-mail, role or source').fill('testadmin');
     await page.getByRole('row').filter({ hasText: 'testadmin' }).first().getByRole('button').first().click();
     const panel = page.getByRole('dialog');
     await expect(panel.getByRole('heading', { name: 'Role' })).toBeVisible();
@@ -126,12 +129,12 @@ test.describe('Users page', () => {
     await rowMenu(page, '@');
     await page.getByRole('menuitem', { name: 'Edit user' }).click();
     const panel = page.getByRole('dialog');
-    await expect(panel.getByText(/editing/i)).toBeVisible();
     await expect(panel.getByPlaceholder('Display name')).toBeVisible();
     await expect(panel.getByPlaceholder('Email address')).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
     await panel.getByRole('button', { name: 'Cancel' }).click();
-    await expect(panel.getByText(/editing/i)).not.toBeVisible();
+    await expect(panel.getByPlaceholder('Display name')).not.toBeVisible();
+    await expect(panel.getByRole('button', { name: 'Edit details' })).toBeVisible();
   });
 
   test('row menu offers the account actions', async ({ page }) => {

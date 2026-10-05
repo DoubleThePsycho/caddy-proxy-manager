@@ -42,11 +42,11 @@ test.describe('PostgreSQL replicas (one dashboard on the test stack)', () => {
     ]);
   });
 
-  test('Settings shows PostgreSQL mode with the replica', async ({ page }) => {
+  test('High availability shows PostgreSQL mode with the replica', async ({ page }) => {
     const body = await clusterNodes(page.request);
     test.skip(!body.enabled, 'The test stack runs on SQLite');
-    await page.goto('/settings?section=high-availability');
-    const group = page.locator('section[data-settings-group="high-availability"]');
+    await page.goto('/high-availability');
+    const group = page.getByRole('main');
     await expect(group.getByRole('heading', { name: 'Dashboard cluster' })).toBeVisible();
     await expect(group.getByText('PostgreSQL mode').first()).toBeVisible();
     await expect(group.getByText('this replica', { exact: true })).toBeVisible();

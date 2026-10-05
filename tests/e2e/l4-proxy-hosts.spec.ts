@@ -1,9 +1,11 @@
 /**
  * E2E tests: L4 Proxy Hosts page.
  *
- * Verifies the L4 Proxy Hosts UI — navigation, list, create/edit/delete dialogs.
+ * Verifies the L4 Proxy Hosts UI: navigation, the list (search, filters,
+ * sort, pages, bulk actions), the detail sheet and the create/edit/delete
+ * dialogs.
  */
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:3000';
 const API = `${BASE_URL}/api/v1`;
@@ -127,15 +129,17 @@ test.describe('L4 Proxy Hosts page', () => {
     await expect(page.getByRole('table').getByText(':19999', { exact: true })).toBeVisible();
   });
 
-  test('selecting a host shows its settings in the detail panel', async ({ page }) => {
+  test('selecting a host shows its settings in the detail sheet', async ({ page }) => {
     await page.goto('/l4-proxy-hosts');
     await page.getByRole('table').getByRole('button', { name: 'E2E Test Host', exact: true }).click();
-    const detail = page.getByRole('region', { name: 'E2E Test Host', exact: true });
+    const detail = page.getByRole('dialog', { name: 'E2E Test Host', exact: true });
     await expect(detail).toBeVisible();
     await expect(detail.getByText(':19999/tcp')).toBeVisible();
     await expect(detail.getByRole('term').filter({ hasText: /^Upstream$/ })).toBeVisible();
     await expect(detail.getByRole('definition').filter({ hasText: '10.0.0.1:5432' })).toBeVisible();
     await expect(detail.getByRole('button', { name: 'Edit' })).toBeVisible();
+    await detail.getByRole('button', { name: 'Close' }).click();
+    await expect(detail).toBeHidden();
   });
 
   /**
@@ -166,7 +170,7 @@ test.describe('L4 Proxy Hosts page', () => {
     await page.goto('/l4-proxy-hosts');
     await page.getByRole('button', { name: /new l4 host/i }).first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByText(/ports 80, 443 and 2019 are reserved/i)).toBeVisible();
+    await expect(page.getByText(/ports 80, 443 and 2019 are caddy's own/i)).toBeVisible();
   });
 
   test('deletes the created L4 proxy host', async ({ page }) => {
@@ -180,7 +184,8 @@ test.describe('L4 Proxy Hosts page', () => {
 
     // Confirm deletion
     await expect(page.getByRole('dialog')).toBeVisible();
-    await expect(page.getByText(/are you sure/i)).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('Delete E2E Test Host?')).toBeVisible();
+    await expect(page.getByRole('dialog').getByText('This cannot be undone.')).toBeVisible();
     await page.getByRole('button', { name: /delete/i }).click();
 
     // Host should be removed
@@ -270,5 +275,153 @@ test.describe('L4 Proxy Hosts page', () => {
       const res = await page.request.delete(`${API}/l4-proxy-hosts/${host.id}`, { headers: { Origin: BASE_URL } });
       expect(res.ok()).toBe(true);
     }
+  });
+});
+
+/**
+ * The list with more hosts than fit on a page: 62 disabled hosts (every
+ * third one UDP, one routing by TLS SNI) created through the REST API and
+ * removed again afterwards.
+ */
+const MANY = 62;
+const MANY_PREFIX = 'E2E Many L4';
+const manyName = (i: number) => `${MANY_PREFIX} ${String(i).padStart(2, '0')}`;
+const MANY_LIST = `/l4-proxy-hosts?search=${encodeURIComponent(MANY_PREFIX)}&sortBy=name&sortDir=asc`;
+
+async function deleteManyHosts(request: APIRequestContext) {
+  const list = await request.get(`${API}/l4-proxy-hosts`, { headers: { Origin: BASE_URL } });
+  expect(list.ok()).toBe(true);
+  const hosts = (await list.json()) as Array<{ id: number; name: string }>;
+  for (const host of hosts.filter((h) => h.name.startsWith(MANY_PREFIX))) {
+    const res = await request.delete(`${API}/l4-proxy-hosts/${host.id}`, { headers: { Origin: BASE_URL } });
+    expect(res.ok()).toBe(true);
+  }
+}
+
+test.describe.serial('L4 hosts list with many hosts', () => {
+  test.beforeAll(async ({ request }) => {
+    test.setTimeout(240_000);
+    await deleteManyHosts(request);
+    for (let i = 1; i <= MANY; i++) {
+      const res = await request.post(`${API}/l4-proxy-hosts`, {
+        data: {
+          name: manyName(i),
+          protocol: i % 3 === 0 ? 'udp' : 'tcp',
+          listenAddress: `:${43000 + i}`,
+          upstreams: [`192.0.2.${i}:5432`],
+          enabled: false,
+          ...(i === 7 ? { matcherType: 'tls_sni', matcherValue: ['mail-07.example.com'] } : {}),
+        },
+        headers: { 'Content-Type': 'application/json', Origin: BASE_URL },
+      });
+      expect(res.status()).toBe(201);
+    }
+  });
+
+  test.afterAll(async ({ request }) => {
+    test.setTimeout(240_000);
+    await deleteManyHosts(request);
+  });
+
+  test('pages the list with the page in the address', async ({ page }) => {
+    await page.goto(MANY_LIST);
+    const table = page.getByRole('table');
+    const pager = page.getByRole('navigation', { name: 'Pages of L4 hosts' });
+    await expect(pager).toContainText('1–25 of 62 hosts');
+    await expect(table.getByRole('row')).toHaveCount(26);
+    await expect(table.getByRole('button', { name: manyName(1), exact: true })).toBeVisible();
+
+    await pager.getByRole('link', { name: 'Next page' }).click();
+    await expect(page).toHaveURL(/[?&]page=2/);
+    await expect(pager).toContainText('26–50 of 62 hosts');
+    await expect(table.getByRole('button', { name: manyName(26), exact: true })).toBeVisible();
+    await expect(table.getByRole('button', { name: manyName(1), exact: true })).toHaveCount(0);
+
+    await pager.getByRole('link', { name: 'Page 3' }).click();
+    await expect(page).toHaveURL(/[?&]page=3/);
+    await expect(table.getByRole('row')).toHaveCount(13);
+    await page.reload();
+    await expect(pager).toContainText('51–62 of 62 hosts');
+    await expect(table.getByRole('button', { name: manyName(62), exact: true })).toBeVisible();
+
+    // A new search starts on the first page; 10 hosts fit on one page, so there is no pager.
+    await page.getByRole('searchbox', { name: 'Filter L4 hosts' }).fill(`${MANY_PREFIX} 1`);
+    await expect(page).toHaveURL(/search=E2E\+Many\+L4\+1/);
+    await expect(page).not.toHaveURL(/[?&]page=/);
+    await expect(table.getByRole('row')).toHaveCount(11);
+    await expect(pager).toHaveCount(0);
+  });
+
+  test('finds a host by server name, port or upstream', async ({ page }) => {
+    await page.goto('/l4-proxy-hosts');
+    const search = page.getByRole('searchbox', { name: 'Filter L4 hosts' });
+    const table = page.getByRole('table');
+    for (const [text, i] of [['mail-07.example.com', 7], [':43042', 42], ['192.0.2.33:', 33]] as const) {
+      await search.fill(text);
+      await expect(table.getByRole('button', { name: manyName(i), exact: true })).toBeVisible();
+      await expect(table.getByRole('row')).toHaveCount(2);
+    }
+    await expect(table.getByText('mail-07.example.com', { exact: true })).toHaveCount(0);
+    await search.fill('mail-07');
+    await expect(table.getByText('mail-07.example.com', { exact: true })).toBeVisible();
+  });
+
+  test('counts and filters by protocol and status within the search', async ({ page }) => {
+    await page.goto(MANY_LIST);
+    const protocol = page.getByRole('group', { name: 'Protocol' });
+    const status = page.getByRole('group', { name: 'Status' });
+    await expect(protocol.getByRole('button', { name: /^UDP/ })).toHaveText('UDP 20');
+    await expect(status.getByRole('button', { name: /^Disabled/ })).toHaveText('Disabled 62');
+    await protocol.getByRole('button', { name: /^UDP/ }).click();
+    await expect(page).toHaveURL(/protocol=udp/);
+    await expect(page.getByRole('table').getByRole('row')).toHaveCount(21);
+    await expect(page.getByRole('navigation', { name: 'Pages of L4 hosts' })).toHaveCount(0);
+    await expect(status.getByRole('button', { name: /^Disabled/ })).toHaveText('Disabled 20');
+    await status.getByRole('button', { name: /^Enabled/ }).click();
+    await expect(page).toHaveURL(/status=enabled/);
+    await expect(page.getByText(/no l4 host matches these filters/i)).toBeVisible();
+  });
+
+  test('shows cards and the pager on a phone', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${MANY_LIST}&page=2`);
+    await expect(page.getByRole('table')).toBeHidden();
+    const cards = page.getByRole('list', { name: 'L4 hosts' });
+    await expect(cards.getByRole('listitem')).toHaveCount(25);
+    await expect(cards.getByRole('button', { name: manyName(26), exact: true })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Pages of L4 hosts' })).toContainText('26–50 of 62 hosts');
+    await expect(page.getByRole('button', { name: 'Sort: Name' })).toBeVisible();
+  });
+
+  test('enables, disables and deletes the selected hosts', async ({ page }) => {
+    await page.goto(MANY_LIST);
+    const table = page.getByRole('table');
+    const switchOf = (i: number) => table.locator('tr', { hasText: manyName(i) }).getByRole('switch');
+    const select = async (...ids: number[]) => {
+      for (const i of ids) await table.getByRole('checkbox', { name: `Select ${manyName(i)}`, exact: true }).check();
+    };
+
+    await select(1, 2);
+    await expect(page.getByText('2 hosts selected')).toBeVisible();
+    await page.getByRole('button', { name: 'Enable', exact: true }).click();
+    await expect(switchOf(1)).toHaveAttribute('data-state', 'checked', { timeout: 15_000 });
+    await expect(switchOf(2)).toHaveAttribute('data-state', 'checked');
+    await expect(page.getByText('2 hosts selected')).toBeHidden();
+
+    await select(1, 2);
+    await page.getByRole('button', { name: 'Disable', exact: true }).click();
+    await expect(switchOf(1)).toHaveAttribute('data-state', 'unchecked', { timeout: 15_000 });
+    await expect(switchOf(2)).toHaveAttribute('data-state', 'unchecked');
+
+    await table.getByRole('checkbox', { name: 'Select every host on this page' }).check();
+    await expect(page.getByText('25 hosts selected')).toBeVisible();
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Delete 25 L4 hosts' });
+    await expect(dialog).toContainText('This cannot be undone.');
+    await expect(dialog.getByRole('listitem')).toHaveCount(25);
+    await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(dialog).toBeHidden({ timeout: 30_000 });
+    await expect(page.getByRole('navigation', { name: 'Pages of L4 hosts' })).toContainText('1–25 of 37 hosts', { timeout: 15_000 });
+    await expect(table.getByRole('button', { name: manyName(26), exact: true })).toBeVisible();
   });
 });

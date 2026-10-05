@@ -235,15 +235,11 @@ function ScheduleDialog({
               ))}
             </div>
           )}
-          <p className="m-0 text-xs text-soft">
-            Each run adds a Traffic questions report that re-runs them for the period over every host, without asking an AI model. The schedule
-            keeps a copy of each question as it is now.
-          </p>
         </fieldset>
         <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
           <legend className="mb-1 text-sm font-medium">Notice to</legend>
           {offered.length === 0 ? (
-            <p className="m-0 text-xs text-muted-foreground">No alert channels yet. Set one up on the Alerts page to get a notice when the reports are ready.</p>
+            <p className="m-0 text-xs text-muted-foreground">No alert channels yet; add one on the Alerts page.</p>
           ) : (
             <div className="grid gap-1.5 sm:grid-cols-2">
               {offered.map((channel) => (
@@ -254,7 +250,6 @@ function ScheduleDialog({
               ))}
             </div>
           )}
-          <p className="m-0 text-xs text-soft">The notice carries the findings per report and their SHA-256, never the reports themselves.</p>
         </fieldset>
         {error && (
           <Banner tone="bad" live>
@@ -336,7 +331,6 @@ export default function SchedulesSection({
       id="schedules"
       title="Report schedules"
       count={schedules.length}
-      description="Each run verifies the audit log, generates the chosen reports for the period that ended and sends a notice."
       actions={
         canWrite && (
           <Button variant="secondary" size="sm" onClick={() => setEditing("new")} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
@@ -347,7 +341,7 @@ export default function SchedulesSection({
       }
     >
       {schedules.length === 0 ? (
-        <EmptyState compact icon={CalendarClock} title="No report schedule" description="A monthly schedule gives you an evidence pack for every month without anyone having to remember it." />
+        <EmptyState compact icon={CalendarClock} title="No report schedule" />
       ) : (
         <Table className="min-w-[1040px]">
           <TableHeader>

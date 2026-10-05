@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   ArrowLeftRight, BadgeCheck, Bell, Building2, ChartColumn, ChevronsUpDown, CircleCheck, ClipboardCheck, Coins,
-  Ellipsis, FileCheck2, FileJson2, History, KeyRound, LayoutGrid, LockKeyhole, LogOut, Menu, Network, Receipt,
+  Ellipsis, FileCheck2, FileJson2, History, KeyRound, Layers, LayoutGrid, LockKeyhole, LogOut, Menu, Network, Receipt,
   ScrollText, Search, Server, ShieldAlert, ShieldCheck, SlidersHorizontal, UserRound, Users, type LucideIcon,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -64,6 +64,7 @@ const ICONS: Record<NavEntryKey, LucideIcon> = {
   history: History,
   compliance: FileCheck2,
   fleet: Network,
+  "high-availability": Layers,
   organizations: Building2,
   monetization: Coins,
   usage: Receipt,
@@ -254,7 +255,7 @@ function EnvironmentSwitcher({ environment, compact }: { environment: NavEnviron
         )}
         {environment.links.sync && (
           <DropdownMenuItem asChild>
-            <Link href="/settings?section=sync">{environment.mode === "standalone" ? "Set up instance sync" : "Instance sync settings"}</Link>
+            <Link href="/instances">{environment.mode === "standalone" ? "Set up instance sync" : "Instance sync settings"}</Link>
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>

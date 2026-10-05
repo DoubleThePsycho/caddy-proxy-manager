@@ -1,10 +1,10 @@
 # OAuth and OpenID Connect sign-in
 
-Supports any OIDC-compliant provider (Authentik, Keycloak, Auth0, etc.). Providers can be configured via environment variables or the **Settings → OAuth providers** UI. The `OAUTH_*` and `AUTH_*` variables are listed in the [configuration reference](configuration.md#environment-variables). The **Sign-in and directories** page shows each provider next to the other sign-in sources ([sign-in-and-directories.md](sign-in-and-directories.md)).
+Supports any OIDC-compliant provider (Authentik, Keycloak, Auth0, etc.). Providers can be configured via environment variables or the **OAuth providers** page (`/oauth-providers`, under Sign-in and directories in the sidebar). The `OAUTH_*` and `AUTH_*` variables are listed in the [configuration reference](configuration.md#environment-variables). The **Sign-in and directories** page shows each provider next to the other sign-in sources ([sign-in-and-directories.md](sign-in-and-directories.md)).
 
 ## Option A: Configure via the UI (recommended)
 
-1. Log in as admin and navigate to **Settings → OAuth providers**
+1. Log in as admin and open **Sign-in and directories → OAuth providers**
 2. Click **Add Provider** and fill in the details
 3. Copy the displayed **Callback URL** and add it to your OAuth provider's allowed redirect URIs
 
@@ -28,7 +28,7 @@ The callback URL format is:
 {BASE_URL}/api/auth/callback/{provider-id}
 ```
 
-For environment-configured providers, the provider ID is derived from `OAUTH_PROVIDER_NAME` (lowercased, non-alphanumeric replaced with `-`). The exact callback URL is shown in **Settings → OAuth providers** after the provider is synced.
+For environment-configured providers, the provider ID is derived from `OAUTH_PROVIDER_NAME` (lowercased, non-alphanumeric replaced with `-`). The exact callback URL is shown on the **OAuth providers** page after the provider is synced.
 
 Examples:
 - `https://caddy-manager.example.com/api/auth/callback/authentik` (production, `OAUTH_PROVIDER_NAME=Authentik`)
@@ -36,13 +36,13 @@ Examples:
 
 The `BASE_URL` environment variable must match exactly where users access your dashboard.
 
-> **Upgrading from < 1.0-RC:** The old callback URL (`/api/auth/callback/oauth2`) no longer works. Update your OAuth provider's redirect URI to the new format shown in **Settings → OAuth providers**.
+> **Upgrading from < 1.0-RC:** The old callback URL (`/api/auth/callback/oauth2`) no longer works. Update your OAuth provider's redirect URI to the new format shown on the **OAuth providers** page.
 
 OAuth login appears on the login page alongside credentials.
 
 ## Account linking
 
-Attaching an OAuth identity to an existing Ingressi user requires **Auto-link accounts** to be enabled for that provider (**Settings → OAuth providers**, or `OAUTH_ALLOW_AUTO_LINKING=true` for environment-configured providers). The switch marks the provider as trusted to prove that its identity owns the Ingressi account carrying the same email address, so leave it off for any IdP where users can register an arbitrary email themselves.
+Attaching an OAuth identity to an existing Ingressi user requires **Auto-link accounts** to be enabled for that provider (the **OAuth providers** page, or `OAUTH_ALLOW_AUTO_LINKING=true` for environment-configured providers). The switch marks the provider as trusted to prove that its identity owns the Ingressi account carrying the same email address, so leave it off for any IdP where users can register an arbitrary email themselves.
 
 With it enabled:
 

@@ -167,7 +167,7 @@ describe('the overview', () => {
       traffic: null, hosts: null, nodes: null, changes: null,
     }));
     expect(html).toContain('Nothing needs attention right now');
-    expect(html).toContain('Checked: Your access reviews.');
+    expect(html).not.toContain('Checked:');
     expect(html).toContain('Nothing else to show for your role');
     expect(html).not.toContain('Time range');
     expect(html).not.toContain('New proxy host');
@@ -201,7 +201,6 @@ describe('the first run', () => {
     const html = render(firstRun());
     expect(html).toContain('Saturday 3 October · 11:36 UTC · Ingressi <span class="num">v2.0.3</span>');
     expect(html).toMatch(/<h1[^>]*>Welcome, admin<\/h1>/);
-    expect(html).toContain('Nothing is configured yet and Caddy is running.');
     expect(html).toContain('data-testid="usage-ping-question"');
     expect(html).toContain('Set up this install');
     expect(html).toContain('0 of 5 done');
@@ -210,7 +209,7 @@ describe('the first run', () => {
     expect(html).toContain('Compare editions');
     expect(html).toContain('Business');
     expect(html).toContain('Hide the checklist');
-    expect(html).toContain('Analytics are off, so there is nothing to chart yet.');
+    expect(html).toContain('Analytics are off.');
     expect(html).toContain('href="#step-analytics"');
     expect(html).toContain('No proxy hosts yet');
     // The setup item is the checklist itself; other items still show.
@@ -223,7 +222,7 @@ describe('the first run', () => {
     done.steps[1] = { ...done.steps[1], done: true, doneBy: 'data' };
     done.steps[0] = { ...done.steps[0], done: true, doneBy: 'manual', markedAt: GENERATED };
     const html = render(firstRun({ permissions: { ...ALL, writeSettings: false }, firstRun: { checklist: { ...done, done: 2 }, ssoEdition: 'Business', ldapEdition: 'Enterprise' } }));
-    expect(html).toContain('2 of 5 setup steps are done.');
+    expect(html).toContain('2 of 5 done');
     expect(html).not.toContain('Mark as done');
     expect(html).not.toContain('Hide the checklist');
     const writer = render(firstRun({ firstRun: { checklist: { ...done, done: 2 }, ssoEdition: 'Business', ldapEdition: 'Enterprise' } }));

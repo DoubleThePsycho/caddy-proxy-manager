@@ -1,5 +1,5 @@
 /**
- * Server-side render of Settings → High availability on PostgreSQL
+ * Server-side render of the High availability page on PostgreSQL
  * (ee/high-availability/ui/PostgresReplicasSection.tsx through
  * ClusterSection): "PostgreSQL mode", the replicas with their role, last
  * heartbeat, version and schema, which one leads, read-only, the license
@@ -12,11 +12,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
-  usePathname: () => '/settings',
+  usePathname: () => '/high-availability',
   useSearchParams: () => new URLSearchParams(),
 }));
 
-import ClusterSection, { clusterSummaryLabel } from '@/ee/high-availability/ui/ClusterSection';
+import ClusterSection from '@/ee/high-availability/ui/ClusterSection';
 import type { ClusterView, PostgresReplicasView, ReplicaReport } from '@/ee/high-availability/cluster/types';
 
 const NOW = '2026-10-04T10:00:00.000Z';
@@ -66,7 +66,7 @@ function view(pg: PostgresReplicasView | null, configurable = true): ClusterView
 
 const render = (v: ClusterView) => renderToStaticMarkup(createElement(ClusterSection, { view: v, editionLabel: 'Enterprise' }));
 
-describe('Settings → High availability on PostgreSQL', () => {
+describe('High availability on PostgreSQL', () => {
   it('shows PostgreSQL mode: the replicas, who leads, heartbeats, versions and schema, read-only', () => {
     const html = render(view(postgres()));
     expect(html).toContain('PostgreSQL mode');
@@ -77,7 +77,7 @@ describe('Settings → High availability on PostgreSQL', () => {
     for (const label of ['Leader', 'Follower', 'Gone', 'Stopped']) expect(html).toContain(label);
     expect(html).toContain('0053_cluster_nodes');
     expect(html).toContain('1.4.0');
-    expect(html).toContain('every 10 s');
+    expect(html).toContain('Every 10 s');
     expect(html).toContain('checked once, when it joins');
     expect(html).not.toContain('High availability is off on this node');
     expect(html).not.toMatch(/<(input|select|textarea)\b/);
@@ -121,9 +121,7 @@ describe('Settings → High availability on PostgreSQL', () => {
     expect(reconnecting).toContain('The leader election connection was lost');
   });
 
-  it('labels the group, and keeps the SQLite cluster card as it was', () => {
-    expect(clusterSummaryLabel(view(postgres()))).toBe('PostgreSQL mode');
-    expect(clusterSummaryLabel(view(null))).toBe('Off');
+  it('keeps the SQLite cluster card as it was', () => {
     const sqlite = render(view(null));
     expect(sqlite).toContain('High availability is off on this node');
     expect(sqlite).not.toContain('PostgreSQL mode');

@@ -13,58 +13,11 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { Globe, Home, Search, X } from "lucide-react";
+import { Home, Search, X } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { GeoBlockSettings } from "@/lib/settings";
 import { GeoBlockMode } from "@/lib/models/proxy-hosts";
 import { COUNTRIES, flagEmoji } from "./countries";
-
-// ─── GeoIpStatus ─────────────────────────────────────────────────────────────
-
-type GeoIpStatusData = { country: boolean; asn: boolean } | null;
-
-function GeoIpStatus() {
-  const [status, setStatus] = useState<GeoIpStatusData>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    fetch("/api/geoip-status")
-      .then((r) => r.json())
-      .then((d) => setStatus(d))
-      .catch(() => setStatus(null))
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) {
-    return <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent inline-block" />;
-  }
-
-  const allLoaded = status?.country && status?.asn;
-  const noneLoaded = !status?.country && !status?.asn;
-
-  const label = allLoaded ? "GeoIP ready" : noneLoaded ? "GeoIP missing" : "GeoIP partial";
-  const tooltip = noneLoaded
-    ? "GeoIP databases not found — country/continent/ASN blocking will not work. Enable the geoipupdate service."
-    : !status?.country
-    ? "GeoLite2-Country database missing — country/continent blocking disabled"
-    : !status?.asn
-    ? "GeoLite2-ASN database missing — ASN blocking disabled"
-    : "GeoLite2-Country and GeoLite2-ASN databases loaded";
-
-  return (
-    <span title={tooltip}>
-      <Badge
-        variant="outline"
-        className={cn(
-          "h-[22px] text-[0.7rem] font-semibold tracking-wide cursor-default",
-          allLoaded ? "border-green-500 text-green-600" : noneLoaded ? "border-destructive text-destructive" : "border-yellow-500 text-yellow-600"
-        )}
-      >
-        {label}
-      </Badge>
-    </span>
-  );
-}
 
 // ─── CountryPicker ────────────────────────────────────────────────────────────
 
@@ -479,7 +432,7 @@ function ResponseHeadersEditor({ initialHeaders }: { initialHeaders: Record<stri
         </Button>
       </div>
       {rows.length === 0 ? (
-        <span className="text-xs text-muted-foreground">No custom headers — click + to add one.</span>
+        <span className="text-xs text-muted-foreground">No headers.</span>
       ) : (
         <div className="flex flex-col gap-2">
           {rows.map((row, i) => (
@@ -565,7 +518,6 @@ function RulesPanel({ prefix, initial, resetKey = 0 }: RulesPanelProps) {
         label="ASNs"
         initialValues={asns.map(String)}
         placeholder="13335, 15169…"
-        helperText="Autonomous System Numbers — press Enter or comma to add"
         validate={(v) => /^\d+$/.test(v)}
       />
 
@@ -577,7 +529,6 @@ function RulesPanel({ prefix, initial, resetKey = 0 }: RulesPanelProps) {
           label="CIDRs"
           initialValues={cidrs}
           placeholder="10.0.0.0/8…"
-          helperText="Press Enter or comma to add"
         />
         <TagInput
           key={`${prefix}-ips-${resetKey}`}
@@ -585,7 +536,6 @@ function RulesPanel({ prefix, initial, resetKey = 0 }: RulesPanelProps) {
           label="IP Addresses"
           initialValues={ips}
           placeholder="1.2.3.4…"
-          helperText="Press Enter or comma to add"
         />
       </div>
     </div>
@@ -648,26 +598,15 @@ export function GeoBlockFields({ initialValues, showModeSelector = true }: GeoBl
   }
 
   return (
-    <div className="rounded-lg border border-rose-500/60 bg-rose-500/5 p-4">
+    <div>
       <input type="hidden" name="geoblockPresent" value="1" />
 
-      {/* Header */}
-      <div className="flex flex-row items-start justify-between gap-2">
-        <div className="flex flex-row items-start gap-3 flex-1 min-w-0">
-          <div className="mt-0.5 w-8 h-8 rounded-xl bg-rose-500 flex items-center justify-center shrink-0">
-            <Globe className="h-4 w-4 text-white" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-row items-center gap-2 flex-wrap">
-              <p className="text-sm font-bold leading-snug">Geo Blocking</p>
-              <GeoIpStatus />
-            </div>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Block or allow traffic by country, continent, ASN, CIDR, or IP
-            </p>
-          </div>
-        </div>
+      <div className="flex flex-row items-center justify-between gap-2">
+        <label htmlFor="geoblock-enabled" className="text-sm font-medium">
+          Use default rules
+        </label>
         <Switch
+          id="geoblock-enabled"
           name="geoblockEnabled"
           checked={enabled}
           onCheckedChange={setEnabled}
@@ -757,10 +696,10 @@ export function GeoBlockFields({ initialValues, showModeSelector = true }: GeoBl
                     label="Trusted Proxies"
                     initialValues={initial?.trusted_proxies ?? []}
                     placeholder="private_ranges, 10.0.0.0/8…"
-                    helperText="Used to parse X-Forwarded-For. Use private_ranges for all RFC-1918 ranges."
+                    helperText="private_ranges covers the private networks."
                   />
 
-                  <div className="flex items-center gap-2" title="When enabled, requests where the real client IP cannot be determined (e.g. behind a trusted proxy with no usable X-Forwarded-For) are blocked. Default: off (fail-open).">
+                  <div className="flex items-center gap-2">
                     <Checkbox
                       id="geoblock-fail-closed"
                       name="geoblockFailClosed"
@@ -784,7 +723,6 @@ export function GeoBlockFields({ initialValues, showModeSelector = true }: GeoBl
                         defaultValue={initial?.response_status ?? 403}
                         className="h-8 text-sm"
                       />
-                      <p className="text-xs text-muted-foreground mt-1">HTTP status when blocked</p>
                     </div>
                     <div className="col-span-2">
                       <label className="text-sm font-medium mb-1 block">Response Body</label>
@@ -793,7 +731,6 @@ export function GeoBlockFields({ initialValues, showModeSelector = true }: GeoBl
                         defaultValue={initial?.response_body ?? "Forbidden"}
                         className="h-8 text-sm"
                       />
-                      <p className="text-xs text-muted-foreground mt-1">Body text returned to blocked clients</p>
                     </div>
                     <div className="col-span-3">
                       <label className="text-sm font-medium mb-1 block">Redirect URL</label>
@@ -803,7 +740,7 @@ export function GeoBlockFields({ initialValues, showModeSelector = true }: GeoBl
                         placeholder="https://example.com/blocked"
                         className="h-8 text-sm"
                       />
-                      <p className="text-xs text-muted-foreground mt-1">If set, sends a 302 redirect instead of status/body above</p>
+                      <p className="text-xs text-muted-foreground mt-1">Sends a 302 there instead of the status and body.</p>
                     </div>
                   </div>
 

@@ -88,8 +88,8 @@ export function VersionDetail({ version, others, compare, onCompare, canDelete, 
   let caption: string;
   if (target === "live") caption = `What rolling back to #${version.id} would change in the live configuration.`;
   else if (comparison?.from.kind === "empty") caption = `#${version.id} is the oldest version kept, so everything in it shows as added.`;
-  else if (typeof target === "number") caption = `Changes from #${target} to #${version.id}. Timestamps are ignored and secrets are never shown.`;
-  else caption = previousId !== null ? `Changes from #${previousId} to #${version.id}. Timestamps are ignored and secrets are never shown.` : "Changes in this version.";
+  else if (typeof target === "number") caption = `Changes from #${target} to #${version.id}.`;
+  else caption = previousId !== null ? `Changes from #${previousId} to #${version.id}.` : "Changes in this version.";
 
   const beforeLabel = comparison ? sideLabel(comparison.from) : "Before";
   const afterLabel = `#${version.id}`;

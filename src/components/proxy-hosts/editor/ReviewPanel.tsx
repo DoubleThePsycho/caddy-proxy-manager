@@ -22,28 +22,25 @@ function formatWhen(iso: string): string {
   return date.toLocaleString("en-GB", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 }
 
-function ApprovalNote({ preview, hostLabel }: { preview: HostChangePreview; hostLabel: string }) {
+function ApprovalNote({ preview, hostLabel, policiesExist }: { preview: HostChangePreview; hostLabel: string; policiesExist: boolean }) {
   const approval = preview.approval;
   if (!approval.required) {
-    return (
-      <Banner tone="ok" icon={ShieldCheck} title="No approval needed.">
-        Saving applies the change at once.
-      </Banner>
-    );
+    // Worth saying only where change approval policies exist.
+    return policiesExist ? <Banner tone="ok" icon={ShieldCheck} title="No approval needed." /> : null;
   }
   const policies = approval.policies.map((policy) => `"${policy.name}"`).join(", ");
   const approvals = `${approval.requiredApprovals} ${approval.requiredApprovals === 1 ? "approval" : "approvals"}`;
   const window = approval.window.restricted
     ? ` and is applied in a change window, ${approval.window.description}.${approval.window.open ? " The window is open now." : approval.window.nextOpenAt ? ` The next window opens ${formatWhen(approval.window.nextOpenAt)}.` : " The windows of its policies do not open together in the coming week."}`
-    : ". No change window applies, so it is applied as soon as it is approved.";
+    : ", and is applied as soon as it is approved.";
   return (
     <div role="note" className="flex gap-3 rounded-xl border border-line2 bg-warn-tint px-3.5 py-3">
       <ShieldCheck aria-hidden="true" className="mt-px h-[18px] w-[18px] shrink-0 text-warn" />
       <span className="flex flex-col gap-1 text-[13px]">
         <span className="font-semibold">This change needs approval</span>
         <span className="text-muted-foreground">
-          {policies ? `${hostLabel} is covered by the change approval ${approval.policies.length === 1 ? "policy" : "policies"} ${policies}. ` : `A change approval policy covers ${hostLabel}. `}
-          Saving creates a change request instead of applying it: it needs {approvals} from someone other than you{window}
+          {policies ? `${hostLabel} is covered by ${policies}. ` : `A change approval policy covers ${hostLabel}. `}
+          Saving creates a change request that needs {approvals} from someone other than you{window}
         </span>
       </span>
     </div>
@@ -69,6 +66,7 @@ export function ReviewPanel({
   onShow,
   onUndo,
   hostLabel,
+  policiesExist,
 }: {
   title: string;
   changes: FormChange[];
@@ -88,6 +86,8 @@ export function ReviewPanel({
   onShow: (change: FormChange) => void;
   onUndo: (change: FormChange) => void;
   hostLabel: string;
+  /** Change approval policies exist (ee/approvals): the review then also says when none applies. */
+  policiesExist: boolean;
 }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -118,7 +118,7 @@ export function ReviewPanel({
       </div>
 
       {changes.length === 0 ? (
-        <p className="m-0 text-[13px] text-muted-foreground">{creating ? "The new host uses the default settings everywhere you did not change them." : "Nothing changed."}</p>
+        <p className="m-0 text-[13px] text-muted-foreground">{creating ? "Every setting is at its default." : "Nothing changed."}</p>
       ) : (
         <ol className="m-0 flex list-none flex-col gap-2.5 p-0" aria-label="Changes">
           {changes.map((change) => (
@@ -158,7 +158,7 @@ export function ReviewPanel({
       )}
       {ready && (
         <>
-          <ApprovalNote preview={ready} hostLabel={hostLabel} />
+          <ApprovalNote preview={ready} hostLabel={hostLabel} policiesExist={policiesExist} />
           <div className="flex flex-col gap-1.5">
             <span className="text-[13px] font-medium">Impact</span>
             <ul className="m-0 flex list-disc flex-col gap-1 pl-5 text-[13px] text-muted-foreground">

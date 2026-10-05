@@ -1,7 +1,7 @@
 /**
- * Server-side render of the Backups tab on the Change history page: the
- * license notice, what stays possible without a license, and no secrets in
- * the markup.
+ * Server-side render of the Backups page (its destinations and runs, the
+ * license notice, what stays possible without a license) and of the backups
+ * line on the Change history page, which links to it.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -14,6 +14,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 import HistoryClient from '@/ee/config-history/ui/HistoryClient';
+import BackupsTab from '@/ee/backups/ui/BackupsTab';
 import type { BackupDestinationView, BackupRunView } from '@/ee/backups/types';
 
 const stamp = '2026-10-02T03:00:00.000Z';
@@ -29,11 +30,25 @@ const run: BackupRunView = {
   objectKey: 'prod/ingressi-config-2026-10-02T03-00-00.000Z.json', sizeBytes: 2048, sha256: 'ab'.repeat(32), prunedCount: 1, error: null, warning: null,
 };
 
-function render(configurable: boolean) {
+function renderBackups(configurable: boolean) {
+  return renderToStaticMarkup(
+    createElement(BackupsTab, {
+      destinations: [destination],
+      runs: { runs: [run], total: 1, page: 1, perPage: 25 },
+      configurable,
+      isSlave: false,
+      editionLabel: 'Business',
+      minPassphraseLength: 12,
+      paginateRuns: true,
+    })
+  );
+}
+
+function renderHistory(destinations: BackupDestinationView[]) {
+  // Without React's text separators, so sentences read as one.
   return renderToStaticMarkup(
     createElement(HistoryClient, {
-      initialTab: 'backups',
-      backups: { destinations: [destination], runs: { runs: [run], total: 1, page: 1, perPage: 20 }, configurable, editionLabel: 'Business' },
+      backups: { destinations },
       now: Date.parse(stamp),
       versions: { versions: [], total: 0, limit: 25, offset: 0, liveId: null, recording: { enabled: false, retention: 200 } },
       page: 1,
@@ -44,25 +59,34 @@ function render(configurable: boolean) {
       editionLabel: 'Homelab',
       limits: { minRetention: 1, maxRetention: 10000, minPassphraseLength: 12 },
     })
-  );
+  ).replace(/<!-- -->/g, '');
 }
 
-describe('History page, Backups tab', () => {
+describe('Backups page', () => {
   it('shows destinations, their schedule, failures and recent runs', () => {
-    const html = render(true);
+    const html = renderBackups(true);
     expect(html).toContain('Offsite R2');
     expect(html).toContain('Mondays at 03:00 (Europe/Rome)');
     expect(html).toContain('Upload failed: HTTP 403 (AccessDenied) from the storage');
     expect(html).toContain('ingressi-config-2026-10-02T03-00-00.000Z.json');
-    expect(html).toMatch(/Backups <span[^>]*>1<\/span>/);
-    expect(html).toContain('Recording off');
     expect(html).not.toContain('needs a');
   });
 
   it('explains what works without a license', () => {
-    const html = render(false);
+    const html = renderBackups(false);
     expect(html).toContain('Scheduled backups need an active Ingressi Business license or higher');
     expect(html).toContain('Enabled destinations keep backing up on schedule; you can still disable and delete them.');
     expect(html).toContain('free import');
+  });
+});
+
+describe('Change history page, backups line', () => {
+  it('summarises the backups and links to the Backups page', () => {
+    const html = renderHistory([destination]);
+    expect(html).toContain('Recording off');
+    expect(html).toMatch(/<a [^>]*href="\/backups"[^>]*>Backups to Offsite R2, mondays at 03:00 \(europe\/rome\)/);
+    expect(html).toContain('last failed');
+    expect(html).not.toContain('role="tab"');
+    expect(renderHistory([])).toMatch(/<a [^>]*href="\/backups"[^>]*>No scheduled backups<\/a>/);
   });
 });

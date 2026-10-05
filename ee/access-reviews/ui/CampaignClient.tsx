@@ -219,7 +219,7 @@ export default function CampaignClient({
         </Banner>
       )}
       {!isReviewer && open && (
-        <Banner tone="info">You do not review this campaign, so its items are shown read-only. Its reviewers decide them.</Banner>
+        <Banner tone="info">You do not review this campaign, so its items are read-only.</Banner>
       )}
       {evidence === null && (
         <Banner tone="warn">The evidence for this review could not be read. Decisions still work.</Banner>
@@ -227,12 +227,7 @@ export default function CampaignClient({
 
       <ConfirmPanel decisions={decisions} />
 
-      <ReviewTable decisions={decisions} evidence={evidence} currentUserId={currentUserId} linkUsers={linkUsers} />
-
-      <p className="m-0 text-xs text-soft">
-        Evidence comes from the audit log, the sign-in records and the forward-auth sessions, read when the page opens. Items nobody
-        confirms stay as they are; completing the review records them as not reviewed.
-      </p>
+      <ReviewTable decisions={decisions} evidence={evidence} currentUserId={currentUserId} linkUsers={linkUsers} urlPage />
 
       <AppDialog
         open={action !== null}

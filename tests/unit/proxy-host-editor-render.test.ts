@@ -27,6 +27,7 @@ import { SecuritySection } from '@/src/components/proxy-hosts/editor/SecuritySec
 import { AccessSection } from '@/src/components/proxy-hosts/editor/AccessSection';
 import { AdvancedSection, CertificateSection, HeadersSection } from '@/src/components/proxy-hosts/editor/OtherSections';
 import { RoutingSection } from '@/src/components/proxy-hosts/editor/RoutingSection';
+import { ReviewPanel, type PreviewState } from '@/src/components/proxy-hosts/editor/ReviewPanel';
 
 const host: ProxyHost = {
   id: 7,
@@ -174,11 +175,15 @@ describe('host editor sections', () => {
   it('Security: the WAF mode, the host’s exclusions and rate limiting', () => {
     const html = inEditor(createElement(SecuritySection));
     expect(html).toMatch(/aria-pressed="true"[^>]*>.*?Block/s);
-    expect(html).toContain('paranoia level 1, anomaly threshold 5');
+    // Global mode names the mode the WAF settings give it today.
+    expect(html).toContain('Currently blocking.');
     expect(html).toContain('Restricted SQL Character Anomaly Detection (args)');
     expect(html).toContain('aria-label="Remove exclusion of rule 942430"');
     expect(html).toContain('paths under /upload');
     expect(html).toContain('Rate limiting');
+    // Rate limiting off still applies the global defaults: the card says so when there are any.
+    expect(html).not.toContain('global default rules apply');
+    expect(inEditor(createElement(SecuritySection), data({ rateLimitDefaults: { enabled: true, rules: 2 } }))).toContain('Off: the 2 global default rules apply.');
   });
 
   it('Access: access list, geo blocking, sign-in, mTLS and blocked paths', () => {
@@ -207,5 +212,41 @@ describe('host editor sections', () => {
     const user = inEditor(createElement(AdvancedSection), data({ isAdmin: false }));
     expect(user).toContain('Only administrators can change custom Caddy JSON.');
     expect(user).toMatch(/<textarea[^>]*disabled=""[^>]*id="f-reverse-proxy"|<textarea[^>]*id="f-reverse-proxy"[^>]*disabled=""/);
+  });
+});
+
+describe('host editor review', () => {
+  const window = { restricted: false, open: true, nextOpenAt: null, description: null };
+  function review(required: boolean, policiesExist: boolean): string {
+    const preview = {
+      status: 'ready',
+      preview: {
+        approval: { required, policies: required ? [{ id: 1, name: 'Production' }] : [], requiredApprovals: 1, operations: ['update'], window, emergencyAllowed: false, minEmergencyReasonLength: 10 },
+        changes: [],
+        impact: { lines: [{ key: 'reload', text: 'Reloads its configuration on this node.' }] },
+        warning: null,
+      },
+    } as unknown as PreviewState;
+    const noop = () => {};
+    return renderToStaticMarkup(
+      createElement(ReviewPanel, {
+        title: 'Review 1 change to App', changes: [], creating: false, preview, note: '', onNote: noop, emergency: false, onEmergency: noop,
+        emergencyReason: '', onEmergencyReason: noop, submitError: null, submitting: false, submitLabel: required ? 'Submit for approval' : 'Save changes',
+        onSubmit: noop, onClose: noop, onShow: noop, onUndo: noop, hostLabel: 'App', policiesExist,
+      })
+    );
+  }
+
+  it('says no approval is needed only where approval policies exist', () => {
+    expect(review(false, true)).toContain('No approval needed.');
+    expect(review(false, false)).not.toContain('No approval needed.');
+    expect(review(false, false)).toContain('Reloads its configuration on this node.');
+  });
+
+  it('says which policy covers a change and what it needs', () => {
+    const html = review(true, true);
+    expect(html).toContain('This change needs approval');
+    expect(html).toContain('App is covered by &quot;Production&quot;.');
+    expect(html).toContain('needs 1 approval from someone other than you, and is applied as soon as it is approved.');
   });
 });

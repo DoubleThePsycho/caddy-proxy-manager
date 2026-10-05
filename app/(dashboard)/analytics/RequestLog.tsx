@@ -37,7 +37,6 @@ export function RequestLog({
         <h2 id="analytics-log-title" className="m-0 text-base leading-6 font-semibold">
           Requests
         </h2>
-        <span className="text-[13px] text-soft">Latest matching the filters · every request is logged, nothing is sampled</span>
         <SegmentedControl
           size="sm"
           label="Requests to list"

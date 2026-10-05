@@ -202,7 +202,7 @@ export default function PoliciesTab({
     <SectionCard
       title="Approval policies"
       count={policies.length}
-      description="Which host changes need approval, by how many people, and when approved changes may be applied. Several policies on one change combine to the strictest."
+      description="Several policies on one change combine to the strictest."
       actions={
         canManage && (
           <Button onClick={openCreate} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
@@ -210,14 +210,12 @@ export default function PoliciesTab({
           </Button>
         )
       }
-      footer={<span className="text-xs text-soft">Disabling or deleting a policy never needs a license. Every change to a policy is recorded in the audit log.</span>}
     >
       {policies.length === 0 ? (
         <EmptyState
           compact
           icon={ShieldCheck}
           title="No policies yet: every host change is applied directly."
-          description="A policy names the hosts (by type and tag) and the changes that need someone else's approval, and when approved changes may be applied."
         />
       ) : (
         <Table className="min-w-[880px]">
@@ -374,9 +372,7 @@ export default function PoliciesTab({
               onChange={(event) => setForm({ ...form, hostTags: event.target.value })}
               placeholder="prod, pci (empty: every host)"
             />
-            <p className="text-xs text-muted-foreground">
-              Hosts carrying one of these tags, before or after the change. Leave empty to protect every host.
-            </p>
+            <p className="text-xs text-muted-foreground">Hosts with one of these tags, before or after the change.</p>
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
@@ -414,9 +410,7 @@ export default function PoliciesTab({
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div className="space-y-1">
                 <p className="text-sm font-medium">Change windows</p>
-                <p className="text-xs text-muted-foreground">
-                  Approved changes wait for a window and are applied within a minute of it opening. None: any time.
-                </p>
+                <p className="text-xs text-muted-foreground">Approved changes wait for a window. None: any time.</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="policy-timezone">Time zone</Label>
@@ -475,10 +469,7 @@ export default function PoliciesTab({
             >
               <Plus className="h-4 w-4" /> Add window
             </Button>
-            <p className="text-xs text-muted-foreground">
-              Times are wall-clock times in the time zone. An end before the start runs past midnight. On daylight saving nights a
-              window follows the clock: a skipped hour never opens, a repeated hour is open twice.
-            </p>
+            <p className="text-xs text-muted-foreground">An end before the start runs past midnight.</p>
           </div>
         </div>
       </AppDialog>

@@ -46,6 +46,15 @@ function joinList(items: string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
+/** Up to this many ports are named in the banner; more are counted, and listed on request. */
+const PORTS_NAMED = 3;
+
+/** "Port 8883/tcp is", "Ports 8883/tcp and 53/udp are", "12 ports are". */
+function portsSubject(mappings: string[]): string {
+  if (mappings.length > PORTS_NAMED) return `${mappings.length} ports are`;
+  return `${mappings.length === 1 ? "Port" : "Ports"} ${joinList(mappings.map(portLabel))} ${mappings.length === 1 ? "is" : "are"}`;
+}
+
 /**
  * L4 ports are published on the Caddy container, which has to be recreated
  * when they change (the l4-port-manager sidecar does it). This banner shows
@@ -67,6 +76,7 @@ export function L4PortsApplyBanner({
   const [data, setData] = useState<PortsResponse | null>(null);
   const [applying, setApplying] = useState(false);
   const [published, setPublished] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
   const onDiffRef = useRef(onDiff);
   useEffect(() => {
     onDiffRef.current = onDiff;
@@ -153,35 +163,43 @@ export function L4PortsApplyBanner({
   if (diff.needsApply) {
     const waiting = diff.requiredPorts.filter((port) => !diff.currentPorts.includes(port));
     const unused = diff.currentPorts.filter((port) => !diff.requiredPorts.includes(port));
-    const names = hosts
-      .filter((host) => host.enabled && waiting.includes(portMappingFor(host) ?? ""))
-      .map((host) => host.name);
-    const title =
-      waiting.length > 0
-        ? `${waiting.length === 1 ? "Port" : "Ports"} ${joinList(waiting.map(portLabel))} ${waiting.length === 1 ? "is" : "are"} not published yet.`
-        : `${unused.length === 1 ? "Port" : "Ports"} ${joinList(unused.map(portLabel))} ${unused.length === 1 ? "is" : "are"} still published.`;
-    const subject =
-      waiting.length === 0
-        ? "No L4 host uses them any more, but"
-        : names.length === 1
-          ? `${names[0]} is saved, but`
-          : names.length > 1
-            ? `${joinList(names)} are saved, but`
-            : "The hosts are saved, but";
+    const ports = waiting.length > 0 ? waiting : unused;
+    // Each waiting port with the hosts that use it; ports no host uses any more on their own.
+    const lines = ports.map((mapping) => {
+      const names = hosts.filter((host) => host.enabled && portMappingFor(host) === mapping).map((host) => host.name);
+      return names.length > 0 ? `${portLabel(mapping)}: ${joinList(names)}` : portLabel(mapping);
+    });
     return (
       <Banner
         tone="warn"
-        title={title}
+        // The port list needs block layout (a list cannot sit in the inline paragraph).
+        layout={ports.length > PORTS_NAMED && listOpen ? "stacked" : "inline"}
+        title={`${portsSubject(ports)} ${waiting.length > 0 ? "not published yet" : "still published"}.`}
         actions={
-          canApply ? (
-            <Button variant="outline" size="sm" onClick={handleApply}>
-              Publish ports now
-            </Button>
+          ports.length > PORTS_NAMED || canApply ? (
+            <>
+              {ports.length > PORTS_NAMED && (
+                <Button variant="ghost" size="sm" aria-expanded={listOpen} onClick={() => setListOpen((open) => !open)}>
+                  {listOpen ? "Hide ports" : "Show ports"}
+                </Button>
+              )}
+              {canApply && (
+                <Button variant="outline" size="sm" onClick={handleApply}>
+                  Publish ports now
+                </Button>
+              )}
+            </>
           ) : undefined
         }
       >
-        {subject} the Caddy container has to be recreated before {waiting.length === 0 ? "they close" : "it can listen"}.
-        Recreating it interrupts all traffic through Caddy for a few seconds.
+        Publishing recreates the Caddy container: traffic through Caddy pauses for a few seconds.
+        {ports.length > PORTS_NAMED && listOpen && (
+          <ul className="mt-1.5 mb-0 list-none p-0 num text-xs">
+            {lines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        )}
       </Banner>
     );
   }
@@ -190,7 +208,11 @@ export function L4PortsApplyBanner({
     const listening = diff.requiredPorts.map(portLabel);
     return (
       <Banner tone="ok" title="Ports published." live onDismiss={() => setPublished(false)}>
-        {listening.length > 0 ? `Caddy now listens on ${joinList(listening)}.` : "Caddy publishes no L4 ports now."}
+        {listening.length === 0
+          ? "Caddy publishes no L4 ports now."
+          : listening.length > PORTS_NAMED
+            ? `Caddy now listens on ${listening.length} L4 ports.`
+            : `Caddy now listens on ${joinList(listening)}.`}
       </Banner>
     );
   }

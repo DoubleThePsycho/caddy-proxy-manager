@@ -69,9 +69,9 @@ async function validateAndSanitizeCertificateId(
     let warning: string;
 
     if (!cloudflareConfigured) {
-      warning = `Certificate ID ${certificateId} not found. Automatically using 'Managed by Caddy (Auto)'. Note: Without Cloudflare DNS integration, wildcard certificates require port 80 to be accessible for HTTP-01 challenges. Configure Cloudflare in Settings to enable DNS-01 challenges.`;
+      warning = `Certificate ${certificateId} not found, so Caddy obtains this host's certificate. Wildcard domains need a DNS provider: add one in Certificate settings.`;
     } else {
-      warning = `Certificate ID ${certificateId} not found. Automatically using 'Managed by Caddy (Auto)' which will provision certificates automatically using Caddy.`;
+      warning = `Certificate ${certificateId} not found, so Caddy obtains this host's certificate.`;
     }
 
     return { certificateId: null, warning };

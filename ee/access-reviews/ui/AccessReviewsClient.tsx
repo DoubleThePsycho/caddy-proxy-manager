@@ -14,9 +14,12 @@ import { SectionCard } from "@/components/ui/SectionCard";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
+import { SearchField } from "@/components/ui/SearchField";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AppDialog } from "@/components/ui/AppDialog";
+import { paginate } from "@/src/lib/pagination";
 import type { CampaignSummary, ReviewScope, ScheduleView } from "../types";
 import { callApi, CampaignStatusPill, describeScope, Field, formatDateTime, formatDay, LOCKED_HINT } from "./shared";
 
@@ -72,29 +75,44 @@ function toggle<T>(list: T[], value: T, on: boolean): T[] {
   return on ? [...new Set([...list, value])] : list.filter((item) => item !== value);
 }
 
+/** More options than this get a search box. */
+const SEARCH_FROM = 10;
+
 function CheckList<T extends string | number>({
   idPrefix,
   options,
   selected,
   onChange,
+  searchLabel,
 }: {
   idPrefix: string;
   options: { value: T; label: string }[];
   selected: T[];
   onChange: (next: T[]) => void;
+  /** The search box's label, shown when there are many options. */
+  searchLabel?: string;
 }) {
+  const [query, setQuery] = useState("");
   if (options.length === 0) return <p className="text-xs text-muted-foreground">None.</p>;
+  const needle = query.trim().toLowerCase();
+  const shown = needle ? options.filter((option) => option.label.toLowerCase().includes(needle)) : options;
   return (
-    <div className="max-h-48 divide-y divide-line overflow-y-auto rounded-xl border border-line">
-      {options.map((option) => {
-        const id = `${idPrefix}-${option.value}`;
-        return (
-          <div key={String(option.value)} className="flex items-center gap-3 px-3 py-2">
-            <Checkbox id={id} checked={selected.includes(option.value)} onCheckedChange={(checked) => onChange(toggle(selected, option.value, checked === true))} />
-            <Label htmlFor={id} className="font-normal">{option.label}</Label>
-          </div>
-        );
-      })}
+    <div className="flex flex-col gap-2">
+      {searchLabel && options.length > SEARCH_FROM && (
+        <SearchField aria-label={searchLabel} placeholder={searchLabel} value={query} onChange={(event) => setQuery(event.target.value)} className="w-full" />
+      )}
+      <div className="max-h-48 divide-y divide-line overflow-y-auto rounded-xl border border-line">
+        {shown.length === 0 && <p className="m-0 px-3 py-2 text-xs text-muted-foreground">No match.</p>}
+        {shown.map((option) => {
+          const id = `${idPrefix}-${option.value}`;
+          return (
+            <div key={String(option.value)} className="flex items-center gap-3 px-3 py-2">
+              <Checkbox id={id} checked={selected.includes(option.value)} onCheckedChange={(checked) => onChange(toggle(selected, option.value, checked === true))} />
+              <Label htmlFor={id} className="font-normal">{option.label}</Label>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -106,6 +124,8 @@ export default function AccessReviewsClient(props: Props) {
   const [form, setForm] = useState<Form>(EMPTY);
   const [error, setError] = useState<string | null>(null);
   const [deletingSchedule, setDeletingSchedule] = useState<ScheduleView | null>(null);
+  const { page, hrefFor } = useUrlPage();
+  const campaigns = paginate(props.campaigns, page);
   const editable = props.canWrite && props.configurable;
   const names = useMemo(() => ({
     customRoles: new Map(props.customRoles.map((role) => [role.id, role.name])),
@@ -189,7 +209,7 @@ export default function AccessReviewsClient(props: Props) {
         className="mb-0"
         breadcrumb={["Identity", "Access reviews"]}
         title="Access reviews"
-        description="Reviewers confirm or revoke each user's dashboard account, role, group memberships and API tokens. Every campaign leaves a downloadable record."
+        description="Reviewers keep or revoke each user's account, role, group memberships and API tokens."
         actions={props.canWrite ? (
           <Button onClick={openForm} disabled={!props.configurable} title={props.configurable ? undefined : LOCKED_HINT}>
             <Plus /> Start review
@@ -200,7 +220,7 @@ export default function AccessReviewsClient(props: Props) {
       {!props.configurable && (
         <Banner tone="info" title="Read-only without a license.">
           Starting and scheduling access reviews needs a license with access reviews ({props.editionLabel} edition). Open reviews can
-          still be decided, completed, cancelled and deleted, and schedules disabled.{" "}
+          still be decided, completed, cancelled and deleted.{" "}
           <Link href="/license" className="text-brand underline-offset-4 hover:underline">Licensing</Link>
         </Banner>
       )}
@@ -221,14 +241,17 @@ export default function AccessReviewsClient(props: Props) {
       <SectionCard
         title="Campaigns"
         count={props.campaigns.length}
-        description="Nobody reviews their own access. Revocations apply when the reviewer confirms."
+        footer={
+          campaigns.pageCount > 1 ? (
+            <Pagination page={campaigns.page} perPage={campaigns.perPage} total={campaigns.total} noun="campaigns" label="Pages of campaigns" hrefFor={hrefFor} />
+          ) : undefined
+        }
       >
         {props.campaigns.length === 0 ? (
           <EmptyState
             compact
             icon={ClipboardCheck}
             title="No access review yet"
-            description="Start one to have reviewers confirm who still needs their access."
             action={props.canWrite && props.configurable ? <Button size="sm" onClick={openForm}><Plus /> Start review</Button> : undefined}
           />
         ) : (
@@ -244,7 +267,7 @@ export default function AccessReviewsClient(props: Props) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {props.campaigns.map((campaign) => {
+              {campaigns.items.map((campaign) => {
                 const decided = campaign.counts.total - campaign.counts.pending;
                 const share = campaign.counts.total ? (decided / campaign.counts.total) * 100 : 0;
                 return (
@@ -278,13 +301,9 @@ export default function AccessReviewsClient(props: Props) {
         )}
       </SectionCard>
 
-      <SectionCard
-        title="Schedules"
-        count={props.schedules.length}
-        description="Recurring reviews start a new campaign every few months. Turn on Repeat in Start review to create one."
-      >
+      <SectionCard title="Schedules" count={props.schedules.length}>
         {props.schedules.length === 0 ? (
-          <EmptyState compact icon={CalendarClock} title="No schedule" description="A schedule starts the same review every few months, so nobody has to remember." />
+          <EmptyState compact icon={CalendarClock} title="No schedule" description="Turn on Repeat in Start review to create one." />
         ) : (
           <Table className="min-w-[760px]">
             <TableHeader>
@@ -338,7 +357,7 @@ export default function AccessReviewsClient(props: Props) {
           <Field label="Name" htmlFor="review-name">
             <Input id="review-name" value={form.name} maxLength={100} placeholder="Quarterly access review" onChange={(event) => set("name", event.target.value)} />
           </Field>
-          <Field label="Who is reviewed" hint="Every access of the users in scope is reviewed: account, role, groups and API tokens.">
+          <Field label="Who is reviewed">
             <div className="flex gap-4">
               {(["all", "filter"] as const).map((type) => (
                 <label key={type} className="flex items-center gap-2 text-sm">
@@ -357,12 +376,12 @@ export default function AccessReviewsClient(props: Props) {
                 <CheckList idPrefix="scope-custom" options={props.customRoles.map((role) => ({ value: role.id, label: role.name }))} selected={form.customRoleIds} onChange={(next) => set("customRoleIds", next)} />
               </Field>
               <Field label="Groups">
-                <CheckList idPrefix="scope-group" options={props.groups.map((group) => ({ value: group.id, label: group.name }))} selected={form.groupIds} onChange={(next) => set("groupIds", next)} />
+                <CheckList idPrefix="scope-group" searchLabel="Find a group" options={props.groups.map((group) => ({ value: group.id, label: group.name }))} selected={form.groupIds} onChange={(next) => set("groupIds", next)} />
               </Field>
             </div>
           )}
-          <Field label="Reviewers" hint="Any active user can review; reviewers see the review under My reviews. A reviewer in scope needs another reviewer for their own access.">
-            <CheckList idPrefix="reviewer" options={props.users.map((user) => ({ value: user.id, label: user.name ? `${user.name} (${user.email})` : user.email }))} selected={form.reviewerIds} onChange={(next) => set("reviewerIds", next)} />
+          <Field label="Reviewers" hint="Nobody reviews their own access: a reviewer in scope needs another reviewer.">
+            <CheckList idPrefix="reviewer" searchLabel="Find a reviewer" options={props.users.map((user) => ({ value: user.id, label: user.name ? `${user.name} (${user.email})` : user.email }))} selected={form.reviewerIds} onChange={(next) => set("reviewerIds", next)} />
           </Field>
           <div className="flex items-center justify-between gap-4">
             <Label htmlFor="review-repeat" className="flex flex-col items-start gap-1">

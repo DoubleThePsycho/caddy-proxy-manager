@@ -58,10 +58,6 @@ export function MfaPolicyPanel({ policy, canEdit }: { policy: MfaPolicySummary; 
             </span>
           )}
         </p>
-        <p className="m-0 text-xs text-soft">
-          Covered accounts without a second factor are asked to set one up when they sign in; after the grace period they can use
-          the dashboard only to set it up. Accounts that sign in through an identity provider are asked by that provider instead.
-        </p>
       </div>
       {canEdit && (
         <Button variant="link" size="sm" className="h-auto px-0" onClick={() => setEditing(true)}>
@@ -109,10 +105,7 @@ export function MfaPolicyDialog({ open, onClose, policy }: { open: boolean; onCl
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Multi-factor authentication policy</DialogTitle>
-          <DialogDescription>
-            Require a second factor (an authenticator app with backup codes, or a passkey) for dashboard sign-in with a password.
-            The grace period starts over when you change who is covered.
-          </DialogDescription>
+          <DialogDescription>The grace period starts over when you change who is covered.</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
           {error && <Banner tone="bad" live>{error}</Banner>}

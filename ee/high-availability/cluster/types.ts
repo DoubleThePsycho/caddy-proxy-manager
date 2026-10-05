@@ -2,7 +2,7 @@
 /**
  * High availability phase 2: a dashboard cluster of one leader and warm
  * standbys. Shared types: the status file the supervisor writes for the
- * dashboard process, and the cluster view the API and the Settings page show.
+ * dashboard process, and the cluster view the API and the High availability page show.
  * Safe to import from client components: nothing here touches Node APIs.
  */
 

@@ -2,6 +2,7 @@
 import { requirePermission } from "@/src/lib/auth";
 import { can } from "@/src/lib/permissions";
 import { getInstanceMode } from "@/src/lib/instance-sync";
+import { DEFAULT_PAGE_SIZE, parsePageParam } from "@/src/lib/pagination";
 import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
 import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { listConsumers } from "@/ee/monetization/consumers";
@@ -13,27 +14,45 @@ import { listPlans } from "@/ee/monetization/plans";
 import { getMonetizationOptionsView } from "@/ee/monetization/options";
 import { getX402SettingsView } from "@/ee/monetization/x402/settings";
 import { listX402Payments } from "@/ee/monetization/x402/payments";
-import { FEATURE, MONETIZATION_TABS } from "@/ee/monetization/types";
+import { FEATURE, LEDGER_TYPES, MONETIZATION_TABS, type LedgerType } from "@/ee/monetization/types";
 import MonetizationClient from "@/ee/monetization/ui/MonetizationClient";
 
 export const metadata = { title: "API monetization" };
 
-export default async function ApiMonetizationPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+type Search = { tab?: string; ledger?: string; consumer?: string; type?: string; payments?: string };
+
+/** The ledger's filters from the address: a consumer id and an entry type, each "all" when absent or unknown. */
+function ledgerFilter(search: Search): { consumerId: number | null; type: LedgerType | null } {
+  const consumerId = /^\d{1,9}$/.test(search.consumer ?? "") ? Number(search.consumer) : null;
+  const type = LEDGER_TYPES.find((value) => value === search.type) ?? null;
+  return { consumerId: consumerId && consumerId > 0 ? consumerId : null, type };
+}
+
+export default async function ApiMonetizationPage({ searchParams }: { searchParams: Promise<Search> }) {
   const { access } = await requirePermission("monetization:read");
-  const { tab: tabParam } = await searchParams;
-  const initialTab = MONETIZATION_TABS.find((tab) => tab === tabParam) ?? "overview";
+  const search = await searchParams;
+  const initialTab = MONETIZATION_TABS.find((tab) => tab === search.tab) ?? "overview";
+  const filter = ledgerFilter(search);
+  const ledgerPage = parsePageParam(search.ledger);
+  const paymentsPage = parsePageParam(search.payments);
   // Every view below is free of secrets (the Stripe keys show as hasSecretKey / hasWebhookSecret).
-  const [plans, consumers, hosts, ledger, configurable, mode, options, x402, x402Payments] = await Promise.all([
+  const [plans, consumers, hosts, ledgerRead, configurable, mode, options, x402, x402Read, x402Latest] = await Promise.all([
     listPlans(),
     listConsumers(),
     listHostMonetization(),
-    listLedger({ page: 1, perPage: 50 }),
+    listLedger({ ...filter, page: ledgerPage, perPage: DEFAULT_PAGE_SIZE }),
     isFeatureConfigurable(FEATURE),
     getInstanceMode(),
     getMonetizationOptionsView(),
     getX402SettingsView(),
+    listX402Payments({ page: paymentsPage, perPage: DEFAULT_PAGE_SIZE }),
     listX402Payments({ page: 1, perPage: 20 }),
   ]);
+  // A page past the last one shows the last one.
+  const lastLedgerPage = Math.max(1, Math.ceil(ledgerRead.total / DEFAULT_PAGE_SIZE));
+  const ledger = ledgerPage > lastLedgerPage ? await listLedger({ ...filter, page: lastLedgerPage, perPage: DEFAULT_PAGE_SIZE }) : ledgerRead;
+  const lastPaymentsPage = Math.max(1, Math.ceil(x402Read.total / DEFAULT_PAGE_SIZE));
+  const x402Payments = paymentsPage > lastPaymentsPage ? await listX402Payments({ page: lastPaymentsPage, perPage: DEFAULT_PAGE_SIZE }) : x402Read;
   // Month totals, the last 30 days and the top consumers, from the ledger; balances from the consumers above.
   const overview = await getMonetizationOverview({ consumers });
   return (
@@ -45,6 +64,7 @@ export default async function ApiMonetizationPage({ searchParams }: { searchPara
       hosts={hosts}
       stripe={await getStripeSettingsView()}
       ledger={ledger}
+      ledgerFilter={{ consumer: filter.consumerId === null ? "all" : String(filter.consumerId), type: filter.type ?? "all" }}
       configurable={configurable}
       canWrite={can(access, "monetization:write")}
       canManagePayments={can(access, "monetization:payments")}
@@ -54,6 +74,7 @@ export default async function ApiMonetizationPage({ searchParams }: { searchPara
       options={options}
       x402={x402}
       x402Payments={x402Payments}
+      x402Latest={x402Latest}
       editionLabel={EDITION_LABELS[FEATURE_INFO[FEATURE].edition]}
     />
   );

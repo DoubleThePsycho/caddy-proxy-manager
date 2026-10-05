@@ -1,17 +1,19 @@
 /**
- * The L4 hosts page's filtering, sorting and descriptions
- * (app/(dashboard)/l4-proxy-hosts/list.ts) and the port helpers of the
- * pending-ports banner.
+ * The L4 hosts page's query, filtering, counting, sorting, paging and
+ * descriptions (app/(dashboard)/l4-proxy-hosts/list.ts) and the port helpers
+ * of the pending-ports banner.
  */
 import { describe, expect, it } from 'vitest';
 import type { L4ProxyHost } from '@/src/lib/models/l4-proxy-hosts';
 import {
+  buildL4ListView,
   l4DetailGroups,
+  listenPort,
   matchesL4Search,
   matcherText,
-  proxyProtocolText,
+  parseL4ListQuery,
+  serverNameSummary,
   sortL4Hosts,
-  tlsView,
 } from '@/app/(dashboard)/l4-proxy-hosts/list';
 import { portLabel, portMappingFor } from '@/src/components/l4-proxy-hosts/L4PortsApplyBanner';
 
@@ -49,23 +51,84 @@ describe('L4 hosts list', () => {
   });
 
   it('sorts listen addresses by port number', () => {
-    const hosts = [host({ id: 1, listenAddress: ':2222' }), host({ id: 2, listenAddress: ':853' }), host({ id: 3, listenAddress: ':25' })];
-    expect(sortL4Hosts(hosts, 'listenAddress', 'asc').map((h) => h.listenAddress)).toEqual([':25', ':853', ':2222']);
+    const hosts = [host({ id: 1, listenAddress: ':2222' }), host({ id: 2, listenAddress: '0.0.0.0:853' }), host({ id: 3, listenAddress: ':25' })];
+    expect(sortL4Hosts(hosts, 'listenAddress', 'asc').map((h) => h.listenAddress)).toEqual([':25', '0.0.0.0:853', ':2222']);
     expect(sortL4Hosts(hosts, 'listenAddress', 'desc').map((h) => h.id)).toEqual([1, 2, 3]);
+    expect([listenPort('[::]:853'), listenPort(':53'), listenPort('bad')]).toEqual([853, 53, null]);
   });
 
-  it('describes TLS and the PROXY protocol', () => {
-    expect(tlsView(host({ tlsTermination: true, matcherType: 'tls_sni', matcherValue: ['dns.example.com'] }))).toEqual({
-      label: 'Terminate',
-      detail: 'dns.example.com',
-      muted: false,
+  it('sorts enabled hosts first by status, then by name', () => {
+    const hosts = [
+      host({ id: 1, name: 'Bravo', enabled: false }),
+      host({ id: 2, name: 'Charlie' }),
+      host({ id: 3, name: 'Alpha' }),
+    ];
+    expect(sortL4Hosts(hosts, 'enabled', 'asc').map((h) => h.name)).toEqual(['Alpha', 'Charlie', 'Bravo']);
+    expect(sortL4Hosts(hosts, 'enabled', 'desc').map((h) => h.name)).toEqual(['Bravo', 'Charlie', 'Alpha']);
+  });
+
+  it('reads the query from the URL, with defaults for anything unknown', () => {
+    expect(parseL4ListQuery({})).toEqual({ search: '', protocol: 'all', status: 'all', sortBy: 'createdAt', sortDir: 'desc', page: 1 });
+    expect(parseL4ListQuery({ search: '  ssh ', protocol: 'udp', status: 'disabled', sortBy: 'name', page: '3' })).toEqual({
+      search: 'ssh',
+      protocol: 'udp',
+      status: 'disabled',
+      sortBy: 'name',
+      sortDir: 'asc',
+      page: 3,
     });
-    expect(tlsView(host({ matcherType: 'tls_sni', matcherValue: ['mail.example.com'] })).label).toBe('Passthrough');
-    expect(tlsView(host({})).label).toBe('Not terminated');
-    expect(tlsView(host({ protocol: 'udp' })).label).toBe('Not TLS');
-    expect(proxyProtocolText(host({ proxyProtocolVersion: 'v2' }))).toBe('Sends v2');
-    expect(proxyProtocolText(host({ proxyProtocolReceive: true, proxyProtocolVersion: 'v1' }))).toBe('Accepts, sends v1');
-    expect(proxyProtocolText(host({}))).toBe('Off');
+    expect(parseL4ListQuery({ protocol: 'sctp', status: 'broken', sortBy: 'id; drop', sortDir: 'up', page: '-2' })).toMatchObject({
+      protocol: 'all',
+      status: 'all',
+      sortBy: 'createdAt',
+      sortDir: 'desc',
+      page: 1,
+    });
+    expect(parseL4ListQuery({ sortBy: ['listenAddress', 'name'], sortDir: 'desc' })).toMatchObject({ sortBy: 'listenAddress', sortDir: 'desc' });
+  });
+
+  it('filters, counts and pages the hosts', () => {
+    const hosts = Array.from({ length: 60 }, (_, i) =>
+      host({
+        id: i + 1,
+        name: `Host ${String(i + 1).padStart(2, '0')}`,
+        listenAddress: `:${41000 + i}`,
+        protocol: i % 3 === 0 ? 'udp' : 'tcp',
+        enabled: i % 4 !== 0,
+      })
+    );
+    const query = parseL4ListQuery({ sortBy: 'name' });
+    const view = buildL4ListView(hosts, query);
+    expect(view.page).toMatchObject({ page: 1, pageCount: 3, total: 60, from: 1, to: 25 });
+    expect(view.page.items[0].name).toBe('Host 01');
+    expect(view.protocolCounts).toEqual({ all: 60, tcp: 40, udp: 20 });
+    expect(view.statusCounts).toEqual({ all: 60, enabled: 45, disabled: 15 });
+
+    // The last page, and a page past the end clamped to it.
+    expect(buildL4ListView(hosts, { ...query, page: 3 }).page).toMatchObject({ page: 3, from: 51, to: 60 });
+    expect(buildL4ListView(hosts, { ...query, page: 99 }).page.items.map((h) => h.name)).toHaveLength(10);
+
+    // Each filter's counts follow the search and the other filter.
+    const udp = buildL4ListView(hosts, { ...query, protocol: 'udp' });
+    expect(udp.page.total).toBe(20);
+    expect(udp.statusCounts).toEqual({ all: 20, enabled: 15, disabled: 5 });
+    expect(udp.protocolCounts).toEqual({ all: 60, tcp: 40, udp: 20 });
+    const disabledUdp = buildL4ListView(hosts, { ...query, protocol: 'udp', status: 'disabled' });
+    expect(disabledUdp.page.items.every((h) => h.protocol === 'udp' && !h.enabled)).toBe(true);
+    expect(disabledUdp.protocolCounts).toEqual({ all: 15, tcp: 10, udp: 5 });
+
+    const searched = buildL4ListView(hosts, { ...query, search: '4101' });
+    expect(searched.page.items.map((h) => h.listenAddress)).toEqual([':41010', ':41011', ':41012', ':41013', ':41014', ':41015', ':41016', ':41017', ':41018', ':41019']);
+    expect(searched.protocolCounts.all).toBe(10);
+  });
+
+  it('summarises server names for the list row', () => {
+    expect(serverNameSummary(host({ matcherType: 'tls_sni', matcherValue: ['mail.example.com', 'smtp.example.com'] }))).toEqual({
+      first: 'mail.example.com',
+      more: 1,
+    });
+    expect(serverNameSummary(host({ matcherType: 'http_host', matcherValue: ['app.example.com'] }))).toEqual({ first: 'app.example.com', more: 0 });
+    expect(serverNameSummary(host({ matcherType: 'proxy_protocol' }))).toBeNull();
     expect(matcherText(host({ protocol: 'udp' }))).toBe('None, every datagram');
   });
 

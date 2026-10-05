@@ -14,7 +14,6 @@ import { Input } from "@/components/ui/input";
 import { KpiTile } from "@/components/ui/KpiTile";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusDot } from "@/components/ui/StatusDot";
-import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import {
   DEFAULT_SHARED_STATE_PREFIX,
   type SharedStateActionResult,
@@ -54,7 +53,7 @@ function StatusPanel({ status, onRefresh, pending }: { status: SharedStateStatus
   return (
     <SectionCard
       title="Status"
-      headingLevel={3}
+      headingLevel={2}
       actions={
         <Button type="button" size="sm" variant="ghost" onClick={onRefresh} disabled={pending} aria-label="Refresh the shared state status">
           <RefreshCw className="h-3.5 w-3.5" />
@@ -99,7 +98,6 @@ function StatusPanel({ status, onRefresh, pending }: { status: SharedStateStatus
 
 export default function SharedStateSection({ view: initialView, canWrite, editionLabel, save, remove, loadStatus }: Props) {
   const router = useRouter();
-  const { productName } = useBranding();
   const [view, setView] = useState(initialView);
   const [prefix, setPrefix] = useState(initialView.keyPrefix || DEFAULT_SHARED_STATE_PREFIX);
   const [error, setError] = useState<string | null>(null);
@@ -159,8 +157,12 @@ export default function SharedStateSection({ view: initialView, canWrite, editio
   return (
     <div className="flex flex-col gap-4" data-testid="shared-state-section">
       <SectionCard
+        id="shared-state"
+        className="scroll-mt-20 md:scroll-mt-4"
         title="Shared state"
-        headingLevel={3}
+        description="Forward-auth sessions, sign-in codes and API balances in Redis or Valkey, the same on every web node."
+        descriptionPlacement="below"
+        headingLevel={2}
         actions={<Badge variant="outline">{editionLabel}</Badge>}
         footer={
           writable ? (
@@ -190,13 +192,15 @@ export default function SharedStateSection({ view: initialView, canWrite, editio
         padded
       >
         <div className="flex flex-col text-sm">
-          <p className="pb-3 text-muted-foreground">
-            With several web nodes, keep forward-auth sessions, sign-in codes and API monetization balances in Redis or Valkey instead of
-            each node&apos;s own database, so a user signed in through one node passes on every node and API consumers are charged once
-            for the whole cluster. {productName} writes the balances back to the ledger every few seconds.
-          </p>
           <Row label="State">{badge}</Row>
-          <Row label="Connection" hint="The Redis or Valkey settings of the certificate storage, above">
+          <Row
+            label="Connection"
+            hint={
+              <Link href="/certificates/settings#certificate-storage" className="text-brand underline-offset-4 hover:underline">
+                Certificate storage settings
+              </Link>
+            }
+          >
             {view.connection.configured ? (
               <span className="num">
                 {view.connection.mode}: {view.connection.addresses.join(", ")}
@@ -206,7 +210,7 @@ export default function SharedStateSection({ view: initialView, canWrite, editio
               <span className="text-muted-foreground">Not configured: save Redis or Valkey settings for the certificate storage first (enabled or not).</span>
             )}
           </Row>
-          <Row label="Key prefix" hint="Every key starts with it, then a part that changes each time shared state is turned on">
+          <Row label="Key prefix" hint="Every key starts with it.">
             <Input
               aria-label="Shared state key prefix"
               value={prefix}

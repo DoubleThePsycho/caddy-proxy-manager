@@ -150,7 +150,7 @@ export function validateForm(form: HostForm, context: ValidationContext): FieldE
   const wildcard = form.domains.find((domain) => domain.startsWith("*."));
   if (!invalid && wildcard && form.certificateId === null && !context.dnsProviderConfigured) {
     errors["f-domains"] = {
-      message: `${wildcard} needs a DNS provider for its certificate. Add one in Settings, or choose a certificate in the Certificate section.`,
+      message: `${wildcard} needs a DNS provider for its certificate. Add one in Certificate settings, or choose a certificate in the Certificate section.`,
       section: "routing",
     };
   }

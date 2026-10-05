@@ -8,12 +8,15 @@ import { Plus, Trash2 } from "lucide-react";
 import { AppDialog } from "@/components/ui/AppDialog";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Pagination } from "@/components/ui/Pagination";
+import { SearchField } from "@/components/ui/SearchField";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useFormat } from "@/components/preferences/PreferencesProvider";
 import { cn } from "@/lib/utils";
+import { paginate } from "@/src/lib/pagination";
 import { FREE_CHANNEL_TYPES, FREE_RULE_TYPES, type AlertChannelView, type AlertRuleView, type RuleType } from "@/ee/alerting/types";
 import type { AlertingLicenseView } from "@/ee/alerting/gate";
 import { deleteAlertRuleAction, setAlertRuleEnabledAction } from "./actions";
@@ -40,8 +43,20 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
   const format = useFormat();
   const [pending, startTransition] = useTransition();
   const [confirmDelete, setConfirmDelete] = useState<AlertRuleView | null>(null);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   const channelById = new Map(channels.map((channel) => [channel.id, channel]));
+  const needle = search.trim().toLowerCase();
+  // Name, condition, scope and channel names.
+  const matching = needle
+    ? rules.filter((rule) =>
+        [rule.name, conditionLine(rule), rule.scopeLabel, ...rule.channelIds.map((id) => channelById.get(id)?.name ?? "")].some((text) =>
+          text.toLowerCase().includes(needle)
+        )
+      )
+    : rules;
+  const shown = paginate(matching, page);
   const freeChannel = (id: number) => {
     const channel = channelById.get(id);
     return channel ? FREE_CHANNEL_TYPES.includes(channel.type) : true;
@@ -74,17 +89,29 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
     <>
       <SectionCard
         title="Rules"
-        description="A rule notifies once when its condition starts, at most once per cooldown, and again when it clears if you ask for it."
         actions={
-          <span className="text-[13px] text-muted-foreground">
-            <span className="num">{enabledCount}</span> of <span className="num">{rules.length}</span> rule{rules.length === 1 ? "" : "s"} on
-          </span>
+          rules.length > 0 && (
+            <>
+              <span className="text-[13px] text-muted-foreground">
+                <span className="num">{enabledCount}</span> of <span className="num">{rules.length}</span> enabled
+              </span>
+              <SearchField
+                type="search"
+                aria-label="Search rules"
+                placeholder="Search rules"
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
+                className="w-full sm:w-56"
+              />
+            </>
+          )
         }
         footer={
-          rules.length > 0 ? (
-            <span className="text-xs text-soft">
-              Turning a rule off forgets what it was firing without sending resolve notices; a PagerDuty incident it opened stays open until closed there.
-            </span>
+          shown.pageCount > 1 ? (
+            <Pagination page={shown.page} perPage={shown.perPage} total={shown.total} noun="rules" label="Pages of rules" onPageChange={setPage} />
           ) : undefined
         }
       >
@@ -92,7 +119,6 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
           <EmptyState
             compact
             title="No rules yet"
-            description="A rule says what to watch, which channels to tell and how often at most."
             action={
               canWrite ? (
                 <Button size="sm" onClick={onCreate}>
@@ -101,6 +127,8 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
               ) : undefined
             }
           />
+        ) : shown.items.length === 0 ? (
+          <EmptyState compact icon={null} title="No rule matches" />
         ) : (
           <Table className="min-w-[1080px]">
             <TableHeader>
@@ -120,7 +148,7 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rules.map((rule) => {
+              {shown.items.map((rule) => {
                 const locked = !canChange(rule);
                 const severity = RULE_SEVERITY[rule.type];
                 const firingSince = rule.enabled ? earliest(rule.firing.map((item) => item.firedAt)) : null;
@@ -240,7 +268,9 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
         onSubmit={remove}
         isSubmitting={pending}
       >
-        <p className="text-sm text-muted-foreground">What it was firing is forgotten without resolve notices. Its history is kept.</p>
+        <p className="text-sm text-muted-foreground">
+          What it was firing is forgotten without resolve notices, so a PagerDuty incident it opened stays open. Its history is kept.
+        </p>
       </AppDialog>
     </>
   );

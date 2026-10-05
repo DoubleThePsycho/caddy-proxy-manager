@@ -247,24 +247,20 @@ export default function StreamingClient({ sinks, retention, licensed, generatedA
 
       {!licensed && (
         <Banner tone="info">
-          Setting up, changing or enabling sinks and retention needs a Business license. Sinks and retention that are already set up
-          keep working, and you can still disable or delete sinks and turn retention off.{" "}
+          Setting up, changing or enabling sinks and retention needs a Business license. You can still disable or delete sinks and
+          turn retention off.{" "}
           <Link href="/license" className="text-brand underline underline-offset-4">
             Manage the license
           </Link>
         </Banner>
       )}
 
-      <SectionCard
-        title="Destinations"
-        count={sinks.length}
-        description="Every audit event is sent a few seconds after it is recorded, at least once."
-      >
+      <SectionCard title="Destinations" count={sinks.length}>
         {sinks.length === 0 ? (
           <EmptyState
             icon={RadioTower}
             title="No sinks yet"
-            description="Add a webhook, syslog or Splunk HEC sink to stream every audit event, so a copy exists outside this node."
+            description="Add a webhook, syslog or Splunk HEC sink."
             action={
               licensed ? (
                 <Button onClick={openCreate}>
@@ -360,15 +356,10 @@ export default function StreamingClient({ sinks, retention, licensed, generatedA
         )}
       </SectionCard>
 
-      <SectionCard
-        title="Retention"
-        padded
-        description="Events older than this are deleted once a day."
-      >
+      <SectionCard title="Retention" padded>
         <div className="flex flex-col gap-3">
           <p className="m-0 text-[13px] text-muted-foreground">
-            The hash chain stays verifiable: verification starts at the oldest remaining event. Events not yet delivered to a failing sink
-            are deleted too.
+            Older events are deleted, including events not yet delivered to a failing sink.
           </p>
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1.5">
@@ -456,10 +447,7 @@ export default function StreamingClient({ sinks, retention, licensed, generatedA
                   placeholder={editing ? "Leave empty to keep the stored value" : undefined}
                 />
                 {form.type === "webhook" && (
-                  <p className="text-xs text-muted-foreground">
-                    At least 16 characters. Each request carries X-Ingressi-Signature: sha256=HMAC(secret, timestamp + &quot;.&quot; +
-                    body) and X-Ingressi-Timestamp.
-                  </p>
+                  <p className="text-xs text-muted-foreground">At least 16 characters. Requests are signed with it.</p>
                 )}
               </div>
               {form.type === "splunk_hec" && (

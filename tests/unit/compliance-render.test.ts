@@ -189,7 +189,7 @@ function renderPage(overrides: Partial<ClientProps> = {}) {
       initialTab: 'overview',
       initialFramework: 'nis2',
       reports: { reports: [report], total: 1, page: 1, perPage: 25 },
-      incidents: [summary],
+      incidents: { incidents: [summary], total: 1, page: 1, perPage: 25 },
       controls,
       schedules: [schedule],
       restoreTests: {
@@ -212,10 +212,25 @@ function renderPage(overrides: Partial<ClientProps> = {}) {
 }
 
 describe('compliance page', () => {
+  it('pages the incident register, the test restores and the reports with the shared pager', () => {
+    const html = renderPage({
+      incidents: { incidents: [summary], total: 60, page: 2, perPage: 25 },
+      restoreTests: { tests: [], total: 30, page: 1, perPage: 25 },
+    });
+    expect(html).toContain('aria-label="Pages of incidents"');
+    expect(html).toMatch(/<span class="num">26<\/span>–<span class="num">50<\/span> of <span class="num">60<\/span> incidents/);
+    expect(html).toContain('href="/compliance?incidentPage=3"');
+    expect(html).toContain('aria-label="Pages of test restores"');
+    expect(html).toContain('href="/compliance?restorePage=2"');
+    const reports = renderPage({ initialTab: 'reports', reports: { reports: [report], total: 40, page: 1, perPage: 25 } });
+    expect(reports).toContain('aria-label="Pages of reports"');
+    expect(reports).toContain('href="/compliance?tab=reports&amp;page=2"');
+  });
+
   it('shows a read-only notice without a license and keeps stored items available', () => {
     const html = renderPage({ configurable: false });
     expect(html).toContain('needs a license with compliance reports (Enterprise edition)');
-    expect(html).toContain('Stored reports and drafts stay readable, downloadable and deletable');
+    expect(html).toContain('Incidents can still be assessed, classified and closed');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*title="Needs a license with compliance reports"[^>]*>.*Generate report/);
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*title="Needs a license with compliance reports"[^>]*>.*Record an incident/);
   });
@@ -233,7 +248,7 @@ describe('compliance page', () => {
     expect(html).not.toContain('A.8.24');
     // Evidence on this page and the backup runs point at their sections.
     expect(html).toContain('href="#restore-tests"');
-    expect(html).toContain('href="/history?tab=backups"');
+    expect(html).toContain('href="/backups"');
     expect(html).toContain('prod/config.json');
     expect(html).toContain('Credential stuffing');
     expect(html).toContain('Significant');

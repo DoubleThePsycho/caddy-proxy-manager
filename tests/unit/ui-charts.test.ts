@@ -190,7 +190,10 @@ describe('StackedBarChart', () => {
     const html = renderToStaticMarkup(
       createElement(StackedBarChart, { title: 'Requests by outcome', buckets, series, previous: [90, null, 250], previousLabel: 'Previous 24 hours' })
     );
-    const table = html.slice(html.indexOf('<table class="sr-only">'));
+    // The table is hidden inside a visually hidden box that clips it.
+    const start = html.indexOf('<div class="sr-only"><table>');
+    expect(start).toBeGreaterThan(-1);
+    const table = html.slice(start);
     expect(table).toContain('<caption>Requests by outcome</caption>');
     expect(table).toContain('<th scope="col">Time (UTC)</th><th scope="col">Served</th><th scope="col">Blocked by WAF</th><th scope="col">Total</th><th scope="col">Previous 24 hours</th>');
     expect(table).toContain('<tr><th scope="row">3 Oct, 10:00 UTC</th><td>100</td><td>5</td><td>105</td><td>90</td></tr>');

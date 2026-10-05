@@ -57,7 +57,7 @@ export default function NextScheduleCard({
           </div>
           <p className="m-0 text-[13px] text-muted-foreground">
             {next.nextPeriod ? `Covers ${periodText(next.nextPeriod)}. ` : ""}
-            {describeScheduleTiming(next)}. Generated, hashed and recorded in the audit log like a report you run by hand.
+            {describeScheduleTiming(next)}.
           </p>
           <ul className="m-0 flex list-none flex-wrap gap-1.5 p-0">
             {next.reportTypes.map((type) => (
@@ -83,7 +83,6 @@ export default function NextScheduleCard({
           icon={CalendarClock}
           className="px-0 py-1"
           title={schedules.length > 0 ? "Every schedule is turned off" : "No report schedule"}
-          description="A schedule generates the chosen reports every week or month for the period that ended, hashed and recorded like reports you run by hand."
           action={
             canWrite ? (
               <Button variant="secondary" size="sm" onClick={onOpenSchedules}>

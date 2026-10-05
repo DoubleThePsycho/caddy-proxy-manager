@@ -167,22 +167,17 @@ export function AutoUpdateCard({ initial, canWrite, installedLicenseId }: AutoUp
       <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
         <div className="flex min-w-0 flex-[1_1_380px] flex-col gap-3">
           <p className="m-0 text-[13px] text-muted-foreground [text-wrap:pretty]">
-            Off by default. While it is on, this node asks {hostOf(view.endpoint)} once a day for the current key of the installed
-            license, sending only the license id and its refresh token. A newer key for the same license is installed only after its
-            signature is checked here, so renewals and node changes arrive without anyone pasting a key. Air-gapped installs leave
-            this off and install renewed keys by hand.
+            Once a day, asks {hostOf(view.endpoint)} for the current key of the installed license, sending only the license id and its
+            refresh token. Renewals then arrive without pasting a key.
           </p>
 
           {view.disabledByEnv && (
             <Banner tone="info">
-              The <code className="num text-xs">LICENSE_AUTO_UPDATE_DISABLED</code> environment variable turns automatic updates off on
-              this install: the license server is never contacted.
+              <code className="num text-xs">LICENSE_AUTO_UPDATE_DISABLED</code> turns automatic updates off on this install.
             </Banner>
           )}
           {!view.disabledByEnv && view.role === "slave" && (
-            <Banner tone="info">
-              This instance is an instance sync replica. Replicas never contact the license server; turn this on on the master.
-            </Banner>
+            <Banner tone="info">This instance is a sync replica: turn this on on the master.</Banner>
           )}
           {view.endpointError && <Banner tone="bad">{view.endpointError}. Nothing is sent until it is fixed.</Banner>}
           {view.status === "license_mismatch" && (
@@ -241,8 +236,8 @@ export function AutoUpdateCard({ initial, canWrite, installedLicenseId }: AutoUp
                 </Button>
               </div>
               <span id={tokenHelpId} className="text-xs text-soft">
-                From the e-mail with your license key{installedLicenseId ? ` (license ${installedLicenseId})` : ""}. The license server
-                is asked once to check it. It is stored encrypted and never shown again.
+                From the e-mail with your license key{installedLicenseId ? ` (license ${installedLicenseId})` : ""}. Saving it checks it with
+                the license server.
               </span>
             </form>
           )}

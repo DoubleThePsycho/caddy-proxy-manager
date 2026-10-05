@@ -69,6 +69,8 @@ export interface TransactionRoot {
   readonly readOnly: boolean;
   closed: boolean;
   savepoints: number;
+  /** What afterTransactionEnds registered; null once the transaction has ended and they ran. */
+  endCallbacks?: (() => void)[] | null;
 }
 
 /** One open transaction or savepoint (opaque outside the executors). */
@@ -130,6 +132,34 @@ export function inTransaction(): boolean {
  */
 export function outsideTransaction<T>(fn: () => T): T {
   return transactionContext.exit(fn);
+}
+
+/**
+ * Runs `fn` once the calling context's transaction has ended, after its
+ * COMMIT or ROLLBACK, outside it; at once when there is none. On PostgreSQL
+ * a query outside the transaction does not wait for it (no gate), so work
+ * that must see the outcome waits for this.
+ */
+export function afterTransactionEnds(fn: () => void): void {
+  const root = transactionContext.getStore()?.root;
+  if (!root || root.endCallbacks === null) {
+    fn();
+    return;
+  }
+  (root.endCallbacks ??= []).push(fn);
+}
+
+/** Runs what afterTransactionEnds registered on `root` (the executors call it once the transaction has ended). */
+export function transactionEnded(root: TransactionRoot): void {
+  const callbacks = root.endCallbacks ?? [];
+  root.endCallbacks = null;
+  for (const callback of callbacks) {
+    try {
+      outsideTransaction(callback);
+    } catch (error) {
+      console.error("[db] A callback after a transaction failed:", error);
+    }
+  }
 }
 
 // ── Watchdog ──

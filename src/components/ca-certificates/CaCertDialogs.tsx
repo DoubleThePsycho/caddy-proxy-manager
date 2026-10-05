@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { Download } from "lucide-react";
 import { AppDialog } from "@/components/ui/AppDialog";
 import { Button } from "@/components/ui/button";
@@ -9,14 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import type { CaCertificate } from "@/lib/models/ca-certificates";
-import type { IssuedClientCertificate } from "@/lib/models/issued-client-certificates";
-import {
-  deleteCaCertificateAction,
-  issueClientCertificateAction,
-  revokeIssuedClientCertificateAction,
-} from "@/app/(dashboard)/certificates/ca-actions";
+import { deleteCaCertificateAction, issueClientCertificateAction } from "@/app/(dashboard)/certificates/ca-actions";
 
 function downloadFile(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
@@ -42,14 +36,6 @@ function sanitizeFilenameSegment(value: string): string {
   return value.trim().replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "") || "client";
 }
 
-function formatDateTime(value: string): string {
-  return new Date(value).toLocaleString();
-}
-
-function formatFingerprint(value: string): string {
-  return value.match(/.{1,2}/g)?.join(":") ?? value;
-}
-
 export function IssueClientCertDialog({
   open,
   cert,
@@ -61,12 +47,7 @@ export function IssueClientCertDialog({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [issued, setIssued] = useState<{
-    pkcs12Base64: string;
-    name: string;
-    passwordProtected: boolean;
-    exportAlgorithm: "3des" | "aes256";
-  } | null>(null);
+  const [issued, setIssued] = useState<{ pkcs12Base64: string; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -88,7 +69,7 @@ export function IssueClientCertDialog({
           return;
         }
         setIssued({
-          ...result,
+          pkcs12Base64: result.pkcs12Base64,
           name: sanitizeFilenameSegment(String(formData.get("common_name") ?? "client")),
         });
         router.refresh();
@@ -123,13 +104,9 @@ export function IssueClientCertDialog({
         <div className="flex flex-col gap-4">
           <Alert>
             <AlertDescription>
-              Client certificate issued. Download the .p12 bundle now. It contains the client certificate,
-              private key, and CA chain, and the private key will not be stored.
+              Download the .p12 bundle now. The private key is not stored, so it cannot be downloaded again.
             </AlertDescription>
           </Alert>
-          <p className="text-sm text-muted-foreground">
-            Export format: {issued.exportAlgorithm === "3des" ? "Compatibility mode (3DES)" : "AES-256"}.
-          </p>
           <Button
             variant="outline"
             onClick={() =>
@@ -142,11 +119,6 @@ export function IssueClientCertDialog({
             <Download className="mr-2 h-4 w-4" />
             Download client certificate (.p12)
           </Button>
-          {issued.passwordProtected && (
-            <p className="text-sm text-muted-foreground">
-              Import it using the export password you entered during issuance.
-            </p>
-          )}
         </div>
       ) : (
         <form id="issue-cert-form" ref={formRef} onSubmit={handleSubmit}>
@@ -160,9 +132,6 @@ export function IssueClientCertDialog({
                 autoFocus
                 placeholder="alice"
               />
-              <p className="text-xs text-muted-foreground">
-                Identifies this client (e.g. a username or device name)
-              </p>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="validity_days">Validity</Label>
@@ -187,150 +156,15 @@ export function IssueClientCertDialog({
                 type="password"
                 required
               />
-              <p className="text-xs text-muted-foreground">
-                Used to protect the .p12 bundle when importing it into operating systems and browsers
-              </p>
             </div>
             <div className="flex items-center gap-2">
               <Switch id="compatibility_mode" name="compatibility_mode" defaultChecked />
-              <Label htmlFor="compatibility_mode">Compatibility mode</Label>
+              <Label htmlFor="compatibility_mode">Compatibility mode (3DES)</Label>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Enabled uses 3DES for broader OS/browser import compatibility. Disabled uses AES-256.
-            </p>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
         </form>
       )}
-    </AppDialog>
-  );
-}
-
-export function ManageIssuedClientCertsDialog({
-  open,
-  cert,
-  issuedCerts,
-  onClose,
-}: {
-  open: boolean;
-  cert: CaCertificate;
-  issuedCerts: IssuedClientCertificate[];
-  onClose: () => void;
-}) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [items, setItems] = useState<IssuedClientCertificate[]>(issuedCerts);
-  const [error, setError] = useState<string | null>(null);
-  const [showRevoked, setShowRevoked] = useState(false);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    setItems(issuedCerts);
-    setError(null);
-  }, [issuedCerts, open]);
-
-  function handleRevoke(id: number) {
-    setError(null);
-    startTransition(async () => {
-      try {
-        const result = await revokeIssuedClientCertificateAction(id);
-        setItems((current) =>
-          current.map((item) =>
-            item.id === id ? { ...item, revokedAt: result.revokedAt, updatedAt: result.revokedAt } : item
-          )
-        );
-        router.refresh();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to revoke certificate");
-      }
-    });
-  }
-
-  const visibleItems = showRevoked ? items : items.filter((i) => !i.revokedAt);
-  const revokedCount = items.filter((i) => i.revokedAt).length;
-
-  return (
-    <AppDialog
-      open={open}
-      onClose={onClose}
-      title="Issued client certificates"
-      maxWidth="md"
-      actions={
-        <Button variant="outline" onClick={onClose} disabled={isPending}>
-          Close
-        </Button>
-      }
-    >
-      <div className="flex flex-col gap-4">
-        <Alert>
-          <AlertDescription>
-            Revoking a client certificate removes it from the trusted mTLS client certificate pool for hosts using{" "}
-            <strong>{cert.name}</strong>.
-          </AlertDescription>
-        </Alert>
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        {revokedCount > 0 && (
-          <div className="flex items-center gap-2">
-            <Switch
-              id="show-revoked"
-              checked={showRevoked}
-              onCheckedChange={setShowRevoked}
-            />
-            <Label htmlFor="show-revoked">Show revoked ({revokedCount})</Label>
-          </div>
-        )}
-        {visibleItems.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {items.length === 0
-              ? "No issued client certificates are currently tracked for this CA. Certificates issued from this UI will appear here and can then be revoked individually."
-              : "No active client certificates. Enable \"Show revoked\" to view revoked certificates."}
-          </p>
-        ) : (
-          visibleItems.map((item) => {
-            const expired = new Date(item.validTo).getTime() < Date.now();
-            return (
-              <div key={item.id} className="rounded-lg border p-4 flex flex-col gap-3">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="font-semibold text-base">{item.commonName}</p>
-                    <p className="text-sm text-muted-foreground">Serial {item.serialNumber}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-1 justify-end">
-                    <Badge variant={item.revokedAt ? "secondary" : "default"}>
-                      {item.revokedAt ? "Revoked" : "Active"}
-                    </Badge>
-                    <Badge variant={expired ? "destructive" : "outline"}>
-                      {expired
-                        ? `Expired ${formatDateTime(item.validTo)}`
-                        : `Expires ${formatDateTime(item.validTo)}`}
-                    </Badge>
-                  </div>
-                </div>
-                <p className="text-sm text-muted-foreground">Issued {formatDateTime(item.createdAt)}</p>
-                <p className="text-sm text-muted-foreground font-mono break-all">
-                  SHA-256 {formatFingerprint(item.fingerprintSha256)}
-                </p>
-                {item.revokedAt ? (
-                  <p className="text-sm text-muted-foreground">Revoked {formatDateTime(item.revokedAt)}</p>
-                ) : (
-                  <div className="flex justify-end">
-                    <Button
-                      variant="outline"
-                      className="text-destructive border-destructive hover:bg-destructive/10"
-                      disabled={isPending}
-                      onClick={() => handleRevoke(item.id)}
-                    >
-                      {isPending ? "Revoking…" : "Revoke"}
-                    </Button>
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
     </AppDialog>
   );
 }

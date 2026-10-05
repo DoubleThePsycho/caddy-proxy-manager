@@ -60,7 +60,7 @@ So run Redis or Valkey itself highly available (Sentinel or cluster, or a manage
 1. Install an Enterprise license (**License**).
 2. Run Redis or Valkey (a maintained release) that every Caddy node can reach. Turn on persistence and a password; use TLS when the traffic leaves a private network.
 3. **Upgrade every node first**, web and Caddy images both. A slave on an older release ignores the setting and keeps local storage. A Caddy image without the Redis storage module refuses the configuration (Caddy keeps its previous one).
-4. Open **Settings → Certificates and ACME**, card **Certificate storage**. Fill in the mode, the addresses, the password, a key prefix and, if you want, an encryption key and TLS. **Test connection**.
+4. Open **Certificate settings** (`/certificates/settings`), card **Certificate storage**. Fill in the mode, the addresses, the password, a key prefix and, if you want, an encryption key and TLS. **Test connection**.
 5. **Save without enabling**, then copy the existing certificates in ([Moving certificates](#moving-certificates)).
 6. **Enable shared storage.** The master applies it to its own Caddy and syncs it to the slaves.
 
@@ -95,7 +95,7 @@ The generated Caddy configuration gets a top-level `storage` block (module `cadd
 
 ## Moving certificates
 
-Switching storage makes Caddy look for certificates in the new storage. Whatever it does not find, it orders again. Caddy can copy everything itself with `caddy storage export` and `caddy storage import`. The Settings page shows a `storage.json` for this: a Caddy configuration with only the storage, whose secrets are `{env.*}` placeholders. Save it next to `docker-compose.yml` and set the variables it names in your shell.
+Switching storage makes Caddy look for certificates in the new storage. Whatever it does not find, it orders again. Caddy can copy everything itself with `caddy storage export` and `caddy storage import`. The Certificate storage card shows a `storage.json` for this: a Caddy configuration with only the storage, whose secrets are `{env.*}` placeholders. Save it next to `docker-compose.yml` and set the variables it names in your shell.
 
 ### Copy the certificates in (recommended)
 
@@ -143,6 +143,8 @@ Nothing is deleted from Redis or Valkey; remove the keys under the prefix yourse
 | Run a dashboard cluster: leases, failovers, restores, replication, reading its state | never |
 | A new replica joins next to a running one on PostgreSQL ([the rule](#license-rule)) | required, read when it joins |
 | One replica on PostgreSQL; replicas that joined before: starting, restarting, leading, serving | never |
+
+Without the license, Certificate settings shows only a license note while no shared storage is set up; storage that is set up stays visible, read-only, with switching back and removing.
 
 ## REST API
 
@@ -243,14 +245,14 @@ Replicas of earlier terms are deleted a minute after a takeover, except the one 
 | The former leader comes back | It starts as a standby. Its own database file is never used again: if it is promoted later, it restores the current replica first. Anything it wrote into its old replica after losing the lease is ignored. | Nothing more. |
 | Redis or Valkey unreachable | The leader stops at its deadline (after at most the TTL); standbys cannot take the lease. **The dashboard is down until Redis is back**; then a node takes the lease and restores. Caddy keeps serving. | Nothing more. |
 | Redis or Valkey loses its data (or fails over without the lease key) | The lease looks free: a standby takes it, while the old leader stops at its next renewal (within a third of the TTL). The new leader finds the current replica in `cluster.json` and raises the epoch above it. | Changes the old leader made in those seconds went to its own replica and are lost. |
-| Object storage unreachable, leader running | The leader keeps serving; Litestream retries and changes wait on its disk. Settings and the API show the replication lag growing. | At risk only if the leader is also lost before storage is back. |
+| Object storage unreachable, leader running | The leader keeps serving; Litestream retries and changes wait on its disk. The High availability page and the API show the replication lag growing. | At risk only if the leader is also lost before storage is back. |
 | Object storage unreachable during a takeover | No standby can restore, so none takes over: the dashboard stays down until storage is back. | Nothing more. |
-| A restore fails (missing or damaged files) | The node gives the lease back and retries with a growing delay; the error is in Settings and the API (`lastRestore`). | See [Runbook: a lost bucket](#runbook-a-lost-bucket). |
+| A restore fails (missing or damaged files) | The node gives the lease back and retries with a growing delay; the error is on the High availability page and in the API (`lastRestore`). | See [Runbook: a lost bucket](#runbook-a-lost-bucket). |
 | First start, empty bucket | The node that has a database (and the license in it) sets the cluster up from it. A node without a database waits. | Nothing. |
 | The bucket was emptied while the leader runs | Every 5 minutes the leader checks that its replica still exists; when it is gone, it sends a full copy again and rewrites `cluster.json`. | Nothing, if the leader stays up. |
 | The bucket was emptied and no leader runs | No node takes over: an empty replica is never taken for a first start. | See the runbook. |
 | Litestream or the dashboard stops on the leader | The supervisor restarts it after 5 seconds; the leader keeps its lease. | Changes wait on disk meanwhile. |
-| A standby's warm copy fails | The standby keeps its last copy and retries; Settings shows it. | Nothing. |
+| A standby's warm copy fails | The standby keeps its last copy and retries; the High availability page shows it. | Nothing. |
 
 So run Redis or Valkey highly available (Sentinel, a cluster, or a managed service) with persistence, and keep the object storage durable (versioning is a good idea).
 
@@ -260,7 +262,7 @@ So run Redis or Valkey highly available (Sentinel, a cluster, or a managed servi
 2. **Run Redis or Valkey** that every web node can reach, with persistence and a password, allowing `EVAL`. It can be the one Caddy uses for certificates, with its own key prefix.
 3. **Create a bucket** on S3-compatible storage (examples below) and an access key that may list the bucket and read, write and delete objects under the path.
 4. **Upgrade the web image**: it includes Litestream (pinned release, checksum verified at build time) and the supervisor.
-5. **Turn high availability on for the existing node first**: set the `HA_*` variables below, a unique `HA_NODE_ID`, and restart it. Finding the bucket empty, it becomes the leader and sends its database as the first replica. Settings → High availability shows it as the leader with the replication time.
+5. **Turn high availability on for the existing node first**: set the `HA_*` variables below, a unique `HA_NODE_ID`, and restart it. Finding the bucket empty, it becomes the leader and sends its database as the first replica. The **High availability** page shows it as the leader with the replication time.
 6. **Add standbys**: the same image and variables, a different `HA_NODE_ID`, their own data volume (it can start empty) and the same `SESSION_SECRET` (stored secrets are encrypted with it). Every node points `CADDY_API_URL` at the same Caddy admin endpoint, or the Caddy nodes are instance sync slaves of the cluster.
 7. **Put a load balancer in front** that checks `/api/health` (below), and give the containers 60 seconds to stop (`stop_grace_period: 60s`), so a hand-over loses nothing.
 
@@ -388,9 +390,9 @@ A standby keeps serving these routes; the single list, with the reason for each,
 
 On a standby the database is a read-only copy that trails the leader by a few seconds (the follow interval plus Litestream's own steps, typically under 10). Checking a forward-auth session (`verify`) only reads, so it works there: protected hosts keep working through a failover. Routes that change state need it shared through Redis or Valkey: with [shared state](#shared-state-phase-3) on, redeeming a sign-in code (`callback`) and metering API usage (the gate) work on standbys too. Portal sign-in still writes to the database (the sign-in and its audit event), so send the portal and its login routes to the leader; without shared state, send everything but `verify` there. `docker-compose.ha.yml` shows how: Caddy reaches the dashboard through `FORWARD_AUTH_INTERNAL_URL`, pointing at a load balancer that sends `/api/forward-auth/verify` to every node that answers `scope=request-path` and the rest to the leader.
 
-### Settings and API
+### Dashboard page and API
 
-**Settings → High availability** shows this node's role, the lease holder and its fencing epoch, when Litestream last confirmed the replica up to date (and the lag), the last restore, the nodes as they last reported themselves (role, warm copy, time), and the configuration without secrets. It is read-only: the cluster is configured with environment variables. Only the leader serves the dashboard, so this is the leader's view. It needs `high_availability:read`.
+The **High availability** page (`/high-availability`) shows this node's role, the lease holder and its fencing epoch, when Litestream last confirmed the replica up to date (and the lag), the last restore, the nodes as they last reported themselves (role, warm copy, time), and the configuration without secrets. It is read-only: the cluster is configured with environment variables. Only the leader serves the dashboard, so this is the leader's view. It needs `high_availability:read`.
 
 `GET /api/v1/high-availability/cluster` returns the same (see [REST API](#rest-api)). A standby answers the API with 503.
 
@@ -399,19 +401,19 @@ Every takeover is in the audit log: `ha_leader_started`, recorded by the new lea
 ### Runbook: failover
 
 - **Planned** (maintenance, upgrades): stop or restart the leader's container (`docker compose stop web`). It hands the lease over after Litestream's last sync; a standby takes over within seconds. Upgrade the standbys first, then the leader: the new leader runs the migrations of its release.
-- **Unplanned**: nothing to do. A standby takes over within about 40 seconds. Afterwards, check Settings → High availability: the new leader, its last restore (`Restored from the newest replica`) and a replication lag of a few seconds.
+- **Unplanned**: nothing to do. A standby takes over within about 40 seconds. Afterwards, check the **High availability** page: the new leader, its last restore (`Restored from the newest replica`) and a replication lag of a few seconds.
 - **To move the leader to a given node**, stop the others' containers briefly, or stop the leader while the chosen node is the only standby.
 - **If no node becomes the leader**: look at the containers' logs (`[ha]` lines) and `lastRestore.error` in each node's report. The usual causes: Redis unreachable, object storage unreachable, a first start without a database or license, or [a lost bucket](#runbook-a-lost-bucket).
 
 ### Runbook: a lost bucket
 
-**The leader is still running.** It notices within 5 minutes that its replica is gone and sends a full copy again (log: `replica … is gone from object storage; sending a full copy again`), then rewrites `cluster.json`. Check that Settings shows a recent replication time.
+**The leader is still running.** It notices within 5 minutes that its replica is gone and sends a full copy again (log: `replica … is gone from object storage; sending a full copy again`), then rewrites `cluster.json`. Check that the High availability page shows a recent replication time.
 
 **No leader is running** (every node stopped, and the bucket or path was emptied or deleted). No node will take over, by design: an empty replica is never taken for a first start.
 
 1. Stop every web node.
 2. Pick the node that was the leader last: its data volume holds the newest database (the logs say which node was the leader; `ingressi.db` there has the newest modification time).
-3. Recreate the bucket if needed, then start only that node with `HA_RECOVER_FROM_LOCAL=true`. It takes the lease, finds the current replica empty, and sends its own database as a new replica (Settings: `Recovered from this node's own database`).
+3. Recreate the bucket if needed, then start only that node with `HA_RECOVER_FROM_LOCAL=true`. It takes the lease, finds the current replica empty, and sends its own database as a new replica (High availability page: `Recovered from this node's own database`).
 4. Remove `HA_RECOVER_FROM_LOCAL` and restart that node: it takes over again, this time from the new replica. Then start the others.
 
 **The bucket and the last leader's disk are both lost**: restore a scheduled backup ([scheduled-backups.md](scheduled-backups.md)) on one node without `HA_ENABLED`, then set the cluster up again on an empty path: a new `HA_S3_PATH` and a new `HA_REDIS_KEY_PREFIX` (or delete `cluster.json`, the `replicas/` objects and the `{<prefix>}:replica` and `{<prefix>}:epoch` keys).
@@ -444,7 +446,7 @@ Users, groups, grants, hosts, plans, consumers and keys stay in the database: sh
 
 1. Configure the Redis or Valkey settings of the [certificate storage](#settings) (**Save without enabling** is enough: certificate storage can stay local).
 2. If a password is read from an environment variable (`CADDY_STORAGE_*`), set it on every **web** container too: the web containers connect with these settings.
-3. **Settings → High availability → Shared state → Turn on**, or `PUT /api/v1/high-availability/shared-state` with `{"enabled": true}`. The node checks that it reaches the server first (`502` otherwise) and writes its own pending API usage to the ledger.
+3. **High availability → Shared state → Turn on**, or `PUT /api/v1/high-availability/shared-state` with `{"enabled": true}`. The node checks that it reaches the server first (`502` otherwise) and writes its own pending API usage to the ledger.
 
 It is a switch of its own on the certificate storage's connection: one Redis or Valkey deployment serves both, with the same settings, secrets, TLS, Sentinel and cluster support, but each moves something different (where Caddy keeps certificates, where web nodes keep sessions and balances) and can be turned on, tested and rolled back without the other. While shared state is on, the certificate storage cannot move to another server or lose its Redis settings (`409`): turn shared state off first. Passwords, TLS and the Caddy key prefix can change.
 
@@ -465,7 +467,7 @@ The ledger in the leader's database stays the record that reports, the overview 
 - **Usage:** the consumer's hash keeps cumulative counters (charged micro-units, requests, free requests). The leader writes the difference to the hour's usage row and the stored balance, and records how far it got (`monetization_shared_cursors`) in the same transaction, so a write-back repeated after a crash counts nothing twice.
 - **Top-ups and adjustments** credit the shared balance at once and are queued for the ledger in the same step, at most once per reference (`stripe:<session>`, `adjustment:<reference>`). The leader writes each queued credit once (`monetization_shared_credits`, in the same transaction) and takes it off the queue afterwards. On the leader, a Stripe webhook or an adjustment is written to the ledger before it answers.
 
-**Settings → High availability → Shared state** and `GET /api/v1/high-availability/shared-state/status` show the sessions and consumers held, credits not yet in the ledger, and the last write-back.
+**High availability → Shared state** and `GET /api/v1/high-availability/shared-state/status` show the sessions and consumers held, credits not yet in the ledger, and the last write-back.
 
 ### Revocation
 
@@ -576,7 +578,7 @@ The **node id** is `INGRESSI_NODE_ID` (letters, digits, `.`, `_`, `-`, up to 64;
    `COMPOSE_FILE=docker-compose.yml:docker-compose.postgres.yml` in `.env` saves typing the files.
 2. Install an Enterprise license (**License**).
 3. In `.env`, add `replicas` to `COMPOSE_PROFILES` (`COMPOSE_PROFILES=clickhouse,replicas`) and list the replicas for Caddy: `DASHBOARD_UPSTREAMS=web:3000,web-2:3000`.
-4. Run the same `up -d` again. `web` is recreated with the new list; `web-2` starts once `web` is healthy and joins. **Settings → High availability** shows both.
+4. Run the same `up -d` again. `web` is recreated with the new list; `web-2` starts once `web` is healthy and joins. The **High availability** page shows both.
 5. Make the dashboard reachable through both replicas ([The dashboard](#the-dashboard)).
 
 A third replica is a copy of `web-2` in your own override file: another service name, its own data volume, `L4_PORTS_DIR` on `caddy-manager-data`, and its name in `DASHBOARD_UPSTREAMS`. Do not use `deploy.replicas` or `docker compose up --scale`: the copies would share one data volume, and so one node id, and all but the oldest would refuse to run.
@@ -671,7 +673,7 @@ Each replica opens up to `DATABASE_POOL_MAX` (10) connections for queries, up to
 
 ### Upgrades and restarts
 
-- **To upgrade, stop every replica, then start the new version.** The first replica to start migrates the database; a replica refuses to start on a database a newer version migrated. Settings → High availability warns when live replicas run different versions.
+- **To upgrade, stop every replica, then start the new version.** The first replica to start migrates the database; a replica refuses to start on a database a newer version migrated. The High availability page warns when live replicas run different versions.
 
   ```bash
   docker compose -f docker-compose.yml -f docker-compose.postgres.yml pull
@@ -696,9 +698,9 @@ Each replica opens up to `DATABASE_POOL_MAX` (10) connections for queries, up to
 - **`SESSION_SECRET`**, with the backups: the stored secrets are encrypted with it.
 - Caddy's own volumes, as without replicas.
 
-### Settings and API
+### Dashboard page and API
 
-**Settings → High availability** shows **PostgreSQL mode**: every replica with its role (leader, follower, stopped, gone), last heartbeat, version, schema and when it was first seen, which one leads, and this replica's election state. It is read-only: a replica joins by starting with the same `DATABASE_URL`. It needs `high_availability:read`, as does `GET /api/v1/cluster/nodes`, which returns the same (see [REST API](#rest-api)). Reading never needs a license.
+The **High availability** page shows **PostgreSQL mode**: every replica with its role (leader, follower, stopped, gone), last heartbeat, version, schema and when it was first seen, which one leads, and this replica's election state. It is read-only: a replica joins by starting with the same `DATABASE_URL`. It needs `high_availability:read`, as does `GET /api/v1/cluster/nodes`, which returns the same (see [REST API](#rest-api)). Reading never needs a license.
 
 Nothing here is a setting: there is nothing to sync to instance sync slaves, export or restore. `DASHBOARD_UPSTREAMS` is an environment variable of each replica.
 

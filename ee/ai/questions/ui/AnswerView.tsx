@@ -75,10 +75,10 @@ function rowLabel(result: QuestionResult, value: string, label: string | null): 
 function ResultView({ result }: { result: QuestionResult }) {
   const format = formatter(result);
   if (result.status === "disabled") {
-    return <Banner tone="warn">Traffic analytics is not configured, so there is no traffic data to answer from.</Banner>;
+    return <Banner tone="warn">Traffic analytics is off.</Banner>;
   }
   if (result.status === "unavailable") {
-    return <Banner tone="warn">ClickHouse did not answer, so the numbers could not be read. Try again later.</Banner>;
+    return <Banner tone="warn">ClickHouse did not answer. Try again later.</Banner>;
   }
   const label = QUESTION_METRIC_LABELS[result.metric];
   const comparing = result.previous !== null;

@@ -74,7 +74,6 @@ export function BusiestHosts({
           compact
           icon={ArrowLeftRight}
           title="No proxy hosts yet"
-          description="Each one you add shows here with its requests, errors and certificate."
           action={canCreate ? <NewHostButton /> : undefined}
           className="px-5"
         />

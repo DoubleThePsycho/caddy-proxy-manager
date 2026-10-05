@@ -16,10 +16,32 @@ import { getQuestionAvailability } from "@/ee/ai/questions/availability";
 import { listBackupDestinations } from "@/ee/backups/destinations";
 import ComplianceClient from "@/ee/compliance/ui/ComplianceClient";
 import type { LastReportView, ShownReport } from "@/ee/compliance/ui/LastReportCard";
+import { DEFAULT_PAGE_SIZE, parsePageParam } from "@/src/lib/pagination";
 
 export const metadata = { title: "Compliance" };
 
-const REPORTS_PER_PAGE = 25;
+const REPORTS_PER_PAGE = DEFAULT_PAGE_SIZE;
+const INCIDENTS_PER_PAGE = DEFAULT_PAGE_SIZE;
+const RESTORE_TESTS_PER_PAGE = DEFAULT_PAGE_SIZE;
+
+/** Pages of a list the store reads page by page, clamped to the last one. */
+async function clampedPage<T extends { total: number }>(requested: number, perPage: number, read: (page: number) => Promise<T>): Promise<T & { page: number }> {
+  const result = await read(requested);
+  const last = Math.max(1, Math.ceil(result.total / perPage));
+  if (requested <= last) return { ...result, page: requested };
+  return { ...(await read(last)), page: last };
+}
+
+/** The page of the incident register that holds incident `id`, newest first; null when it is not there. */
+async function incidentPageOf(id: number): Promise<number | null> {
+  const scan = 100;
+  for (let page = 1; ; page++) {
+    const { incidents, total } = await listIncidents({ page, perPage: scan });
+    const index = incidents.findIndex((incident) => incident.id === id);
+    if (index >= 0) return Math.floor(((page - 1) * scan + index) / INCIDENTS_PER_PAGE) + 1;
+    if (page * scan >= total || incidents.length === 0) return null;
+  }
+}
 
 /** A report with whether it still matches its SHA-256 and the hash its audit event recorded. */
 async function withIntegrity(report: StoredReportSummary): Promise<ShownReport> {
@@ -47,21 +69,24 @@ async function lastReport(): Promise<LastReportView | null> {
 export default async function CompliancePage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string; page?: string; framework?: string; incident?: string }>;
+  searchParams: Promise<{ tab?: string; page?: string; incidentPage?: string; restorePage?: string; framework?: string; incident?: string }>;
 }) {
   const { access } = await requirePermission("compliance:read");
-  const { tab: tabParam, page: pageParam, framework, incident } = await searchParams;
-  const page = Math.max(1, Number.parseInt(pageParam ?? "1", 10) || 1);
+  const { tab: tabParam, page: pageParam, incidentPage, restorePage, framework, incident } = await searchParams;
+  const openIncident = Number.parseInt(incident ?? "", 10);
+  const openIncidentId = Number.isSafeInteger(openIncident) && openIncident > 0 ? openIncident : null;
+  // ?incident=<id> without a page opens the page that holds it.
+  const incidentsPage = incidentPage === undefined && openIncidentId !== null ? (await incidentPageOf(openIncidentId)) ?? 1 : parsePageParam(incidentPage);
   const canWrite = can(access, "compliance:write");
   // Reports are listed without their content; draft sources are ids, names and titles only;
   // of alert channels and backup destinations only ids, names and types reach the page.
   const canAsk = can(access, "analytics:read");
   const [reports, incidents, controls, schedules, restoreTests, last, configurable, channels, destinations, savedQuestions, askAvailability] = await Promise.all([
-    listReports({ page, perPage: REPORTS_PER_PAGE }),
-    listIncidents({ page: 1, perPage: 100 }),
+    clampedPage(parsePageParam(pageParam), REPORTS_PER_PAGE, (page) => listReports({ page, perPage: REPORTS_PER_PAGE })),
+    clampedPage(incidentsPage, INCIDENTS_PER_PAGE, (page) => listIncidents({ page, perPage: INCIDENTS_PER_PAGE })),
     getControlStatus(),
     listReportSchedules(),
-    listRestoreTests({ page: 1, perPage: 20 }),
+    clampedPage(parsePageParam(restorePage), RESTORE_TESTS_PER_PAGE, (page) => listRestoreTests({ page, perPage: RESTORE_TESTS_PER_PAGE })),
     lastReport(),
     isFeatureConfigurable(FEATURE),
     canWrite ? listAlertChannels() : Promise.resolve([]),
@@ -70,14 +95,13 @@ export default async function CompliancePage({
     canWrite ? listSavedQuestions(access) : Promise.resolve([]),
     canAsk ? getQuestionAvailability() : Promise.resolve(null),
   ]);
-  const openIncident = Number.parseInt(incident ?? "", 10);
   return (
     <ComplianceClient
       initialTab={readComplianceTab(tabParam)}
       initialFramework={readComplianceFramework(framework)}
-      initialIncidentId={Number.isSafeInteger(openIncident) && openIncident > 0 ? openIncident : null}
+      initialIncidentId={openIncidentId}
       reports={reports}
-      incidents={incidents.incidents}
+      incidents={incidents}
       controls={controls}
       schedules={schedules}
       restoreTests={restoreTests}

@@ -4,7 +4,7 @@ Feature id `approvals` (Enterprise edition). Code: `ee/approvals/` (Elastic Lice
 
 Change approvals add segregation of duties to the hosts that matter: a change to a protected proxy host or L4 proxy host is not applied when it is made. It is stored as a **change request** and applied only after other people approve it (four-eyes), and only inside a **change window** if the policy has one. An administrator-level **emergency change** can skip both, with a mandatory reason, and is flagged in the audit log. This covers the change-management and segregation-of-duties controls auditors ask for under DORA (ICT change management) and NIS2.
 
-Configure it on the **Approvals** page or through `/api/v1/approval-policies` and `/api/v1/change-requests`.
+Configure it on the **Approvals** page or through `/api/v1/approval-policies` and `/api/v1/change-requests`. The page lists the open requests oldest first and the decided ones newest first, 25 to a page each (`?queue=` and `?tab=decided&page=`).
 
 ## Approval policies
 

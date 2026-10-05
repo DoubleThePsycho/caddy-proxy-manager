@@ -60,7 +60,7 @@ function AssignmentWorkspace({
             <CampaignStatusPill campaign={campaign} now={now} />
           </h2>
           <span className="text-[13px] text-soft">
-            Due <span className="num">{format.dateTime(assignment.campaign.dueAt)}</span>. Revocations apply when you confirm.
+            Due <span className="num">{format.dateTime(assignment.campaign.dueAt)}</span>
           </span>
         </div>
         <div className="flex flex-wrap gap-2.5">
@@ -92,11 +92,11 @@ export default function MyReviewsClient({ assignments, currentUserId, evidence =
         breadcrumb={["Identity", "My reviews"]}
         title="My reviews"
         count={assignments.length > 0 ? assignments.length : null}
-        description="Access reviews you were asked to decide. Choose keep or revoke for each item, then confirm. You never review your own access."
+        description="Choose keep or revoke for each item, then confirm."
       />
       {assignments.length === 0 ? (
         <section aria-label="My reviews" className="rounded-2xl border border-line bg-panel">
-          <EmptyState icon={ClipboardCheck} title="Nothing to review" description="When someone names you as a reviewer, the review shows up here." />
+          <EmptyState icon={ClipboardCheck} title="Nothing to review" />
         </section>
       ) : (
         assignments.map((assignment) => (

@@ -137,7 +137,7 @@ export default function OverviewTab({
           }
           footer={
             <span className="text-soft">
-              From the ledger, hourly per consumer · {formatDayUtc(buckets[0])} to {clock(now)} UTC today
+              {formatDayUtc(buckets[0])} to {clock(now)} UTC today
             </span>
           }
         >
@@ -168,7 +168,6 @@ export default function OverviewTab({
         <SectionCard
           title={`Top consumers, ${month}`}
           actions={<span className="text-xs text-soft">Requests</span>}
-          footer={<span className="text-soft">Bars show each consumer&apos;s share of the month&apos;s metered requests.</span>}
         >
           <TopList
             framed={false}

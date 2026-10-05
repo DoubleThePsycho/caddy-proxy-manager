@@ -41,7 +41,7 @@ export function WafRulesStopped({ week, analyticsEnabled }: { week: WafSettingsP
         <span className="text-sm text-muted-foreground">
           {analyticsEnabled
             ? `Last 7 days · ${fmt(week.summary.rules)} ${week.summary.rules === 1 ? "rule" : "rules"} on ${fmt(week.summary.hosts)} ${week.summary.hosts === 1 ? "host" : "hosts"}`
-            : "Turn on ClickHouse analytics to see which rules match."}
+            : "Analytics are off."}
         </span>
       </div>
       {analyticsEnabled && (

@@ -20,23 +20,17 @@ function stepDescription(step: SetupStepView, firstRun: OverviewFirstRun, config
     case "domain":
       return (
         <>
-          Create an A or AAAA record for each domain you will serve, pointing at this server&apos;s public address. Ports {num("80")} and{" "}
-          {num("443")} must be reachable from the internet so certificates can be issued.
+          Create an A or AAAA record for each domain, pointing at this server&apos;s public address. Ports {num("80")} and {num("443")} must
+          be reachable from the internet for certificates to be issued.
         </>
       );
     case "first_proxy_host":
-      return (
-        <>
-          Send a domain to a service on your network, for example wiki.example.com to {num("10.0.4.21:3000")}. The certificate is requested
-          as soon as you save.
-        </>
-      );
+      return <>For example wiki.example.com to {num("10.0.4.21:3000")}.</>;
     case "analytics":
       return (
         <span id="step-analytics" className="flex scroll-mt-20 flex-col gap-2">
           <span>
-            Traffic and WAF charts need the ClickHouse database, and this install was started without it. Add these lines to {num(".env")},
-            with a password from {num("openssl rand -base64 32")}, then run {num("docker compose up -d")}.
+            Add these lines to {num(".env")}, with a password from {num("openssl rand -base64 32")}, then run {num("docker compose up -d")}.
           </span>
           <pre className="num m-0 overflow-x-auto rounded-lg border border-line bg-panel2 px-3 py-2.5 text-xs leading-[18px] whitespace-pre text-foreground">
             {ANALYTICS_ENV_LINES}
@@ -44,19 +38,13 @@ function stepDescription(step: SetupStepView, firstRun: OverviewFirstRun, config
         </span>
       );
     case "second_user":
-      return (
-        <>
-          Create an account for each person who manages this install and give it a role: administrator, user or viewer. Sharing the admin
-          account leaves the audit log unable to tell people apart.
-        </>
-      );
+      return <>One account per person, so the audit log can tell people apart.</>;
     case "single_sign_on":
       return configurable ? (
-        <>Let people sign in through an OpenID Connect or SAML provider, or an LDAP directory, instead of a password kept here.</>
+        <>Sign in through an OpenID Connect or SAML provider, or an LDAP directory.</>
       ) : (
         <>
-          Sign-in through an OpenID Connect provider is included. SAML providers such as Entra ID or Okta come with the {firstRun.ssoEdition}{" "}
-          edition, LDAP directories with {firstRun.ldapEdition}.
+          OpenID Connect is included. SAML comes with the {firstRun.ssoEdition} edition, LDAP with {firstRun.ldapEdition}.
         </>
       );
     default:
@@ -213,11 +201,10 @@ export function SetupChecklist({ firstRun, permissions }: { firstRun: OverviewFi
       )}
       <Checklist title="Set up this install" items={items} progressLabel="Setup steps done" />
       {canMark && (
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-soft">
+        <div>
           <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => save({ dismissed: true })}>
             Hide the checklist
           </Button>
-          <span>The overview then shows traffic, hosts and recent changes instead.</span>
         </div>
       )}
     </div>

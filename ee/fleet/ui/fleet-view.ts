@@ -111,7 +111,7 @@ export type Health = { tone: StatusTone; label: string; note: string | null; tit
 export function nodeHealth(instance: FleetInstanceView, replica: PullReplicaView | undefined, now: number): Health {
   if (!instance.enabled) return { tone: "off", label: "Disabled", note: null };
   if (instance.pull) {
-    if (instance.pull.checkIn === "never") return { tone: "off", label: "Never checked in", note: "waits for its first poll" };
+    if (instance.pull.checkIn === "never") return { tone: "off", label: "Never checked in", note: null };
     if (instance.pull.checkIn === "missed") {
       return {
         tone: "bad",
@@ -120,10 +120,10 @@ export function nodeHealth(instance: FleetInstanceView, replica: PullReplicaView
       };
     }
     if (replica?.caddy && !replica.caddy.ok) {
-      return { tone: "bad", label: "Caddy apply failed", note: replica.caddy.code ?? "reported with its poll" };
+      return { tone: "bad", label: "Caddy apply failed", note: replica.caddy.code ?? null };
     }
-    if (instance.lastSyncError) return { tone: "warn", label: "Last sync failed", note: "reported with its poll" };
-    return { tone: "ok", label: "Healthy", note: "reported with its poll" };
+    if (instance.lastSyncError) return { tone: "warn", label: "Last sync failed", note: null };
+    return { tone: "ok", label: "Healthy", note: null };
   }
   if (instance.drift.status === "unreachable") {
     return { tone: "bad", label: "Unreachable", note: instance.drift.checkedAt ? `checked ${formatClock(instance.drift.checkedAt)}` : null, title: instance.drift.detail ?? undefined };

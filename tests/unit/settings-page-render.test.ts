@@ -1,9 +1,9 @@
 /**
- * The Settings page's groups: the catalog shared with the command palette
- * (every old section id still opens the group that took it in), the save
- * bar's change count, and a server-side render of the page in its main
- * states (default group, deep links, replica wording, read-only analytics,
- * branding outside the MSP edition, restricted groups).
+ * The settings pages: the catalog that tells the command palette and the
+ * old Settings links where each section is now (every old id still leads
+ * somewhere, every page is in the navigation with settings:read), the save
+ * bar's change count, and server-side renders of each page in its main
+ * states (replica wording, read-only analytics, restricted sections).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -49,70 +49,90 @@ vi.mock('@/ee/high-availability/ui/certificate-storage-actions', () => ({
   removeCertificateStorageAction: vi.fn(),
   testCertificateStorageAction: vi.fn(),
 }));
-vi.mock('@/ee/high-availability/ui/shared-state-actions', () => ({
-  saveSharedStateAction: vi.fn(),
-  removeSharedStateAction: vi.fn(),
-  sharedStateStatusAction: vi.fn(async () => ({ ok: true, status: { backend: 'local', reachable: null, error: null, keys: null, drain: null, leader: true } })),
-}));
 vi.mock('../../app/(dashboard)/settings/usage-ping-actions', () => ({
   setUsagePingEnabledAction: vi.fn(),
   resetUsagePingInstallIdAction: vi.fn(),
 }));
 
-import SettingsClient from '../../app/(dashboard)/settings/SettingsClient';
-import type { SettingsClientProps } from '../../app/(dashboard)/settings/types';
+import SettingsClient, { type SettingsClientProps } from '../../app/(dashboard)/settings/SettingsClient';
+import CertificateSettingsClient, { type CertificateSettingsProps } from '../../app/(dashboard)/certificates/settings/CertificateSettingsClient';
+import HostDefaultsClient, { type HostDefaultsProps } from '../../app/(dashboard)/proxy-hosts/defaults/HostDefaultsClient';
+import GeoBlockingClient from '../../app/(dashboard)/geo-blocking/GeoBlockingClient';
+import RateLimitingClient from '../../app/(dashboard)/rate-limiting/RateLimitingClient';
+import AnalyticsSettingsClient, { type AnalyticsSettingsProps } from '../../app/(dashboard)/analytics/settings/AnalyticsSettingsClient';
+import InstancesClient from '../../app/(dashboard)/instances/InstancesClient';
+import type { InstanceSyncProps } from '../../app/(dashboard)/instances/types';
+import ClusterSection from '@/ee/high-availability/ui/ClusterSection';
+import BackupsTab from '@/ee/backups/ui/BackupsTab';
 import { countChanges } from '@/src/components/settings/settings-form';
-import {
-  SETTINGS_SECTIONS,
-  SETTINGS_SECTION_ALIASES,
-  SETTINGS_SECTION_GROUPS,
-  findSettingsSection,
-  resolveSettingsSection,
-} from '../../src/lib/settings-sections';
+import { NAV_PAGES } from '../../src/lib/navigation';
+import { SETTINGS_PAGES, SETTINGS_SECTIONS, findSettingsSection, settingsSectionHref } from '../../src/lib/settings-sections';
 import { GEOIP_ASN_DB, GEOIP_COUNTRY_DB, getGeoIpDatabases, getGeoIpStatus } from '../../src/lib/geoip-status';
 import type { UsagePingView } from '../../src/lib/usage-ping/store';
 
-/** Every id `/settings?section=` accepted before the groups were merged. */
+/** Every id `/settings?section=` (or `#`) accepted by the old Settings page. */
 const OLD_SECTION_IDS = [
-  'sync', 'general', 'acme', 'default-response', 'usage-ping', 'certificate-storage',
-  'dns-providers', 'dns-resolvers', 'upstream-dns', 'trusted-proxies',
-  'geoblock', 'rate-limit', 'error-pages', 'authentik', 'forward-auth', 'oauth',
-  'metrics', 'logging',
+  'general', 'acme', 'sync', 'high-availability', 'backups', 'usage-ping', 'trusted-proxies', 'upstream-dns',
+  'geoblock', 'rate-limit', 'error-pages', 'forward-auth', 'oauth', 'analytics', 'branding',
+  'default-response', 'dns-providers', 'dns-resolvers', 'certificate-storage', 'shared-state', 'authentik', 'metrics', 'logging',
+  'instance-sync',
 ];
 
-describe('settings groups catalog', () => {
-  it('keeps every old section id working', () => {
+function decode(html: string): string {
+  return html.replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&amp;/g, '&');
+}
+
+describe('where each setting is', () => {
+  it('sends every old Settings link to the page that holds the section now', () => {
     for (const id of OLD_SECTION_IDS) {
-      expect(resolveSettingsSection(id), id).not.toBeNull();
+      expect(settingsSectionHref(id), id).not.toBeNull();
     }
-    expect(resolveSettingsSection('dns-providers')).toMatchObject({ section: { id: 'acme' }, anchor: 'settings-dns-providers' });
-    expect(resolveSettingsSection('logging')).toMatchObject({ section: { id: 'analytics' }, anchor: 'settings-access-log' });
-    expect(resolveSettingsSection('default-response')).toMatchObject({ section: { id: 'general' }, anchor: 'settings-unknown-hosts' });
-    expect(resolveSettingsSection('general')).toMatchObject({ section: { id: 'general' }, anchor: null });
-    expect(resolveSettingsSection('nope')).toBeNull();
+    expect(settingsSectionHref('dns-providers')).toBe('/certificates/settings#dns-providers');
+    expect(settingsSectionHref('acme')).toBe('/certificates/settings');
+    expect(settingsSectionHref('default-response')).toBe('/proxy-hosts/defaults#default-response');
+    expect(settingsSectionHref('authentik')).toBe('/proxy-hosts/defaults#authentik');
+    expect(settingsSectionHref('geoblock')).toBe('/geo-blocking');
+    expect(settingsSectionHref('rate-limit')).toBe('/rate-limiting');
+    expect(settingsSectionHref('oauth')).toBe('/oauth-providers');
+    expect(settingsSectionHref('logging')).toBe('/analytics/settings#logging');
+    expect(settingsSectionHref('sync')).toBe('/instances');
+    expect(settingsSectionHref('instance-sync')).toBe('/instances');
+    expect(settingsSectionHref('shared-state')).toBe('/high-availability#shared-state');
+    expect(settingsSectionHref('backups')).toBe('/backups');
+    expect(settingsSectionHref('branding')).toBe('/branding');
+    expect(settingsSectionHref('general')).toBe('/settings');
+    expect(settingsSectionHref('usage-ping')).toBe('/settings#usage-ping');
+    // The groups of the old page, as ?group=.
+    expect(settingsSectionHref('networking')).toBe('/proxy-hosts/defaults#trusted-proxies');
+    expect(settingsSectionHref('nope')).toBeNull();
+    expect(settingsSectionHref('')).toBeNull();
   });
 
-  it('points every card at a group that exists, and keeps ids unique', () => {
-    const ids = SETTINGS_SECTION_GROUPS.flatMap((group) => group.items.map((item) => item.id));
+  it('keeps ids unique and puts every section on a page of the navigation that needs settings:read', () => {
+    const ids = SETTINGS_SECTIONS.map((section) => section.id);
     expect(new Set(ids).size).toBe(ids.length);
-    for (const alias of SETTINGS_SECTION_ALIASES) {
-      expect(findSettingsSection(alias.section), alias.id).toBeDefined();
-      expect(ids).not.toContain(alias.id);
+    for (const section of SETTINGS_SECTIONS) {
+      const path = section.href.split('#')[0];
+      const page = NAV_PAGES.find((candidate) => candidate.href === path);
+      expect(page, section.id).toBeDefined();
+      // Backups is its own permission area, as on the REST API.
+      expect(page?.permission, section.id).toBe(section.id === 'backups' ? 'backups:read' : 'settings:read');
+      expect(page?.label, section.id).toBe(section.page);
     }
+    expect([...SETTINGS_PAGES].sort()).toEqual([
+      '/analytics/settings', '/backups', '/certificates/settings', '/geo-blocking', '/high-availability', '/instances',
+      '/oauth-providers', '/proxy-hosts/defaults', '/rate-limiting', '/settings',
+    ]);
   });
 
-  it('lists groups and cards for the palette with the permission they need', () => {
-    const byId = new Map(SETTINGS_SECTIONS.map((section) => [section.id, section]));
-    expect(byId.get('sync')?.permission).toBe('instances:read');
-    expect(byId.get('oauth')?.permission).toBe('sso:read');
-    expect(byId.get('backups')?.permission).toBe('backups:read');
-    expect(byId.get('certificate-storage')?.permission).toBe('high_availability:read');
-    expect(byId.get('high-availability')?.permission).toBe('high_availability:read');
-    expect(byId.get('shared-state')?.permission).toBe('high_availability:read');
-    expect(resolveSettingsSection('shared-state')).toMatchObject({ section: { id: 'high-availability' }, anchor: 'settings-shared-state' });
-    // Branding has its own palette entry (the /branding page).
-    expect(byId.has('branding')).toBe(false);
-    expect(byId.get('dns-providers')?.groupLabel).toBe('Certificates and ACME');
+  it('keeps the permission each section needs on top of settings:read', () => {
+    expect(findSettingsSection('sync')?.permission).toBe('instances:read');
+    expect(findSettingsSection('oauth')?.permission).toBe('sso:read');
+    expect(findSettingsSection('backups')?.permission).toBe('backups:read');
+    expect(findSettingsSection('certificate-storage')?.permission).toBe('high_availability:read');
+    expect(findSettingsSection('high-availability')?.permission).toBe('high_availability:read');
+    expect(findSettingsSection('shared-state')?.permission).toBe('high_availability:read');
+    expect(findSettingsSection('geoblock')?.permission).toBeUndefined();
   });
 });
 
@@ -154,177 +174,241 @@ const usagePing = {
   payload: { schema: 1 },
 } as unknown as UsagePingView;
 
-function props(overrides: Partial<SettingsClientProps> = {}): SettingsClientProps {
-  return {
-    general: { primaryDomain: 'example.com', acmeEmail: 'admin@example.com' },
-    acme: null,
-    dnsProvider: null,
-    dnsProviderDefinitions: [],
-    authentik: null,
-    forwardAuth: null,
-    metrics: null,
-    logging: { enabled: true, format: 'json' },
-    dns: null,
-    upstreamDnsResolution: null,
-    trustedProxies: null,
-    defaultResponse: null,
-    oauthProviders: [],
-    baseUrl: 'https://dashboard.example.com',
-    usagePing,
-    canWriteSettings: true,
-    instanceSync: {
-      mode: 'master',
-      modeFromEnv: false,
-      tokenFromEnv: false,
-      overrides: {
-        general: false, acme: false, dnsProvider: false, authentik: false, forwardAuth: false, metrics: false,
-        logging: false, dns: false, upstreamDnsResolution: false, trustedProxies: false, defaultResponse: false,
-      },
-      slave: null,
-      master: { instances: [], envInstances: [], orphanSyncKeyPins: [] },
-    },
-    geoip: [
-      { name: 'GeoLite2 Country', path: GEOIP_COUNTRY_DB, found: true, updatedAt: '2026-10-01T03:00:00.000Z' },
-      { name: 'GeoLite2 ASN', path: GEOIP_ASN_DB, found: false, updatedAt: null },
-    ],
-    analytics: { enabled: true, retentionDays: 30, retentionFromEnv: false, totals: null, totalsError: null },
-    backups: { allowed: true, configurable: false, editionLabel: 'Business', destinations: [] },
-    branding: { licensed: false, canRead: true, editionLabel: 'MSP' },
-    links: { history: true, certificates: true, fleet: true },
-    ...overrides,
-  };
-}
-
-function render(overrides: Partial<SettingsClientProps> = {}): string {
-  return renderToStaticMarkup(createElement(SettingsClient, props(overrides)))
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&amp;/g, '&');
-}
-
 describe('Settings page', () => {
-  it('opens on General with its cards, the group list and one save bar', () => {
+  function render(overrides: Partial<SettingsClientProps> = {}) {
+    const props: SettingsClientProps = {
+      general: { primaryDomain: 'example.com', acmeEmail: 'admin@example.com' },
+      baseUrl: 'https://dashboard.example.com',
+      usagePing,
+      isSlave: false,
+      overrideGeneral: false,
+      canWriteSettings: true,
+      ...overrides,
+    };
+    return decode(renderToStaticMarkup(createElement(SettingsClient, props)));
+  }
+
+  it('shows the general settings and the usage ping on one page, without the old group list', () => {
     const html = render();
-    expect(html).toContain('<h1');
-    expect(html).toMatch(/<h2 id="settings-group-general"[^>]*>General<\/h2>/);
+    expect(html).toMatch(/<h1[^>]*>Settings/);
     expect(html).toContain('Primary domain');
     expect(html).toContain('https://dashboard.example.com');
-    expect(html).toContain('Requests for unknown hosts');
-    expect(html).toContain('Close the connection');
+    expect(html).toContain('id="usage-ping"');
+    expect(html).toContain('data-testid="usage-ping-section"');
     expect(html.match(/data-testid="settings-save-bar"/g)).toHaveLength(1);
-    expect(html).toContain('No unsaved changes.');
-    // The group list with its sections and notes.
-    for (const label of ['System', 'Networking', 'Security defaults', 'Observability', 'Appearance']) {
-      expect(html).toContain(`aria-label="${label}"`);
-    }
-    expect(html).toContain('Search settings');
-    expect(html).toContain('href="/history"');
-    // The contact e-mail moved to Certificates and ACME; General only carries it along.
+    expect(html).not.toContain('Search settings');
+    expect(html).not.toContain('Settings navigation');
+    expect(html).not.toContain('Requests for unknown hosts');
+    // The contact e-mail is on Certificate settings; General only carries it along.
     expect(html).toContain('<input type="hidden" data-untracked="" name="acmeEmail" value="admin@example.com"/>');
   });
 
-  it('opens the group an old section id now lives in', () => {
-    const html = render({ initialSection: 'dns-providers' });
-    expect(html).toMatch(/<h2 id="settings-group-acme"[^>]*>Certificates and ACME<\/h2>/);
-    expect(html).toContain('id="settings-dns-providers"');
-    expect(html).toContain('No DNS provider yet');
+  it('cannot save without settings:write, and asks a replica whether to override its master', () => {
+    expect(render({ canWriteSettings: false })).toContain('Your role can read these settings but not change them.');
+    expect(render({ isSlave: true })).toContain('Override the master');
+  });
+});
+
+describe('Certificate settings page', () => {
+  function render(overrides: Partial<CertificateSettingsProps> = {}) {
+    const props: CertificateSettingsProps = {
+      acme: null,
+      general: { primaryDomain: 'example.com', acmeEmail: 'admin@example.com' },
+      dnsProvider: null,
+      dnsProviderDefinitions: [],
+      dns: null,
+      isSlave: false,
+      overrides: { general: false, acme: false, dnsProvider: false, dns: false },
+      certificateStorage: null,
+      canSave: true,
+      canOpenCertificates: true,
+      ...overrides,
+    };
+    return decode(renderToStaticMarkup(createElement(CertificateSettingsClient, props)));
+  }
+
+  it('holds the CA, the contact e-mail, DNS-01 providers and resolvers, and certificate storage', () => {
+    const html = render();
+    expect(html).toMatch(/<h1[^>]*>Certificate settings/);
+    expect(html).toContain('href="/certificates"');
+    expect(html).toContain('Certificate authority');
     expect(html).toContain('Contact e-mail');
-    expect(html).not.toMatch(/<h2 id="settings-group-general"/);
+    for (const id of ['acme', 'dns-providers', 'dns-resolvers', 'certificate-storage']) expect(html).toContain(`id="${id}"`);
+    expect(html).toContain('No DNS provider yet');
+    expect(html).toContain('Use my own resolvers');
+    // The primary domain is saved with the e-mail, from Settings.
+    expect(html).toContain('<input type="hidden" data-untracked="" name="primaryDomain" value="example.com"/>');
+    // Certificate storage needs high_availability:read.
+    expect(html).toContain('high_availability:read');
   });
 
-  it('says replica, never slave, while keeping the stored mode value', () => {
-    const html = render({ initialSection: 'sync' });
-    expect(html).toContain('>Replica<');
-    expect(html).toContain('<input type="hidden" name="mode" value="master"/>');
-    expect(html).toContain('No replicas yet');
-    expect(html).not.toMatch(/>[^<]*\bslaves?\b[^<]*</i);
+  it('says where a replica takes its contact e-mail from', () => {
+    expect(render({ isSlave: true })).toContain('Follows the master unless Settings, General overrides it on this replica.');
   });
+});
+
+describe('Host defaults page', () => {
+  function render(overrides: Partial<HostDefaultsProps> = {}) {
+    const props: HostDefaultsProps = {
+      defaultResponse: null,
+      errorPages: null,
+      trustedProxies: null,
+      upstreamDnsResolution: null,
+      authentik: null,
+      forwardAuth: null,
+      isSlave: false,
+      overrides: { defaultResponse: false, trustedProxies: false, upstreamDnsResolution: false, authentik: false, forwardAuth: false },
+      canSave: true,
+      canOpenProxyHosts: true,
+      ...overrides,
+    };
+    return decode(renderToStaticMarkup(createElement(HostDefaultsClient, props)));
+  }
+
+  it('holds the answer for unknown hosts, error pages, trusted proxies, upstream DNS and forward auth, with one save bar', () => {
+    const html = render();
+    expect(html).toMatch(/<h1[^>]*>Host defaults/);
+    for (const id of ['default-response', 'error-pages', 'trusted-proxies', 'upstream-dns', 'forward-auth', 'authentik', 'generic-forward-auth']) {
+      expect(html).toContain(`id="${id}"`);
+    }
+    for (const answer of ['Caddy default', 'Custom response', 'Redirect', 'Close the connection']) expect(html).toContain(answer);
+    expect(html).toContain('placeholder="outpost.goauthentik.io"');
+    expect(html.match(/data-testid="settings-save-bar"/g)).toHaveLength(1);
+    expect(html).toContain('No unsaved changes.');
+  });
+});
+
+describe('Geo blocking and Rate limiting pages', () => {
+  it('shows the GeoIP databases found and missing', () => {
+    const html = decode(
+      renderToStaticMarkup(
+        createElement(GeoBlockingClient, {
+          geoblock: null,
+          geoip: [
+            { name: 'GeoLite2 Country', path: GEOIP_COUNTRY_DB, found: true, updatedAt: '2026-10-01T03:00:00.000Z' },
+            { name: 'GeoLite2 ASN', path: GEOIP_ASN_DB, found: false, updatedAt: null },
+          ],
+          canSave: true,
+          canOpenSecurity: true,
+        })
+      )
+    );
+    expect(html).toMatch(/<h1[^>]*>Geo blocking/);
+    expect(html).toContain(GEOIP_COUNTRY_DB);
+    expect(html).toContain('Missing');
+    expect(html).toContain('GeoLite2 ASN is missing');
+    expect(html).toContain('Default rules');
+    expect(html).toContain('href="/security"');
+  });
+
+  it('shows the default rate limits', () => {
+    const html = decode(renderToStaticMarkup(createElement(RateLimitingClient, { rateLimit: null, canSave: true, canOpenSecurity: false })));
+    expect(html).toMatch(/<h1[^>]*>Rate limiting/);
+    expect(html).toContain('data-testid="rate-limit-settings"');
+    expect(html).not.toContain('href="/security"');
+  });
+});
+
+describe('Analytics settings page', () => {
+  function render(overrides: Partial<AnalyticsSettingsProps> = {}) {
+    const props: AnalyticsSettingsProps = {
+      analytics: { enabled: true, retentionDays: 30, retentionFromEnv: false, totals: null, totalsError: null },
+      logging: { enabled: true, format: 'json' },
+      metrics: null,
+      isSlave: false,
+      overrides: { logging: false, metrics: false },
+      canSave: true,
+      canOpenAnalytics: true,
+      ...overrides,
+    };
+    return decode(renderToStaticMarkup(createElement(AnalyticsSettingsClient, props)));
+  }
 
   it('shows ClickHouse and its retention read-only, with totals only when given', () => {
-    const without = render({ initialSection: 'analytics' });
+    const without = render();
     expect(without).toContain('Keep events for');
     expect(without).toContain('30 days');
     expect(without).toContain('CLICKHOUSE_RETENTION_DAYS');
     expect(without).not.toContain('Unique addresses');
     expect(without).toContain('http://ingressi-caddy:9090/metrics');
+    for (const id of ['analytics', 'logging', 'metrics']) expect(without).toContain(`id="${id}"`);
 
     const withTotals = render({
-      initialSection: 'analytics',
       analytics: { enabled: true, retentionDays: 30, retentionFromEnv: true, totals: { requests: 2_980_000, wafEvents: 30_545, bytes: 41.9e9, uniqueAddresses: 10_896 }, totalsError: null },
     });
     expect(withTotals).toContain('Unique addresses');
     expect(withTotals).toContain('30,545');
   });
 
-  it('shows the GeoIP databases found and missing', () => {
-    const html = render({ initialSection: 'geoblock' });
-    expect(html).toContain(GEOIP_COUNTRY_DB);
-    expect(html).toContain('Missing');
-    expect(html).toContain('GeoLite2 ASN is missing');
+  it('warns that analytics stop while the access log is off', () => {
+    expect(render({ logging: { enabled: false, format: 'json' } })).toContain('Traffic analytics get no new requests while access logging is off.');
+  });
+});
+
+describe('Instance sync page', () => {
+  const instanceSync: InstanceSyncProps = {
+    mode: 'master',
+    modeFromEnv: false,
+    tokenFromEnv: false,
+    slave: null,
+    master: { instances: [], envInstances: [], orphanSyncKeyPins: [] },
+  };
+
+  it('says replica, never slave, while keeping the stored mode value', () => {
+    const html = decode(renderToStaticMarkup(createElement(InstancesClient, { instanceSync, canWrite: true, canOpenFleet: true })));
+    expect(html).toMatch(/<h1[^>]*>Instance sync/);
+    expect(html).toContain('>Replica<');
+    expect(html).toContain('<input type="hidden" name="mode" value="master"/>');
+    expect(html).toContain('No replicas yet');
+    expect(html).not.toMatch(/>[^<]*\bslaves?\b[^<]*</i);
   });
 
-  it('shows branding locked outside the MSP edition, and a link with it', () => {
-    const locked = render({ initialSection: 'branding' });
-    expect(locked).toContain('Branding is part of the MSP edition.');
-    expect(locked).toContain('href="/license"');
-    const licensed = render({ initialSection: 'branding', branding: { licensed: true, canRead: true, editionLabel: 'MSP' } });
-    expect(licensed).not.toContain('Branding is part of the MSP edition.');
-    expect(licensed).toContain('Open branding');
-  });
-
-  it('summarises backups and links to where they are set up', () => {
-    const html = render({ initialSection: 'backups' });
-    expect(html).toContain('No backup destination yet');
-    expect(html).toContain('href="/history?tab=backups"');
-    const restricted = render({ initialSection: 'backups', backups: { allowed: false, configurable: false, editionLabel: 'Business', destinations: [] } });
-    expect(restricted).toContain('backups:read');
-  });
-
-  it('shows a notice instead of groups the role cannot read', () => {
-    const html = render({ initialSection: 'sync', restricted: { sync: true, oauth: true } });
+  it('shows a notice instead of the settings without instances:read', () => {
+    const html = decode(renderToStaticMarkup(createElement(InstancesClient, { instanceSync: null, canWrite: false, canOpenFleet: false })));
     expect(html).toContain('instances:read');
     expect(html).not.toContain('Instance mode');
   });
+});
 
+describe('High availability page', () => {
   it('shows the dashboard cluster, or how to set one up', () => {
-    const off = render({
-      initialSection: 'high-availability',
-      cluster: {
+    const off = renderToStaticMarkup(
+      createElement(ClusterSection, {
         view: { enabled: false, configurable: false, error: null, node: null, lease: null, replication: null, lastRestore: null, nodes: [], config: null },
         editionLabel: 'Enterprise',
-      },
-    });
-    expect(off).toMatch(/<h2 id="settings-group-high-availability"[^>]*>High availability<\/h2>/);
+      })
+    );
     expect(off).toContain('High availability is off on this node');
     expect(off).toContain('ee/docs/high-availability.md');
 
     const now = '2026-10-03T10:00:00.000Z';
-    const on = render({
-      initialSection: 'high-availability',
-      cluster: {
-        editionLabel: 'Enterprise',
-        view: {
-          enabled: true,
-          configurable: true,
-          error: null,
-          node: { id: 'web-1', role: 'leader', startedAt: now, statusUpdatedAt: now },
-          lease: { holder: 'web-1', epoch: 7, ttlSeconds: 15, checkedAt: now, error: null },
-          replication: { replicaId: 'e7-0a1b2c3d', lastSyncAt: now, lagSeconds: 1, error: null, checkedAt: now },
-          lastRestore: { at: now, ok: true, source: 'replica', replicaId: 'e6-99887766', durationMs: 2400, error: null },
-          nodes: [
-            { id: 'web-1', role: 'leader', epoch: 7, follow: null, lastRestore: null, updatedAt: now },
-            { id: 'web-2', role: 'standby', epoch: null, follow: { replicaId: 'e7-0a1b2c3d', ready: true, error: null }, lastRestore: null, updatedAt: now },
-          ],
-          config: {
-            redis: { mode: 'standalone', addresses: ['valkey.example.com:6379'], keyPrefix: 'ingressi-ha', tls: false, hasPassword: true },
-            storage: { endpoint: 'https://s3.example.com', region: 'us-east-1', bucket: 'ingressi-ha', path: 'ingressi' },
-            leaseTtlSeconds: 15,
-            syncIntervalSeconds: 1,
-            followIntervalSeconds: 5,
+    const on = decode(
+      renderToStaticMarkup(
+        createElement(ClusterSection, {
+          editionLabel: 'Enterprise',
+          view: {
+            enabled: true,
+            configurable: true,
+            error: null,
+            node: { id: 'web-1', role: 'leader', startedAt: now, statusUpdatedAt: now },
+            lease: { holder: 'web-1', epoch: 7, ttlSeconds: 15, checkedAt: now, error: null },
+            replication: { replicaId: 'e7-0a1b2c3d', lastSyncAt: now, lagSeconds: 1, error: null, checkedAt: now },
+            lastRestore: { at: now, ok: true, source: 'replica', replicaId: 'e6-99887766', durationMs: 2400, error: null },
+            nodes: [
+              { id: 'web-1', role: 'leader', epoch: 7, follow: null, lastRestore: null, updatedAt: now },
+              { id: 'web-2', role: 'standby', epoch: null, follow: { replicaId: 'e7-0a1b2c3d', ready: true, error: null }, lastRestore: null, updatedAt: now },
+            ],
+            config: {
+              redis: { mode: 'standalone', addresses: ['valkey.example.com:6379'], keyPrefix: 'ingressi-ha', tls: false, hasPassword: true },
+              storage: { endpoint: 'https://s3.example.com', region: 'us-east-1', bucket: 'ingressi-ha', path: 'ingressi' },
+              leaseTtlSeconds: 15,
+              syncIntervalSeconds: 1,
+              followIntervalSeconds: 5,
+            },
           },
-        },
-      },
-    });
+        })
+      )
+    );
     expect(on).toContain('Dashboard cluster');
     expect(on).toContain('Epoch 7');
     expect(on).toContain('e7-0a1b2c3d');
@@ -332,13 +416,31 @@ describe('Settings page', () => {
     expect(on).toContain('web-2');
     expect(on).toContain('Ready');
     expect(on).not.toContain('Replication is behind');
-
-    const restricted = render({ initialSection: 'high-availability', restricted: { sync: false, oauth: false, certificateStorage: true } });
-    expect(restricted).toContain('high_availability:read');
   });
+});
 
-  it('cannot save without settings:write', () => {
-    const html = render({ canWriteSettings: false });
-    expect(html).toContain('Your role can read these settings but not change them.');
+describe('Backups page', () => {
+  it('pages through the backup runs', () => {
+    const stamp = '2026-10-02T03:00:00.000Z';
+    const runs = Array.from({ length: 25 }, (_, index) => ({
+      id: 100 - index, destinationId: 1, destinationName: 'Offsite', trigger: 'schedule' as const, status: 'success' as const,
+      startedAt: stamp, finishedAt: stamp, objectKey: `prod/backup-${index}.json`, sizeBytes: 2048, sha256: null, prunedCount: 0, error: null, warning: null,
+    }));
+    const html = decode(
+      renderToStaticMarkup(
+        createElement(BackupsTab, {
+          destinations: [],
+          runs: { runs, total: 60, page: 1, perPage: 25 },
+          configurable: true,
+          isSlave: false,
+          editionLabel: 'Business',
+          minPassphraseLength: 12,
+          paginateRuns: true,
+        })
+      )
+    );
+    expect(html).toContain('aria-label="Pages of backup runs"');
+    expect(html).toContain('of <span class="num">60</span> runs');
+    expect(html).toContain('href="/settings?page=2"');
   });
 });

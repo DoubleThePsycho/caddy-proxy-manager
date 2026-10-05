@@ -121,7 +121,7 @@ describe('Security events page', () => {
     expect(page).toContain('No rules yet · Add one');
     expect(page).toContain('28 WAF rules matched · top address sent 462');
     expect(page).toContain('Most targeted host');
-    expect(html).toContain('href="/settings?section=rate-limit"');
+    expect(html).toContain('href="/rate-limiting"');
   });
 
   it('explains the peak and links to its events', () => {
@@ -155,7 +155,7 @@ describe('Security events page', () => {
     expect(text(html)).toContain(reason);
     expect(text(html)).toContain('Adding an exclusion needs the waf:write permission.');
     expect(html).not.toContain('Open in analytics');
-    expect(html).not.toContain('href="/settings?section=rate-limit"');
+    expect(html).not.toContain('href="/rate-limiting"');
   });
 
   it('lists events with what stopped them, the filters and the pages', () => {
@@ -175,6 +175,11 @@ describe('Security events page', () => {
     expect(html).toContain('aria-pressed="true" aria-label="WAF"');
     expect(html).toContain('href="/security?range=24h&amp;kind=waf&amp;filters=%5B%7B%22dim%22%3A%22host%22%2C%22op%22%3A%22is%22%2C%22value%22%3A%22app.example.com%22%7D%5D&amp;page=2#events"');
     expect(html).toContain('href="/analytics?range=24h&amp;filters=');
+    // The pager looks like the shared one: the first page has no previous page, the next one is a link.
+    expect(html).toContain('aria-label="Pages of events"');
+    expect(html).toContain('aria-disabled="true" aria-label="Previous page"');
+    expect(html).toContain('aria-label="Next page"');
+    expect(page).toMatch(/1–\d+ events/);
   });
 
   it('reports a filter or range it did not use', () => {

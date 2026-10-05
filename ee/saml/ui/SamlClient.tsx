@@ -290,7 +290,7 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
         className="mb-0"
         breadcrumb={["Identity", { label: "Sign-in and directories", href: "/sign-in" }, "SAML"]}
         title="SAML"
-        description={`Let people sign in to ${productName} through a SAML 2.0 identity provider such as Microsoft Entra ID, Okta, Google Workspace or Keycloak. Groups can decide their role. This covers the dashboard only; the forward-auth portal is not affected.`}
+        description={`Sign in to ${productName} through a SAML 2.0 identity provider. The forward-auth portal is not affected.`}
         actions={canWrite ? (
           <Button onClick={openCreate} disabled={!canChange || pending} title={configurable ? undefined : LOCKED_HINT}>
             <Plus /> Add provider
@@ -300,8 +300,8 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
 
       {!configurable && (
         <Banner tone="info" title="Read-only without a license.">
-          Setting up and changing SAML providers needs an active {productName} {editionLabel} license or higher. Enabled
-          providers keep working for sign-in, and you can still disable and delete them.{" "}
+          Setting up and changing SAML providers needs an active {productName} {editionLabel} license or higher. You can still disable and
+          delete them.{" "}
           <Link href="/license" className="text-brand underline-offset-4 hover:underline">Manage the license</Link>
         </Banner>
       )}
@@ -312,21 +312,12 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
         </Banner>
       )}
 
-      <SectionCard
-        title="SAML identity providers"
-        count={providers.length}
-        description="Started by the login page only; answers the provider sends on its own are refused."
-      >
-        <p className="m-0 border-b border-line px-[18px] py-3 text-[13px] text-muted-foreground">
-          Responses must be signed with RSA-SHA256 or stronger by one of the provider&apos;s certificates. Accounts are linked by a
-          persistent NameID or an immutable id attribute, never by e-mail unless you choose so.
-        </p>
+      <SectionCard title="SAML identity providers" count={providers.length}>
         {providers.length === 0 ? (
           <EmptyState
             compact
             icon={IdCard}
             title="No SAML providers yet"
-            description="Add your identity provider's metadata, then give it this dashboard's service provider details."
             action={canWrite ? (
               <Button size="sm" onClick={openCreate} disabled={!canChange || pending}>
                 <Plus /> Add provider
@@ -429,7 +420,7 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
             <Field label="Name" htmlFor="saml-name" hint="Shown on the login page as Continue with ….">
               <Input id="saml-name" value={form.name} maxLength={100} onChange={(event) => set("name", event.target.value)} />
             </Field>
-            <Field label="Identity provider" hint="Fills in the attribute names; every field stays editable.">
+            <Field label="Identity provider" hint="Fills in the attribute names.">
               <Select onValueChange={(value) => setForm((previous) => ({ ...previous, ...PRESETS[value as keyof typeof PRESETS] }))}>
                 <SelectTrigger aria-label="Identity provider">
                   <SelectValue placeholder="Choose (optional)" />
@@ -458,7 +449,7 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
             </Field>
             {form.source === "metadata" ? (
               <Field label="IdP metadata XML" htmlFor="saml-metadata"
-                hint="Read once when you save: the entity ID, the HTTP-Redirect sign-in URL and the signing certificates. It is never fetched from a URL.">
+                hint="Read once when you save.">
                 <Textarea id="saml-metadata" rows={6} className="num text-xs" value={form.idpMetadataXml}
                   placeholder="<md:EntityDescriptor …>" onChange={(event) => set("idpMetadataXml", event.target.value)} />
               </Field>
@@ -475,7 +466,7 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
                   </Field>
                 </div>
                 <Field label="Signing certificates (PEM)" htmlFor="saml-certificates"
-                  hint="One or more, for certificate rollover. RSA only. Responses signed by any of them are accepted.">
+                  hint="One or more, for rollover. RSA only.">
                   <Textarea id="saml-certificates" rows={4} className="num text-xs" value={form.idpCertificates}
                     placeholder="-----BEGIN CERTIFICATE-----" onChange={(event) => set("idpCertificates", event.target.value)} />
                 </Field>
@@ -503,7 +494,7 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
 
           <Section title="Attributes">
             <Field label="Account id attribute (optional)" htmlFor="saml-subject"
-              hint="An immutable id, such as Entra ID's objectidentifier. Leave empty to use the NameID, which must then be persistent. Naming the e-mail attribute here links accounts by e-mail address, which can change.">
+              hint="An immutable id, such as Entra ID's objectidentifier. Empty: the NameID, which must be persistent. Avoid the e-mail attribute: addresses change.">
               <Input id="saml-subject" value={form.subjectAttribute} onChange={(event) => set("subjectAttribute", event.target.value)} />
             </Field>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -524,9 +515,8 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
               <div className="space-y-2">
                 <Label>Group-to-role mapping</Label>
                 <p className="text-xs text-muted-foreground">
-                  The only way SAML grants a role. With at least one mapping, every sign-in sets the role (the highest of
-                  the matched groups, otherwise the default role), demoting as well as promoting. Group values are compared
-                  exactly as the identity provider sends them. Without mappings, roles are managed on the Users page.
+                  With a mapping, every sign-in sets the role, demoting as well as promoting: the highest matched group, otherwise the
+                  default role. Without mappings, roles are set on the Users page.
                 </p>
                 {form.groupRoleMappings.map((mapping, index) => (
                   <div key={index} className="flex items-center gap-2">
@@ -600,8 +590,7 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
         {detailsTarget && (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
-              Enter these at the identity provider, or give it the metadata URL. They follow BASE_URL: changing it means
-              updating the identity provider too.
+              Enter these at the identity provider, or give it the metadata URL. Changing BASE_URL changes them.
             </p>
             <CopyField label="Entity ID (audience)" value={detailsTarget.sp.entityId} />
             <CopyField label="Assertion consumer service URL (HTTP-POST)" value={detailsTarget.sp.acsUrl} />

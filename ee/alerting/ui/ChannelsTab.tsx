@@ -12,12 +12,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Pagination } from "@/components/ui/Pagination";
+import { SearchField } from "@/components/ui/SearchField";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useFormat } from "@/components/preferences/PreferencesProvider";
+import { paginate } from "@/src/lib/pagination";
 import {
   CHANNEL_TYPE_LABELS,
   CHANNEL_TYPES,
@@ -185,12 +188,23 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
   const [confirmDelete, setConfirmDelete] = useState<AlertChannelView | null>(null);
   const [tests, setTests] = useState<Record<number, TestOutcome>>({});
   const [testing, setTesting] = useState<number | null>(null);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   const canChange = (type: ChannelType) => canConfigurePaid || FREE_CHANNEL_TYPES.includes(type);
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((previous) => ({ ...previous, [key]: value }));
   const stored = (key: string) => Boolean(editing && (editing.config as Record<string, unknown>)[key]);
   const usedBy = (channel: AlertChannelView) => rules.filter((rule) => rule.channelIds.includes(channel.id)).length;
   const failing = channels.filter((channel) => channel.enabled && channel.lastDeliveryError);
+  const needle = search.trim().toLowerCase();
+  // Name, type and destination.
+  const matching = needle
+    ? channels.filter((channel) => {
+        const destination = channelDestination(channel);
+        return [channel.name, CHANNEL_TYPE_LABELS[channel.type], destination.target, destination.detail].some((text) => text.toLowerCase().includes(needle));
+      })
+    : channels;
+  const shown = paginate(matching, page);
 
   function openCreate() {
     setEditing(null);
@@ -277,31 +291,46 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
             ) : undefined
           }
         >
-          Check its settings, then send a test. Rules keep notifying the channel and each failure is recorded with the alert.
+          Check its settings, then send a test.
         </Banner>
       ))}
 
       <SectionCard
         title="Channels"
-        description="Where notifications go. Credentials are stored encrypted and never shown again; addresses show only their host."
         actions={
-          canWrite ? (
-            <Button variant="secondary" size="sm" onClick={openCreate}>
-              <Plus /> Add channel
-            </Button>
-          ) : undefined
+          (channels.length > 0 || canWrite) && (
+            <>
+              {channels.length > 0 && (
+                <SearchField
+                  type="search"
+                  aria-label="Search channels"
+                  placeholder="Search channels"
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    setPage(1);
+                  }}
+                  className="w-full sm:w-56"
+                />
+              )}
+              {canWrite && (
+                <Button variant="secondary" size="sm" onClick={openCreate}>
+                  <Plus /> Add channel
+                </Button>
+              )}
+            </>
+          )
         }
         footer={
-          <span className="text-xs text-soft">
-            Deliveries time out after 10 seconds and do not follow redirects. Errors show the status or error code only, never the response body.
-          </span>
+          shown.pageCount > 1 ? (
+            <Pagination page={shown.page} perPage={shown.perPage} total={shown.total} noun="channels" label="Pages of channels" onPageChange={setPage} />
+          ) : undefined
         }
       >
         {channels.length === 0 ? (
           <EmptyState
             compact
             title="No channels yet"
-            description="Add a channel, then create rules that notify it."
             action={
               canWrite ? (
                 <Button size="sm" onClick={openCreate}>
@@ -310,6 +339,8 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
               ) : undefined
             }
           />
+        ) : shown.items.length === 0 ? (
+          <EmptyState compact icon={null} title="No channel matches" />
         ) : (
           <Table className="min-w-[1040px]">
             <TableHeader>
@@ -327,7 +358,7 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
               </TableRow>
             </TableHeader>
             <TableBody>
-              {channels.map((channel) => {
+              {shown.items.map((channel) => {
                 const locked = !canChange(channel.type);
                 const destination = channelDestination(channel);
                 const used = usedBy(channel);
@@ -471,7 +502,7 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
               </div>
               <label className="flex items-center gap-2 text-sm">
                 <Switch checked={form.secure} onCheckedChange={(checked) => set("secure", checked)} />
-                Implicit TLS (usually port 465); otherwise STARTTLS is used when offered
+                Implicit TLS (usually port 465)
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="User name" htmlFor="smtp-user">
@@ -504,8 +535,8 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
               onChange={(value) => set("webhookUrl", value)}
               hint={
                 form.type === "slack"
-                  ? "Slack: Apps → Incoming Webhooks. The URL contains a token and is stored encrypted."
-                  : "Teams: a Workflows \"Post to a channel when a webhook request is received\" URL. Stored encrypted."
+                  ? "In Slack: Apps → Incoming Webhooks."
+                  : "A Teams Workflows \"Post to a channel when a webhook request is received\" URL."
               }
             />
           )}
@@ -533,7 +564,7 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
                 value={form.routingKey}
                 stored={stored("hasRoutingKey")}
                 onChange={(value) => set("routingKey", value)}
-                hint="Events API v2 integration of a PagerDuty service. Incidents are resolved when the alert clears."
+                hint="The Events API v2 integration key of a PagerDuty service."
               />
               <Field label="Region">
                 <Select value={form.region} onValueChange={(value) => set("region", value as "us" | "eu")}>

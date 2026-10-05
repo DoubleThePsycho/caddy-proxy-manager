@@ -5,19 +5,42 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Pagination } from "@/components/ui/Pagination";
+import { SearchField } from "@/components/ui/SearchField";
+import { paginate } from "@/src/lib/pagination";
 import { deleteWafExclusionAction } from "./actions";
 import { WafExclusionDialog } from "./WafExclusionDialog";
 import type { WafExclusionRow, WafHostRow } from "./waf-settings-shared";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** "2 Oct, 18:31" this year, "2 Oct 2025" before (UTC). */
+/** "2 Oct, 18:31 UTC" this year, "2 Oct 2025" before. */
 function shortDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   const day = `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]}`;
   if (date.getUTCFullYear() !== new Date().getUTCFullYear()) return `${day} ${date.getUTCFullYear()}`;
-  return `${day}, ${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}`;
+  return `${day}, ${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")} UTC`;
+}
+
+/** The host an exclusion is limited to, by its first domain; null for a global one. */
+function scopeName(exclusion: WafExclusionRow): string | null {
+  return exclusion.scope === "global" ? null : exclusion.host?.domains[0] ?? exclusion.host?.name ?? `host ${exclusion.proxyHostId}`;
+}
+
+/** Rule id, rule message, host, path, variable, reason or author containing the search. */
+function matchesSearch(exclusion: WafExclusionRow, needle: string): boolean {
+  if (!needle) return true;
+  return [
+    String(exclusion.ruleId),
+    exclusion.ruleMessage,
+    scopeName(exclusion) ?? "global",
+    exclusion.host?.name,
+    exclusion.path,
+    exclusion.variable,
+    exclusion.reason,
+    exclusion.createdBy?.name,
+  ].some((value) => typeof value === "string" && value.toLowerCase().includes(needle));
 }
 
 function ScopeChip({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
@@ -41,7 +64,15 @@ export function WafExclusionsSection({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [pending, startTransition] = useTransition();
+  const needle = search.trim().toLowerCase();
+  // Newest first, so one just added is on the first page.
+  const shown = paginate(
+    exclusions.filter((exclusion) => matchesSearch(exclusion, needle)).sort((a, b) => b.id - a.id),
+    page
+  );
 
   function remove(exclusion: WafExclusionRow) {
     startTransition(async () => {
@@ -55,19 +86,23 @@ export function WafExclusionsSection({
     });
   }
 
-  const scopeName = (exclusion: WafExclusionRow) =>
-    exclusion.scope === "global" ? null : exclusion.host?.domains[0] ?? exclusion.host?.name ?? `host ${exclusion.proxyHostId}`;
-
   return (
     <section aria-labelledby="waf-exclusions-title" className="overflow-hidden rounded-xl border bg-card">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5 px-4 py-3.5">
-        <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-0.5">
-          <h2 id="waf-exclusions-title" className="text-base font-semibold">Rule exclusions</h2>
-          <span className="text-sm text-muted-foreground">
-            <span className="font-mono">{exclusions.length}</span> {exclusions.length === 1 ? "exclusion" : "exclusions"}. A request in scope
-            skips only that rule; every other rule still checks it.
-          </span>
-        </div>
+        <h2 id="waf-exclusions-title" className="mr-auto text-base font-semibold">Rule exclusions</h2>
+        {exclusions.length > 0 && (
+          <SearchField
+            type="search"
+            aria-label="Search exclusions"
+            placeholder="Search exclusions"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+            className="w-full sm:w-56"
+          />
+        )}
         {canWrite && (
           <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
             <Plus aria-hidden="true" />
@@ -75,7 +110,7 @@ export function WafExclusionsSection({
           </Button>
         )}
       </div>
-      <div className="overflow-x-auto">
+      <div className="relative overflow-x-auto">
         <table className="w-full min-w-[880px] border-collapse text-sm">
           <thead>
             <tr className="border-y text-left text-xs text-muted-foreground">
@@ -87,14 +122,14 @@ export function WafExclusionsSection({
             </tr>
           </thead>
           <tbody>
-            {exclusions.length === 0 && (
+            {shown.items.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-6 text-center text-muted-foreground">
-                  No rule is excluded. When a rule blocks requests it should not, add an exclusion here or from the event.
+                  {exclusions.length === 0 ? "No rule exclusions." : "No exclusion matches."}
                 </td>
               </tr>
             )}
-            {exclusions.map((exclusion) => {
+            {shown.items.map((exclusion) => {
               const host = scopeName(exclusion);
               return (
                 <tr key={exclusion.id} className="border-b last:border-b-0 hover:bg-muted/30">
@@ -140,10 +175,17 @@ export function WafExclusionsSection({
           </tbody>
         </table>
       </div>
-      <p className="border-t px-4 py-2.5 text-xs text-muted-foreground">
-        An exclusion without a path or variable is written as <span className="font-mono">SecRuleRemoveById</span> for its scope; a path or
-        variable narrows it to the matching requests. Exclusions apply right away.
-      </p>
+      {shown.pageCount > 1 && (
+        <Pagination
+          page={shown.page}
+          perPage={shown.perPage}
+          total={shown.total}
+          noun="exclusions"
+          label="Pages of exclusions"
+          onPageChange={setPage}
+          className="border-t px-4 py-3"
+        />
+      )}
 
       <WafExclusionDialog open={open} onOpenChange={setOpen} hosts={hosts} onCreated={() => router.refresh()} />
     </section>

@@ -12,7 +12,15 @@ import {
   getCaCertificatePrivateKey,
   updateCaCertificate
 } from "@/src/lib/models/ca-certificates";
-import { createIssuedClientCertificate, revokeIssuedClientCertificate } from "@/src/lib/models/issued-client-certificates";
+import {
+  createIssuedClientCertificate,
+  getIssuedClientCertificate,
+  revokeIssuedClientCertificate,
+  type IssuedClientCertificate
+} from "@/src/lib/models/issued-client-certificates";
+import { runAsChangeBatch } from "@/src/lib/change-batch";
+import { applyCaddyConfig } from "@/src/lib/caddy";
+import { logAuditEvent } from "@/src/lib/audit";
 import { X509Certificate } from "node:crypto";
 import forge from "node-forge";
 
@@ -212,4 +220,79 @@ export async function revokeIssuedClientCertificateAction(id: number): Promise<{
   const record = await revokeIssuedClientCertificate(id, userId);
   revalidatePath("/certificates");
   return { revokedAt: record.revokedAt! };
+}
+
+/** At most this many client certificates per bulk revoke. */
+const MAX_BULK_REVOKE = 500;
+
+export type BulkRevokeResult = { ok: boolean; revoked: number; message: string };
+
+function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/**
+ * Revokes several client certificates at once: one change batch, so Caddy
+ * is applied once at the end; each certificate still gets its own audit
+ * event, as revoking one does.
+ */
+export async function revokeIssuedClientCertificatesAction(ids: unknown): Promise<BulkRevokeResult> {
+  const session = await requirePermission("certificates:write");
+  assertUnscopedCertificates(session.access);
+  const userId = Number(session.user.id);
+  if (!Array.isArray(ids) || ids.length === 0) throw new Error("Choose the certificates first.");
+  const unique = [...new Set(ids)];
+  if (!unique.every((id): id is number => typeof id === "number" && Number.isSafeInteger(id) && id > 0)) {
+    throw new Error("Unknown client certificate.");
+  }
+  if (unique.length > MAX_BULK_REVOKE) throw new Error(`Choose at most ${MAX_BULK_REVOKE} certificates at a time.`);
+
+  const revoked: IssuedClientCertificate[] = [];
+  const failed: string[] = [];
+  let alreadyRevoked = 0;
+  const { applyRequested } = await runAsChangeBatch(async () => {
+    for (const id of unique) {
+      const existing = await getIssuedClientCertificate(id);
+      if (!existing) {
+        failed.push(`#${id} (not found)`);
+        continue;
+      }
+      if (existing.revokedAt) {
+        alreadyRevoked++;
+        continue;
+      }
+      try {
+        revoked.push(await revokeIssuedClientCertificate(id, userId));
+      } catch (error) {
+        failed.push(`${existing.commonName} (${error instanceof Error ? error.message : "failed"})`);
+      }
+    }
+  });
+  // One audit event per certificate, as revoking one records.
+  for (const cert of revoked) {
+    await logAuditEvent({
+      userId,
+      action: "revoke",
+      entityType: "issued_client_certificate",
+      entityId: cert.id,
+      summary: `Revoked client certificate ${cert.commonName}`,
+      data: { caCertificateId: cert.caCertificateId, serialNumber: cert.serialNumber }
+    });
+  }
+  let applyError: string | null = null;
+  if (applyRequested) {
+    try {
+      await applyCaddyConfig();
+    } catch (error) {
+      applyError = error instanceof Error ? error.message : "Caddy did not take the new configuration";
+    }
+  }
+  revalidatePath("/certificates");
+
+  const parts: string[] = [];
+  if (revoked.length > 0) parts.push(`Revoked ${plural(revoked.length, "certificate")}.`);
+  if (alreadyRevoked > 0) parts.push(`${plural(alreadyRevoked, "certificate")} already ${alreadyRevoked === 1 ? "was" : "were"} revoked.`);
+  if (failed.length > 0) parts.push(`${plural(failed.length, "certificate")} could not be revoked: ${failed.join("; ")}.`);
+  if (applyError) parts.push(`The certificates are revoked, but Caddy did not take the new configuration: ${applyError}`);
+  return { ok: failed.length === 0 && applyError === null, revoked: revoked.length, message: parts.join(" ") || "Nothing to revoke." };
 }

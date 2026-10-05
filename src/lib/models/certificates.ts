@@ -215,7 +215,7 @@ export async function deleteCertificate(id: number, actorUserId: number) {
     if (!(dns?.default && dns.providers[dns.default])) {
       throw new ApiValidationError(
         `Proxy host "${wildcardUser.name}" uses this certificate for a wildcard name, which needs a DNS provider to be obtained automatically. ` +
-          "Set a default DNS provider in Settings, or give the host another certificate, before deleting it."
+          "Set a default DNS provider in Certificate settings, or give the host another certificate, before deleting it."
       );
     }
   }

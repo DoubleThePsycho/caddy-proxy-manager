@@ -43,7 +43,7 @@ describe("browser secret boundaries", () => {
 
   it("redacts DNS settings and certificate records before client-component props", () => {
     const settingsPage = readFileSync(
-      join(process.cwd(), "app/(dashboard)/settings/page.tsx"),
+      join(process.cwd(), "app/(dashboard)/certificates/settings/page.tsx"),
       "utf8"
     );
     const proxyHostsPage = readFileSync(
@@ -69,11 +69,11 @@ describe("browser secret boundaries", () => {
     expect(view).not.toContain("instance-sync-token-secret-sentinel");
     expect(view).not.toContain("future-instance-secret-sentinel");
 
-    const settingsPage = readFileSync(
-      join(process.cwd(), "app/(dashboard)/settings/page.tsx"),
+    const instancesPage = readFileSync(
+      join(process.cwd(), "app/(dashboard)/instances/page.tsx"),
       "utf8"
     );
-    expect(settingsPage).toMatch(
+    expect(instancesPage).toMatch(
       /getEnvSlaveInstances\(\)\.map\(toEnvSlaveInstanceView\)/
     );
   });

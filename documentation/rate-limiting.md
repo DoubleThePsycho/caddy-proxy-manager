@@ -19,7 +19,7 @@ A rule counts the requests that match its **path** and **methods**, per **key**,
 
 Keys:
 
-- **`client_ip`**: the client IP as Caddy resolves it, so **Settings → Trusted proxies** applies. IPv6 clients are grouped by network (a `/64` by default), since one subscriber usually holds a whole `/64`.
+- **`client_ip`**: the client IP as Caddy resolves it, so **Host defaults → Trusted proxies** applies. IPv6 clients are grouped by network (a `/64` by default), since one subscriber usually holds a whole `/64`.
 - **`header`**: the value of a request header, such as `X-Api-Key`. Requests without the header are counted per client IP, so they never share one counter.
 - **`forward_auth_user`**: the user signed in through the built-in forward auth (by user id). Requests without a signed-in user, and every request on hosts that do not use the built-in forward auth, are counted per client IP.
 
@@ -27,7 +27,7 @@ A host can have up to 20 rules; so can the global defaults. Two rules on the sam
 
 ## Per host and global defaults
 
-The **Rate limiting** card in the **Security** section of the proxy host editor sets a host's rules. **Settings → Rate limiting** sets the global defaults.
+The **Rate limiting** card in the **Security** section of the proxy host editor sets a host's rules. The **Rate limiting** page (`/rate-limiting`, under Security events in the sidebar) sets the global defaults.
 
 | Host | Rules that apply |
 | --- | --- |
@@ -107,7 +107,7 @@ Caddy keeps one timestamp (24 bytes) per allowed request, for every client and r
 
 ## Security notes
 
-- **Client IP behind a proxy or CDN.** Without trusted proxies, every request seems to come from the proxy, and all clients share its counter. Configure **Settings → Trusted proxies** first. The allowlist and the client-IP key use the same resolved IP.
+- **Client IP behind a proxy or CDN.** Without trusted proxies, every request seems to come from the proxy, and all clients share its counter. Configure **Host defaults → Trusted proxies** first. The allowlist and the client-IP key use the same resolved IP.
 - **Header keys.** A client chooses its header values, and each value gets its own counter. Use them for headers the upstream checks (API keys), together with a client-IP rule: header rules only see requests that the client-IP rules let through, which caps how many values one client can try. Headers that forward auth sets for the upstream (such as `Remote-User`) are removed from client requests before rate limiting, so a rule keyed by one counts per client IP; use the signed-in-user key for the built-in forward auth.
 - **No placeholders.** Paths, header names and allowlist entries are checked strictly; Caddy placeholders (`{...}`) are refused, so a client-controlled value can never end up in a matcher.
 - **Nothing leaks.** Keys (client IPs, header values, user ids) stay in Caddy's memory. They are not logged, and the plugin's Prometheus metrics, which would label every key, are turned off.

@@ -91,8 +91,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createTestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
 import { POST as pullPost } from '../../app/api/instances/pull/route';
-import SettingsPage from '../../app/(dashboard)/settings/page';
-import SettingsClient from '../../app/(dashboard)/settings/SettingsClient';
+import InstancesPage from '../../app/(dashboard)/instances/page';
+import InstancesClient from '../../app/(dashboard)/instances/InstancesClient';
 import { GET as syncGet, POST as syncPost } from '../../app/api/instances/sync/route';
 import { GET as listRoute, POST as createRoute } from '../../app/api/v1/fleet/pull-replicas/route';
 import { DELETE as deleteRoute, GET as getRoute } from '../../app/api/v1/fleet/pull-replicas/[id]/route';
@@ -835,12 +835,12 @@ describe('license and permissions', () => {
   });
 });
 
-describe('Settings page', () => {
-  type SettingsProps = Parameters<typeof SettingsClient>[0];
+describe('Instance sync page', () => {
+  type InstancesProps = Parameters<typeof InstancesClient>[0];
 
   async function renderSettings() {
-    const element = (await SettingsPage({ searchParams: Promise.resolve({ section: 'sync' }) })) as { props: SettingsProps };
-    return { props: element.props, html: renderToStaticMarkup(createElement(SettingsClient, element.props)) };
+    const element = (await InstancesPage()) as { props: InstancesProps };
+    return { props: element.props, html: renderToStaticMarkup(createElement(InstancesClient, element.props)) };
   }
 
   it('lists pull replicas on the master, and shows a replica where it polls', async () => {
@@ -848,15 +848,15 @@ describe('Settings page', () => {
     await round(replica);
 
     const { props, html } = await renderSettings();
-    expect(props.instanceSync.master?.pullReplicas?.replicas).toEqual([expect.objectContaining({ name: 'edge', checkIn: 'ok' })]);
+    expect(props.instanceSync?.master?.pullReplicas?.replicas).toEqual([expect.objectContaining({ name: 'edge', checkIn: 'ok' })]);
     expect(html).toContain('Pull replicas');
     expect(html).toContain('Add pull replica');
-    expect(html).toContain('Pull replica: polls this master');
+    expect(html).toContain('>Pull replica<');
     expect(html).toContain('Checking in');
     expect(html).not.toContain(replica.credential);
 
     const own = await asReplica(replica, renderSettings);
-    expect(own.props.instanceSync.slave?.pull).toMatchObject({ masterUrl: 'https://master.example.com', intervalSeconds: 30, lastError: null });
+    expect(own.props.instanceSync?.slave?.pull).toMatchObject({ masterUrl: 'https://master.example.com', intervalSeconds: 30, lastError: null });
     expect(own.html).toContain('Master connection (pull)');
     expect(own.html).toContain('accepts no');
     expect(own.html).not.toContain('Master sync token');

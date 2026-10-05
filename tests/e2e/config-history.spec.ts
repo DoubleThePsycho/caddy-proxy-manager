@@ -1,7 +1,7 @@
 /**
  * Change history page (ee/config-history and ee/backups) on the E2E stack,
  * which runs without a license: the page loads read-only with the license
- * notice, the Versions and Backups tabs work (also from ?tab=backups), the
+ * notice, the backups line leads to the Backups page (as ?tab=backups does), the
  * settings and export dialogs open, and turning recording on is refused.
  * Versions, comparisons and rollbacks are covered by
  * tests/integration/config-history*.test.ts, which can sign test licenses.
@@ -9,23 +9,23 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Change history', () => {
-  test('page loads with the tabs, the recording strip and the license notice', async ({ page }) => {
+  test('page loads with the recording strip and the license notice; the backups line opens Backups', async ({ page }) => {
     await page.goto('/history');
     await expect(page).not.toHaveURL(/login/);
     await expect(page.getByRole('heading', { name: 'Change history', level: 1 })).toBeVisible();
-    await expect(page.getByRole('tab', { name: /Versions/ })).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByText(/Recording (on|off)/).first()).toBeVisible();
     await expect(page.getByText(/Configuration history needs an active .* license or higher/)).toBeVisible();
     await expect(page.getByRole('button', { name: /Save a version now/ })).toBeDisabled();
+    await expect(page.getByRole('tab', { name: /Backups/ })).toHaveCount(0);
 
-    await page.getByRole('tab', { name: /Backups/ }).click();
-    await expect(page).toHaveURL(/tab=backups/);
+    await page.getByRole('main').getByRole('link', { name: /No scheduled backups|^Backups to / }).click();
+    await expect(page).toHaveURL(/\/backups$/);
     await expect(page.getByRole('heading', { name: 'Backup destinations' })).toBeVisible();
   });
 
-  test('?tab=backups opens the Backups tab', async ({ page }) => {
+  test('?tab=backups opens the Backups page', async ({ page }) => {
     await page.goto('/history?tab=backups');
-    await expect(page.getByRole('tab', { name: /Backups/ })).toHaveAttribute('aria-selected', 'true');
+    await expect(page).toHaveURL(/\/backups$/);
     await expect(page.getByRole('heading', { name: 'Recent backups' })).toBeVisible();
     await expect(page.getByText(/Scheduled backups need an active .* license or higher/)).toBeVisible();
   });

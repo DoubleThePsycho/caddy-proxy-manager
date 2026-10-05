@@ -1,6 +1,8 @@
 # Certificates
 
-The **Certificates** page (Traffic → Certificates) lists every TLS certificate the product serves, in three tabs.
+The **Certificates** page (Traffic → Certificates) lists every TLS certificate the product serves, in three tabs. **Certificate settings** in its header opens the ACME account (the contact email Let's Encrypt or the configured ACME server knows the account by), the ACME server and the DNS providers, at `/certificates/settings`; the link is shown to users with `settings:read` outside an organisation.
+
+Every list on the page shows 25 rows a page, with the pager under it; changing the search or a filter goes back to the first page. On phones the tables become cards.
 
 ## Certificates
 
@@ -8,9 +10,9 @@ One row per certificate:
 
 - **ACME certificates.** Caddy gets and renews a certificate on its own for every proxy host without a chosen certificate. A host whose names an imported certificate covers is listed under that certificate instead, and a host covered by a wildcard host (`sub.example.com` under `*.example.com`) under the wildcard.
 - **Imported certificates**, uploaded as PEM. They are replaced by hand.
-- **Managed entries** left from earlier versions. Caddy obtains these certificates on its own as well; the entries can be deleted.
+- **Managed entries** left from earlier versions, marked **Older entry**. Caddy obtains these certificates on its own as well; the entries can be deleted from their row menu.
 
-Each row shows the issuer and key, how the certificate is obtained (HTTP-01, or DNS-01 with the DNS provider set under Settings → DNS Providers; a custom ACME directory under Settings → ACME Server is named as the issuer until a certificate has been read), when it expires, where its renewal stands and which proxy hosts and L4 hosts use it. An L4 host uses a certificate when it terminates TLS for a server name (TLS SNI matcher) the certificate covers.
+Each row shows the issuer and key, how the certificate is obtained (HTTP-01, which needs port 80, or TLS-ALPN on 443, reachable from the internet; or DNS-01 with the DNS provider set under Certificate settings → DNS-01 providers, named under the method; a custom ACME directory under Certificate settings → Certificate authority is named as the issuer until a certificate has been read), when it expires, where its renewal stands and which proxy hosts and L4 hosts use it. An L4 host uses a certificate when it terminates TLS for a server name (TLS SNI matcher) the certificate covers.
 
 Renewal states:
 
@@ -22,7 +24,7 @@ Renewal states:
 
 Deleting an imported certificate or a managed entry moves the proxy hosts that use it to automatic TLS: Caddy obtains a certificate for their names. A certificate that a host with a wildcard name uses cannot be deleted while no default DNS provider is set, since Caddy could not obtain the wildcard on its own; set one, or give the host another certificate first.
 
-Above the table, the expiry timeline shows the next 90 days with the 30-day renewal band. Selecting a marker highlights its row. Search matches domains, names, issuers and the hosts using a certificate; the status filter shows the certificates due for renewal (including expired ones and imported ones to replace) or the healthy ones.
+Above the table, the expiry timeline shows the next 90 days with the 30-day renewal band. Certificates expiring later, and those whose expiry is not read yet, are not on it (the table lists them). Selecting a marker clears the filters, turns to the row's page and highlights it. Search matches domains, names, issuers and the hosts using a certificate; the status filter shows the certificates due for renewal (including expired ones and imported ones to replace) or the healthy ones.
 
 ### Where the expiry comes from
 
@@ -35,13 +37,22 @@ Imported certificates are read from their PEM. For the certificates Caddy obtain
 
 ## Certificate authorities
 
-Certificate authorities for client certificates (mutual TLS): generate one here, which stores its private key encrypted and lets you issue client certificates, or import a CA's certificate so the client certificates it signs elsewhere are trusted. **Trusted by** lists the proxy hosts whose mutual TLS trusts the CA, its client certificates or a role holding them.
+Certificate authorities for client certificates (mutual TLS): generate one here, which stores its private key encrypted and lets you issue client certificates, or import a CA's certificate so the client certificates it signs elsewhere are trusted. **Trusted by** lists the proxy hosts whose mutual TLS trusts the CA, its client certificates or a role holding them. The count of active client certificates, or **Show client certificates** in the CA's menu, opens the **Client certificates** tab filtered to that CA. From ten certificate authorities on, a search field filters them by name.
 
 ## Client certificates
 
-**Roles** group client certificates; mutual TLS on a proxy host can require a role. Each card shows how many active certificates the role holds and which hosts require it; its menu chooses the certificates, renames or deletes the role.
+**Roles** group client certificates; mutual TLS on a proxy host can require a role. Each card shows how many active certificates the role holds and which hosts require it; its menu chooses the certificates (a searchable list, ten a page), renames or deletes the role.
 
-The table lists every client certificate issued here, with its role, issuing CA and expiry. **Revoke** stops proxy hosts accepting it at once and cannot be undone. **Issue client certificate** asks for the common name, validity and an export password, and downloads the certificate with its private key and the CA chain as a `.p12` bundle; the private key is not stored.
+The list shows every client certificate issued here: common name, serial number (its SHA-256 fingerprint on hover), roles, issuing CA, issue date, expiry and status. Narrower screens leave out the serial number and the issue date; phones show a card per certificate.
+
+- **Search** matches the common name, role names, the CA's name and the serial number (from four characters; colons and spaces are ignored, so a short name does not match inside every serial).
+- **Status**: **Active** (valid and not revoked, including the expiring ones), **Expiring** (under 30 days left), **Expired** and **Revoked**, each with its count for the current search.
+- **CA** (with more than one issuing certificate authority) shows the certificates of one CA.
+- **Sort** by common name, CA, issue date or expiry from the column headers (on phones, from the sort menu). The default is the soonest expiry first, with revoked certificates last.
+
+**Revoke** stops proxy hosts accepting a certificate at once and cannot be undone. To revoke several, tick them (the header checkbox ticks the page; **Select all N matching** then ticks every certificate the search and filters show, across pages) and choose **Revoke** in the bar above the list; a confirmation lists them first. They are revoked as one change: Caddy is applied once, and each certificate gets its own audit event. At most 500 at a time.
+
+**Issue client certificate** asks for the common name, validity and an export password, and downloads the certificate with its private key and the CA chain as a `.p12` bundle; the private key is not stored. **Compatibility mode (3DES)**, on by default, encrypts the bundle with 3DES so older operating systems and browsers can import it; turned off, it uses AES-256.
 
 Organisation users and roles limited to tags see only the **Certificates** tab: certificate authorities, client certificates and roles serve every host.
 
@@ -49,7 +60,7 @@ Organisation users and roles limited to tags see only the **Certificates** tab: 
 
 Caddy automatically obtains Let's Encrypt certificates for all proxy hosts.
 
-**DNS-01 Challenge** (optional): Configure a DNS provider in **Settings → Certificates and ACME** (DNS-01 providers) for wildcard certificates and environments where ports 80/443 are not public. Supported providers: Cloudflare, Route 53, DigitalOcean, Duck DNS, Hetzner, Vultr, Porkbun, GoDaddy, Namecheap, OVH, IONOS, Linode, Njalla, netcup, Spaceship, deSEC, Dynu, acme-dns, Infomaniak, INWX, ClouDNS, and RFC2136 (BIND/TSIG). Credentials are encrypted at rest with AES-256-GCM. You can override the DNS provider per certificate. The DNS propagation delay and timeout can be set per provider (netcup ships with slow-propagation defaults).
+**DNS-01 Challenge** (optional): Configure a DNS provider in **Certificates → Certificate settings** (DNS-01 providers) for wildcard certificates and environments where ports 80/443 are not public. Supported providers: Cloudflare, Route 53, DigitalOcean, Duck DNS, Hetzner, Vultr, Porkbun, GoDaddy, Namecheap, OVH, IONOS, Linode, Njalla, netcup, Spaceship, deSEC, Dynu, acme-dns, Infomaniak, INWX, ClouDNS, and RFC2136 (BIND/TSIG). Credentials are encrypted at rest with AES-256-GCM. You can override the DNS provider per certificate. The DNS propagation delay and timeout can be set per provider (netcup ships with slow-propagation defaults).
 
 **Custom Certificates** (optional): Import your own certificates via the Certificates page. Private keys are encrypted at rest with AES-256-GCM, migrated from legacy plaintext storage on startup, and treated as write-only by ordinary API responses and browser payloads.
 

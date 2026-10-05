@@ -7,10 +7,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+const navigation = vi.hoisted(() => ({ search: new URLSearchParams() }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
   usePathname: () => '/fleet',
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => navigation.search,
 }));
 
 import FleetClient from '@/ee/fleet/ui/FleetClient';
@@ -165,6 +166,55 @@ describe('Fleet page', () => {
     expect(page).toContain('No replicas yet');
     expect(page).toContain('No rollouts yet');
     expect(page).toContain('No pull replicas');
+  });
+
+  it('pages a large fleet: nodes, rollouts and revisions, and caps the chips of an environment', () => {
+    const nodes = Array.from({ length: 64 }, (_, index) => ({
+      ...overview.instances[0], id: 100 + index, name: `edge-${String(index + 1).padStart(2, '0')}`, baseUrl: `https://edge-${index + 1}.example.com`,
+    }));
+    const big: FleetOverview = { ...overview, instances: nodes, rollouts: [], environments: overview.environments.map((environment) => ({ ...environment, activeRolloutId: null })) };
+    const rolloutPage = { items: [overview.rollouts[1]], total: 60, page: 3 };
+    const revisionPage = { items: overview.revisions, total: 52, page: 1 };
+
+    const html = render({ overview: big, rolloutPage, revisionPage });
+    const page = text(html);
+    expect(html).toContain('aria-label="Filter nodes"');
+    expect(html).toContain('edge-25');
+    expect(html).not.toContain('>edge-26<');
+    expect(page).toMatch(/1 – 25 of 64 nodes/);
+    expect(html).toContain('href="/fleet?nodes=2"');
+    // The environment card lists the first nodes and links to the rest.
+    expect(page).toContain('52 more');
+    // Rollouts and revisions are paged on the server.
+    expect(page).toMatch(/51 – 60 of 60 rollouts/);
+    expect(html).toContain('href="/fleet?rollouts=2"');
+    expect(page).toMatch(/1 – 25 of 52 revisions/);
+    expect(html).toContain('href="/fleet?revisions=2"');
+
+    navigation.search = new URLSearchParams('nodes=3');
+    try {
+      const third = render({ overview: big, rolloutPage, revisionPage });
+      expect(third).toContain('edge-64');
+      expect(third).not.toContain('>edge-50<');
+      // The master's row is on the first page only.
+      expect(text(third)).not.toContain('Master this dashboard');
+    } finally {
+      navigation.search = new URLSearchParams();
+    }
+  });
+
+  it('lists the first targets of a large rollout and offers the rest', () => {
+    const targets = Array.from({ length: 30 }, (_, index) => ({
+      instanceId: 200 + index, instanceName: `node-${index + 1}`, role: index === 0 ? ('canary' as const) : ('rest' as const),
+      status: 'pending' as const, error: null, syncedAt: null,
+    }));
+    const big: FleetOverview = { ...overview, rollouts: [{ ...overview.rollouts[0], targets }, overview.rollouts[1]] };
+    const page = text(render({ overview: big }));
+    expect(page).toContain('node-12');
+    expect(page).not.toContain('node-13 ');
+    expect(page).toContain('Show all 30');
+    // Steps give the number of nodes instead of every name.
+    expect(page).toContain('29 nodes take #5.');
   });
 
   it('shows pull replicas with their check-in, credential and controls', () => {

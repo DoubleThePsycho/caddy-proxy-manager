@@ -12,7 +12,7 @@ import { Bookmark, ChevronDown, Link2, Pencil, RefreshCw, Trash2, Users } from "
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,12 +24,16 @@ import {
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Pagination } from "@/components/ui/Pagination";
 import { Switch } from "@/components/ui/switch";
 import type { AnalyticsSavedView } from "@/src/lib/models/analytics-views";
+import { paginate } from "@/src/lib/pagination";
 import { savedViewSettings, serializeViewState, stateFromSavedView, type ViewState } from "./view-state";
 
 const VIEWS_URL = "/api/v1/analytics/views";
 const MAX_NAME = 100;
+/** Saved views per page of the manage dialog; above this it also offers a search. */
+const VIEWS_PER_PAGE = 10;
 
 async function send(method: "POST" | "PATCH" | "DELETE", url: string, body?: unknown): Promise<unknown> {
   const response = await fetch(url, {
@@ -238,11 +242,10 @@ export function SaveViewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" aria-describedby={undefined}>
         <form onSubmit={submit} className="flex flex-col gap-4">
           <DialogHeader>
             <DialogTitle>Save view</DialogTitle>
-            <DialogDescription>Saves the time range, filters, metric and grouping under a name.</DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="analytics-view-name">Name</Label>
@@ -463,23 +466,49 @@ export function ManageViewsDialog({
   state: ViewState;
   onOpen: (view: AnalyticsSavedView) => void;
 }) {
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    if (open) {
+      setSearch("");
+      setPage(1);
+    }
+  }, [open]);
+  const needle = search.trim().toLowerCase();
+  const matching = needle
+    ? api.views.filter((view) => view.name.toLowerCase().includes(needle) || (view.ownerName ?? "").toLowerCase().includes(needle))
+    : api.views;
+  const shown = paginate(matching, page, VIEWS_PER_PAGE);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-xl" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Saved views</DialogTitle>
-          <DialogDescription>Your views and the ones others in your organisation shared. Only the person who saved a view changes it.</DialogDescription>
         </DialogHeader>
+        {(api.views.length > VIEWS_PER_PAGE || search) && (
+          <Input
+            type="search"
+            aria-label="Search saved views"
+            placeholder="Name or owner"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+          />
+        )}
         <div className="min-h-0 flex-1 overflow-y-auto">
           {api.error ? (
             <p role="alert" className="m-0 text-[13px] text-bad">
               {api.error}
             </p>
           ) : api.views.length === 0 ? (
-            <EmptyState compact icon={Bookmark} title="No saved views yet" description="Save the current range and filters to come back to them." />
+            <EmptyState compact icon={Bookmark} title="No saved views yet" />
+          ) : matching.length === 0 ? (
+            <p className="m-0 py-3 text-[13px] text-soft">No saved view matches.</p>
           ) : (
             <ul className="m-0 list-none p-0">
-              {api.views.map((view) => (
+              {shown.items.map((view) => (
                 <ManagedView
                   key={view.id}
                   view={view}
@@ -495,6 +524,7 @@ export function ManageViewsDialog({
             </ul>
           )}
         </div>
+        <Pagination page={shown.page} perPage={VIEWS_PER_PAGE} total={shown.total} noun="views" label="Pages of saved views" onPageChange={setPage} />
       </DialogContent>
     </Dialog>
   );

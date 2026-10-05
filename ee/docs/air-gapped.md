@@ -59,7 +59,7 @@ To upgrade, build a bundle of the new release, run its `install.sh` in its own d
 
 | Function | Offline approach |
 | --- | --- |
-| Certificates | Automatic Let's Encrypt or ZeroSSL issuance needs Internet access. Use your internal ACME CA (**Settings → Certificates and ACME → Custom ACME directory**, with its root certificate), import certificates, or issue them from the built-in CA. |
+| Certificates | Automatic Let's Encrypt or ZeroSSL issuance needs Internet access. Use your internal ACME CA (**Certificate settings → Certificate authority → Custom ACME directory**, with its root certificate), import certificates, or issue them from the built-in CA. |
 | GeoIP blocking | Copy `GeoLite2-Country.mmdb` and `GeoLite2-ASN.mmdb` into the `geoip-data` volume (for example `docker run --rm -v <project>_geoip-data:/data -v "$PWD":/src alpine cp /src/GeoLite2-Country.mmdb /src/GeoLite2-ASN.mmdb /data/`) and refresh them with each bundle. |
 | AI analyst | Point it at a model server on your network (any OpenAI-compatible endpoint such as vLLM or Ollama). |
 | Alerts and digests | Use your internal SMTP relay and webhook endpoints. |

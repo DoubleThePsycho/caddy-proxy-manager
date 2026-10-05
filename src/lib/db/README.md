@@ -180,8 +180,11 @@ await providers.changed(); // after changing what it is loaded from
   `runDatabaseStartup()`, through `loadStartupCaches()`
   (src/lib/startup-caches.ts): import the defining module there.
 - The code that changes the rows awaits `changed()`. Inside a transaction it
-  reads the transaction's own writes, and reads again after the transaction
-  ended, so a rollback does not leave an uncommitted value behind.
+  reads the transaction's own writes, and reads again once the transaction
+  has ended (`afterTransactionEnds` in `executor-core.ts`, after its COMMIT or
+  ROLLBACK), so a rollback does not leave an uncommitted value behind and, on
+  PostgreSQL, a read from outside the open transaction cannot put the old
+  value back.
 - `current()` returns the fallback before the first load, and refreshes a value
   older than its TTL (30 seconds by default) in the background, for changes
   this process did not make (a standby's replicated copy, an edit by hand).

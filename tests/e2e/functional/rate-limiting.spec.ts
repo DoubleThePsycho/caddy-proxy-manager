@@ -14,7 +14,7 @@
  *   - Global defaults apply to hosts without rules of their own, an
  *     override with no rules opts a host out, and the allowlist exempts
  *     clients from every rule.
- *   - The Rate limiting sections exist in the host editor and in Settings.
+ *   - The Rate limiting sections exist in the host editor and on the Rate limiting page.
  *
  * Every rule uses a one-minute window and paths unique to its test, so
  * counters never carry over between tests. The global defaults are reset
@@ -178,7 +178,7 @@ test.describe.serial('Rate limiting — global defaults and allowlist', () => {
 });
 
 test.describe('Rate limiting — dashboard', () => {
-  test('the host editor and Settings have a Rate limiting section', async ({ page }) => {
+  test('the host editor and the Rate limiting page have the rules', async ({ page }) => {
     await openCreateHostDialog(page);
     await openEditorSection(page, 'Security');
     await expect(page.getByRole('heading', { name: 'Rate limiting', exact: true })).toBeVisible();
@@ -187,8 +187,7 @@ test.describe('Rate limiting — dashboard', () => {
     await card.getByRole('button', { name: 'Add rule' }).click();
     await expect(card.getByTestId('rate-limit-rule')).toHaveCount(1);
 
-    await page.goto('/settings');
-    await page.locator('aside[aria-label="Settings navigation"]').getByRole('button', { name: /^Rate limiting/ }).click();
+    await page.goto('/rate-limiting');
     await expect(page.getByTestId('rate-limit-settings')).toBeVisible();
     await expect(page.getByTestId('settings-save-bar').getByRole('button', { name: 'Save changes' })).toBeVisible();
   });

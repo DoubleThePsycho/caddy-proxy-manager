@@ -31,7 +31,7 @@ An API token can also carry **scopes**: a list of permissions from the catalogue
 | `analytics` | read | Traffic analytics, security events, traffic signals and per-host traffic summaries, the caller's saved analytics views, and plain-language analytics questions with saved questions (paid: the AI analyst, [analytics-questions.md](analytics-questions.md)). Every host; per-host summaries only for the proxy hosts the role reaches, and a question's host tags only name proxy hosts the role reaches. |
 | `users` | read, write | Users, roles, custom roles, MFA resets, forward-auth sessions. |
 | `audit_log` | read | Audit log, its filters, event details with the before/after diff of configuration changes (from configuration history, secrets masked), its export and verification. Every host. |
-| `settings` | read, write | Global settings (the Settings page except instance sync and OAuth providers, the usage ping included), re-applying the Caddy configuration, the setup checklist (`write` marks steps done or hides it). |
+| `settings` | read, write | Global settings: the Settings page (the usage ping included) and the settings pages next to what they configure (Certificate settings, Host defaults, Geo blocking, Rate limiting, Analytics settings, and the pages of instance sync, OAuth providers and high availability, whose contents need their own permission too), re-applying the Caddy configuration, the setup checklist (`write` marks steps done or hides it). |
 | `instances` | read, write | Instance mode, sync token, slave instances, sync-key pins; with `monetization:write`, whether and how replicas serve monetized hosts. |
 | `fleet` | read, write, promote, replicas | Fleet management: environments, revisions, rollouts, drift, pull replicas. `write` manages environments and assignments and runs drift checks; `promote` starts promotions and rollbacks, aborts rollouts and re-syncs instances, which change what slaves serve. Releasing instances from a promotion-only environment needs both. `replicas` adds and deletes pull replicas and issues, rotates and revokes their credentials; it is administrator-level, since a credential fetches the whole configuration. Every host. |
 | `high_availability` | read, write | High availability: where the Caddy nodes keep certificates and their private keys (local or shared Redis/Valkey storage), testing that storage, and whether the web nodes keep forward-auth sessions and API balances there (shared state); `read` also shows the dashboard cluster (leader, standbys, replication). `write` is administrator-level. Every host. |
@@ -41,7 +41,7 @@ An API token can also carry **scopes**: a list of permissions from the catalogue
 | `ai` | read, write | AI provider settings, the security digest and the settings of analytics questions. |
 | `audit_streaming` | read, write | Audit sinks and audit retention. |
 | `config_history` | read, write, restore | Snapshots, history settings, rollback. |
-| `backups` | read, write, restore | Backup destinations, runs, restores. |
+| `backups` | read, write, restore | Backup destinations, runs, restores (the Backups page). |
 | `sso` | read, write | OAuth/OIDC providers, SAML providers (`/api/v1/saml-providers`) and enforced SSO. `write` is administrator-level. |
 | `mfa_policy` | read, write | The MFA policy. |
 | `ldap` | read, write | LDAP / Active Directory directories for dashboard sign-in, their group-to-role mapping, testing them. `write` is administrator-level. |
@@ -112,7 +112,7 @@ The `admins` scope of the MFA policy covers administrators **and every user with
 
 - **Users and groups → Roles** lists the built-in roles and the custom roles with how many permissions each holds, its tag scope and its users. Open a role to see its permissions grouped by area (Traffic, Observe, Identity, Govern, Platform), who holds it, and **Edit role**, **Duplicate** and **Delete role**. The editor has the permission matrix (one row per area) and the tag scope; permissions you do not hold are disabled. Deleting asks for confirmation and says how many users fall back to viewer.
 - The role picker (create user, edit user) offers the built-in roles and the custom roles. Admin and administrator-level roles are disabled for non-administrators, custom roles without a license.
-- The sidebar shows the pages whose read permission the user holds (`NAV_ITEMS` in `app/(dashboard)/DashboardLayoutClient.tsx`). Pages and server actions check the same permissions as the REST API. Sections inside a page that belong to another area are hidden: instance sync, OAuth providers, certificate storage and the backups summary on Settings (`instances:read`, `sso:read`, `high_availability:read`, `backups:read`; the traffic totals there need `analytics:read`), the AI tab on Alerts (`ai:read`), backups and export/import on History (`backups:read`, `config:export`, `config:import`), the MFA policy on Users (`mfa_policy:read`), the user picker on Groups (`users:read`).
+- The sidebar shows the pages whose read permission the user holds (`NAV_GROUPS` in `src/lib/navigation.ts`). Pages and server actions check the same permissions as the REST API. Sections inside a page that belong to another area are hidden: the settings pages of instance sync, OAuth providers and high availability, and certificate storage on Certificate settings, show a notice without `instances:read`, `sso:read` or `high_availability:read` (the traffic totals on Analytics settings need `analytics:read`), the AI tab on Alerts (`ai:read`), the backups line and export/import on History (`backups:read`, `config:export`, `config:import`), the MFA policy on Users (`mfa_policy:read`), the user picker on Groups (`users:read`).
 - Proxy host and L4 host forms have a **Tags** field; the lists show the tags.
 
 ## Instance sync
@@ -168,6 +168,7 @@ Every guard of a route, page or server action and the permission it checks. Rout
 <!-- call-sites:start -->
 | File | Function | Permission |
 | --- | --- | --- |
+| `app/(dashboard)/access-lists/[id]/page.tsx` | `AccessListPage` | `access_lists:read` |
 | `app/(dashboard)/access-lists/actions.ts` | `createAccessListAction` | `access_lists:write` |
 | `app/(dashboard)/access-lists/actions.ts` | `saveAccessListAction` | `access_lists:write` |
 | `app/(dashboard)/access-lists/actions.ts` | `deleteAccessListAction` | `access_lists:write` |
@@ -179,12 +180,14 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/(dashboard)/access-reviews/page.tsx` | `AccessReviewsPage` | `access_reviews:read` |
 | `app/(dashboard)/alerts/page.tsx` | `AlertsPage` | `alerts:read` |
 | `app/(dashboard)/analytics/page.tsx` | `AnalyticsPage` | `analytics:read` |
+| `app/(dashboard)/analytics/settings/page.tsx` | `AnalyticsSettingsPage` | `settings:read` |
 | `app/(dashboard)/api-docs/page.tsx` | `ApiDocsPage` | `api_docs:read` |
 | `app/(dashboard)/api-monetization/page.tsx` | `ApiMonetizationPage` | `monetization:read` |
 | `app/(dashboard)/approvals/page.tsx` | `ApprovalsPage` | `approvals:read` |
 | `app/(dashboard)/audit-log/actions.ts` | `getAuditEventDetailAction` | `audit_log:read` |
 | `app/(dashboard)/audit-log/page.tsx` | `AuditLogPage` | `audit_log:read` |
 | `app/(dashboard)/audit-log/streaming/page.tsx` | `AuditStreamingPage` | `audit_streaming:read` |
+| `app/(dashboard)/backups/page.tsx` | `BackupsPage` | `backups:read` |
 | `app/(dashboard)/branding/page.tsx` | `BrandingPage` | `branding:read` |
 | `app/(dashboard)/certificates/actions.ts` | `createCertificateAction` | `certificates:write` |
 | `app/(dashboard)/certificates/actions.ts` | `updateCertificateAction` | `certificates:write` |
@@ -195,11 +198,14 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/(dashboard)/certificates/ca-actions.ts` | `generateCaCertificateAction` | `certificates:write` |
 | `app/(dashboard)/certificates/ca-actions.ts` | `issueClientCertificateAction` | `certificates:write` |
 | `app/(dashboard)/certificates/ca-actions.ts` | `revokeIssuedClientCertificateAction` | `certificates:write` |
+| `app/(dashboard)/certificates/ca-actions.ts` | `revokeIssuedClientCertificatesAction` | `certificates:write` |
 | `app/(dashboard)/certificates/page.tsx` | `CertificatesPage` | `certificates:read` |
+| `app/(dashboard)/certificates/settings/page.tsx` | `CertificateSettingsPage` | `settings:read` |
 | `app/(dashboard)/compliance/incidents/[id]/page.tsx` | `ComplianceIncidentPage` | `compliance:read` |
 | `app/(dashboard)/compliance/page.tsx` | `CompliancePage` | `compliance:read` |
 | `app/(dashboard)/compliance/reports/[id]/page.tsx` | `ComplianceReportPage` | `compliance:read` |
 | `app/(dashboard)/fleet/page.tsx` | `FleetPage` | `fleet:read` |
+| `app/(dashboard)/geo-blocking/page.tsx` | `GeoBlockingPage` | `settings:read` |
 | `app/(dashboard)/groups/actions.ts` | `createGroupAction` | `groups:write` |
 | `app/(dashboard)/groups/actions.ts` | `updateGroupAction` | `groups:write` |
 | `app/(dashboard)/groups/actions.ts` | `deleteGroupAction` | `groups:write` |
@@ -207,16 +213,21 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/(dashboard)/groups/actions.ts` | `removeGroupMemberAction` | `groups:write` |
 | `app/(dashboard)/groups/page.tsx` | `GroupsPage` | `groups:read` |
 | `app/(dashboard)/history/page.tsx` | `HistoryPage` | `config_history:read` |
+| `app/(dashboard)/high-availability/page.tsx` | `HighAvailabilityPage` | `settings:read` |
+| `app/(dashboard)/instances/page.tsx` | `InstancesPage` | `settings:read` |
 | `app/(dashboard)/l4-proxy-hosts/actions.ts` | `createL4ProxyHostAction` | `l4_proxy_hosts:write` |
 | `app/(dashboard)/l4-proxy-hosts/actions.ts` | `updateL4ProxyHostAction` | `l4_proxy_hosts:write` |
 | `app/(dashboard)/l4-proxy-hosts/actions.ts` | `deleteL4ProxyHostAction` | `l4_proxy_hosts:write` |
 | `app/(dashboard)/l4-proxy-hosts/actions.ts` | `toggleL4ProxyHostAction` | `l4_proxy_hosts:write` |
+| `app/(dashboard)/l4-proxy-hosts/bulk-actions.ts` | `bulkL4ProxyHostsAction` | `l4_proxy_hosts:write` |
 | `app/(dashboard)/l4-proxy-hosts/page.tsx` | `L4ProxyHostsPage` | `l4_proxy_hosts:read` |
 | `app/(dashboard)/ldap/page.tsx` | `LdapPage` | `ldap:read` |
 | `app/(dashboard)/license/page.tsx` | `LicensePage` | `license:read` |
+| `app/(dashboard)/oauth-providers/page.tsx` | `OAuthProvidersPage` | `settings:read` |
 | `app/(dashboard)/organizations/page.tsx` | `OrganizationsPage` | `organizations:read` |
 | `app/(dashboard)/proxy-hosts/[id]/edit/page.tsx` | `EditProxyHostPage` | `proxy_hosts:write` |
 | `app/(dashboard)/proxy-hosts/[id]/page.tsx` | `ProxyHostPage` | `proxy_hosts:read` |
+| `app/(dashboard)/proxy-hosts/defaults/page.tsx` | `HostDefaultsPage` | `settings:read` |
 | `app/(dashboard)/proxy-hosts/actions.ts` | `createProxyHostAction` | `proxy_hosts:write` |
 | `app/(dashboard)/proxy-hosts/actions.ts` | `updateProxyHostAction` | `proxy_hosts:write` |
 | `app/(dashboard)/proxy-hosts/actions.ts` | `deleteProxyHostAction` | `proxy_hosts:write` |
@@ -226,6 +237,7 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/(dashboard)/proxy-hosts/editor-actions.ts` | `previewProxyHostEditorAction` | `proxy_hosts:write` |
 | `app/(dashboard)/proxy-hosts/new/page.tsx` | `NewProxyHostPage` | `proxy_hosts:write` |
 | `app/(dashboard)/proxy-hosts/page.tsx` | `ProxyHostsPage` | `proxy_hosts:read` |
+| `app/(dashboard)/rate-limiting/page.tsx` | `RateLimitingPage` | `settings:read` |
 | `app/(dashboard)/saml/page.tsx` | `SamlPage` | `sso:read` |
 | `app/(dashboard)/scim/page.tsx` | `ScimPage` | `scim:read` |
 | `app/(dashboard)/security/actions.ts` | `wafAuditRecordAction` | `waf:read` |

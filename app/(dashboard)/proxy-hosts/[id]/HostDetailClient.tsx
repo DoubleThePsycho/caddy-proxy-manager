@@ -131,11 +131,6 @@ function HealthChecks({ health, hostId, upstreams, canWrite }: { health: ProxyHo
     return (
       <div className="flex flex-col gap-1 rounded-[10px] bg-panel2 px-3 py-2.5 text-[13px]">
         <span className="font-semibold">Health checks are off</span>
-        <span className="text-muted-foreground">
-          {upstreams === 1
-            ? "Caddy sends every request to this upstream whether it answers or not. Turn on passive checks to see its failures here and in alerts."
-            : "Caddy keeps sending requests to an upstream that stopped answering until a check takes it out of rotation."}
-        </span>
         {canWrite && (
           <Link href={hostHealthChecksHref(hostId)} className="mt-0.5 self-start text-brand underline-offset-4 hover:underline">
             Turn on health checks
@@ -148,14 +143,14 @@ function HealthChecks({ health, hostId, upstreams, canWrite }: { health: ProxyHo
   if (active) {
     lines.push(
       `Active: GET ${active.path ?? "/"}${active.port ? ` on port ${active.port}` : ""} every ${active.interval ?? "30s"}` +
-        `${active.expectStatus ? `, expects ${active.expectStatus}` : ""}. Caddy does not report their result.`
+        `${active.expectStatus ? `, expects ${active.expectStatus}` : ""}.`
     );
   }
   if (passive) {
     lines.push(
       passive.counting
         ? `Passive: taken out after ${plural(Math.max(1, passive.maxFails ?? 1), "failure")} within ${passive.failDuration}.`
-        : "Passive: on, but without a fail duration Caddy counts no failures."
+        : "Passive: on, but without a fail duration no failures are counted."
     );
   }
   if (loadBalancing && upstreams > 1) lines.push(`Load balancing: ${loadBalancing.policy.replace(/_/g, " ")}.`);
@@ -192,7 +187,7 @@ function IncidentBanner({
       body =
         `Between ${time(item.start * 1000)} and ${time(item.end * 1000)}${share ? `, ${share} of the requests answered with 5xx` : ""}` +
         (item.path ? `; the most frequent was ${item.method ? `${item.method} ` : ""}${item.path}.` : ".") +
-        (item.ongoing ? " Check that the upstream is running and reachable from Caddy." : " The upstream answered normally after that.");
+        (item.ongoing ? " Check that the upstream is running and reachable from Caddy." : "");
       if (allowed.analytics) {
         actions.push(
           <Link key="requests" href={hostAnalyticsHref(domains, { from: item.start - 60, to: item.end + 60 })} className={actionClass}>
@@ -211,7 +206,7 @@ function IncidentBanner({
     }
     case "error_rate":
       title = `${formatPercent(item.rate)} of the requests in the last 24 hours answered with 5xx.`;
-      body = `${formatCount(item.errors)} of ${formatCount(item.requests)} requests. The upstream may be failing, or a client keeps calling something it does not support.`;
+      body = `${formatCount(item.errors)} of ${formatCount(item.requests)} requests.`;
       if (allowed.analytics) {
         actions.push(
           <Link key="requests" href={hostAnalyticsHref(domains)} className={actionClass}>
@@ -225,7 +220,7 @@ function IncidentBanner({
         item.factor !== null
           ? `Blocked traffic is ${Math.round(item.factor)} times the usual: ${formatCount(item.count)} requests stopped in 24 hours.`
           : `${formatCount(item.count)} requests stopped in 24 hours, with none in the week before.`;
-      body = `Most were stopped by ${OUTCOME_TEXT[item.outcome] ?? item.outcome}. That is usually a scanner or a misbehaving client; nothing reached the upstream.`;
+      body = `Most were stopped by ${OUTCOME_TEXT[item.outcome] ?? item.outcome}.`;
       if (allowed.security) {
         actions.push(
           <Link key="security" href="/security" className={actionClass}>
@@ -244,7 +239,7 @@ function IncidentBanner({
             : `The certificate expires in ${plural(item.daysLeft ?? 0, "day")}.`;
       body =
         item.state === "replace_soon"
-          ? "It was imported, so Caddy does not renew it: import a renewed certificate."
+          ? "It was imported, so it is not renewed automatically: import a renewed one."
           : "Check Caddy's log for challenge errors, that the domain points at this server and that ports 80 and 443 are reachable.";
       if (allowed.certificates) {
         actions.push(
@@ -415,9 +410,7 @@ export default function HostDetailClient({ host, detail, can: allowed }: { host:
               </Link>
             ) : undefined
           }
-        >
-          It is applied once enough approvers agree.
-        </Banner>
+        />
       )}
 
       <div className="flex flex-wrap items-start gap-5">
@@ -434,11 +427,7 @@ export default function HostDetailClient({ host, detail, can: allowed }: { host:
                   compact
                   icon={null}
                   title={traffic.status === "disabled" ? "Traffic analytics is off" : "Traffic could not be read"}
-                  description={
-                    traffic.status === "disabled"
-                      ? "Requests are recorded once ClickHouse is configured (CLICKHOUSE_PASSWORD on the web container)."
-                      : "ClickHouse did not answer. The rest of this page is current."
-                  }
+                  description={traffic.status === "disabled" ? "Set up ClickHouse to record requests." : "ClickHouse did not answer."}
                 />
               ) : (
                 <>
@@ -483,7 +472,7 @@ export default function HostDetailClient({ host, detail, can: allowed }: { host:
           <div className="flex flex-wrap gap-5">
             <SectionCard title="Upstreams" count={health.upstreams.length} className="flex-[1_1_320px]" contentClassName="flex flex-col gap-3 px-[18px] py-3.5">
               {!health.caddyReachable && (
-                <p className="m-0 text-[13px] text-muted-foreground">Caddy&apos;s admin API did not answer, so the upstreams&apos; state is unknown.</p>
+                <p className="m-0 text-[13px] text-muted-foreground">Caddy did not answer: the upstreams&apos; state is unknown.</p>
               )}
               <ul className="m-0 flex list-none flex-col gap-2.5 p-0">
                 {health.upstreams.map((upstream) => (

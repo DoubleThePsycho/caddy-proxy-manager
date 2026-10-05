@@ -11,9 +11,12 @@ import { SectionCard } from "@/components/ui/SectionCard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
+import { SearchField } from "@/components/ui/SearchField";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AppDialog } from "@/components/ui/AppDialog";
+import { DEFAULT_PAGE_SIZE, paginate } from "@/src/lib/pagination";
 import type { ScimManagedGroupView, ScimManagedUserView, ScimRoleMappingView } from "../types";
 import type { ScimClientProps } from "./ScimClient";
 import { callApi, Field, formatDate, LOCKED_HINT } from "./shared";
@@ -83,10 +86,6 @@ function MappingsCard(props: ScimClientProps) {
         </Button>
       ) : undefined}
     >
-        <p className="m-0 border-b border-line px-[18px] py-3 text-[13px] text-muted-foreground">
-          The only way SCIM grants a role. With &quot;Manage roles&quot; on, a SCIM user gets the role of the first mapping (lowest
-          priority) whose group they are in. The primary admin and break-glass accounts are never changed.
-        </p>
         {!props.settings.manageRoles && props.mappings.length > 0 && (
           <div className="px-[18px] pt-3">
             <Banner tone="warn">Manage roles is off, so these mappings are not applied.</Banner>
@@ -188,7 +187,19 @@ function UsersCard(props: ScimClientProps) {
   const [externalId, setExternalId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [releasing, setReleasing] = useState<ScimManagedUserView | null>(null);
+  const [query, setQuery] = useState("");
+  const { page, hrefFor } = useUrlPage("usersPage");
   const configurable = props.settings.configurable;
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? props.managedUsers.filter((user) => `${user.name ?? ""} ${user.email} ${user.userName}`.toLowerCase().includes(needle))
+    : props.managedUsers;
+  const slice = paginate(shown, page);
+
+  function search(value: string) {
+    setQuery(value);
+    if (page > 1) window.history.replaceState(null, "", hrefFor(1));
+  }
 
   function adopt() {
     setError(null);
@@ -230,45 +241,67 @@ function UsersCard(props: ScimClientProps) {
       ) : undefined}
     >
         <p className="m-0 border-b border-line px-[18px] py-3 text-[13px] text-muted-foreground">
-          Accounts the identity provider manages. An existing account joins only when you hand it over here with the exact userName
-          the provider sends; until then a provider creating the same e-mail address is refused.
+          The identity provider cannot create an account that already exists until you hand it over here.
         </p>
         {props.managedUsers.length === 0 ? (
           <EmptyState compact icon={Users} title="No SCIM users yet" description="They appear when the identity provider sends them." />
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Account</TableHead>
-                <TableHead>userName</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>First sign-in linked</TableHead>
-                {props.canWrite && <TableHead className="text-right">Release</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {props.managedUsers.map((user) => (
-                <TableRow key={user.userId}>
-                  <TableCell>
-                    <div className="font-medium">{user.name ?? user.email}</div>
-                    <div className="text-xs text-muted-foreground">{user.email}{user.origin === "adopted" ? " · handed over" : ""}</div>
-                  </TableCell>
-                  <TableCell className="num text-xs">{user.userName}</TableCell>
-                  <TableCell>{statusBadge(user)}</TableCell>
-                  <TableCell>{user.customRoleId !== null ? `Custom role ${user.customRoleId}` : user.role}</TableCell>
-                  <TableCell>{user.linkedAt ? formatDate(user.linkedAt) : "Not yet"}</TableCell>
-                  {props.canWrite && (
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="icon-sm" title="Stop SCIM managing this account" aria-label={`Release ${user.email}`} onClick={() => setReleasing(user)} disabled={pending}>
-                        <UserMinus />
-                      </Button>
-                    </TableCell>
-                  )}
+          <>
+            {props.managedUsers.length > DEFAULT_PAGE_SIZE && (
+              <div className="border-b border-line px-[18px] py-3">
+                <SearchField
+                  aria-label="Search SCIM users"
+                  placeholder="Name, e-mail or userName"
+                  value={query}
+                  onChange={(event) => search(event.target.value)}
+                  className="w-full max-w-sm"
+                />
+              </div>
+            )}
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Account</TableHead>
+                  <TableHead>userName</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>First sign-in linked</TableHead>
+                  {props.canWrite && <TableHead className="text-right">Release</TableHead>}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {slice.items.map((user) => (
+                  <TableRow key={user.userId}>
+                    <TableCell>
+                      <div className="font-medium">{user.name ?? user.email}</div>
+                      <div className="text-xs text-muted-foreground">{user.email}{user.origin === "adopted" ? " · handed over" : ""}</div>
+                    </TableCell>
+                    <TableCell className="num text-xs">{user.userName}</TableCell>
+                    <TableCell>{statusBadge(user)}</TableCell>
+                    <TableCell>{user.customRoleId !== null ? `Custom role ${user.customRoleId}` : user.role}</TableCell>
+                    <TableCell>{user.linkedAt ? formatDate(user.linkedAt) : "Not yet"}</TableCell>
+                    {props.canWrite && (
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon-sm" title="Stop SCIM managing this account" aria-label={`Release ${user.email}`} onClick={() => setReleasing(user)} disabled={pending}>
+                          <UserMinus />
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {shown.length === 0 && <p className="m-0 border-t border-line px-[18px] py-4 text-[13px] text-muted-foreground">No SCIM user matches.</p>}
+            <Pagination
+              page={slice.page}
+              perPage={slice.perPage}
+              total={slice.total}
+              noun="users"
+              label="Pages of SCIM users"
+              hrefFor={hrefFor}
+              className="border-t border-line px-[18px] py-3"
+            />
+          </>
         )}
 
       <AppDialog open={open} onClose={() => setOpen(false)} title="Hand an account to SCIM" submitLabel="Hand over" onSubmit={adopt} isSubmitting={pending} maxWidth="md">
@@ -314,7 +347,9 @@ function GroupsCard(props: ScimClientProps) {
   const [groupId, setGroupId] = useState("");
   const [externalId, setExternalId] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const { page, hrefFor } = useUrlPage("groupsPage");
   const configurable = props.settings.configurable;
+  const slice = paginate(props.managedGroups, page);
 
   function adopt() {
     setError(null);
@@ -353,8 +388,7 @@ function GroupsCard(props: ScimClientProps) {
       ) : undefined}
     >
         <p className="m-0 border-b border-line px-[18px] py-3 text-[13px] text-muted-foreground">
-          Forward-auth groups the identity provider manages. In a group you hand over, SCIM only adds and removes SCIM users; other
-          members stay.
+          In a group you hand over, members SCIM did not add stay.
         </p>
         {props.managedGroups.length === 0 ? (
           <EmptyState compact icon={Users} title="No SCIM groups yet" description="They appear when the identity provider pushes them." />
@@ -369,7 +403,7 @@ function GroupsCard(props: ScimClientProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {props.managedGroups.map((group) => (
+              {slice.items.map((group) => (
                 <TableRow key={group.groupId}>
                   <TableCell className="font-medium">{group.name}</TableCell>
                   <TableCell className="num">{group.scimMemberCount} / {group.memberCount}</TableCell>
@@ -386,6 +420,15 @@ function GroupsCard(props: ScimClientProps) {
             </TableBody>
           </Table>
         )}
+        <Pagination
+          page={slice.page}
+          perPage={slice.perPage}
+          total={slice.total}
+          noun="groups"
+          label="Pages of SCIM groups"
+          hrefFor={hrefFor}
+          className="border-t border-line px-[18px] py-3"
+        />
 
       <AppDialog open={open} onClose={() => setOpen(false)} title="Hand a group to SCIM" submitLabel="Hand over" onSubmit={adopt} isSubmitting={pending} maxWidth="md">
         <div className="flex flex-col gap-4">

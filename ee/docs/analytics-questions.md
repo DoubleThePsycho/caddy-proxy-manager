@@ -21,7 +21,9 @@ The answer shows:
 - **The result**: one figure (with the change from the previous period when asked), a chart over time (the analytics chart, with the previous period as a line), or a ranked list or table.
 - **What was sent** to the provider for this answer.
 
-**Save question** keeps the question and the query it was read as (optionally shared with everyone of your organisation who can read analytics). A saved question runs again with fresh data without asking the model to read it again: a relative range such as "the last 7 days" ends now.
+**Save question** keeps the question and the query it was read as (optionally shared with everyone of your organisation who can read analytics). A saved question runs again with fresh data without asking the model to read it again: a relative range such as "the last 7 days" ends now. Saved questions are listed under the box, ten a page.
+
+The question goes to the AI provider, which turns it into a query; the query runs on your analytics, and only aggregated figures are used for the summary (see [What the model sees](#what-the-model-sees) and [Audit](#audit)). Without a license that includes the AI analyst the box is read-only: saved questions stay listed and can be deleted.
 
 A question that is ambiguous gets a short question back ("For which period and hosts?"). One that traffic data cannot answer (configuration, users, certificates, predictions) says so. Neither runs anything.
 
@@ -82,9 +84,9 @@ On **Alerts → AI → Analytics questions**, or with `GET`/`PUT /api/v1/ai/ques
 
 | Field | Default | |
 | --- | --- | --- |
-| `enabled` | `true` | Users who can read analytics may ask |
-| `aiSummaries` | `true` | The model writes the summary from the aggregated result |
-| `shareRequestDetails` | `false` | Send client addresses, user agents and paths when a question needs them |
+| `enabled` | `true` | Users who can read analytics may ask, within their organisation and host tags |
+| `aiSummaries` | `true` | The model writes the summary from the aggregated result; off, the dashboard writes it and the result is never sent |
+| `shareRequestDetails` | `false` | Send client addresses, user agents and paths when a question needs them; off, they reach the model as placeholders such as `[address 1]`. The question is always sent as typed |
 
 Stored under `ai_questions` in the settings table, not synced to slave instances (like the provider). Saved questions (`analytics_questions`) are master-only and not part of configuration export or history; deleting a user deletes their questions.
 

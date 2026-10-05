@@ -1207,7 +1207,7 @@ async function checkSlaveSyncKey(
         `Instance sync: slave "${slave.name}" presented sync key ${key.keyId}, but ${check.pinnedKeyId} is pinned ` +
         "and the slave sent no valid rotation proof; not syncing. If the slave's SESSION_SECRET was rotated, set " +
         "SESSION_SECRET_PREVIOUS on the slave to the old value until the next sync; otherwise pin the key the " +
-        "slave's own Settings page shows (or reset its key pin)."
+        "slave's own Instance sync page shows (or reset its key pin)."
       );
       return { ok: false, error: SYNC_KEY_CHANGED_ERROR };
     case "unreadable":
@@ -1216,7 +1216,7 @@ async function checkSlaveSyncKey(
         "pin",
         ["unreadable", key.keyId],
         `Instance sync: the sync key pin stored for slave "${slave.name}" cannot be read by this release; not ` +
-        `syncing. It presented sync key ${key.keyId}; pin the key the slave's own Settings page shows (or reset its ` +
+        `syncing. It presented sync key ${key.keyId}; pin the key the slave's own Instance sync page shows (or reset its ` +
         "key pin)."
       );
       return { ok: false, error: SYNC_KEY_CHANGED_ERROR };

@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Coins } from "lucide-react";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,7 +44,7 @@ function shortHex(value: string): string {
 /** Recent x402 payments: who paid, how much, the transaction and the Stripe PaymentIntent that records it. */
 export function X402PaymentsTable({ page }: { page: X402PaymentPage }) {
   if (page.payments.length === 0) {
-    return <EmptyState compact icon={Coins} title="No x402 payments yet" description="Requests paid with x402 show here with the payer's address, the transaction and the Stripe payment." />;
+    return <EmptyState compact icon={Coins} title="No x402 payments yet" />;
   }
   return (
     <div className="overflow-x-auto">
@@ -109,6 +110,7 @@ export default function X402Tab({
     cdpKeySecret: "",
   });
   const canChange = canWrite && configurable;
+  const { hrefFor } = useUrlPage("payments");
 
   function save() {
     const micros = decimalToMicros(form.price.trim());
@@ -158,9 +160,8 @@ export default function X402Tab({
         </Banner>
       )}
       <Banner tone="info" title="Stripe receives the payments.">
-        Clients pay USDC on Base to a Stripe deposit address of your account. The Coinbase Developer Platform facilitator verifies and settles each
-        payment on chain; Stripe records it as a payment in your Stripe balance, and only then is the request answered. Stripe custodies and settles
-        the funds. Receiving stablecoin payments can bring obligations (for example tax and anti-money-laundering rules) that are yours to check.
+        Clients pay USDC on Base to a deposit address of your Stripe account. Stripe custodies and settles the funds. Receiving stablecoin payments
+        can bring obligations (for example tax and anti-money-laundering rules) that are yours to check.
       </Banner>
       <SectionCard title="x402 pay-per-request" description="Requests without an API key (and key holders on plans that accept x402) can pay a single request.">
         <div className="flex flex-col gap-4 px-[18px] py-4">
@@ -224,8 +225,11 @@ export default function X402Tab({
           )}
         </div>
       </SectionCard>
-      <SectionCard title="x402 payments" count={payments.total} description="The latest payments. A payment settled on chain but not recorded by Stripe is never answered until Stripe records it.">
+      <SectionCard title="x402 payments" count={payments.total}>
         <X402PaymentsTable page={payments} />
+        <div className="border-t border-line px-[18px] py-3 empty:hidden">
+          <Pagination page={payments.page} perPage={payments.perPage} total={payments.total} noun="payments" label="Pages of x402 payments" hrefFor={hrefFor} />
+        </div>
       </SectionCard>
     </div>
   );

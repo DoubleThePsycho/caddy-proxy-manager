@@ -8,7 +8,6 @@ import { listIssuedClientCertificates, type IssuedClientCertificate } from '@/sr
 import { buildRoleCertIdMap, listMtlsRoles, type MtlsRole } from '@/src/lib/models/mtls-roles';
 import { listProxyHosts, type ProxyHost } from '@/src/lib/models/proxy-hosts';
 import { buildCertificateOverview } from '@/src/lib/certificate-overview';
-import { getGeneralSettings } from '@/src/lib/settings';
 import { trustAnchorUsage, type HostRef } from './trust';
 
 export type { CaCertificate };
@@ -16,14 +15,16 @@ export type { IssuedClientCertificate };
 export type { MtlsRole };
 
 export type CaCertificateView = CaCertificate & {
-  issuedCerts: IssuedClientCertificate[];
+  /** Client certificates it issued here, revoked or not. */
+  issued: { active: number; revoked: number };
   /** End of the CA certificate's validity (ISO 8601), null when its PEM cannot be read. */
   validTo: string | null;
   /** Proxy hosts whose mTLS trusts this CA or certificates it issued. */
   trustedBy: HostRef[];
 };
 
-export type IssuedClientCertificateView = IssuedClientCertificate & {
+/** An issued client certificate without its PEM, which the list does not need. */
+export type IssuedClientCertificateView = Omit<IssuedClientCertificate, 'certificatePem'> & {
   caName: string | null;
   /** Names of the mTLS roles the certificate belongs to. */
   roles: string[];
@@ -66,7 +67,7 @@ export default async function CertificatesPage({ searchParams }: PageProps) {
   const settingsReadable = can(access, 'settings:read') && tenantOf(access) === null;
   const { tab } = await searchParams;
 
-  const [overview, caCerts, issuedClientCerts, roles, roleCertIds, hosts, general] = await Promise.all([
+  const [overview, caCerts, issuedClientCerts, roles, roleCertIds, hosts] = await Promise.all([
     buildCertificateOverview(access, organizationId),
     hideTrustAnchors ? Promise.resolve([] as CaCertificate[]) : listCaCertificates(),
     hideTrustAnchors ? Promise.resolve([] as IssuedClientCertificate[]) : listIssuedClientCertificates(),
@@ -76,7 +77,6 @@ export default async function CertificatesPage({ searchParams }: PageProps) {
       : buildRoleCertIdMap().catch(() => new Map<number, Set<number>>()),
     // CAs and roles serve every host, so "trusted by" looks at every organisation's hosts.
     hideTrustAnchors ? Promise.resolve([] as ProxyHost[]) : listProxyHosts(null, undefined),
-    settingsReadable ? getGeneralSettings() : Promise.resolve(null),
   ]);
 
   const usage = trustAnchorUsage(hosts, issuedClientCerts, roleCertIds);
@@ -88,14 +88,31 @@ export default async function CertificatesPage({ searchParams }: PageProps) {
     }
   }
 
+  const issuedByCa = new Map<number, { active: number; revoked: number }>();
+  for (const cert of issuedClientCerts) {
+    const counts = issuedByCa.get(cert.caCertificateId) ?? { active: 0, revoked: 0 };
+    if (cert.revokedAt) counts.revoked++;
+    else counts.active++;
+    issuedByCa.set(cert.caCertificateId, counts);
+  }
+
   const caCertificates: CaCertificateView[] = caCerts.map((ca) => ({
     ...ca,
-    issuedCerts: issuedClientCerts.filter((cert) => cert.caCertificateId === ca.id),
+    issued: issuedByCa.get(ca.id) ?? { active: 0, revoked: 0 },
     validTo: pemValidTo(ca.certificatePem),
     trustedBy: usage.caTrustedBy.get(ca.id) ?? [],
   }));
   const clientCertificates: IssuedClientCertificateView[] = issuedClientCerts.map((cert) => ({
-    ...cert,
+    id: cert.id,
+    caCertificateId: cert.caCertificateId,
+    commonName: cert.commonName,
+    serialNumber: cert.serialNumber,
+    fingerprintSha256: cert.fingerprintSha256,
+    validFrom: cert.validFrom,
+    validTo: cert.validTo,
+    revokedAt: cert.revokedAt,
+    createdAt: cert.createdAt,
+    updatedAt: cert.updatedAt,
     caName: caNames.get(cert.caCertificateId) ?? null,
     roles: roleNamesByCert.get(cert.id) ?? [],
   }));
@@ -117,7 +134,6 @@ export default async function CertificatesPage({ searchParams }: PageProps) {
       canWrite={canWrite}
       canCreateCertificate={canWrite && scope === null}
       canReadSettings={settingsReadable}
-      acmeEmail={general?.acmeEmail?.trim() || null}
       initialTab={!hideTrustAnchors && (tab === 'authorities' || tab === 'client') ? tab : 'certificates'}
     />
   );

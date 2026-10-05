@@ -2,7 +2,7 @@
 /**
  * PostgreSQL replicas, the Enterprise part (D6; ee/docs/high-availability.md,
  * "PostgreSQL replicas"): the license rule a new replica joins under, and
- * the view Settings → High availability and GET /api/v1/cluster/nodes show.
+ * the view the High availability page and GET /api/v1/cluster/nodes show.
  *
  * The rule: one replica on a PostgreSQL database is free. A node id the
  * cluster does not know may join next to a live replica only while the

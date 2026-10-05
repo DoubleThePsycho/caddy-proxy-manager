@@ -71,8 +71,7 @@ export function RollbackSummary({ version, preview, canRestore, pending, onRollB
         <>
           <p className="m-0 text-[13px] text-muted-foreground">
             The configuration goes back to how it was after <span className="num">#{version.id}</span> and Caddy reloads it on{" "}
-            {describeReload(preview.reload)}. The live configuration is saved as a new version first, so you can undo this. Users,
-            sign-in settings and API tokens do not change.
+            {describeReload(preview.reload)}. The live configuration is saved as a new version first, so you can undo this.
             {preview.reload.heldBack.length > 0 &&
               ` ${preview.reload.heldBack.join(", ")} get${preview.reload.heldBack.length === 1 ? "s" : ""} it only when a revision is promoted.`}
           </p>

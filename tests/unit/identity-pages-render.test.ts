@@ -99,7 +99,22 @@ describe('Users tab', () => {
     expect(html).toContain('Primary admin');
     expect(html).toContain('Multi-factor authentication is required for administrators and custom roles.');
     expect(html).toContain('Edit policy');
-    expect(html).toContain('4 users');
+    // Four users fit on one page: no pager.
+    expect(html).not.toContain('aria-label="Pages of users"');
+  });
+
+  it('pages a long list 25 at a time, newest first, with links that keep the page in the URL', () => {
+    const many = Array.from({ length: 30 }, (_, index) =>
+      user({ id: 100 + index, name: `person-${index}`, email: `person-${index}@example.com`, createdAt: new Date(Date.UTC(2026, 8, 1 + index)).toISOString() })
+    );
+    const html = usersTab({ users: many });
+    expect(html.match(/data-testid="user-row-/g)).toHaveLength(25);
+    expect(html).toContain('aria-label="Pages of users"');
+    expect(html).toMatch(/<span class="num">1<\/span>–<span class="num">25<\/span> of <span class="num">30<\/span> users/);
+    expect(html).toContain('href="/users?page=2"');
+    // Newest first: the last account created leads, the five oldest are on page 2.
+    expect(html.indexOf('person-29@example.com')).toBeLessThan(html.indexOf('person-5@example.com'));
+    expect(html).not.toContain('person-4@example.com');
   });
 
   it('gives a reader no account controls in the banner and no policy editing', () => {
@@ -127,8 +142,16 @@ describe('Groups tab', () => {
     expect(html).toContain('Mapping, priority');
     expect(html).toContain('Created by SCIM');
     expect(html).toContain('No host yet');
-    expect(html).toContain('only memberships the identity provider');
     expect(html).toContain('New group');
+    expect(html).toContain('placeholder="Group name, description or member"');
+  });
+
+  it('pages a long list of groups', () => {
+    const many = Array.from({ length: 27 }, (_, index) => group({ id: 10 + index, name: `team-${String(index).padStart(2, '0')}` }));
+    const html = renderToStaticMarkup(createElement(GroupsTab, { groups: many, users: null, canWrite: false }));
+    expect(html.match(/data-testid="group-row-/g)).toHaveLength(25);
+    expect(html).toContain('aria-label="Pages of groups"');
+    expect(html).toContain('href="/users?page=2"');
   });
 
   it('hides the columns the role cannot read', () => {

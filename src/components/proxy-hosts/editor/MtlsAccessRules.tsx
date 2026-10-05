@@ -124,7 +124,7 @@ function RuleDialog({
           <div className="flex flex-col gap-1">
             <span className="text-[13px] font-medium">Roles</span>
             {roles.length === 0 ? (
-              <span className="text-[13px] text-soft">No mTLS roles yet. Roles are made on the Certificates page.</span>
+              <span className="text-[13px] text-soft">No mTLS roles yet.</span>
             ) : (
               roles.map((role) => (
                 <label key={role.id} className="flex items-center gap-2 py-0.5 text-[13px]">
@@ -187,7 +187,7 @@ export function MtlsAccessRules({ hostId, roles, certificates }: { hostId: numbe
       <div className="flex flex-wrap items-end justify-between gap-2">
         <span className="flex flex-col gap-0.5">
           <span className="text-[13px] font-medium">Path-based access rules</span>
-          <span className="text-xs text-soft">Limit a path to some roles or certificates. Saved on their own, as soon as you add, change or remove one.</span>
+          <span className="text-xs text-soft">Saved as soon as you add, change or remove one.</span>
         </span>
         <AddButton onClick={() => setDialog({ rule: null })}>Add access rule</AddButton>
       </div>

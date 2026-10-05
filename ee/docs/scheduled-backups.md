@@ -4,7 +4,7 @@ Feature id `scheduled_backups` (Business edition and up). Code: `ee/backups/`.
 
 On a schedule, the configuration is exported exactly like the free **Export** on the Change history page and uploaded to your own S3-compatible storage: Amazon S3, Cloudflare R2, Backblaze B2, Hetzner Object Storage, Wasabi, MinIO, Ceph and others. Older backups are deleted according to a retention count. A stored backup can be restored from the dashboard, or downloaded from the bucket and loaded with the free import.
 
-Configure it on **Change history → Backups** (`/history?tab=backups`) or through `/api/v1/backup-destinations` and `/api/v1/backup-runs`.
+Configure it on the **Backups** page (`/backups`, under Change history in the sidebar; it needs `backups:read`) or through `/api/v1/backup-destinations` and `/api/v1/backup-runs`.
 
 ## What a backup contains
 
@@ -73,7 +73,7 @@ Errors stored and shown name the HTTP status and the S3 error code (for example 
 
 ## Restore
 
-**Change history → Backups → Restore** (or `GET .../objects` then `POST .../restore { "key": ... }`) downloads the chosen backup, checks its SHA-256 against `x-amz-meta-sha256`, and imports it through the same code as `POST /api/v1/config/import`:
+**Backups → Restore** (or `GET .../objects` then `POST .../restore { "key": ... }`) downloads the chosen backup, checks its SHA-256 against `x-amz-meta-sha256`, and imports it through the same code as `POST /api/v1/config/import`:
 
 - the file is validated and the passphrase checked before anything changes (a wrong passphrase is a 400);
 - when configuration history is on, the configuration being replaced is saved as a snapshot (reason `import`) in the same transaction;

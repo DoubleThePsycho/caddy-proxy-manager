@@ -31,12 +31,12 @@ const PROVIDER_ONLY = "The Blocked sources list applies to every organisation; o
 async function run<T>(operation: () => Promise<T>): Promise<AccessListActionResult<T>> {
   try {
     const value = await operation();
-    revalidatePath("/access-lists");
+    revalidatePath("/access-lists", "layout");
     return { ok: true, value };
   } catch (error) {
     if (error instanceof ApiClientError) return { ok: false, error: error.message };
     if (error instanceof CaddyApplyError) {
-      revalidatePath("/access-lists");
+      revalidatePath("/access-lists", "layout");
       return { ok: false, saved: true, error: `Saved, but Caddy did not take the new configuration: ${error.message}` };
     }
     if (error instanceof Error && error.message.toLowerCase().endsWith("not found")) {

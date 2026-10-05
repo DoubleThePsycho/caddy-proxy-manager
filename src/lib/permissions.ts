@@ -87,7 +87,7 @@ export const PERMISSION_AREAS = {
   },
   settings: {
     label: "Settings",
-    description: "Global settings (ACME, DNS, logging, geoblocking, error pages and the rest of the Settings page) and the setup checklist.",
+    description: "Global settings: the Settings page, the settings pages next to what they configure, and the setup checklist.",
     actions: ["read", "write"],
     instanceWide: true,
   },

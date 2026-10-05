@@ -117,8 +117,8 @@ export default function TokensSection({
             API tokens <span className="font-mono text-sm font-normal text-muted-foreground">{tokens.length} of {maxTokens}</span>
           </h2>
           <span className="text-sm text-muted-foreground">
-            For scripts and tools, sent as <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">Authorization: Bearer &lt;token&gt;</code>.
-            A token acts as you, limited to its scopes, and can never do more than your role.
+            Sent as <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">Authorization: Bearer &lt;token&gt;</code>. A token can never do
+            more than your role.
           </span>
         </div>
         <a href="/api-docs" className="shrink-0 text-sm text-primary underline-offset-4 hover:underline">API reference</a>
@@ -146,7 +146,7 @@ export default function TokensSection({
       )}
 
       {tokens.length > 0 ? (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b text-left text-xs text-muted-foreground">
@@ -278,7 +278,7 @@ export default function TokensSection({
 
         {access === "pick" && (
           <fieldset className="flex flex-col gap-2 rounded-lg border p-3">
-            <legend className="px-1 text-xs text-muted-foreground">Permissions from your role</legend>
+            <legend className="px-1 text-xs text-muted-foreground">Permissions from your role (a write permission includes its read)</legend>
             <div className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
               {heldPermissions.map((permission) => (
                 <label key={permission} className="flex items-center gap-2 font-mono text-xs">
@@ -295,11 +295,11 @@ export default function TokensSection({
           </fieldset>
         )}
 
-        <span className="text-xs text-muted-foreground">
-          {full
-            ? `You have ${maxTokens} tokens, the most one account can have. Revoke one to create another.`
-            : "The token is shown once, right after it is created. It can never do more than your role allows, now or later; a write permission includes its read."}
-        </span>
+        {full && (
+          <span className="text-xs text-muted-foreground">
+            You have {maxTokens} tokens, the most one account can have. Revoke one to create another.
+          </span>
+        )}
       </form>
     </section>
   );

@@ -2,7 +2,7 @@
 
 Geo blocking is configured per proxy host. It requires MaxMind GeoLite2 databases (see [GeoIP setup](#geoip-setup)).
 
-It also has a fail-closed mode, custom response codes and bodies, and trusted proxy support. The defaults for every host are under **Settings → Geo blocking and GeoIP** ([settings.md](settings.md)), and L4 proxy hosts have geo blocking of their own. [Access lists](access-lists.md) can allow or deny by country, continent and AS number too.
+It also has a fail-closed mode, custom response codes and bodies, and trusted proxy support. The defaults for every host are on the **Geo blocking** page (`/geo-blocking`, under Security events in the sidebar; [settings.md](settings.md)), and L4 proxy hosts have geo blocking of their own. [Access lists](access-lists.md) can allow or deny by country, continent and AS number too.
 
 ## Rule types
 

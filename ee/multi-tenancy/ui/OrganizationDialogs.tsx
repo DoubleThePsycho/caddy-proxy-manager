@@ -142,8 +142,8 @@ export function OrganizationEditDialog({
             onChange={(event) => onDraftChange({ ...draft, allowedUpstreams: event.target.value })}
           />
           <p className="text-xs text-soft">
-            Where the organisation&apos;s own users may proxy to, one per line: host names, *.wildcards, IP addresses or CIDRs.
-            Empty allows nothing; &quot;*&quot; allows any address, including other tenants&apos; backends and your internal services.
+            One per line: host names, *.wildcards, IP addresses or CIDRs. Empty allows nothing; &quot;*&quot; allows any address,
+            including other tenants&apos; backends and your internal services.
           </p>
         </div>
         <div className="space-y-1.5">
@@ -241,9 +241,8 @@ export function OrganizationMoveDialog({
       <div className="flex flex-col gap-4">
         <DialogError error={error} />
         <p className="text-sm text-muted-foreground">
-          A host moves together with its certificate and access list. Moved users get a role that fits: an administrator becomes
-          an organisation admin, and moving out of an organisation leaves a viewer. Group members and forward-auth grants that
-          would cross organisations are removed.
+          A host moves with its certificate and access list. A moved administrator becomes an organisation admin; a user moved out of
+          an organisation becomes a viewer. Group memberships and forward-auth grants that would cross organisations are removed.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <SearchField

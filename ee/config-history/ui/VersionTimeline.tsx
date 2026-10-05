@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 "use client";
 
-import Link from "next/link";
-import type { ReactNode } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Pagination } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { useFormat } from "@/components/preferences/PreferencesProvider";
 import { cn } from "@/lib/utils";
@@ -75,8 +72,6 @@ type Props = {
 export function VersionTimeline({ versions, total, page, perPage, selectedId, onSelect, now }: Props) {
   const fmt = useFormat();
   const groups = groupByDay(versions, now, fmt.timeZone);
-  const first = (page - 1) * perPage + 1;
-  const last = (page - 1) * perPage + versions.length;
   const pages = Math.max(1, Math.ceil(total / perPage));
 
   return (
@@ -85,28 +80,16 @@ export function VersionTimeline({ versions, total, page, perPage, selectedId, on
       description="Newest first"
       className="flex-[1_1_340px]"
       footer={
-        <div className="flex flex-wrap items-center gap-2.5 text-muted-foreground">
-          <span>
-            {total === 0 ? (
-              "No versions kept"
-            ) : (
-              <>
-                Showing <span className="num">{first.toLocaleString("en-US")}</span> to <span className="num">{last.toLocaleString("en-US")}</span> of{" "}
-                <span className="num">{total.toLocaleString("en-US")}</span> versions
-              </>
-            )}
-          </span>
-          {pages > 1 && (
-            <span className="ml-auto flex gap-2">
-              <PageLink page={page - 1} disabled={page <= 1} label="Newer">
-                <ChevronLeft /> Newer
-              </PageLink>
-              <PageLink page={page + 1} disabled={page >= pages} label="Older">
-                Older <ChevronRight />
-              </PageLink>
-            </span>
-          )}
-        </div>
+        pages > 1 ? (
+          <Pagination
+            page={page}
+            perPage={perPage}
+            total={total}
+            noun="versions"
+            label="Pages of versions"
+            hrefFor={(target) => (target <= 1 ? "/history" : `/history?page=${target}`)}
+          />
+        ) : undefined
       }
     >
       <div className="flex flex-col pb-2.5 pt-1.5">
@@ -162,22 +145,5 @@ export function VersionTimeline({ versions, total, page, perPage, selectedId, on
         ))}
       </div>
     </SectionCard>
-  );
-}
-
-function PageLink({ page, disabled, label, children }: { page: number; disabled: boolean; label: string; children: ReactNode }) {
-  if (disabled) {
-    return (
-      <Button variant="secondary" size="sm" disabled aria-label={`${label} versions`}>
-        {children}
-      </Button>
-    );
-  }
-  return (
-    <Button variant="secondary" size="sm" asChild>
-      <Link href={page <= 1 ? "/history" : `/history?page=${page}`} aria-label={`${label} versions`} scroll={false}>
-        {children}
-      </Link>
-    </Button>
   );
 }

@@ -37,7 +37,6 @@ import {
   chartTitle,
   filterSuggestions,
   formatClockUtc,
-  formatStep,
   groupingLabel,
   rangeNoun,
   seriesColor,
@@ -70,7 +69,7 @@ import {
 export type AnalyticsClientProps = {
   /** ClickHouse is configured (CLICKHOUSE_PASSWORD is set). */
   analyticsEnabled: boolean;
-  /** Caddy's access log is on (Settings, Analytics and logs). */
+  /** Caddy's access log is on (Analytics settings, Access log). */
   loggingEnabled: boolean;
   retentionDays: number;
   /** May open the security events page (waf:read). */
@@ -139,8 +138,9 @@ export function KpiRow({
     );
   }
   const { headline, headlineSeries } = result;
-  const vs = result.previous.available ? `vs previous ${rangeLabel}` : `analytics keep ${result.retention.days} days`;
-  const tiles: Record<Metric, { value: string; current: number; previous: number | null; note: string; spark: number[] }> = {
+  // Without an earlier period the delta says "No earlier data"; nothing to add under it.
+  const vs = result.previous.available ? `vs previous ${rangeLabel}` : undefined;
+  const tiles: Record<Metric, { value: string; current: number; previous: number | null; note: string | undefined; spark: number[] }> = {
     requests: {
       value: formatCompact(headline.requests.value),
       current: headline.requests.value,
@@ -254,15 +254,14 @@ function AnalyticsOff({ canReadSettings }: { canReadSettings: boolean }) {
         title="Traffic analytics is off"
         description={
           <>
-            Analytics stores every request in ClickHouse, which is not configured. To turn it on, add <code className="num">clickhouse</code> to{" "}
-            <code className="num">COMPOSE_PROFILES</code> and set <code className="num">CLICKHOUSE_PASSWORD</code> in <code className="num">.env</code>{" "}
-            (generate one with <code className="num">openssl rand -base64 32</code>), then run <code className="num">docker compose up -d</code>.
+            To turn it on, add <code className="num">clickhouse</code> to <code className="num">COMPOSE_PROFILES</code> and set{" "}
+            <code className="num">CLICKHOUSE_PASSWORD</code> in <code className="num">.env</code>, then run <code className="num">docker compose up -d</code>.
           </>
         }
         action={
           canReadSettings ? (
             <Button asChild variant="outline">
-              <Link href="/settings?section=analytics">Analytics settings</Link>
+              <Link href="/analytics/settings">Analytics settings</Link>
             </Button>
           ) : undefined
         }
@@ -333,7 +332,6 @@ export default function AnalyticsClient({
     const added = after.filters[after.filters.length - 1];
     const what = `${DIMENSION_LABEL[dim]} is ${added.value}`;
     toast(op === "is" ? `Showing only ${what}` : `Hiding ${what}`, {
-      description: "Every chart and list on the page follows the filters.",
       duration: 8000,
       action: {
         label: "Undo",
@@ -446,12 +444,12 @@ export default function AnalyticsClient({
           actions={
             canReadSettings ? (
               <Button asChild variant="outline" size="sm">
-                <Link href="/settings?section=analytics">Turn it on in Settings</Link>
+                <Link href="/analytics/settings#logging">Turn it on in Analytics settings</Link>
               </Button>
             ) : undefined
           }
         >
-          Caddy writes no access log, so no new requests are recorded.
+          No new requests are recorded.
         </Banner>
       )}
 
@@ -479,9 +477,7 @@ export default function AnalyticsClient({
                 Retry
               </Button>
             }
-          >
-            The numbers below stay empty until it does.
-          </Banner>
+          />
         </div>
       ) : null}
 
@@ -511,7 +507,7 @@ export default function AnalyticsClient({
 
       <section
         aria-labelledby="analytics-chart-title"
-        className="flex min-w-0 flex-col gap-3.5 rounded-2xl border border-line bg-panel px-4 pb-3.5 pt-4 sm:px-5"
+        className="relative flex min-w-0 flex-col gap-3.5 rounded-2xl border border-line bg-panel px-4 pb-3.5 pt-4 sm:px-5"
       >
         <div className="flex flex-wrap items-center gap-3">
           <h2 id="analytics-chart-title" className="m-0 flex-[1_1_240px] text-base leading-6 font-semibold">
@@ -545,11 +541,6 @@ export default function AnalyticsClient({
               formatValue={METRIC_INFO[metric].format}
               emptyText={EMPTY_TEXT[metric]}
             />
-            {metric === "visitors" && (
-              <p className="m-0 mt-2 text-xs text-soft">
-                Distinct client addresses in each {formatStep(result.range.step)}. They do not add up across the chart: one address can come back in many.
-              </p>
-            )}
           </div>
         ) : queryFailed ? (
           <p className="m-0 rounded-lg border border-dashed border-line px-4 py-10 text-center text-[13px] text-soft">The chart could not be loaded.</p>
@@ -558,13 +549,7 @@ export default function AnalyticsClient({
         )}
       </section>
 
-      <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-2">
-        <h2 className="m-0 text-base leading-6 font-semibold">Top dimensions</h2>
-        <span className="text-[13px] text-soft">
-          Hover a row, then <strong className="font-semibold text-muted-foreground">Only</strong> to show just that value or{" "}
-          <strong className="font-semibold text-muted-foreground">Exclude</strong> to hide it. Every chart and list on the page follows the filters.
-        </span>
-      </div>
+      <h2 className="m-0 mt-2 text-base leading-6 font-semibold">Top dimensions</h2>
       <div className={data.top.loading && top ? "opacity-70 transition-opacity" : undefined} aria-busy={data.top.loading}>
         <TopPanels
           dimensions={top?.dimensions ?? null}
@@ -589,10 +574,6 @@ export default function AnalyticsClient({
           onMitigatedOnlyChange={setMitigatedOnly}
         />
       </div>
-
-      <p className="m-0 mt-1 text-xs text-soft">
-        Exact counts from ClickHouse, kept for {result?.retention.days ?? retentionDays} days. Times in UTC.
-      </p>
 
       <SaveViewDialog
         open={saveOpen}

@@ -25,7 +25,7 @@ test.describe('Alerts', () => {
     await page.getByRole('tab', { name: /Channels/ }).click();
     await expect(page).toHaveURL(/tab=channels/);
     await expect(page.getByRole('heading', { name: 'Channels', exact: true })).toBeVisible();
-    await expect(page.getByText(/Deliveries time out after 10 seconds/)).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Add channel' }).first()).toBeVisible();
 
     await page.goto('/alerts?tab=history');
     await expect(page.getByRole('heading', { name: 'Alert history' })).toBeVisible();

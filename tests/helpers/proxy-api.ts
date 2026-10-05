@@ -375,8 +375,8 @@ export interface AccessListUser {
 
 /**
  * Create an access list with initial users via the browser UI.
- * Creates the list in the "New access list" dialog, then adds the members in
- * the editor and saves.
+ * Creates the list in the "New access list" dialog, then adds the basic-auth
+ * users on the list's page and saves.
  */
 export async function createAccessList(
   page: Page,
@@ -386,22 +386,23 @@ export async function createAccessList(
   await page.goto('/access-lists');
 
   // Create the list
-  await page.getByRole('button', { name: /new access list/i }).click();
+  await page.getByRole('button', { name: /new access list/i }).first().click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible({ timeout: 5_000 });
   await dialog.getByLabel('Name', { exact: true }).fill(name);
   await dialog.getByRole('button', { name: /create list/i }).click();
   await expect(dialog).not.toBeVisible({ timeout: 10_000 });
 
-  // The new list opens in the editor: add the members and save
-  const editor = page.getByTestId('access-list-editor');
-  await expect(editor.getByRole('heading', { name, exact: true })).toBeVisible({ timeout: 10_000 });
+  // The new list's page opens: add the users and save
+  await expect(page).toHaveURL(/\/access-lists\/\d+$/, { timeout: 10_000 });
+  await expect(page.getByRole('heading', { name, exact: true, level: 1 })).toBeVisible({ timeout: 10_000 });
   if (users.length === 0) return;
   for (const user of users) {
-    await editor.getByLabel('Username', { exact: true }).fill(user.username);
-    await editor.getByLabel('Password', { exact: true }).fill(user.password);
-    await editor.getByRole('button', { name: 'Add member' }).click();
+    await page.getByLabel('Username', { exact: true }).fill(user.username);
+    await page.getByLabel('Password', { exact: true }).fill(user.password);
+    await page.getByRole('button', { name: 'Add user' }).click();
   }
-  await editor.getByRole('button', { name: 'Save list' }).click();
-  await expect(editor.getByText('Saved · matches the running configuration')).toBeVisible({ timeout: 10_000 });
+  const bar = page.getByTestId('access-list-save-bar');
+  await bar.getByRole('button', { name: 'Save list' }).click();
+  await expect(bar.getByText('No unsaved changes')).toBeVisible({ timeout: 10_000 });
 }

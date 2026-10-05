@@ -57,7 +57,7 @@ Each proxy host has a WAF mode:
 
 A host without WAF settings of its own follows the global settings. Older stored values keep their meaning: `mode: "Off"` with `enabled: true` is off.
 
-The **Per-host settings** table on the WAF settings page shows every host's mode, whether it follows, merges with or overrides the global settings, what it changes, and its events of the last 7 days. The mode can be changed there; everything else is in the proxy host's WAF section.
+The **Per-host settings** table on the WAF settings page shows every host's mode, whether it follows, merges with or overrides the global settings, what it changes, and its events of the last 7 days. Hosts with WAF settings of their own, exclusions or events come first; the table can be searched by name or domain, filtered by mode and is paged 25 hosts at a time. The mode can be changed there; everything else is in the proxy host's WAF section.
 
 ## Rule exclusions
 
@@ -72,6 +72,8 @@ An exclusion stops one rule from checking some requests. Every other rule still 
 Without a path or variable, the rule is removed for the scope (`SecRuleRemoveById`). With one, a rule that runs before the Core Rule Set removes it for matching requests (`ctl:ruleRemoveById`, or `ctl:ruleRemoveTargetById` for a variable). Generated rules take ids from 1,900,000,000 up.
 
 Exclusions apply as soon as they are added or removed. If Caddy does not accept the new configuration, the change is undone.
+
+The **Rule exclusions** table lists the newest first, 25 at a time, and can be searched by rule id, rule message, host, path, variable, reason or author. Its times are UTC.
 
 Exclusions made before this release were plain rule id lists (`excluded_rule_ids` of the global settings and of each proxy host). They are turned into exclusions without a reason when Ingressi starts. The lists keep working: they always hold the exclusions without a path or variable, and sending a list through the settings or proxy host API replaces those (exclusions with a path or variable stay). Leaving the list out keeps them.
 

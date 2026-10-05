@@ -232,7 +232,7 @@ const PINNING_FAMILIES = { inherit: "Inherit global", both: "Both, IPv6 first", 
 export function changeGroups(mode: "create" | "edit"): ChangeGroup[] {
   const nameSection: SectionId = mode === "create" ? "routing" : "advanced";
   return [
-    { id: "enabled", section: "routing", label: "Host enabled", focus: "f-enabled", kind: "value", value: (f) => f.enabled, lines: (f) => [f.enabled ? "Enabled" : "Paused"], restore: keys("enabled") },
+    { id: "enabled", section: "routing", label: "Host enabled", focus: "f-enabled", kind: "value", value: (f) => f.enabled, lines: (f) => [f.enabled ? "Enabled" : "Disabled"], restore: keys("enabled") },
     { id: "name", section: nameSection, label: "Name", focus: "f-name", kind: "value", value: (f) => f.name.trim(), lines: (f) => [orNone(f.name)], restore: keys("name") },
     { id: "tags", section: nameSection, label: "Tags", focus: "f-tags", kind: "list", value: (f) => f.tags, lines: (f) => f.tags, restore: keys("tags") },
     { id: "domains", section: "routing", label: "Domains", focus: "f-domains", kind: "list", value: (f) => f.domains, lines: (f) => f.domains, restore: keys("domains") },

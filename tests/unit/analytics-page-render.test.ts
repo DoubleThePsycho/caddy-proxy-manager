@@ -54,8 +54,8 @@ describe('first paint', () => {
     for (const title of ['Hosts', 'Paths', 'Countries', 'Source networks', 'Status codes', 'Source IPs', 'User agents', 'Methods', 'HTTP versions']) {
       expect(html).toContain(`>${title}</h3>`);
     }
-    expect(html).toContain('every request is logged, nothing is sampled');
-    expect(html).toContain('kept for 30 days');
+    expect(html).toContain('id="analytics-log-title"');
+    expect(html).not.toContain('kept for 30 days');
     expect(html).not.toContain('Traffic analytics is off');
     expect(html).not.toContain('Access logging is off');
   });
@@ -82,17 +82,18 @@ describe('degraded states', () => {
     expect(html).toContain('Traffic analytics is off');
     expect(html).toContain('CLICKHOUSE_PASSWORD');
     expect(html).toContain('COMPOSE_PROFILES');
-    expect(html).toContain('href="/settings?section=analytics"');
+    expect(html).toContain('href="/analytics/settings"');
     expect(html).not.toContain('Export CSV');
     expect(html).not.toContain('Top dimensions');
-    expect(render('', { analyticsEnabled: false, canReadSettings: false })).not.toContain('/settings?section=analytics');
+    expect(render('', { analyticsEnabled: false, canReadSettings: false })).not.toContain('href="/analytics/settings"');
   });
 
   it('warns when access logging is off', () => {
     const html = render('', { loggingEnabled: false });
     expect(html).toContain('Access logging is off.');
-    expect(html).toContain('Turn it on in Settings');
-    expect(render('', { loggingEnabled: false, canReadSettings: false })).not.toContain('Turn it on in Settings');
+    expect(html).toContain('Turn it on in Analytics settings');
+    expect(html).toContain('href="/analytics/settings#logging"');
+    expect(render('', { loggingEnabled: false, canReadSettings: false })).not.toContain('Turn it on in Analytics settings');
   });
 });
 
@@ -156,7 +157,7 @@ describe('headline tiles', () => {
     r.headline.requests.previous = null;
     const html = renderToStaticMarkup(createElement(KpiRow, { result: r, metric: 'requests', rangeLabel: '30 days', onSelect: () => {} }));
     expect(html).toContain('No earlier data');
-    expect(html).toContain('analytics keep 30 days');
+    expect(html).not.toContain('analytics keep');
   });
 });
 

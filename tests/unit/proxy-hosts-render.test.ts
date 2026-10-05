@@ -121,7 +121,17 @@ describe('proxy hosts list', () => {
     expect(html).toContain('Domain, upstream or tag');
     expect(html).toContain('Needs attention');
     for (const column of ['Host', 'Status', 'Requests, 24h', '5xx', 'Protection', 'Certificate', 'Tags']) expect(html).toContain(`>${column}`);
-    expect(html).toContain('3 hosts, sorted by requests in 24 hours');
+    // Everything fits on one page: no pager.
+    expect(html).not.toContain('Pages of hosts');
+  });
+
+  it('pages a long list with the shared pager, linking each page by ?page=', () => {
+    const html = renderList({ totalHosts: 62, statusCounts: { all: 62, attention: 1, disabled: 1 }, pagination: { total: 62, page: 2, perPage: 25 } });
+    expect(html).toContain('aria-label="Pages of hosts"');
+    expect(html).toMatch(/26<\/span>–<span class="num">50<\/span> of <span class="num">62<\/span> hosts/);
+    expect(html).toContain('href="/proxy-hosts?page=3"');
+    expect(html).toContain('aria-label="Next page"');
+    expect(html).not.toContain('>Previous<');
   });
 
   it('renders each row with its link, status, traffic, pills and certificate', () => {
@@ -150,7 +160,6 @@ describe('proxy hosts list', () => {
     expect(html).not.toContain('12,147');
     expect(html).not.toContain('Select tv.example.com');
     expect(html).not.toContain('New proxy host');
-    expect(html).toContain('sorted by host name');
   });
 
   it('says when ClickHouse did not answer, and offers the first host when there is none', () => {

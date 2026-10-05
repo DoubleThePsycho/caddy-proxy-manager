@@ -60,8 +60,7 @@ test.describe('Mobile layout', () => {
 
   test('proxy hosts page shows card list, not a table', async ({ page }) => {
     await page.goto('/proxy-hosts');
-    // On mobile with mobileCard, there should be no <table> element
-    // (DataTable renders cards instead)
+    // On a phone the hosts list is a list of cards: no table is shown.
     await expect(page.locator('table')).not.toBeVisible();
   });
 

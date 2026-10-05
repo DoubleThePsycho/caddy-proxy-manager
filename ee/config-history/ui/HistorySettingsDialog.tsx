@@ -98,7 +98,6 @@ export function HistorySettingsDialog({ open, onClose, settings, configurable, c
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col gap-0.5">
               <Label htmlFor="history-enabled">Record a version after every change</Label>
-              <p className="m-0 text-xs text-muted-foreground">Every change Caddy accepts that alters the configuration is saved as a version.</p>
             </div>
             <Switch
               id="history-enabled"
@@ -129,9 +128,6 @@ export function HistorySettingsDialog({ open, onClose, settings, configurable, c
           {!canWrite && <p className="m-0 text-xs text-muted-foreground">Your role can read the history but not change these settings.</p>}
           {canWrite && total > 0 && (
             <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
-              <p className="m-0 flex-[1_1_220px] text-xs text-muted-foreground">
-                Deleting the versions does not change the live configuration.
-              </p>
               <Button variant="danger" size="sm" onClick={() => setConfirmDeleteAll(true)} disabled={pending}>
                 <Trash2 /> Delete all versions
               </Button>

@@ -41,6 +41,7 @@ export type NavEntryKey =
   | "history"
   | "compliance"
   | "fleet"
+  | "high-availability"
   | "organizations"
   | "monetization"
   | "usage"
@@ -71,12 +72,22 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     title: "Traffic",
     entries: [
-      { key: "proxy-hosts", label: "Proxy hosts", pages: [{ href: "/proxy-hosts", label: "Proxy hosts", permission: "proxy_hosts:read" }] },
+      {
+        key: "proxy-hosts",
+        label: "Proxy hosts",
+        pages: [
+          { href: "/proxy-hosts", label: "Proxy hosts", permission: "proxy_hosts:read" },
+          { href: "/proxy-hosts/defaults", label: "Host defaults", permission: "settings:read" },
+        ],
+      },
       { key: "l4-hosts", label: "L4 hosts", pages: [{ href: "/l4-proxy-hosts", label: "L4 hosts", permission: "l4_proxy_hosts:read" }] },
       {
         key: "certificates",
         label: "Certificates",
-        pages: [{ href: "/certificates", label: "Certificates", permission: "certificates:read" }],
+        pages: [
+          { href: "/certificates", label: "Certificates", permission: "certificates:read" },
+          { href: "/certificates/settings", label: "Certificate settings", permission: "settings:read" },
+        ],
         badge: "certificatesExpiring",
       },
       { key: "access-lists", label: "Access lists", pages: [{ href: "/access-lists", label: "Access lists", permission: "access_lists:read" }] },
@@ -85,13 +96,22 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     title: "Observe",
     entries: [
-      { key: "analytics", label: "Analytics", pages: [{ href: "/analytics", label: "Analytics", permission: "analytics:read" }] },
+      {
+        key: "analytics",
+        label: "Analytics",
+        pages: [
+          { href: "/analytics", label: "Analytics", permission: "analytics:read" },
+          { href: "/analytics/settings", label: "Analytics settings", permission: "settings:read" },
+        ],
+      },
       {
         key: "security",
         label: "Security events",
         pages: [
           { href: "/security", label: "Security events", permission: "waf:read" },
           { href: "/waf", label: "WAF settings", permission: "waf:read" },
+          { href: "/geo-blocking", label: "Geo blocking", permission: "settings:read" },
+          { href: "/rate-limiting", label: "Rate limiting", permission: "settings:read" },
         ],
       },
       { key: "alerts", label: "Alerts", pages: [{ href: "/alerts", label: "Alerts", permission: "alerts:read" }], badge: "alertsFiring" },
@@ -122,6 +142,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         pages: [
           { href: "/sign-in", label: "Sign-in and directories", permission: "sso:read" },
           { href: "/sso", label: "Single sign-on", permission: "sso:read" },
+          { href: "/oauth-providers", label: "OAuth providers", permission: "settings:read" },
           { href: "/saml", label: "SAML", permission: "sso:read" },
           { href: "/ldap", label: "LDAP directories", permission: "ldap:read" },
           { href: "/scim", label: "SCIM provisioning", permission: "scim:read" },
@@ -142,14 +163,33 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     title: "Govern",
     entries: [
       { key: "approvals", label: "Approvals", pages: [{ href: "/approvals", label: "Approvals", permission: "approvals:read" }], badge: "approvalsPending" },
-      { key: "history", label: "Change history", pages: [{ href: "/history", label: "Change history", permission: "config_history:read" }] },
+      {
+        key: "history",
+        label: "Change history",
+        pages: [
+          { href: "/history", label: "Change history", permission: "config_history:read" },
+          { href: "/backups", label: "Backups", permission: "backups:read" },
+        ],
+      },
       { key: "compliance", label: "Compliance", pages: [{ href: "/compliance", label: "Compliance", permission: "compliance:read" }] },
     ],
   },
   {
     title: "Platform",
     entries: [
-      { key: "fleet", label: "Fleet", pages: [{ href: "/fleet", label: "Fleet", permission: "fleet:read" }] },
+      {
+        key: "fleet",
+        label: "Fleet",
+        pages: [
+          { href: "/fleet", label: "Fleet", permission: "fleet:read" },
+          { href: "/instances", label: "Instance sync", permission: "settings:read" },
+        ],
+      },
+      {
+        key: "high-availability",
+        label: "High availability",
+        pages: [{ href: "/high-availability", label: "High availability", permission: "settings:read" }],
+      },
       { key: "organizations", label: "Organisations", pages: [{ href: "/organizations", label: "Organisations", permission: "organizations:read" }] },
       { key: "monetization", label: "API monetization", pages: [{ href: "/api-monetization", label: "API monetization", permission: "monetization:read" }] },
       { key: "usage", label: "Usage", pages: [{ href: "/usage", label: "Usage", permission: "usage_reports:read" }] },

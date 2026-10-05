@@ -1,7 +1,7 @@
 /**
  * Whether the GeoLite2 databases Caddy and the log parser read are present.
- * Shared by GET /api/geoip-status (the host dialog's badge) and the Settings
- * page's GeoIP card. Server only.
+ * Shared by GET /api/geoip-status (the host dialog's badge) and the Geo
+ * blocking page's GeoIP card. Server only.
  */
 import { existsSync, statSync } from "node:fs";
 
@@ -30,7 +30,7 @@ function databaseView(name: GeoIpDatabaseView["name"], path: string): GeoIpDatab
   }
 }
 
-/** Both databases with their paths and file dates, for the Settings page. */
+/** Both databases with their paths and file dates, for the Geo blocking page. */
 export function getGeoIpDatabases(): GeoIpDatabaseView[] {
   return [databaseView("GeoLite2 Country", GEOIP_COUNTRY_DB), databaseView("GeoLite2 ASN", GEOIP_ASN_DB)];
 }

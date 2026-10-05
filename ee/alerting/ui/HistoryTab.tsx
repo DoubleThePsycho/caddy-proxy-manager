@@ -2,9 +2,10 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Pagination } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -38,9 +39,6 @@ function pageHref(page: number): string {
 /** Every firing and resolved transition of the last 90 days, newest first. */
 export default function HistoryTab({ history }: Props) {
   const format = useFormat();
-  const pages = Math.max(1, Math.ceil(history.total / history.perPage));
-  const first = history.total === 0 ? 0 : (history.page - 1) * history.perPage + 1;
-  const last = Math.min(history.total, history.page * history.perPage);
   return (
     <div className="flex flex-col gap-3">
       <div>
@@ -53,48 +51,21 @@ export default function HistoryTab({ history }: Props) {
       <SectionCard
         title="Alert history"
         count={history.total}
-        description="Every time a rule started or stopped firing."
         footer={
-          <div className="flex flex-wrap items-center gap-3 text-xs text-soft">
-            <span>History is kept for 90 days. Times in {format.timeZone}.</span>
-            {pages > 1 && (
-              <span className="ml-auto flex items-center gap-2 text-[13px] text-muted-foreground">
-                <span>
-                  <span className="num">{first}</span> to <span className="num">{last}</span> of <span className="num">{history.total}</span>
-                </span>
-                {history.page > 1 ? (
-                  <Button asChild variant="outline" size="icon-sm" aria-label="Newer events">
-                    <Link href={pageHref(history.page - 1)}>
-                      <ChevronLeft />
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="icon-sm" aria-label="Newer events" disabled>
-                    <ChevronLeft />
-                  </Button>
-                )}
-                {history.page < pages ? (
-                  <Button asChild variant="outline" size="icon-sm" aria-label="Older events">
-                    <Link href={pageHref(history.page + 1)}>
-                      <ChevronRight />
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="icon-sm" aria-label="Older events" disabled>
-                    <ChevronRight />
-                  </Button>
-                )}
-              </span>
-            )}
-          </div>
+          history.total > history.perPage ? (
+            <Pagination
+              page={history.page}
+              perPage={history.perPage}
+              total={history.total}
+              noun="alerts"
+              label="Pages of alert history"
+              hrefFor={pageHref}
+            />
+          ) : undefined
         }
       >
         {history.events.length === 0 ? (
-          <EmptyState
-            compact
-            title="No alerts yet"
-            description="Alerts appear here when a rule starts or stops firing; history is kept for 90 days."
-          />
+          <EmptyState compact title="No alerts yet" />
         ) : (
           <Table className="min-w-[960px]">
             <TableHeader>

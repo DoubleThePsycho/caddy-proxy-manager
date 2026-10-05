@@ -14,7 +14,7 @@ export function RecentChanges({ changes, now }: { changes: OverviewChange[]; now
   return (
     <SectionCard title="Recent changes" link={{ label: "Audit log", href: "/audit-log" }}>
       {changes.length === 0 ? (
-        <EmptyState compact icon={null} title="No changes recorded yet" description="Every change to hosts, certificates, users and settings shows here." className="px-[18px]" />
+        <EmptyState compact icon={null} title="No changes recorded yet" className="px-[18px]" />
       ) : (
         <ol className="m-0 list-none py-1.5 pl-0" data-testid="recent-changes">
           {changes.map((change) => (

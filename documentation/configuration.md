@@ -61,6 +61,6 @@ The web container is configured with environment variables. Copy `.env.example` 
 | `LICENSE_AUTO_UPDATE_DISABLED` | `true` forbids automatic license updates: the license server is never contacted and the setting cannot be turned on | `false` | No |
 | `LICENSE_SERVER_URL` | License server for automatic license updates (https only) | `https://license.ingres.si` | No |
 
-With the stock `docker-compose.yml`, the web container only receives the variables listed in the `web` service's `environment`; a value in `.env` for any other variable in this table has no effect until you add it there (for example `INSTANCE_MODE: ${INSTANCE_MODE:-}`; an empty value leaves the mode to the Settings page). Give numeric variables their documented default rather than an empty one, e.g. `LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}`: an empty value is read as 0.
+With the stock `docker-compose.yml`, the web container only receives the variables listed in the `web` service's `environment`; a value in `.env` for any other variable in this table has no effect until you add it there (for example `INSTANCE_MODE: ${INSTANCE_MODE:-}`; an empty value leaves the mode to the Instance sync page). Give numeric variables their documented default rather than an empty one, e.g. `LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}`: an empty value is read as 0.
 
 In production, `SESSION_SECRET` and `ADMIN_PASSWORD` must meet the [production requirements](security.md#production-checklist).

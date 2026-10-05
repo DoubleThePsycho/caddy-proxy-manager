@@ -14,7 +14,7 @@ The old **WAF events** page (`/waf/events`) now opens Security events with the W
 - **Mitigated requests by source**: one bar per bucket (a minute for the last hour, 30 minutes for 24 hours, 3 hours for 7 days, a day for 30 days). The busiest bucket is marked and explained: what stopped the requests, the busiest source address, the host they went to and the WAF rule that matched most. **Show these events** narrows the page to that bucket.
 - **Top rules**: the WAF rules that matched most, with their category, the paths and hosts they matched on, a trend and their events (detection-only matches included). **Add exclusion** opens the exclusion form with the rule, and the host and path when it matched on only one.
 - **Top sources**: the addresses with the most events, with country, network (AS number), the WAF rules they hit and when they were last seen. **Block** adds the address to the [Blocked sources](access-lists.md#blocked-sources) list after a confirmation, optionally for a limited time. Addresses already on that list show as blocked.
-- **Events**: every WAF event and every stopped request, newest first, 50 to a page.
+- **Events**: every WAF event and every stopped request, newest first, 50 to a page. The pager under the list goes to the next (older) or previous page; the page is in the address (`?page=2`). The events are not counted in advance, so the pager shows the range of the page (`51–100 events`) rather than a total. Select an event to see why it was stopped.
 
 ## Filters and range
 

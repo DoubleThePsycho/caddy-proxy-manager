@@ -15,7 +15,9 @@
  * This does what registration.mjs does, from the package's public exports,
  * for the elements that have no refractor of their own; where the bundler
  * kept registration.mjs (webpack, Node, the tests) it changes nothing.
- * tests/unit/api-docs-refractors.test.ts checks it matches ApiDOM's.
+ * Our @swagger-api/apidom-* dependencies stay at the versions swagger-client
+ * pins, so this patches the copy Swagger UI loads (a second copy would be
+ * patched in vain). tests/unit/api-docs-refractors.test.ts checks both.
  */
 import { dereference, dispatchRefractorPlugins, refract as baseRefract, visit } from "@swagger-api/apidom-core";
 import {

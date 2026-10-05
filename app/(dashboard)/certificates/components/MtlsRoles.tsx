@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { MoreHorizontal, Plus, Users } from "lucide-react";
 import { AppDialog } from "@/components/ui/AppDialog";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Pagination } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import {
   DropdownMenu,
@@ -17,8 +18,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { paginate } from "@/src/lib/pagination";
 import type { IssuedClientCertificateView, MtlsRoleView } from "../page";
+import { matchesClientCertQuery, sortClientCerts } from "../client-list";
 import { formatDate } from "../format";
+import { ListSearch } from "./ListSearch";
+
+/** Certificates per page of the "Choose certificates" dialog. */
+const ASSIGN_PAGE_SIZE = 10;
 
 type Props = {
   roles: MtlsRoleView[];
@@ -41,7 +48,7 @@ export function MtlsRoles({ roles, clientCertificates, canWrite }: Props) {
     <SectionCard
       title="Roles"
       count={roles.length}
-      description="A role groups client certificates; mutual TLS on a proxy host can require one."
+      description="Groups of client certificates a proxy host can require."
       actions={
         canWrite && roles.length > 0 ? (
           <Button variant="outline" size="sm" onClick={() => setEditing(null)}>
@@ -57,7 +64,6 @@ export function MtlsRoles({ roles, clientCertificates, canWrite }: Props) {
           compact
           icon={Users}
           title="No roles yet"
-          description="Without roles, a proxy host trusts client certificates one by one."
           action={
             canWrite ? (
               <Button variant="outline" size="sm" onClick={() => setEditing(null)}>
@@ -72,10 +78,7 @@ export function MtlsRoles({ roles, clientCertificates, canWrite }: Props) {
           {roles.map((role) => (
             <li key={role.id} className="flex items-start gap-3 rounded-xl border border-line bg-panel2 px-4 py-3.5">
               <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <span className="flex items-center gap-2">
-                  <span className="truncate font-semibold">{role.name}</span>
-                  <span className="text-xs text-soft">role</span>
-                </span>
+                <span className="truncate font-semibold">{role.name}</span>
                 <span className="text-[13px] text-muted-foreground">
                   {role.description ? `${role.description.replace(/[.\s]+$/, "")}. ` : ""}
                   <span className="num">{role.certificateIds.length}</span>{" "}
@@ -211,6 +214,15 @@ function AssignCertificatesDialog({
   const [assigned, setAssigned] = useState<Set<number>>(() => new Set(role.certificateIds));
   const [busy, setBusy] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+
+  const sorted = useMemo(() => sortClientCerts(certificates, { key: "name", dir: "asc" }), [certificates]);
+  const slice = paginate(
+    sorted.filter((cert) => matchesClientCertQuery(cert, query)),
+    page,
+    ASSIGN_PAGE_SIZE
+  );
 
   async function toggle(certId: number) {
     const isAssigned = assigned.has(certId);
@@ -265,34 +277,63 @@ function AssignCertificatesDialog({
       <div className="flex flex-col gap-3">
         {error && <p className="m-0 text-sm text-bad">{error}</p>}
         {certificates.length === 0 ? (
-          <p className="m-0 text-sm text-muted-foreground">No active client certificates yet. Issue one from a certificate authority first.</p>
+          <p className="m-0 text-sm text-muted-foreground">No active client certificates yet.</p>
         ) : (
-          <ul className="m-0 flex list-none flex-col divide-y divide-line overflow-hidden rounded-lg border border-line p-0">
-            {certificates.map((cert) => {
-              const id = `role-${role.id}-cert-${cert.id}`;
-              return (
-                <li key={cert.id} className="flex items-center gap-3 px-3 py-2">
-                  <Checkbox
-                    id={id}
-                    checked={assigned.has(cert.id)}
-                    disabled={busy === cert.id}
-                    onCheckedChange={() => void toggle(cert.id)}
-                  />
-                  <Label htmlFor={id} className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 font-normal">
-                    <span className="num truncate text-sm">{cert.commonName}</span>
-                    <span className="text-xs text-soft">
-                      {cert.caName ?? "Unknown CA"} · expires {formatDate(cert.validTo)}
-                    </span>
-                  </Label>
-                </li>
-              );
-            })}
-          </ul>
+          <>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <ListSearch
+                label="Search certificates"
+                placeholder="Common name, serial or CA"
+                value={query}
+                onChange={(value) => {
+                  setQuery(value);
+                  setPage(1);
+                }}
+              />
+              <span className="text-[13px] text-muted-foreground">
+                <span className="num">{assigned.size}</span> in the role
+              </span>
+            </div>
+            {slice.total === 0 ? (
+              <p className="m-0 text-sm text-muted-foreground">No certificate matches this search.</p>
+            ) : (
+              <ul className="m-0 flex list-none flex-col divide-y divide-line overflow-hidden rounded-lg border border-line p-0">
+                {slice.items.map((cert) => {
+                  const id = `role-${role.id}-cert-${cert.id}`;
+                  return (
+                    <li key={cert.id} className="flex items-center gap-3 px-3 py-2">
+                      <Checkbox
+                        id={id}
+                        checked={assigned.has(cert.id)}
+                        disabled={busy === cert.id}
+                        onCheckedChange={() => void toggle(cert.id)}
+                      />
+                      <Label htmlFor={id} className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 font-normal">
+                        <span className="num truncate text-sm">{cert.commonName}</span>
+                        <span className="truncate text-xs text-soft">
+                          {cert.caName ?? "Unknown CA"} · expires {formatDate(cert.validTo)}
+                        </span>
+                      </Label>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <Pagination
+              page={slice.page}
+              perPage={slice.perPage}
+              total={slice.total}
+              noun="certificates"
+              label="Pages of certificates"
+              onPageChange={setPage}
+            />
+          </>
         )}
       </div>
     </AppDialog>
   );
 }
+
 
 function DeleteRoleDialog({ role, onClose }: { role: MtlsRoleView; onClose: () => void }) {
   const router = useRouter();

@@ -247,17 +247,14 @@ export default function LoginClient({
   const customHeading = branding.loginHeading !== branding.productName;
 
   const title = challenge ? "Two-step verification" : customHeading ? branding.loginHeading : "Sign in";
+  // The second step says what it needs; the first needs no sentence under "Sign in".
   const subtitle = challenge?.kind === "passkey"
     ? "Finish signing in with your passkey."
     : challenge
       ? useBackupCode
         ? "Enter one of your backup codes. Each code works once."
         : "Enter the 6-digit code from your authenticator app."
-      : ssoFirst
-        ? "This dashboard uses single sign-on through your organisation’s identity provider."
-        : hasSso
-          ? "Sign in with single sign-on, or with your username and password."
-          : "Sign in with your username and password.";
+      : null;
 
   const providerButtonClass = "h-auto min-h-12 w-full justify-start gap-3 rounded-lg px-4 py-2 text-left";
 
@@ -278,7 +275,7 @@ export default function LoginClient({
         <section aria-labelledby="signin-title" className="flex flex-col gap-5 rounded-xl border bg-card p-7 text-card-foreground">
           <div className="flex flex-col gap-1">
             <h1 id="signin-title" className="break-words text-2xl font-semibold tracking-tight">{title}</h1>
-            <p className="text-sm text-muted-foreground">{subtitle}</p>
+            {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
           </div>
 
           {loginError && (

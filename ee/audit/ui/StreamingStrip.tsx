@@ -69,9 +69,7 @@ export function StreamingStrip({ sinks, retentionDays, generatedAt }: { sinks: A
         <h2 id="audit-streaming-title" className="m-0 text-base leading-6 font-semibold">
           Streaming
         </h2>
-        <span className="text-[13px] text-soft">
-          Every event is sent to these destinations a few seconds after it is recorded, at least once.{kept ? ` ${kept}` : ""}
-        </span>
+        {kept && <span className="text-[13px] text-soft">{kept}</span>}
         <Link href="/audit-log/streaming" className="ml-auto text-[13px] text-brand underline-offset-4 hover:text-foreground hover:underline">
           Manage destinations
         </Link>
@@ -82,7 +80,7 @@ export function StreamingStrip({ sinks, retentionDays, generatedAt }: { sinks: A
             compact
             icon={RadioTower}
             title="No streaming destinations"
-            description="Send every event to a SIEM, a syslog server or a webhook as it is recorded, so a copy exists outside this node."
+            description="Send events to a SIEM, a syslog server or a webhook."
             action={
               <Link href="/audit-log/streaming" className="text-[13px] text-brand underline-offset-4 hover:underline">
                 Add a destination
@@ -128,8 +126,8 @@ export function StreamingStrip({ sinks, retentionDays, generatedAt }: { sinks: A
           })}
         </div>
       )}
-      {retentionDays !== null && retentionDays > 0 && sinks.length > 0 && (
-        <p className="m-0 text-xs text-soft">Events that wait for a failing destination are still deleted when they pass the retention period.</p>
+      {retentionDays !== null && retentionDays > 0 && sinks.some((sink) => sink.enabled && sink.consecutiveFailures > 0) && (
+        <p className="m-0 text-xs text-warn">Events waiting for a failing destination are still deleted when they pass the retention period.</p>
       )}
     </section>
   );

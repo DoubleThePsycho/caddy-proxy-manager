@@ -261,7 +261,6 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
         className="mb-0"
         breadcrumb={["Settings", "Branding"]}
         title="Branding"
-        description="Show your own name, logo and colours to the people who use this install: in the dashboard, on the sign-in pages, on the forward-auth portal of protected sites, on the API consumer portal and in alert and digest e-mails."
       />
 
       {!view.configurable && (
@@ -274,8 +273,8 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
             </Button>
           }
         >
-          Changing the branding needs an active {editionLabel} license. The current branding keeps showing and is shown
-          read-only; you can still remove images and reset everything to the defaults.
+          Changing the branding needs an active {editionLabel} license. The current branding keeps showing; you can still remove images and
+          reset everything to the defaults.
         </Banner>
       )}
       {isSlave && (
@@ -298,12 +297,7 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
           <SectionCard
             title="Name and sign-in pages"
             descriptionPlacement="below"
-            description={
-              <>
-                Leave a field empty to use the default. The license page, license texts and legal notices keep the name{" "}
-                {view.defaultProductName}.
-              </>
-            }
+            description={<>The license page and legal notices keep the name {view.defaultProductName}.</>}
             actions={view.source !== "default" ? <Badge variant="success">Custom</Badge> : <Badge variant="muted">Default</Badge>}
             padded
           >
@@ -351,7 +345,7 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
           <SectionCard
             title="Accent colour"
             descriptionPlacement="below"
-            description="Buttons, links and highlights. Each colour needs 3:1 contrast with its theme's background; the text on it is black or white, whichever reads better (at least 4.5:1)."
+            description="Buttons, links and highlights. Each colour needs 3:1 contrast with its theme's background."
             padded
           >
             <fieldset disabled={!editable || pending} className="m-0 grid min-w-0 gap-4 border-0 p-0 sm:grid-cols-2">
@@ -382,8 +376,8 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
             description={
               <>
                 PNG, JPEG or WebP logos up to <span className="num">2048×2048</span> and a PNG or ICO favicon up to{" "}
-                <span className="num">512×512</span>, at most <span className="num">{formatBytes(view.limits.maxBytes)}</span> each.
-                SVG is not accepted. Metadata such as EXIF is removed. A single logo is used in both themes.
+                <span className="num">512×512</span>, at most <span className="num">{formatBytes(view.limits.maxBytes)}</span> each; no SVG.
+                A single logo is used in both themes.
               </>
             }
           >
@@ -444,12 +438,7 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
             </ul>
           </SectionCard>
 
-          <SectionCard
-            title="Support and e-mail"
-            descriptionPlacement="below"
-            description="Where people get help, shown on the sign-in pages and in the dashboard, and the sender name of e-mails."
-            padded
-          >
+          <SectionCard title="Support and e-mail" padded>
             <fieldset disabled={!editable || pending} className="m-0 grid min-w-0 gap-4 border-0 p-0 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="brand-support-url">Support URL</Label>
@@ -468,9 +457,7 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
                   placeholder="Empty: the bare sender address"
                   onChange={(event) => update("emailSenderName", event.target.value)}
                 />
-                <p className="m-0 text-xs text-soft">
-                  The name in the From header of alert and digest e-mails; the address stays the one set on each e-mail channel.
-                </p>
+                <p className="m-0 text-xs text-soft">The From name of alert and digest e-mails.</p>
               </div>
             </fieldset>
           </SectionCard>
@@ -501,13 +488,7 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
         </div>
 
         <div className="min-w-0 xl:sticky xl:top-6 xl:col-span-2">
-          <SectionCard
-            title="Preview"
-            descriptionPlacement="below"
-            description="The sign-in page with the values above, before you save. Images show once uploaded."
-            padded
-            contentClassName="flex flex-col gap-4"
-          >
+          <SectionCard title="Preview" padded contentClassName="flex flex-col gap-4">
             <PreviewPanel theme="light" branding={preview} accent={palette?.light ?? DEFAULT_ACCENT.light} />
             <PreviewPanel theme="dark" branding={preview} accent={palette?.dark ?? DEFAULT_ACCENT.dark} />
             <div className="flex items-center gap-2 text-xs text-muted-foreground">

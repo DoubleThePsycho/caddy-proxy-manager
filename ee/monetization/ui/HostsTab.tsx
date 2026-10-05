@@ -15,9 +15,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AppDialog } from "@/components/ui/AppDialog";
 import { Banner } from "@/components/ui/Banner";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
+import { SearchField } from "@/components/ui/SearchField";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DEFAULT_PAGE_SIZE, paginate } from "@/src/lib/pagination";
 import { decimalToMicros } from "../money";
 import type { HostMonetizationView, PlanView } from "../types";
 import { callApi, Field, LOCKED_HINT } from "./shared";
@@ -39,8 +42,7 @@ const EMPTY_FORM: Form = {
   x402Price: "",
 };
 
-const STANDALONE_NOTE =
-  "This instance is a sync replica: its monetized hosts and their settings come from its master, which decides whether replicas serve them (API Monetization → Settings on the master).";
+const STANDALONE_NOTE = "This instance is a sync replica: change monetized hosts on its master.";
 
 function keyHeaderLabel(header: string): string {
   return header === "Authorization" ? "Authorization: Bearer" : header;
@@ -80,6 +82,8 @@ export default function HostsTab({
   const [editing, setEditing] = useState<HostMonetizationView | null>(null);
   const [form, setForm] = useState<Form>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const { page, hrefFor } = useUrlPage("hosts");
   const planName = new Map(plans.map((plan) => [plan.id, plan.name]));
   const canEnable = canWrite && configurable && standalone;
   const configureHint = canEnable ? undefined : !configurable ? LOCKED_HINT : "Managed on the master";
@@ -142,6 +146,11 @@ export default function HostsTab({
   }
 
   const monetized = hosts.filter((host) => host.monetization?.enabled);
+  const needle = search.trim().toLowerCase();
+  const matching = needle
+    ? hosts.filter((host) => host.name.toLowerCase().includes(needle) || host.domains.some((domain) => domain.toLowerCase().includes(needle)))
+    : hosts;
+  const shown = paginate(matching, page);
 
   const dialog = (
     <AppDialog
@@ -158,9 +167,12 @@ export default function HostsTab({
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex items-start gap-2 text-sm">
           <Switch checked={form.enabled} onCheckedChange={(checked) => setForm({ ...form, enabled: checked })} />
-          Charge requests to this host
+          <span className="flex flex-col gap-0.5">
+            Charge requests to this host
+            <span className="text-xs text-muted-foreground">Not combined with forward auth or a basic-auth access list; the WAF, geo blocking and mTLS keep working.</span>
+          </span>
         </label>
         <Field
           label="API key header"
@@ -276,16 +288,22 @@ export default function HostsTab({
           {STANDALONE_NOTE}
         </Banner>
       )}
-      <SectionCard
-        title="Proxy hosts"
-        count={monetized.length > 0 ? `${monetized.length} monetized` : null}
-        description="A monetized host asks the gate about every request before it reaches the upstream."
-      >
-        <p className="m-0 border-b border-line px-[18px] py-3 text-[13px] text-muted-foreground">
-          The consumer&apos;s API key must be valid, its plan allowed and its balance sufficient. Monetization replaces forward auth and
-          access lists on the host; the WAF, geoblocking and mTLS keep working. The upstream receives{" "}
-          <span className="num">X-Ingressi-Consumer-Id</span> and <span className="num">X-Ingressi-Plan</span> (the plan id).
-        </p>
+      <SectionCard title="Proxy hosts" count={monetized.length > 0 ? `${monetized.length} monetized` : null}>
+        {hosts.length > DEFAULT_PAGE_SIZE && (
+          <div className="border-b border-line px-[18px] py-3">
+            <SearchField
+              aria-label="Filter proxy hosts"
+              type="search"
+              placeholder="Name or domain"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                if (page > 1) router.replace(hrefFor(1), { scroll: false });
+              }}
+              className="w-full sm:max-w-xs"
+            />
+          </div>
+        )}
         {hosts.length === 0 ? (
           <EmptyState
             compact
@@ -315,7 +333,14 @@ export default function HostsTab({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {hosts.map((host) => {
+                {matching.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-6 text-center text-[13px] text-soft">
+                      No proxy hosts match.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {shown.items.map((host) => {
                   const on = host.monetization?.enabled === true;
                   return (
                     <TableRow key={host.proxyHostId}>
@@ -367,6 +392,9 @@ export default function HostsTab({
             </Table>
           </div>
         )}
+        <div className="border-t border-line px-[18px] py-3 empty:hidden">
+          <Pagination page={shown.page} perPage={shown.perPage} total={shown.total} noun="hosts" label="Pages of proxy hosts" hrefFor={hrefFor} />
+        </div>
       </SectionCard>
       {dialog}
     </div>

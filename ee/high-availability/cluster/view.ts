@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * The dashboard cluster as this dashboard process sees it, for
- * GET /api/v1/high-availability/cluster and Settings → High availability:
+ * GET /api/v1/high-availability/cluster and the High availability page:
  * the configuration from the environment (without secrets) and the status
  * the supervisor of this container last wrote. Only the leader serves the
  * dashboard and the API, so this is the leader's view; reading it never

@@ -35,13 +35,17 @@ function GeoIpStatus() {
       alive = false;
     };
   }, []);
-  if (status === "loading") return null;
-  const ready = Boolean(status?.country && status?.asn);
+  // Said only when something is missing: then country, continent or ASN rules do nothing.
+  if (status === "loading" || (status?.country && status?.asn)) return null;
   const none = !status?.country && !status?.asn;
-  const text = ready ? "GeoIP databases loaded" : none ? "GeoIP databases missing: country and ASN rules do nothing" : "GeoIP partly loaded";
+  const text = none
+    ? "GeoIP databases missing: country, continent and ASN rules do nothing"
+    : !status?.country
+      ? "GeoIP country database missing: country and continent rules do nothing"
+      : "GeoIP ASN database missing: ASN rules do nothing";
   return (
-    <span className={cn("inline-flex items-center gap-1.5 text-xs", ready ? "text-soft" : "text-warn")}>
-      <span aria-hidden="true" className={cn("h-2 w-2 rounded-full", ready ? "bg-ok" : none ? "bg-bad" : "bg-warn")} />
+    <span className="inline-flex items-center gap-1.5 text-xs text-warn">
+      <span aria-hidden="true" className={cn("h-2 w-2 rounded-full", none ? "bg-bad" : "bg-warn")} />
       {text}
     </span>
   );
@@ -200,13 +204,7 @@ export function GeoBlockCard() {
       id="geo-blocking"
       title="Geo blocking"
       was="geoblock"
-      description={
-        geo.enabled
-          ? "Block or allow clients by country, continent, network or address. Allow rules win over block rules."
-          : data.geoblockGlobal?.enabled
-            ? "Off for this host: only the global geo blocking rules apply."
-            : "Off: clients are not checked by where they come from."
-      }
+      description={geo.enabled ? "Allow rules win over block rules." : data.geoblockGlobal?.enabled ? "Off for this host: only the global geo blocking rules apply." : undefined}
       actions={
         <span className="flex items-center gap-2 text-[13px]">
           <span id="f-geo-enabled-label">Geo blocking for this host</span>
@@ -270,15 +268,12 @@ export function GeoBlockCard() {
                   values={geo.trustedProxies}
                   onChange={(trustedProxies) => set({ trustedProxies })}
                   placeholder="private_ranges"
-                  hint="Their X-Forwarded-For header names the client. private_ranges covers the private networks."
+                  hint="private_ranges covers the private networks."
                 />
               </div>
               <label className="flex items-start gap-2.5">
                 <Checkbox checked={geo.failClosed} onCheckedChange={(checked) => set({ failClosed: checked === true })} className="mt-0.5" />
-                <span className="flex flex-col gap-0.5">
-                  <span className="text-[13px] font-medium">Block clients whose address is unknown</span>
-                  <span className="text-xs text-soft">For example behind a trusted proxy that sends no usable X-Forwarded-For.</span>
-                </span>
+                <span className="text-[13px] font-medium">Block clients whose address is unknown</span>
               </label>
               <div className="grid grid-cols-[repeat(auto-fit,minmax(min(200px,100%),1fr))] gap-x-4 gap-y-3">
                 <TextField id="f-geo-status" name="geoblockResponseStatus" label="Status code" value={geo.responseStatus} onChange={(responseStatus) => set({ responseStatus })} inputMode="numeric" mono />

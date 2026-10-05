@@ -10,10 +10,14 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SearchField } from "@/components/ui/SearchField";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { Switch } from "@/components/ui/switch";
 import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import type { BreakGlassCandidate, SsoEnforcementView } from "@/ee/sso/enforcement";
+
+/** More break-glass candidates than this get a search box. */
+const CANDIDATE_SEARCH_FROM = 10;
 
 type SaveResult = { ok: true; view: SsoEnforcementView } | { ok: false; error: string };
 
@@ -42,7 +46,12 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [query, setQuery] = useState("");
   const readOnly = !view.configurable;
+  const needle = query.trim().toLowerCase();
+  const shownCandidates = needle
+    ? candidates.filter((candidate) => `${candidate.username} ${candidate.name ?? ""}`.toLowerCase().includes(needle))
+    : candidates;
 
   const dirty = useMemo(() => {
     const current = selectableUsernames(view);
@@ -82,13 +91,13 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
         className="mb-0"
         breadcrumb={["Identity", { label: "Sign-in and directories", href: "/sign-in" }, "Single sign-on"]}
         title="Single sign-on"
-        description={`Require administrators and users to sign in to ${productName} through your identity provider. This covers the dashboard only; the forward-auth portal for protected applications is not affected.`}
+        description={`Require sign-in to ${productName} through your identity provider. The forward-auth portal is not affected.`}
       />
 
       {readOnly && (
         <Banner tone="info" title="Read-only without a license.">
-          Changing enforced SSO needs an active Business license or higher. The current setting keeps working and is shown read-only;
-          you can still turn it off. <Link href="/license" className="text-brand underline-offset-4 hover:underline">Manage the license</Link>
+          Changing enforced SSO needs a Business license or higher. You can still turn it off.{" "}
+          <Link href="/license" className="text-brand underline-offset-4 hover:underline">Manage the license</Link>
         </Banner>
       )}
 
@@ -134,11 +143,22 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
               These accounts can still sign in with their username and password, for example while the identity provider is down.
               Keep at least one active administrator here and store its password safely.
             </p>
+            {candidates.length > CANDIDATE_SEARCH_FROM && (
+              <SearchField
+                aria-label="Find an account"
+                placeholder="Find an account"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="w-full max-w-sm"
+              />
+            )}
             {candidates.length === 0 ? (
               <p className="m-0 text-sm text-muted-foreground">No account can sign in with a password.</p>
+            ) : shownCandidates.length === 0 ? (
+              <p className="m-0 text-sm text-muted-foreground">No account matches.</p>
             ) : (
               <div className="max-h-72 divide-y divide-line overflow-y-auto rounded-xl border border-line">
-                {candidates.map((candidate) => {
+                {shownCandidates.map((candidate) => {
                   const id = `break-glass-${candidate.id}`;
                   return (
                     <div key={candidate.id} className="flex items-center gap-3 px-3 py-2">
@@ -176,7 +196,6 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
         <div className="flex min-w-0 flex-col gap-5">
           <SectionCard
             title="Identity providers"
-            description="Enabled providers stay on the login page while SSO is enforced."
             padded
             contentClassName="flex flex-col gap-3"
           >
@@ -195,7 +214,7 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
             <div className="flex flex-wrap gap-2">
               {canReadSettings && (
                 <Button variant="outline" size="sm" asChild>
-                  <Link href="/settings?section=oauth">Manage OAuth providers</Link>
+                  <Link href="/oauth-providers">Manage OAuth providers</Link>
                 </Button>
               )}
               <Button variant="outline" size="sm" asChild>

@@ -66,10 +66,7 @@ export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => 
             <Input id="export-to" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
           </div>
         </div>
-        <p className="text-[13px] text-muted-foreground">
-          Leave the dates empty to export everything. Exports include each event&apos;s hash, so the copy can be verified later. The
-          export itself is recorded in the audit log.
-        </p>
+        <p className="text-[13px] text-muted-foreground">Leave the dates empty to export everything.</p>
       </div>
     </AppDialog>
   );
@@ -155,11 +152,7 @@ export function ChainBanner({ chain, licensed }: { chain: AuditChainStatus; lice
           </Button>
         }
       >
-        <p className="m-0 text-[13px]">
-          Each event stores a SHA-256 hash that covers the event before it, so changing, removing or inserting an event breaks the
-          chain. Streamed and exported copies show if someone rewrote the whole chain.
-        </p>
-        {anchorLine.length > 0 && <p className="num m-0 mt-1 text-xs text-soft">{anchorLine.join(" · ")}</p>}
+        {anchorLine.length > 0 && <p className="num m-0 text-xs text-soft">{anchorLine.join(" · ")}</p>}
       </Banner>
       {error && (
         <Banner tone="bad" live onDismiss={() => setError(null)}>

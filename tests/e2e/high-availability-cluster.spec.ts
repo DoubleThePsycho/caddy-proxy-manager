@@ -24,12 +24,12 @@ test.describe('High availability: dashboard cluster (off on the test stack)', ()
     expect(response.headers()['x-ha-role']).toBeUndefined();
   });
 
-  test('Settings shows the cluster group with how to set it up', async ({ page }) => {
-    // On PostgreSQL the group shows the replicas instead (postgres-replicas.spec.ts).
+  test('High availability shows the cluster with how to set it up', async ({ page }) => {
+    // On PostgreSQL the page shows the replicas instead (postgres-replicas.spec.ts).
     const nodes = await page.request.get('/api/v1/cluster/nodes');
     test.skip((await nodes.json()).enabled === true, 'The test stack runs on PostgreSQL');
-    await page.goto('/settings?section=high-availability');
-    const group = page.locator('section[data-settings-group="high-availability"]');
+    await page.goto('/high-availability');
+    const group = page.getByRole('main');
     await expect(group.getByRole('heading', { name: 'Dashboard cluster' })).toBeVisible();
     await expect(group.getByText('High availability is off on this node')).toBeVisible();
     await expect(group.getByRole('link', { name: 'Read the setup guide' })).toHaveAttribute('href', /ee\/docs\/high-availability\.md$/);

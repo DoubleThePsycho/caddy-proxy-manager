@@ -191,10 +191,11 @@ test.describe('OAuth link/unlink synchronizes the Ingressi user state (#261)', (
     await unlinkButton.click();
     await page.getByRole('button', { name: /^unlink oauth$/i }).click();
 
-    // The page reloads and must show the account as no longer linked.
-    await expect(page.getByText(/link an oauth provider to enable single sign-on/i)).toBeVisible({
+    // The page reloads and must show the account as no longer linked, offering to link it again.
+    await expect(page.getByRole('button', { name: new RegExp(`^link ${provider.name}$`, 'i') })).toBeVisible({
       timeout: 30_000,
     });
+    await expect(page.getByText(/your account is linked to/i)).toHaveCount(0);
 
     const adminUser = await getAdminUser(admin);
     expect(adminUser.provider, 'users.provider must fall back to credentials').toBe('credentials');

@@ -127,7 +127,7 @@ export function TrafficChart({
       title={compact ? `Traffic, ${rangeLabel}` : <><span className="md:hidden">Traffic</span><span className="max-md:hidden">Traffic, {rangeLabel}</span></>}
       divided={false}
       padded
-      className="max-md:[&>div:first-child]:px-3.5 max-md:[&>div:first-child]:py-1"
+      className="relative max-md:[&>div:first-child]:px-3.5 max-md:[&>div:first-child]:py-1"
       contentClassName="pt-0 max-md:px-3.5 max-md:pb-3"
       actions={
         <span className="flex items-center gap-3 max-md:gap-2">
@@ -174,8 +174,8 @@ export function TrafficChart({
 export function TrafficUnavailable({ status }: { status: "disabled" | "unavailable" }) {
   if (status === "unavailable") {
     return (
-      <Banner tone="warn" title="ClickHouse did not answer, so the traffic figures are missing.">
-        They come back on their own once it answers; the rest of the overview is up to date.
+      <Banner tone="warn" title="Traffic could not be read.">
+        ClickHouse did not answer.
       </Banner>
     );
   }
@@ -187,7 +187,7 @@ export function TrafficUnavailable({ status }: { status: "disabled" | "unavailab
         title="Analytics are off"
         description={
           <>
-            Traffic, error and bandwidth figures need the ClickHouse database. Set <span className="num">COMPOSE_PROFILES=clickhouse</span> and a{" "}
+            Set <span className="num">COMPOSE_PROFILES=clickhouse</span> and a{" "}
             <span className="num">CLICKHOUSE_PASSWORD</span> in <span className="num">.env</span>, then run{" "}
             <span className="num">docker compose up -d</span>.
           </>

@@ -87,40 +87,34 @@ function formFromSettings(settings: WafSettings | null): FormState {
 }
 
 const MODES: { value: EngineMode; label: string; description: string; recommended?: boolean }[] = [
-  { value: "Off", label: "Off", description: "Requests reach the upstreams without inspection. Nothing is logged." },
-  { value: "DetectionOnly", label: "Detection only", description: "Every request is checked and matches are logged as events, but nothing is blocked." },
-  {
-    value: "On",
-    label: "Blocking",
-    description: "A request whose anomaly score reaches the inbound threshold gets 403 Forbidden. Every match is logged.",
-    recommended: true,
-  },
+  { value: "Off", label: "Off", description: "No inspection, nothing logged." },
+  { value: "DetectionOnly", label: "Detection only", description: "Matches are logged, nothing is blocked." },
+  { value: "On", label: "Blocking", description: "Requests over the inbound threshold get 403.", recommended: true },
 ];
 
 const LEVELS: { level: ParanoiaLevel; name: string; cost: string; tone: "ok" | "warn" | "bad"; description: string }[] = [
-  { level: 1, name: "Baseline", cost: "Rare", tone: "ok", description: "Catches common attacks with rules that seldom match normal traffic." },
+  { level: 1, name: "Baseline", cost: "Rare", tone: "ok", description: "Common attacks, with rules that seldom match normal traffic." },
   {
     level: 2,
     name: "Elevated",
     cost: "Some",
     tone: "warn",
-    description:
-      "Adds rules for encoded and obfuscated attacks. Expect false positives on search boxes, rich-text editors and JSON APIs that accept free text; most apps need one or two exclusions.",
+    description: "Adds encoded and obfuscated attacks. Search boxes, rich-text editors and JSON APIs often need an exclusion.",
   },
   {
     level: 3,
     name: "Strict",
     cost: "Frequent",
     tone: "bad",
-    description: "Adds limits on special characters, argument lengths and request formats. Every app needs tuning; run it in detection only for a week before blocking.",
+    description: "Adds limits on special characters, argument lengths and request formats. Try it in detection only first.",
   },
-  { level: 4, name: "Paranoid", cost: "Very frequent", tone: "bad", description: "Treats almost any special character as suspicious. Only for small APIs whose inputs you fully control." },
+  { level: 4, name: "Paranoid", cost: "Very frequent", tone: "bad", description: "Only for small APIs whose inputs you control." },
 ];
 
 const BODY_HELP: Record<BodyAction, string> = {
-  "": "Uses Coraza’s default: reject with 413 Payload Too Large.",
-  Reject: "Rejects bodies over the limit with 413 Payload Too Large.",
-  ProcessPartial: `Inspects the first part of the body up to the limit and forwards the rest, so large uploads go through. Coraza’s hard maximum is ${MAX_BODY_LIMIT_MIB.toLocaleString("en-US")} MiB.`,
+  "": "Bodies over the limit get 413.",
+  Reject: "Bodies over the limit get 413.",
+  ProcessPartial: "Inspects the start of the body and forwards the rest, so large uploads go through.",
 };
 
 const fmt = (value: number) => value.toLocaleString("en-US");
@@ -165,12 +159,6 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
   const usingWaf = data.hosts.filter((host) => host.configured && host.mode !== "off").length;
   const level = LEVELS[form.paranoia - 1];
   const detectionLevel = form.logNext && form.paranoia < 4 ? form.paranoia + 1 : form.paranoia;
-  const writtenAs = [
-    `tx.blocking_paranoia_level=${form.paranoia}`,
-    ...(detectionLevel > form.paranoia ? [`tx.detection_paranoia_level=${detectionLevel}`] : []),
-    `tx.inbound_anomaly_score_threshold=${inbound ?? "?"}`,
-    `tx.outbound_anomaly_score_threshold=${outbound ?? "?"}`,
-  ].join(", ");
 
   // The strip describes what is applied now, which a never-saved form does not.
   const savedTuning = resolveWafTuning(data.settings);
@@ -220,18 +208,13 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
       ? {
           tone: "bad" as const,
           title: "Nothing would be inspected.",
-          text:
-            summary.blocked > 0
-              ? `In the last 7 days the WAF blocked ${plural(summary.blocked, "request")} on these hosts.`
-              : "Requests would reach the upstreams without any check.",
+          text: summary.blocked > 0 ? `The WAF blocked ${plural(summary.blocked, "request")} in the last 7 days.` : "",
         }
       : form.mode === "DetectionOnly"
         ? {
             tone: "warn" as const,
             title: "Matches would be logged, not blocked.",
-            text: `${
-              summary.blocked > 0 ? `The ${plural(summary.blocked, "request")} blocked in the last 7 days would have reached the upstreams. ` : ""
-            }Detection only suits a trial week after raising the paranoia level; switch back afterwards.`,
+            text: summary.blocked > 0 ? `The ${plural(summary.blocked, "request")} blocked in the last 7 days would have gone through.` : "",
           }
         : null;
 
@@ -266,7 +249,7 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
 
       {readOnly && (
         <p role="note" className="rounded-lg border bg-muted/30 px-4 py-2.5 text-sm text-muted-foreground">
-          You can view the WAF settings. Changing them needs the WAF write permission.
+          Read-only: changing the WAF settings needs the waf:write permission.
         </p>
       )}
 
@@ -274,8 +257,7 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
         <div role="status" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border bg-primary/5 px-4 py-2.5">
           <Info className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
           <span className="min-w-0 flex-1 text-sm">
-            <span className="font-semibold">Not applied yet: {changed.map((key) => FIELD_LABELS[key]).join(", ")}.</span>{" "}
-            <span className="text-muted-foreground">Saving rebuilds the Caddy configuration and applies it to this node.</span>
+            <span className="font-semibold">Not applied yet: {changed.map((key) => FIELD_LABELS[key]).join(", ")}.</span>
           </span>
           <span className="flex gap-2">
             <Button size="sm" variant="outline" onClick={discard} disabled={pending}>Discard</Button>
@@ -293,18 +275,14 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border bg-card px-4 py-2.5 text-sm text-muted-foreground">
         <span className="flex items-center gap-2 text-foreground">
           <ToneDot tone={appliedMode === "On" ? "ok" : appliedMode === "DetectionOnly" ? "warn" : "bad"} />
-          {hostModeSummary(data.hosts)}, using {appliedCrs ? `the OWASP Core Rule Set ${OWASP_CRS_VERSION}` : "custom rules only"}
+          {hostModeSummary(data.hosts)}
         </span>
-        <span>
-          {appliedCrs ? `Paranoia level ${savedTuning.paranoiaLevel} · inbound threshold ${savedTuning.inboundThreshold}` : "Core Rule Set not loaded"}
-        </span>
+        <span>{appliedCrs ? `Core Rule Set ${OWASP_CRS_VERSION}, paranoia level ${savedTuning.paranoiaLevel}` : "Custom rules only"}</span>
         {data.analyticsEnabled && (
           <span>
-            Last 7 days: <span className="font-mono">{fmt(summary.total)}</span> events, <span className="font-mono">{fmt(summary.blocked)}</span> blocked,{" "}
-            <span className="font-mono">{fmt(summary.uniqueClientIps)}</span> source addresses
+            Last 7 days: <span className="font-mono">{fmt(summary.total)}</span> events, <span className="font-mono">{fmt(summary.blocked)}</span> blocked
           </span>
         )}
-        <Link href="/security?kind=waf" className="ml-auto text-primary hover:underline">Open events</Link>
       </div>
 
       <div className="flex flex-wrap items-start gap-5">
@@ -313,11 +291,11 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
             <div className="flex flex-wrap items-start gap-3">
               <div className="flex min-w-0 flex-[1_1_300px] flex-col gap-0.5">
                 <h2 id="waf-mode-title" className="text-base font-semibold">Global mode</h2>
-                <p className="text-sm text-muted-foreground">
-                  {form.enabled
-                    ? "The mode for every proxy host. A host can turn the WAF off or set its own mode in the table below."
-                    : `The mode for hosts that use the WAF, ${fmt(usingWaf)} of ${fmt(data.hosts.length)} today. A host can turn it off or set its own mode in the table below.`}
-                </p>
+                {!form.enabled && (
+                  <p className="text-sm text-muted-foreground">
+                    Used by <span className="font-mono">{fmt(usingWaf)}</span> of <span className="font-mono">{fmt(data.hosts.length)}</span> hosts
+                  </p>
+                )}
               </div>
               <label className="flex items-center gap-2.5 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
                 <Switch
@@ -373,7 +351,8 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
               >
                 <TriangleAlert className={cn("mt-0.5 h-4 w-4 shrink-0", modeNote.tone === "bad" ? "text-destructive" : "text-muted-foreground")} aria-hidden="true" />
                 <span>
-                  <span className="font-semibold">{modeNote.title}</span> <span className="text-muted-foreground">{modeNote.text}</span>
+                  <span className="font-semibold">{modeNote.title}</span>
+                  {modeNote.text && <span className="text-muted-foreground"> {modeNote.text}</span>}
                 </span>
               </div>
             )}
@@ -384,9 +363,7 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
               <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-0.5">
                 <h2 id="waf-crs-title" className="text-base font-semibold">Rule set</h2>
                 <p className="text-sm text-muted-foreground">
-                  OWASP Core Rule Set <span className="font-mono">{OWASP_CRS_VERSION}</span>, built into the Caddy image. It covers SQL
-                  injection, cross-site scripting, file inclusion, remote code execution, scanners and protocol abuse. Without it only
-                  your custom rules run.
+                  OWASP Core Rule Set <span className="font-mono">{OWASP_CRS_VERSION}</span>. Without it only your custom rules run.
                 </p>
               </div>
               <label className="flex items-center gap-2.5 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
@@ -448,10 +425,7 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
                       onCheckedChange={(value) => set("logNext", value === true)}
                       className="mt-0.5"
                     />
-                    <span className="flex flex-col gap-0.5">
-                      <span>Also log level <span className="font-mono">{form.paranoia + 1}</span> matches without blocking them</span>
-                      <span className="text-muted-foreground">Shows what raising the level would catch, and what it would break, before you raise it.</span>
-                    </span>
+                    <span>Also log level <span className="font-mono">{form.paranoia + 1}</span> matches without blocking them</span>
                   </label>
                 )}
               </div>
@@ -474,8 +448,7 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
                     </span>
                   </div>
                   <span id="waf-th-in-help" className={cn("text-xs", fieldErrors.inbound ? "text-destructive" : "text-muted-foreground")}>
-                    {fieldErrors.inbound ??
-                      "Every match adds to the request's score: critical 5, error 4, warning 3, notice 2. At 5, one critical match is enough."}
+                    {fieldErrors.inbound ?? "At 5, one critical match is enough. Lower blocks more."}
                   </span>
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -495,8 +468,7 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
                     </span>
                   </div>
                   <span id="waf-th-out-help" className={cn("text-xs", fieldErrors.outbound ? "text-destructive" : "text-muted-foreground")}>
-                    {fieldErrors.outbound ??
-                      "Scores responses for leaks such as SQL errors, stack traces and directory listings. Lower blocks more, higher lets more through."}
+                    {fieldErrors.outbound ?? "For responses that leak SQL errors or stack traces."}
                   </span>
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -510,14 +482,11 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
                       { value: "log", label: "Log only" },
                     ]}
                   />
-                  <span className="text-xs text-muted-foreground">
-                    {form.anomalyAction === "log"
-                      ? "Requests over the threshold are logged as events and reach the upstream. Custom rules that deny still block."
-                      : "Requests over the threshold get 403 Forbidden and are logged."}
-                  </span>
+                  {form.anomalyAction === "log" && (
+                    <span className="text-xs text-muted-foreground">They reach the upstream. Custom rules that deny still block.</span>
+                  )}
                 </div>
               </div>
-              <span className="font-mono text-xs text-muted-foreground">Written as {writtenAs}</span>
             </fieldset>
           </section>
 
@@ -525,8 +494,7 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
             <div className="flex flex-col gap-0.5">
               <h2 id="waf-body-title" className="text-base font-semibold">Request bodies</h2>
               <p className="text-sm text-muted-foreground">
-                Coraza holds each request body to inspect it. With the Core Rule Set its limit is <span className="font-mono">12.5 MiB</span>,
-                which is why large uploads fail with 413. Hosts can set their own limits.
+                Uploads over the limit (<span className="font-mono">12.5 MiB</span> by default) fail with 413. Hosts can set their own.
               </p>
             </div>
             <fieldset disabled={readOnly} className="grid grid-cols-[repeat(auto-fit,minmax(min(200px,100%),1fr))] gap-3.5">
@@ -583,7 +551,7 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
         <WafRulesStopped week={data.week} analyticsEnabled={data.analyticsEnabled} />
       </div>
 
-      <WafHostsSection hosts={data.hosts} globalMode={saved.mode} appliesToAll={saved.enabled} canWrite={data.canWrite} />
+      <WafHostsSection hosts={data.hosts} globalMode={saved.mode} canWrite={data.canWrite} />
 
       <WafExclusionsSection exclusions={data.exclusions} hosts={data.hosts} canWrite={data.canWrite} />
 
@@ -594,10 +562,6 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
         readOnly={readOnly}
         droppedDirectives={data.droppedDirectives}
       />
-
-      <p className="text-xs text-muted-foreground">
-        {data.analyticsEnabled ? "Event counts from ClickHouse, last 7 days. Times in UTC." : "Event counts need ClickHouse analytics, which are off. Times in UTC."}
-      </p>
     </div>
   );
 }

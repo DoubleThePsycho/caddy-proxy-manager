@@ -59,7 +59,6 @@ export function ErrorPagesFields({ initialData = [], name = "errorPagesJson" }: 
 
   return (
     <div>
-      <p className="text-sm font-semibold mb-2">Error Pages</p>
       <input type="hidden" name={name} value={toJson(rules)} />
       {rules.length > 0 && (
         <div className="mb-2 flex flex-col gap-3">
@@ -68,6 +67,7 @@ export function ErrorPagesFields({ initialData = [], name = "errorPagesJson" }: 
               <div className="grid grid-cols-[1fr_1fr_40px] gap-2 items-center">
                 <Input
                   size={1}
+                  aria-label="Status codes"
                   placeholder="502, 503, 504 (blank = all errors)"
                   value={rule.statuses}
                   onChange={(e) => updateRule(i, "statuses", e.target.value)}
@@ -75,6 +75,7 @@ export function ErrorPagesFields({ initialData = [], name = "errorPagesJson" }: 
                 />
                 <Input
                   size={1}
+                  aria-label="Content type"
                   placeholder="text/html; charset=utf-8"
                   value={rule.contentType}
                   onChange={(e) => updateRule(i, "contentType", e.target.value)}
@@ -85,12 +86,14 @@ export function ErrorPagesFields({ initialData = [], name = "errorPagesJson" }: 
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8"
+                  aria-label="Remove error page"
                   onClick={() => removeRule(i)}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
               <Textarea
+                aria-label="Page body"
                 placeholder="<h1>Service temporarily unavailable</h1>"
                 value={rule.body}
                 onChange={(e) => updateRule(i, "body", e.target.value)}
@@ -102,12 +105,8 @@ export function ErrorPagesFields({ initialData = [], name = "errorPagesJson" }: 
       )}
       <Button type="button" variant="ghost" size="sm" onClick={addRule}>
         <Plus className="h-4 w-4 mr-1" />
-        Add Error Page
+        Add error page
       </Button>
-      <p className="text-xs text-muted-foreground mt-1">
-        Serve a custom response body when a request errors (e.g. 502/503 when the upstream is down, or 404).
-        Comma-separate status codes, or leave blank to match every error. The original status code is preserved.
-      </p>
     </div>
   );
 }

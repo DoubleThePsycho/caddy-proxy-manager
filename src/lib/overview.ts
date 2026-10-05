@@ -327,7 +327,7 @@ export async function loadNodes(access: Access): Promise<OverviewNodes> {
   const link = can(access, "fleet:read")
     ? { label: "Fleet", href: "/fleet" }
     : can(access, "instances:read") && can(access, "settings:read")
-      ? { label: "Instance sync", href: "/settings?section=sync" }
+      ? { label: "Instance sync", href: "/instances" }
       : null;
   return { mode, nodes: [self, ...nodes.slice(0, NODES_SHOWN)], more: Math.max(0, nodes.length - NODES_SHOWN), link };
 }

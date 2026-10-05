@@ -14,11 +14,10 @@ import type { MonetizationOptionsView, ReplicaMode } from "../types";
 import { callApi, Field, LOCKED_HINT } from "./shared";
 
 const MODE_HINTS: Record<ReplicaMode, string> = {
-  off: "Sync replicas and pull replicas do not serve monetized hosts: only this instance does.",
+  off: "Only this instance serves monetized hosts.",
   shared:
-    "Replicas charge the same balances in the high availability shared state (Redis or Valkey) this instance uses, with its credentials: use it only for replicas you trust like this instance. Every replica must reach it with the certificate storage settings it receives.",
-  allowance:
-    "Replicas ask this instance's gate for small allowances (up to 50 requests, 30 seconds) with a credential derived from their sync secret; each allowance is charged before the replica admits a request. A replica that cannot reach the gate refuses requests.",
+    "Replicas charge the same balances through the shared state (Redis or Valkey) with this instance's credentials: use it only for replicas you trust like this instance.",
+  allowance: "Replicas take small prepaid allowances from this instance's gate. A replica that cannot reach the gate refuses requests.",
 };
 
 /** Install-wide options: usage history retention, serving monetized hosts on sync replicas. */
@@ -67,7 +66,7 @@ export default function SettingsTab({
       )}
       <SectionCard
         title="Usage history"
-        description="Hourly usage and failed-answer credit entries older than this are deleted once a day. Top-ups, payments, refunds, disputes and adjustments are kept, and balances never change."
+        description="Usage and failed-answer credit entries older than this are deleted. Top-ups, payments, refunds, disputes and adjustments are kept, and balances never change."
       >
         <div className="flex flex-wrap items-end gap-3 px-[18px] py-4">
           <div className="w-40">
@@ -88,10 +87,7 @@ export default function SettingsTab({
         </div>
       </SectionCard>
 
-      <SectionCard
-        title="Sync replicas"
-        description="Whether replicas of this instance (instance sync slaves and fleet pull replicas) serve monetized hosts. They never serve one without gating it with this instance's balances."
-      >
+      <SectionCard title="Sync replicas">
         <div className="flex flex-col gap-4 px-[18px] py-4">
           {instanceMode === "slave" && (
             <Banner tone="info" title="This instance is a replica.">
@@ -119,7 +115,7 @@ export default function SettingsTab({
             <Field
               label="Gate URL for replicas"
               htmlFor="replica-gate-url"
-              hint="Where pushed replicas reach this instance: https (http only with INSTANCE_SYNC_ALLOW_HTTP=true). Empty: BASE_URL, which must then be https. Pull replicas use the master URL they poll."
+              hint="Where pushed replicas reach this instance, over https. Empty: BASE_URL. Pull replicas use the master URL they poll."
             >
               <Input
                 id="replica-gate-url"
@@ -148,11 +144,11 @@ export default function SettingsTab({
         </div>
       </SectionCard>
 
-      <SectionCard title="Failed-answer credits" description="A plan option: requests answered with a 5xx are credited back from the access log.">
+      <SectionCard title="Failed-answer credits">
         <p className="m-0 px-[18px] py-4 text-[13px] text-muted-foreground">
           {options.analyticsAvailable
-            ? "Available: ClickHouse analytics is configured, so the access log records each request's answer. Turn the option on per plan."
-            : "Not available: it needs ClickHouse analytics (CLICKHOUSE_PASSWORD), the pipeline that reads the access log. Plans that already have it keep it, and resume crediting once ClickHouse is back."}
+            ? "Available. Turn it on per plan to credit back requests answered with a 5xx."
+            : "Not available: it needs ClickHouse analytics. Plans that already have it resume crediting once ClickHouse is back."}
         </p>
       </SectionCard>
     </div>

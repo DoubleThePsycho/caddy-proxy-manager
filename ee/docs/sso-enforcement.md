@@ -21,7 +21,7 @@ Enforced SSO turns off password sign-in to the dashboard for everyone except a s
 
 ## Setup
 
-1. Configure and enable at least one OAuth/OIDC provider (**Settings → OAuth providers**) or SAML provider (**Sign-in and directories → SAML**). Check that administrators can sign in with it, and link existing accounts from **Profile** if needed.
+1. Configure and enable at least one OAuth/OIDC provider (the **OAuth providers** page) or SAML provider (**Sign-in and directories → SAML**). Check that administrators can sign in with it, and link existing accounts from **Profile** if needed.
 2. Choose one or more break-glass accounts. At least one must be an **active administrator that can sign in on the login page with a username and password**. Store its password offline, for example in a safe or a password manager outside the identity provider.
 3. Open **Sign-in and directories → Single sign-on**, select the break-glass accounts, turn on **Require single sign-on for dashboard sign-in** and save.
 

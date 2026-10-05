@@ -72,8 +72,7 @@ export function BlockSourceDialog({ target, onClose, onBlocked }: { target: Bloc
         <DialogHeader>
           <DialogTitle>Block {target?.ip}</DialogTitle>
           <DialogDescription>
-            Adds the address to the <Link href="/access-lists" className="text-brand hover:underline">Blocked sources</Link> access list,
-            which every host checks before anything else. Requests from it are refused right away.
+            Every host refuses its requests (the <Link href="/access-lists?tab=blocked-sources" className="text-brand hover:underline">Blocked sources</Link> list).
           </DialogDescription>
         </DialogHeader>
         <form
@@ -95,9 +94,6 @@ export function BlockSourceDialog({ target, onClose, onBlocked }: { target: Bloc
               options={EXPIRY.map((option) => ({ value: option.value, label: option.label }))}
               className="self-start"
             />
-            <span className="text-xs text-muted-foreground">
-              {expiry === "never" ? "The entry stays until someone removes it." : "The entry is removed when the time is up."}
-            </span>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="block-reason">

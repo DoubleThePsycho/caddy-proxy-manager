@@ -90,7 +90,7 @@ export function EnforcementSection({ enforcement, canWriteSso, canReadAuditLog, 
               {changed}
               {enforcement.enabled
                 ? `Password sign-in is refused for everyone except ${plural(breakGlassCount, "break-glass account")}, and nobody can register with a password.`
-                : "Anyone with a password can sign in on the login page. Requiring single sign-on sends everyone through your identity provider and keeps break-glass accounts for outages."}
+                : "Anyone with a password can sign in on the login page."}
             </span>
           </span>
           <span className="flex flex-wrap gap-2">

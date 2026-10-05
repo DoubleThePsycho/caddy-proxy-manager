@@ -1082,7 +1082,7 @@ const spec = {
         summary: "Pin an instance's sync key",
         description:
           "Pins the given sync public key for the instance's base URL, replacing any pin (source \"manual\"), so syncs are sealed to that key only. " +
-          "Read the key from the slave itself (its Settings page, or GET /api/v1/instances/sync-key there) over a channel you trust. " +
+          "Read the key from the slave itself (its Instance sync page, or GET /api/v1/instances/sync-key there) over a channel you trust. " +
           "Unlike a reset, this leaves no sync that trusts whatever key answers. Instances and INSTANCE_SLAVES entries with the same URL share the pin.",
         operationId: "pinInstanceSyncKey",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
@@ -4272,7 +4272,7 @@ const spec = {
           publicKey: {
             type: "string",
             pattern: "^[A-Za-z0-9+/]{43}=$",
-            description: "The slave's sync public key (raw 32-byte X25519, base64), as the slave's Settings page and GET /api/v1/instances/sync-key show it",
+            description: "The slave's sync public key (raw 32-byte X25519, base64), as the slave's Instance sync page and GET /api/v1/instances/sync-key show it",
           },
         },
         required: ["publicKey"],

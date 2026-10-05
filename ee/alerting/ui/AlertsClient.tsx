@@ -8,7 +8,6 @@ import { Plus } from "lucide-react";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { StatusDot } from "@/components/ui/StatusDot";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FREE_CHANNEL_TYPES, FREE_RULE_TYPES, type AlertChannelView, type AlertEventView, type AlertRuleView, type FiringAlertView } from "@/ee/alerting/types";
 import type { AlertingLicenseView } from "@/ee/alerting/gate";
@@ -113,14 +112,11 @@ export default function AlertsClient({
           breadcrumb={["Observe", "Alerts"]}
           title="Alerts"
           actions={
-            <>
-              <StatusDot tone="ok" label={<span className="text-soft">Rules are checked every minute on this node.</span>} />
-              {canWrite && (
-                <Button onClick={() => openEditor(null)}>
-                  <Plus /> New rule
-                </Button>
-              )}
-            </>
+            canWrite && (
+              <Button onClick={() => openEditor(null)}>
+                <Plus /> New rule
+              </Button>
+            )
           }
         >
           <TabsList aria-label="Alert sections">
@@ -139,9 +135,8 @@ export default function AlertsClient({
 
         {!license.alerting && (
           <Banner tone="info">
-            Community includes e-mail channels and certificate-expiry rules that notify them. Slack, Teams, webhooks,
-            PagerDuty, ntfy and the other rule types need a license with Alerting; anything already set up keeps running,
-            is shown read-only and can still be disabled or deleted.{" "}
+            Community includes e-mail channels and certificate-expiry rules. Other channels and rule types need a license
+            with Alerting; existing ones keep running and can still be disabled or deleted.{" "}
             <Link href="/license" className="text-brand underline underline-offset-2">
               Licensing
             </Link>

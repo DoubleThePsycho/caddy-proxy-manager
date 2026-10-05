@@ -10,17 +10,25 @@ import { getAlertingLicenseView } from "@/ee/alerting/gate";
 import { getAiSettingsView } from "@/ee/ai/settings";
 import { getDigestSettingsView } from "@/ee/ai/digest-settings";
 import { getQuestionSettings } from "@/ee/ai/questions/settings";
+import { DEFAULT_PAGE_SIZE, parsePageParam } from "@/src/lib/pagination";
 import AlertsClient, { type AlertsTab } from "./AlertsClient";
 
 export const metadata = { title: "Alerts" };
 
-const HISTORY_PER_PAGE = 25;
+const HISTORY_PER_PAGE = DEFAULT_PAGE_SIZE;
 /** The newest events read for the "Last 7 days" table. */
 const RECENT_EVENTS = 200;
 const TABS: readonly AlertsTab[] = ["firing", "rules", "channels", "ai", "history"];
 
 interface PageProps {
-  searchParams: Promise<{ tab?: string; page?: string }>;
+  searchParams: Promise<{ tab?: string; page?: string | string[] }>;
+}
+
+/** A page of the history; the last one when the page asked for is past the end. */
+async function historyPage(page: number) {
+  const result = await listAlertEvents({ page, perPage: HISTORY_PER_PAGE });
+  const last = Math.max(1, Math.ceil(result.total / HISTORY_PER_PAGE));
+  return page > last ? listAlertEvents({ page: last, perPage: HISTORY_PER_PAGE }) : result;
 }
 
 export default async function AlertsPage({ searchParams }: PageProps) {
@@ -30,7 +38,7 @@ export default async function AlertsPage({ searchParams }: PageProps) {
   const canWrite = can(access, "alerts:write");
   const { tab: tabParam, page: pageParam } = await searchParams;
   const tab = TABS.find((candidate) => candidate === tabParam && (candidate !== "ai" || canAi)) ?? "firing";
-  const page = Math.max(1, Number.parseInt(pageParam ?? "1", 10) || 1);
+  const page = parsePageParam(pageParam);
   const now = Date.now();
   // Every view below is already free of credentials; proxy hosts are reduced to ids and names.
   const [channels, rules, firing, recent, history, hosts, ai, digest, license, questions] = await Promise.all([
@@ -38,9 +46,7 @@ export default async function AlertsPage({ searchParams }: PageProps) {
     listAlertRules(),
     listFiringAlerts(),
     listAlertEvents({ page: 1, perPage: RECENT_EVENTS }),
-    tab === "history"
-      ? listAlertEvents({ page, perPage: HISTORY_PER_PAGE })
-      : Promise.resolve({ events: [], total: 0, page: 1, perPage: HISTORY_PER_PAGE }),
+    tab === "history" ? historyPage(page) : Promise.resolve({ events: [], total: 0, page: 1, perPage: HISTORY_PER_PAGE }),
     // Only the hosts the user may read are offered and named.
     can(access, "proxy_hosts:read")
       ? listProxyHosts(scopeTagsFor(access, "proxy_hosts"), organizationFilterFor(access))

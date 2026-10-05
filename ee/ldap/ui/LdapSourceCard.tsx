@@ -141,12 +141,12 @@ export function LdapSourceCard({ directory, can, format }: { directory: LdapSour
       }
       footerNote={
         !directory.enabled
-          ? "Disabled directories are not checked"
+          ? "Not checked while disabled"
           : health?.status === "failing"
-            ? <>Checked every 5 minutes · <span className="num">{health.consecutiveFailures}</span> failed check{health.consecutiveFailures === 1 ? "" : "s"} in a row</>
+            ? <><span className="num">{health.consecutiveFailures}</span> failed check{health.consecutiveFailures === 1 ? "" : "s"} in a row</>
             : health
-              ? <>Checked every 5 minutes · last <span className="num">{format.dateTime(health.checkedAt)}</span></>
-              : "Checked every 5 minutes"
+              ? <>Last checked <span className="num">{format.dateTime(health.checkedAt)}</span></>
+              : "Not checked yet"
       }
       footerActions={
         <>

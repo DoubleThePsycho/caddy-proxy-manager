@@ -18,7 +18,7 @@ function AccessListCard() {
   const { form, update, data } = useEditor();
   const selected = data.accessLists.find((list) => list.id === form.accessListId) ?? null;
   const describe = () => {
-    if (!selected) return "Anyone can reach the host. Sign-in below and the upstream's own checks still apply.";
+    if (!selected) return null;
     const parts = [
       selected.description,
       `${selected.rules} ${selected.rules === 1 ? "rule" : "rules"}, ${selected.members} basic-auth ${selected.members === 1 ? "member" : "members"}; everything else is ${selected.defaultAction === "deny" ? "denied" : "let through"}.`,
@@ -31,11 +31,10 @@ function AccessListCard() {
       id="access-list"
       title="Access list"
       was="accessListId"
-      description="Address, country and basic-auth rules shared between hosts."
       actions={
         data.canChooseAccessLists ? (
-          <Link href="/access-lists" className="text-[13px] text-brand underline-offset-4 hover:underline">
-            Manage access lists
+          <Link href={selected ? `/access-lists/${selected.id}` : "/access-lists"} className="text-[13px] text-brand underline-offset-4 hover:underline">
+            {selected ? "Open list" : "Manage access lists"}
           </Link>
         ) : undefined
       }
@@ -56,13 +55,13 @@ function AccessListCard() {
             </option>
           ))}
         </SelectField>
-        <p className="m-0 text-[13px] text-muted-foreground sm:pt-7">{describe()}</p>
+        {selected && <p className="m-0 text-[13px] text-muted-foreground sm:pt-7">{describe()}</p>}
       </div>
       {data.blockedSourcesActive && (
         <div className="flex items-center gap-2.5 rounded-lg bg-panel2 px-3 py-2.5 text-[13px] text-muted-foreground">
           <Info aria-hidden="true" className="h-4 w-4 shrink-0 text-soft" />
           <span>
-            The global list <span className="text-foreground">Blocked sources</span> applies to every host, this one included.
+            <span className="text-foreground">Blocked sources</span> apply to this host too.
           </span>
         </div>
       )}
@@ -203,7 +202,7 @@ function AuthentikSignIn() {
         <Checkbox checked={a.setHostHeader} onCheckedChange={(checked) => set({ setHostHeader: checked === true })} className="mt-0.5" />
         <span className="flex flex-col gap-0.5">
           <span className="text-[13px] font-medium">Send the outpost domain as its Host header</span>
-          <span className="text-xs text-soft">Keep on unless the outpost is reached by address or you are tracing routing problems.</span>
+          <span className="text-xs text-soft">Keep on unless the outpost is reached by address.</span>
         </span>
       </label>
     </div>
@@ -243,7 +242,7 @@ function GenericSignIn() {
           hint="Authelia takes the portal address as ?authelia_url=."
           mono
         />
-        <TextField id="f-fa-headers" label="Headers copied to the upstream" value={f.copyHeaders} onChange={(copyHeaders) => set({ copyHeaders })} hint="Comma separated. Clients cannot send them themselves." mono />
+        <TextField id="f-fa-headers" label="Headers copied to the upstream" value={f.copyHeaders} onChange={(copyHeaders) => set({ copyHeaders })} hint="Comma separated." mono />
         <TextField id="f-fa-proxies" label="Trusted proxies" value={f.trustedProxies} onChange={(trustedProxies) => set({ trustedProxies })} placeholder="private_ranges" mono />
         <TextField
           id="f-fa-bypass"
@@ -260,7 +259,7 @@ function GenericSignIn() {
         <ToggleRow
           id="f-fa-api-split"
           label="401 for API clients"
-          description="API clients and WebSocket handshakes get 401 instead of a redirect to the sign-in page."
+          description="API clients and WebSocket handshakes get 401 instead of a redirect."
           checked={f.apiSplit}
           onChange={(apiSplit) => set({ apiSplit })}
         />
@@ -280,9 +279,8 @@ function SignInCard() {
     { value: "generic", label: "Authelia or custom" },
   ];
   return (
-    <EditorCard id="sign-in" title="Sign-in in front of the host" was="signIn" description="Forward auth: visitors sign in before a request reaches the upstream.">
+    <EditorCard id="sign-in" title="Sign-in in front of the host" was="signIn">
       <SegmentedField id="f-sign-in" label="Provider" value={form.signIn} onChange={(signIn) => update((f) => ({ ...f, signIn }))} options={options} />
-      {form.signIn === "none" && <p className="m-0 text-[13px] text-muted-foreground">No sign-in. Requests go straight to the upstream, which checks its own credentials if it has any.</p>}
       {form.signIn === "ingressi" && <IngressiSignIn />}
       {form.signIn === "authentik" && <AuthentikSignIn />}
       {form.signIn === "generic" && <GenericSignIn />}
@@ -304,11 +302,18 @@ function MtlsCard() {
       id="f-mtls"
       title="Client certificates (mTLS)"
       was="mtls"
-      description="Only clients holding a certificate from a trusted role or one of the chosen certificates connect at all. The host needs TLS."
+      description={m.enabled ? "Clients without a trusted certificate cannot connect at all." : undefined}
       actions={
-        <span className="flex items-center gap-2 text-[13px]">
-          <span id="f-mtls-enabled-label">Require client certificates</span>
-          <Switch id="f-mtls-enabled" aria-labelledby="f-mtls-enabled-label" checked={m.enabled} onCheckedChange={(enabled) => set({ enabled })} disabled={!data.canChooseTrust && !m.enabled} />
+        <span className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
+          {data.canChooseTrust && m.enabled && (
+            <Link href="/certificates" className="text-brand underline-offset-4 hover:underline">
+              Roles and client certificates
+            </Link>
+          )}
+          <span className="flex items-center gap-2">
+            <span id="f-mtls-enabled-label">Require client certificates</span>
+            <Switch id="f-mtls-enabled" aria-labelledby="f-mtls-enabled-label" checked={m.enabled} onCheckedChange={(enabled) => set({ enabled })} disabled={!data.canChooseTrust && !m.enabled} />
+          </span>
         </span>
       }
     >
@@ -390,13 +395,6 @@ function MtlsCard() {
             names={{ protectedPaths: "mtlsProtectedPaths", excludedPaths: "mtlsExcludedPaths" }}
           />
           {data.mode === "edit" && data.host && data.canChooseTrust && <MtlsAccessRules hostId={data.host.id} roles={data.mtlsRoles} certificates={active} />}
-          <p className="m-0 text-xs text-soft">
-            Roles and client certificates live on the{" "}
-            <Link href="/certificates" className="text-brand underline-offset-4 hover:underline">
-              Certificates
-            </Link>{" "}
-            page.
-          </p>
         </>
       )}
     </EditorCard>
@@ -412,7 +410,6 @@ function BlockedPathsCard() {
       id="f-blocks"
       title="Blocked paths"
       was="pathBlocks"
-      description="Answered here with a fixed status; the upstream never sees them."
       actions={<AddButton onClick={() => setBlocks((rows) => [...rows, { key: rowKey("pb"), path: "", status: 403, body: "Forbidden" }])}>Add blocked path</AddButton>}
       flush
     >
@@ -436,7 +433,7 @@ function BlockedPathsCard() {
           Paths that bypass the blocks
           <WasHint group="pathAllows" />
         </span>
-        <span className="text-xs text-soft">A request matching one of these is never blocked here, even when a blocked path matches it too. Allow /secret and block /* to expose only /secret.</span>
+        <span className="text-xs text-soft">Allow /secret and block /* to expose only /secret.</span>
         {form.pathAllows.map((row, index) => (
           <AllowRow
             key={row.key}

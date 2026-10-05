@@ -139,7 +139,7 @@ The policy is per dashboard and is **not synchronized** to sync slaves. Users ar
   docker compose exec web bun db-tools/break-glass.js remove-mfa-policy
   ```
 
-  Without a policy nobody is required to use MFA; set it again under **Settings** once you can sign in. The change bypasses the application, so it is not in the audit log.
+  Without a policy nobody is required to use MFA; set it again on the **Users** page once you can sign in. The change bypasses the application, so it is not in the audit log.
 
 ## Enforced SSO and break-glass accounts
 

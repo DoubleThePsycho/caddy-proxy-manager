@@ -7,11 +7,22 @@ import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+const navigation = vi.hoisted(() => ({ search: new URLSearchParams() }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
   usePathname: () => '/organizations',
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => navigation.search,
 }));
+
+/** Renders with `query` as the page's address, then puts the empty one back. */
+function withQuery<T>(query: string, run: () => T): T {
+  navigation.search = new URLSearchParams(query);
+  try {
+    return run();
+  } finally {
+    navigation.search = new URLSearchParams();
+  }
+}
 
 import OrganizationsClient, { isNearLimit, upstreamMeaning } from '@/ee/multi-tenancy/ui/OrganizationsClient';
 import UsageClient from '@/ee/multi-tenancy/ui/UsageClient';
@@ -207,6 +218,42 @@ describe('Organisations page', () => {
   });
 });
 
+describe('Organisations page with many rows', () => {
+  const many = Array.from({ length: 62 }, (_, index) =>
+    organization({ id: index + 1, name: `Client ${String(index + 1).padStart(2, '0')}`, slug: `client-${index + 1}` })
+  );
+  const members = Array.from({ length: 30 }, (_, index) => ({
+    id: 100 + index, email: `member-${index + 1}@example.com`, name: null, roleKind: 'user' as const, roleLabel: 'User', status: 'active',
+    lastSignInAt: null, mfa: false, apiTokens: 0, tokenLastUsedAt: null,
+  }));
+  const big: OrganizationsPageData = { ...data, organizations: many, selected: { ...data.selected!, id: 1, members } };
+
+  it('pages the list 25 at a time, the page in the address', () => {
+    const first = text(render({ data: big }));
+    expect(first).toContain('Client 25');
+    expect(first).not.toContain('Client 26');
+    expect(first).toMatch(/1 – 25 of 62 organisations/);
+
+    const third = withQuery('page=3', () => render({ data: big }));
+    expect(text(third)).toContain('Client 62');
+    expect(text(third)).not.toContain('Client 49 ');
+    expect(text(third)).toMatch(/51 – 62 of 62 organisations/);
+    // Opening an organisation keeps the list on its page.
+    expect(third).toContain('href="/organizations?page=3&amp;organization=62"');
+  });
+
+  it('pages the members of the opened organisation and offers to filter them', () => {
+    const html = render({ data: big });
+    expect(html).toContain('aria-label="Filter members"');
+    expect(html).toContain('member-25@example.com');
+    expect(html).not.toContain('member-26@example.com');
+    expect(text(html)).toMatch(/1 – 25 of 30 members/);
+    const second = withQuery('members=2', () => render({ data: big }));
+    expect(second).toContain('member-26@example.com');
+    expect(second).not.toContain('member-25@example.com');
+  });
+});
+
 describe('helpers', () => {
   it('counts an organisation at 80% or more of either limit as near it', () => {
     const counts = { proxyHosts: 0, certificates: 0, accessLists: 0, groups: 0, users: 0 };
@@ -253,5 +300,17 @@ describe('Usage page', () => {
     expect(body).toContain('Disabled');
     expect(body).toContain('1 enabled');
     expect(body).toContain('2026-10-01 to 2026-10-03 UTC');
+  });
+
+  it('pages a report with many organisations', () => {
+    const rows = Array.from({ length: 40 }, (_, index) => ({
+      ...report.rows[1], organizationId: index + 1, organizationName: `Client ${index + 1}`, organizationSlug: `client-${index + 1}`,
+    }));
+    const html = renderToStaticMarkup(createElement(UsageClient, { initialReport: { ...report, rows }, organizations: [], providerLevel: true }));
+    const body = text(html);
+    expect(body).toMatch(/1 – 25 of 40 rows/);
+    expect(body).toContain('Client 25');
+    expect(body).not.toContain('Client 26');
+    expect(html).toContain('aria-label="Filter organisations"');
   });
 });

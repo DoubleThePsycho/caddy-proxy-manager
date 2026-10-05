@@ -249,10 +249,7 @@ export default function RequestDetail({
 
       <div className="flex flex-col gap-5 px-5 pt-[18px] pb-5">
         {waitingForWindow && (
-          <Banner tone="ok" icon={Clock} title={request.impact.schedule.description}>
-            Before applying, the dashboard checks that {request.targetName} has not changed since the request was made and that the policies
-            still have enough approvals.
-          </Banner>
+          <Banner tone="ok" icon={Clock} title={request.impact.schedule.description} />
         )}
         {request.emergencyReason && (
           <Banner tone="bad" icon={ShieldAlert} title={`Emergency change by ${request.emergencyBy?.name ?? "unknown"}.`}>
@@ -377,13 +374,6 @@ export default function RequestDetail({
                   Cancel request
                 </Button>
               )}
-              <span className="flex-[1_1_220px] text-xs text-soft">
-                {request.status === "approved"
-                  ? "Apply now works inside the change window. An emergency change skips it and needs a reason."
-                  : viewer.canReject
-                    ? `A reason is required to reject; ${request.requestedBy.name} sees it here and in the audit log.`
-                    : "Comments are visible to everyone who can see this request and are recorded in the audit log."}
-              </span>
             </div>
           </div>
         )}
@@ -400,8 +390,8 @@ export default function RequestDetail({
       >
         <div className="flex flex-col gap-3">
           <p className="m-0 text-sm">
-            This applies {describeRequest(request)} at once, without the remaining approvals and outside any change window. It is flagged
-            as an emergency change on the request and in the audit log.
+            This applies {describeRequest(request)} at once, without the remaining approvals and outside any change window, flagged as
+            an emergency change.
           </p>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={`emergency-reason-${request.id}`}>Reason</Label>

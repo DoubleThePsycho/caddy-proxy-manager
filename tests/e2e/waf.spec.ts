@@ -114,16 +114,18 @@ test.describe('WAF settings', () => {
     await expect(page.getByRole('radiogroup', { name: 'Global mode' }).getByRole('radio', { name: /^Blocking/ })).toHaveAttribute('aria-checked', 'true');
   });
 
-  test('tuning is saved and shown in the written CRS variables', async ({ page }) => {
+  test('tuning is saved', async ({ page }) => {
     await enableGlobalWafWithCrs(page);
     await page.getByRole('radiogroup', { name: 'Paranoia level' }).getByRole('radio', { name: /Elevated/ }).click();
     await page.getByLabel('Inbound anomaly threshold').fill('7');
-    await expect(page.getByText(/Written as tx\.blocking_paranoia_level=2, tx\.inbound_anomaly_score_threshold=7/)).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Not applied yet' })).toContainText('inbound threshold');
     await page.getByRole('button', { name: 'Save and apply' }).first().click();
     await expect(page.getByText('WAF settings saved and applied.')).toBeVisible({ timeout: 15_000 });
 
     await page.reload();
     await expect(page.getByLabel('Inbound anomaly threshold')).toHaveValue('7');
+    await expect(page.getByRole('radiogroup', { name: 'Paranoia level' }).getByRole('radio', { name: /Elevated/ })).toHaveAttribute('aria-checked', 'true');
+    await expect(page.getByText('Core Rule Set 4.25, paranoia level 2')).toBeVisible();
 
     // Put the defaults back for the specs that follow.
     await page.getByRole('radiogroup', { name: 'Paranoia level' }).getByRole('radio', { name: /Baseline/ }).click();
@@ -142,6 +144,7 @@ test.describe('WAF settings', () => {
     await dialog.getByRole('button', { name: 'Add exclusion' }).click();
     await expect(dialog).toHaveCount(0);
 
+    await page.getByRole('searchbox', { name: 'Search exclusions' }).fill('Playwright');
     const row = page.getByRole('row').filter({ hasText: 'Playwright exclusion' });
     await expect(row).toContainText('/e2e-exclusion/');
     await row.getByRole('button', { name: /Remove exclusion of rule 920350/ }).click();

@@ -12,10 +12,10 @@ Both live on the **Change history** page of the dashboard (`/history`, under Gov
 - A strip shows whether recording is on, how many versions are kept and the oldest one, and the scheduled backups. **History settings** turns recording on or off, sets the retention and deletes every version.
 - **Versions** lists the versions on a timeline, newest first and grouped by day, each with its title, who made it, its size, the live marker and the change request it came from. Select one to see what it changed against the previous version, the live configuration or any other version, unified or side by side, and the **rollback preview**: the hosts and settings that would change, the later changes it would undo, later changes to the same hosts, and approval policies that would refuse it. **Roll back** asks for confirmation; the live configuration is saved as a version first.
 - **Save a version now** saves a manual version with a note. **Export or import** downloads or loads the passphrase-protected configuration file (free).
-- **Backups** sets up scheduled backups ([scheduled-backups.md](scheduled-backups.md)); `/history?tab=backups` opens it.
+- The backups line links to **Backups** (`/backups`, under Change history in the sidebar), where scheduled backups are set up ([scheduled-backups.md](scheduled-backups.md)); `/history?tab=backups` opens it too.
 - Links can open a version directly: `/history?version=<id>`, with `&compare=previous|live|<id>` and `&rollback=1` to jump to the rollback preview (the audit log links its configuration changes this way).
 
-Scheduled backups of the same export file to S3-compatible storage (Business edition) are on the same page; see [scheduled-backups.md](scheduled-backups.md).
+Scheduled backups of the same export file to S3-compatible storage (Business edition) are on the Backups page; see [scheduled-backups.md](scheduled-backups.md).
 
 ## What "the configuration" is
 

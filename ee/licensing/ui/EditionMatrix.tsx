@@ -172,8 +172,7 @@ export function EditionMatrix({ license, rows }: { license: LicenseView; rows: r
       </div>
       {shown.length === 0 && <p className="m-0 px-5 py-4 text-[13px] text-muted-foreground">No feature in this view.</p>}
       <p className="m-0 px-5 pt-3 pb-4 text-xs leading-[18px] text-soft">
-        A license is needed to set a paid feature up, turn it on or change it. Nothing already set up stops working when a license lapses. MSP
-        adds multi-tenancy and white-label to Business; it does not include the Enterprise features.
+        MSP adds multi-tenancy and white-label to Business; it does not include the Enterprise features.
       </p>
     </section>
   );

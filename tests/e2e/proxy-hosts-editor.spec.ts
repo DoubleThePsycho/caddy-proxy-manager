@@ -121,8 +121,9 @@ test.describe('Proxy host editor', () => {
       const review = page.getByRole('region', { name: /^Review \d+ changes? to Review Host$/ });
       await expect(review).toBeVisible();
       await expect(review.getByRole('listitem').filter({ hasText: 'WebSockets' })).toBeVisible();
-      await expect(review.getByText('No approval needed.')).toBeVisible({ timeout: 15_000 });
-      await expect(review.getByText(/Reloads its configuration on this node/)).toBeVisible();
+      // The preview has answered: the impact is listed and, with no approval needed, the change saves at once.
+      await expect(review.getByText(/Reloads its configuration on this node/)).toBeVisible({ timeout: 15_000 });
+      await expect(review.getByRole('button', { name: 'Save changes' })).toBeEnabled();
 
       await review.getByRole('button', { name: 'Undo change to HSTS header' }).click();
       await expect(bar).toContainText('1 unsaved change');

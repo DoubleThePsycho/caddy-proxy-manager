@@ -1,5 +1,5 @@
 /**
- * Server-side render of the Shared state card of Settings
+ * Server-side render of the Shared state card of the High availability page
  * (ee/high-availability/ui/SharedStateSection.tsx): turning on needs the
  * license and the certificate storage connection, read-only on a slave,
  * turning off stays possible without a license, and the error when shared
@@ -11,7 +11,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
-  usePathname: () => '/settings',
+  usePathname: () => '/high-availability',
   useSearchParams: () => new URLSearchParams(),
 }));
 

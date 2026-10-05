@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AppDialog } from "@/components/ui/AppDialog";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
+import { SearchField } from "@/components/ui/SearchField";
 import { SectionCard } from "@/components/ui/SectionCard";
 import {
   DropdownMenu,
@@ -23,6 +25,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatCount } from "@/components/ui/chart-format";
 import { formatDateTimeUtc } from "@/src/lib/date-format";
 import { cn } from "@/lib/utils";
+import { DEFAULT_PAGE_SIZE, paginate } from "@/src/lib/pagination";
 import type { ConsumerDetailView, ConsumerKeyView, ConsumerView, MonetizationConsumerUsage, PaymentView, PlanView, PostpaidView } from "../types";
 import ConsumerFormDialog from "./ConsumerFormDialog";
 import { callApi, Field, fromInput, LOCKED_HINT, money, shortTime } from "./shared";
@@ -170,6 +173,20 @@ export default function ConsumersTab({
   const canChange = canWrite && configurable;
   const usageById = new Map(usage.map((item) => [item.consumerId, item]));
   const includedByPlan = new Map(plans.map((plan) => [plan.id, plan.includedRequestsPerMonth]));
+  const { page, hrefFor } = useUrlPage("consumers");
+  const [search, setSearch] = useState("");
+  const needle = search.trim().toLowerCase();
+  const matching = needle
+    ? consumers.filter(
+        (consumer) =>
+          consumer.name.toLowerCase().includes(needle) ||
+          (consumer.email ?? "").toLowerCase().includes(needle) ||
+          (consumer.planName ?? "").toLowerCase().includes(needle) ||
+          `#${consumer.id}` === needle ||
+          String(consumer.id) === needle
+      )
+    : consumers;
+  const shown = paginate(matching, page);
 
   const [editing, setEditing] = useState<ConsumerView | null>(null);
 
@@ -317,7 +334,7 @@ export default function ConsumersTab({
     <>
       <SectionCard
         title="Consumers"
-        description={`Usage since 1 ${monthLabel}, UTC · balances include usage not yet written to the ledger`}
+        description={`Usage since 1 ${monthLabel} (UTC)`}
         actions={
           onShowLedger ? (
             <Button variant="link" size="sm" className="h-auto px-0 font-normal" onClick={onShowLedger}>
@@ -331,7 +348,7 @@ export default function ConsumersTab({
             compact
             icon={Users}
             title="No consumers yet"
-            description="A consumer is whoever pays for requests: give them a plan and an API key, and they top up their balance through Stripe."
+            description="Give each consumer a plan and an API key."
             action={
               canWrite && onAdd ? (
                 <Button size="sm" variant="outline" onClick={onAdd} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
@@ -341,150 +358,177 @@ export default function ConsumersTab({
             }
           />
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Consumer</TableHead>
-                  <TableHead>Plan</TableHead>
-                  <TableHead className="text-right">Requests</TableHead>
-                  <TableHead>Free used</TableHead>
-                  <TableHead className="text-right">Charged</TableHead>
-                  <TableHead className="text-right">Balance</TableHead>
-                  <TableHead className="text-right">Limit</TableHead>
-                  <TableHead>API keys</TableHead>
-                  {canWrite && (
-                    <TableHead className="w-12">
-                      <span className="sr-only">Actions</span>
-                    </TableHead>
+          <>
+            {consumers.length > DEFAULT_PAGE_SIZE && (
+              <div className="border-b border-line px-[18px] py-3">
+                <SearchField
+                  aria-label="Filter consumers"
+                  type="search"
+                  placeholder="Name, e-mail, plan or #id"
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value);
+                    if (page > 1) router.replace(hrefFor(1), { scroll: false });
+                  }}
+                  className="w-full sm:max-w-xs"
+                />
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Consumer</TableHead>
+                    <TableHead>Plan</TableHead>
+                    <TableHead className="text-right">Requests</TableHead>
+                    <TableHead>Free used</TableHead>
+                    <TableHead className="text-right">Charged</TableHead>
+                    <TableHead className="text-right">Balance</TableHead>
+                    <TableHead className="text-right">Limit</TableHead>
+                    <TableHead>API keys</TableHead>
+                    {canWrite && (
+                      <TableHead className="w-12">
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
+                    )}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {matching.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={9} className="py-6 text-center text-[13px] text-soft">
+                        No consumers match.
+                      </TableCell>
+                    </TableRow>
                   )}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {consumers.map((consumer) => {
-                  const used = usageById.get(consumer.id);
-                  const disabled = consumer.status === "disabled";
-                  const included = consumer.planId === null ? null : includedByPlan.get(consumer.planId) ?? null;
-                  return (
-                    <TableRow key={consumer.id} className={cn(disabled && "text-muted-foreground")}>
-                      <TableCell>
-                        <div className="flex min-w-0 flex-col gap-0.5">
-                          <span className="flex items-center gap-2">
-                            <span className={cn("font-semibold", disabled ? "text-muted-foreground" : "text-foreground")}>{consumer.name}</span>
-                            {disabled && <Badge variant="muted">Disabled</Badge>}
-                          </span>
-                          {consumer.postpaid && <PostpaidBadges postpaid={consumer.postpaid} />}
-                          <span className="text-xs text-soft">
-                            <span className="num">#{consumer.id}</span>
-                            {consumer.email ? ` · ${consumer.email}` : ""}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>{consumer.planName ?? <Badge variant="warning">No plan</Badge>}</TableCell>
-                      <TableCell className={cn("num text-right", !used?.requests && "text-soft")}>{formatCount(used?.requests ?? 0)}</TableCell>
-                      <TableCell>
-                        <FreeUsed used={consumer.includedRequestsUsed} included={included} />
-                      </TableCell>
-                      <TableCell className={cn("num whitespace-nowrap text-right", !used?.chargedMicros && "text-soft")}>
-                        {money(used?.chargedMicros ?? 0, currency)}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-right">
-                        <span className="flex flex-col items-end gap-0.5">
-                          <span className={cn("num", consumer.balanceMicros < 0 ? "text-bad" : consumer.balanceMicros === 0 && "text-soft")}>
-                            {money(consumer.balanceMicros, currency)}
-                          </span>
-                          {consumer.balanceMicros === 0 && used?.funded !== true && !consumer.postpaid && (
-                            <span className="text-xs text-soft">never topped up</span>
-                          )}
-                          {consumer.balanceMicros < 0 && !consumer.postpaid && <span className="text-xs text-bad">in overdraft</span>}
-                          {consumer.postpaid && consumer.postpaid.openAmountMicros > 0 && <span className="text-xs text-warn">owed, unpaid</span>}
-                        </span>
-                      </TableCell>
-                      {consumer.postpaid ? (
+                  {shown.items.map((consumer) => {
+                    const used = usageById.get(consumer.id);
+                    const disabled = consumer.status === "disabled";
+                    const included = consumer.planId === null ? null : includedByPlan.get(consumer.planId) ?? null;
+                    return (
+                      <TableRow key={consumer.id} className={cn(disabled && "text-muted-foreground")}>
+                        <TableCell>
+                          <div className="flex min-w-0 flex-col gap-0.5">
+                            <span className="flex items-center gap-2">
+                              <span className={cn("font-semibold", disabled ? "text-muted-foreground" : "text-foreground")}>{consumer.name}</span>
+                              {disabled && <Badge variant="muted">Disabled</Badge>}
+                            </span>
+                            {consumer.postpaid && <PostpaidBadges postpaid={consumer.postpaid} />}
+                            <span className="text-xs text-soft">
+                              <span className="num">#{consumer.id}</span>
+                              {consumer.email ? ` · ${consumer.email}` : ""}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>{consumer.planName ?? <Badge variant="warning">No plan</Badge>}</TableCell>
+                        <TableCell className={cn("num text-right", !used?.requests && "text-soft")}>{formatCount(used?.requests ?? 0)}</TableCell>
+                        <TableCell>
+                          <FreeUsed used={consumer.includedRequestsUsed} included={included} />
+                        </TableCell>
+                        <TableCell className={cn("num whitespace-nowrap text-right", !used?.chargedMicros && "text-soft")}>
+                          {money(used?.chargedMicros ?? 0, currency)}
+                        </TableCell>
                         <TableCell className="whitespace-nowrap text-right">
                           <span className="flex flex-col items-end gap-0.5">
-                            <span className="num">{money(consumer.postpaid.capMicros, currency)}</span>
-                            <span className="text-xs text-soft">postpaid cap</span>
+                            <span className={cn("num", consumer.balanceMicros < 0 ? "text-bad" : consumer.balanceMicros === 0 && "text-soft")}>
+                              {money(consumer.balanceMicros, currency)}
+                            </span>
+                            {consumer.balanceMicros === 0 && used?.funded !== true && !consumer.postpaid && (
+                              <span className="text-xs text-soft">never topped up</span>
+                            )}
+                            {consumer.balanceMicros < 0 && !consumer.postpaid && <span className="text-xs text-bad">in overdraft</span>}
+                            {consumer.postpaid && consumer.postpaid.openAmountMicros > 0 && <span className="text-xs text-warn">owed, unpaid</span>}
                           </span>
                         </TableCell>
-                      ) : (
-                        <TableCell className={cn("num whitespace-nowrap text-right", consumer.overdraftAllowanceMicros === 0 && "text-soft")}>
-                          {money(consumer.overdraftAllowanceMicros, currency)}
+                        {consumer.postpaid ? (
+                          <TableCell className="whitespace-nowrap text-right">
+                            <span className="flex flex-col items-end gap-0.5">
+                              <span className="num">{money(consumer.postpaid.capMicros, currency)}</span>
+                              <span className="text-xs text-soft">postpaid cap</span>
+                            </span>
+                          </TableCell>
+                        ) : (
+                          <TableCell className={cn("num whitespace-nowrap text-right", consumer.overdraftAllowanceMicros === 0 && "text-soft")}>
+                            {money(consumer.overdraftAllowanceMicros, currency)}
+                          </TableCell>
+                        )}
+                        <TableCell>
+                          <KeysCell consumer={consumer} usage={used} now={now} />
                         </TableCell>
-                      )}
-                      <TableCell>
-                        <KeysCell consumer={consumer} usage={used} now={now} />
-                      </TableCell>
-                      {canWrite && (
-                        <TableCell className="text-right">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon-sm" aria-label={`More actions for ${consumer.name}`} disabled={pending}>
-                                <MoreHorizontal className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={() => openKeys(consumer)}>API keys</DropdownMenuItem>
-                              <DropdownMenuItem
-                                disabled={!canChange}
-                                onSelect={() => {
-                                  setAdjustFor(consumer);
-                                  setAdjust({ amount: "", reason: "" });
-                                  setAdjustError(null);
-                                }}
-                              >
-                                Adjust balance
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={() => {
-                                  setPortalFor(consumer);
-                                  setPortalUrl(null);
-                                }}
-                              >
-                                Portal link
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onSelect={() => openPayments(consumer)}>Payments</DropdownMenuItem>
-                              {consumer.postpaid && (
-                                <>
-                                  <DropdownMenuItem
-                                    disabled={consumer.postpaid.openAmountMicros <= 0 || consumer.postpaid.card === null}
-                                    onSelect={() => chargeNow(consumer)}
-                                  >
-                                    Charge open amount now
-                                  </DropdownMenuItem>
-                                  {consumer.postpaid.state === "suspended" && (
-                                    <DropdownMenuItem disabled={!canChange} onSelect={() => resume(consumer)}>
-                                      Resume
-                                    </DropdownMenuItem>
-                                  )}
-                                  {consumer.postpaid.card && <DropdownMenuItem onSelect={() => forgetCard(consumer)}>Remove saved card</DropdownMenuItem>}
-                                </>
-                              )}
-                              <DropdownMenuItem disabled={!canChange} onSelect={() => setEditing(consumer)}>
-                                Edit
-                              </DropdownMenuItem>
-                              {disabled ? (
-                                // Enabling needs the license; disabling always works.
-                                <DropdownMenuItem disabled={!configurable} onSelect={() => setStatus(consumer, true)}>
-                                  Enable
+                        {canWrite && (
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon-sm" aria-label={`More actions for ${consumer.name}`} disabled={pending}>
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onSelect={() => openKeys(consumer)}>API keys</DropdownMenuItem>
+                                <DropdownMenuItem
+                                  disabled={!canChange}
+                                  onSelect={() => {
+                                    setAdjustFor(consumer);
+                                    setAdjust({ amount: "", reason: "" });
+                                    setAdjustError(null);
+                                  }}
+                                >
+                                  Adjust balance
                                 </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem onSelect={() => setStatus(consumer, false)}>Disable</DropdownMenuItem>
-                              )}
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem className="text-bad focus:text-bad" onSelect={() => setDeleteFor(consumer)}>
-                                Delete
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+                                <DropdownMenuItem
+                                  onSelect={() => {
+                                    setPortalFor(consumer);
+                                    setPortalUrl(null);
+                                  }}
+                                >
+                                  Portal link
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => openPayments(consumer)}>Payments</DropdownMenuItem>
+                                {consumer.postpaid && (
+                                  <>
+                                    <DropdownMenuItem
+                                      disabled={consumer.postpaid.openAmountMicros <= 0 || consumer.postpaid.card === null}
+                                      onSelect={() => chargeNow(consumer)}
+                                    >
+                                      Charge open amount now
+                                    </DropdownMenuItem>
+                                    {consumer.postpaid.state === "suspended" && (
+                                      <DropdownMenuItem disabled={!canChange} onSelect={() => resume(consumer)}>
+                                        Resume
+                                      </DropdownMenuItem>
+                                    )}
+                                    {consumer.postpaid.card && <DropdownMenuItem onSelect={() => forgetCard(consumer)}>Remove saved card</DropdownMenuItem>}
+                                  </>
+                                )}
+                                <DropdownMenuItem disabled={!canChange} onSelect={() => setEditing(consumer)}>
+                                  Edit
+                                </DropdownMenuItem>
+                                {disabled ? (
+                                  // Enabling needs the license; disabling always works.
+                                  <DropdownMenuItem disabled={!configurable} onSelect={() => setStatus(consumer, true)}>
+                                    Enable
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem onSelect={() => setStatus(consumer, false)}>Disable</DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem className="text-bad focus:text-bad" onSelect={() => setDeleteFor(consumer)}>
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="border-t border-line px-[18px] py-3 empty:hidden">
+              <Pagination page={shown.page} perPage={shown.perPage} total={shown.total} noun="consumers" label="Pages of consumers" hrefFor={hrefFor} />
+            </div>
+          </>
         )}
       </SectionCard>
 
@@ -601,8 +645,7 @@ export default function ConsumersTab({
       >
         <div className="flex flex-col gap-4 text-sm">
           <p className="text-muted-foreground">
-            The portal shows the consumer their balance and recent usage and lets them top up through Stripe, without an
-            account. Anyone with the link can see that page and pay into the balance, so send it only to the consumer.
+            Anyone with the link can see the consumer&apos;s balance and usage and pay into it: send it only to the consumer.
           </p>
           {portalUrl ? (
             <Alert>
@@ -690,7 +733,6 @@ export default function ConsumersTab({
               </TableBody>
             </Table>
           </div>
-          <p className="m-0 text-xs text-soft">Receipts are sent by Stripe, as set in your Stripe account.</p>
         </div>
       </AppDialog>
 

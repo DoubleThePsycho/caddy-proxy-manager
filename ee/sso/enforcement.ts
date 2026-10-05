@@ -179,7 +179,7 @@ async function resolveBreakGlassUsernames(reader: SsoReader, names: readonly str
 }
 
 export const NO_SSO_PROVIDER_MESSAGE =
-  "Enforced SSO needs at least one enabled OAuth/OIDC or SAML provider. Add or enable one under Settings, OAuth Providers, or on the SAML page first.";
+  "Enforced SSO needs at least one enabled OAuth/OIDC or SAML provider. Add or enable one on the OAuth providers or SAML page first.";
 
 export const NO_BREAK_GLASS_ADMIN_MESSAGE =
   "Enforced SSO needs at least one break-glass account that is an active administrator and can sign in with a password, " +

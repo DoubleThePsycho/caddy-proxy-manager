@@ -4,6 +4,15 @@ An access list decides who may reach the proxy hosts it is attached to: which ad
 
 One list can serve many hosts. A host uses at most one list, set in the proxy host's settings. Changing a list changes every host using it at once.
 
+## The Access lists page
+
+**Traffic → Access lists** has two tabs:
+
+- **Lists**: the lists you attach to hosts. Each row says in plain words what the list does ("Allows only 203.0.113.0/26 and private networks · basic auth for 2 users"), which hosts use it (with links to them) and, with analytics on, what it stopped in the last 24 hours. Search finds a list by its name, description, rule values and notes, basic-auth users, or the hosts using it. **New access list** asks for a name and whether it starts as a **blocklist** (everyone gets in except what you deny; also the choice for basic auth only) or an **allowlist** (only what you allow gets in), then opens the list's page.
+- **Blocked sources** (`/access-lists?tab=blocked-sources`): the global list described [below](#blocked-sources), with search. **Block a source** adds an address, network, country, continent or AS number at once; **Unblock** removes it at once. Only provider-level users see this tab.
+
+A list's page (`/access-lists/{id}`) shows its rules in the order they are checked, then **Everyone else**: the default action, for requests no rule matches. The summary under the title follows your changes as you make them. It warns when the list would deny every request, and when allow rules change nothing because everyone else is allowed too. Changes are saved together with **Save list**; leaving the page with unsaved changes asks first.
+
 ## Rules
 
 A rule allows or denies requests that match it:
@@ -17,7 +26,7 @@ A rule allows or denies requests that match it:
 
 A rule can hold up to 500 values of one kind, a note, and an expiry. A list holds up to 2000 rules.
 
-**The first rule that matches decides.** Rules are checked from the top; a request that matches an allow rule goes on, one that matches a deny rule is refused, and later rules are not looked at. A request that matches no rule gets the list's **default action**: let through (the default) or deny.
+**The first rule that matches decides.** Rules are checked from the top; a request that matches an allow rule goes on, one that matches a deny rule is refused, and later rules are not looked at. A request that matches no rule gets the list's **default action** (**Everyone else** on the list's page): let through (the default) or deny.
 
 Some examples:
 
@@ -30,9 +39,9 @@ Countries, continents and AS numbers come from the GeoLite2 databases, which the
 
 ## Client addresses
 
-Address rules match the client address Caddy works out, so **Settings → Trusted proxies** applies: behind a trusted proxy, the address comes from `X-Forwarded-For` (or the headers configured there). Without trusted proxies, it is the address of the connection.
+Address rules match the client address Caddy works out, so **Host defaults → Trusted proxies** applies: behind a trusted proxy, the address comes from `X-Forwarded-For` (or the headers configured there). Without trusted proxies, it is the address of the connection.
 
-Country, continent and AS number rules look up the same address. When a request comes from a trusted proxy that sends no usable `X-Forwarded-For`, the address is unknown: country and AS number rules cannot match it. **Block when the client address is unknown** (`failClosed`) denies such requests instead of letting them through. With a default action of deny, country, continent and AS number allows never let such requests in.
+Country, continent and AS number rules look up the same address. When a request comes from a trusted proxy that sends no usable `X-Forwarded-For`, the address is unknown: country and AS number rules cannot match it. **Deny when the client address is unknown** (`failClosed`) denies such requests instead of letting them through. The page shows this switch only when trusted proxies are configured (or the switch is on): without them the address is always known. With a default action of deny, country, continent and AS number allows never let such requests in.
 
 ## What a denied request gets
 
@@ -40,7 +49,7 @@ By default `403 Forbidden`. A list can set another status (400 to 599) and body,
 
 ## Members (basic auth)
 
-A list can also have members: usernames and passwords, stored only as bcrypt hashes. With members, visitors the rules let through then have to sign in. Without members, nobody is asked to sign in. A list with members and no rules works exactly as access lists always did.
+A list can also have members (**Basic auth** on the list's page): usernames and passwords, stored only as bcrypt hashes, so a password is shown only until the list is saved. With members, visitors the rules let through then have to sign in. Without members, nobody is asked to sign in. A list with members and no rules works exactly as access lists always did.
 
 ## Blocked sources
 
@@ -61,11 +70,11 @@ On every request a server takes:
 5. The host's access list members (basic auth) or the API monetization gate
 6. Forward auth and the upstream
 
-Global geo blocking (**Settings → Geoblocking**) still works as before and runs before the host's list. A list cannot let in what global geo blocking refuses.
+Global geo blocking (the **Geo blocking** page) still works as before and runs before the host's list. A list cannot let in what global geo blocking refuses.
 
 ## What it stopped
 
-The Access lists page shows, per list, the hosts using it and the requests stopped on them in the last 24 hours, and for lists with members the failed sign-ins (`401` answers). The counts come from analytics, so access logging and ClickHouse must be on. A request counts as stopped when it was blocked on one of the list's hosts; global geo blocking on the same host counts too. Blocked sources counts the blocked requests from the addresses and countries it names, on any host.
+The Access lists page shows, per list and per host using it, the requests stopped in the last 24 hours, and for lists with members the failed sign-ins (`401` answers). The counts come from analytics, so access logging and ClickHouse must be on; without them the page leaves the counts out. A request counts as stopped when it was blocked on one of the list's hosts; global geo blocking on the same host counts too. Blocked sources counts the blocked requests from the addresses and countries it names, on any host. `GET /api/v1/access-lists/stats` also gives the totals, the 24 hours before, and where stopped requests came from and went to; the Security events page lists the requests themselves.
 
 The request total and what Blocked sources stopped need `analytics:read` as well; the rest needs `access_lists:read`. Users with a tag scope see only the hosts in their scope.
 

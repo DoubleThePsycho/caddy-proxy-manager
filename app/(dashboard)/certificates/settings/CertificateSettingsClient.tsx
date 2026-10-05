@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Banner } from "@/components/ui/Banner";
@@ -9,15 +8,14 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { AcmeSettings, DnsSettings, GeneralSettings } from "@/lib/settings";
 import type { DnsProviderApiStatus, DnsProviderDefinition } from "@/src/lib/dns-providers";
-import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import CertificateStorageSection from "@/ee/high-availability/ui/CertificateStorageSection";
 import type { CertificateStorageView } from "@/ee/high-availability/types";
-import { updateAcmeSettingsAction, updateDnsProviderSettingsAction, updateDnsSettingsAction, updateGeneralSettingsAction } from "../actions";
 import {
   removeCertificateStorageAction,
   saveCertificateStorageAction,
@@ -34,10 +32,30 @@ import {
   type ActionResult,
 } from "@/src/components/settings/settings-form";
 import { RestrictedNotice } from "@/src/components/settings/RestrictedNotice";
+import { updateAcmeSettingsAction, updateDnsProviderSettingsAction, updateDnsSettingsAction, updateGeneralSettingsAction } from "../../settings/actions";
+import { useUnsavedWarning } from "../../settings/use-unsaved-warning";
 
 type Issuer = "le" | "custom";
 
-export default function CertificatesGroup({
+export type CertificateSettingsProps = {
+  acme: AcmeSettings | null;
+  general: GeneralSettings | null;
+  dnsProvider: DnsProviderApiStatus | null;
+  dnsProviderDefinitions: DnsProviderDefinition[];
+  dns: DnsSettings | null;
+  isSlave: boolean;
+  /** On a replica: the settings it overrides instead of following its master. */
+  overrides: { general: boolean; acme: boolean; dnsProvider: boolean; dns: boolean };
+  /** Certificate storage (ee/high-availability); null without high_availability:read. */
+  certificateStorage: { view: CertificateStorageView; canWrite: boolean; editionLabel: string } | null;
+  /** settings:write */
+  canSave: boolean;
+  /** certificates:read, for the breadcrumb's link. */
+  canOpenCertificates: boolean;
+};
+
+/** Certificate settings: the ACME issuer and contact, DNS-01 providers and resolvers, and where Caddy keeps certificates. */
+export default function CertificateSettingsClient({
   acme,
   general,
   dnsProvider,
@@ -46,58 +64,51 @@ export default function CertificatesGroup({
   isSlave,
   overrides,
   certificateStorage,
-  storageRestricted,
   canSave,
   canOpenCertificates,
-  onDirtyChange,
-}: {
-  acme: AcmeSettings | null;
-  general: GeneralSettings | null;
-  dnsProvider: DnsProviderApiStatus | null;
-  dnsProviderDefinitions: DnsProviderDefinition[];
-  dns: DnsSettings | null;
-  isSlave: boolean;
-  overrides: { general: boolean; acme: boolean; dnsProvider: boolean; dns: boolean };
-  certificateStorage: { view: CertificateStorageView; canWrite: boolean; editionLabel: string } | null;
-  storageRestricted: boolean;
-  canSave: boolean;
-  canOpenCertificates: boolean;
-  onDirtyChange: (count: number) => void;
-}) {
+}: CertificateSettingsProps) {
+  const onDirtyChange = useUnsavedWarning();
   return (
-    <SettingsGroupForms
-      name="Certificates and ACME"
-      canSave={canSave}
-      onDirtyChange={onDirtyChange}
-      after={
-        <div id="settings-certificate-storage" className="flex scroll-mt-4 flex-col gap-4">
-          {storageRestricted || !certificateStorage ? (
-            <SectionCard title="Certificate storage" headingLevel={3} padded>
-              <RestrictedNotice permission="high_availability:read" />
-            </SectionCard>
-          ) : (
-            <CertificateStorageSection
-              view={certificateStorage.view}
-              canWrite={certificateStorage.canWrite}
-              editionLabel={certificateStorage.editionLabel}
-              save={saveCertificateStorageAction}
-              remove={removeCertificateStorageAction}
-              test={testCertificateStorageAction}
-            />
-          )}
-        </div>
-      }
-    >
-      <AuthorityCard acme={acme} general={general} isSlave={isSlave} overrides={overrides} canOpenCertificates={canOpenCertificates} />
-      <DnsCard
-        dnsProvider={dnsProvider}
-        dnsProviderDefinitions={dnsProviderDefinitions}
-        dns={dns}
-        isSlave={isSlave}
-        overrides={overrides}
-        canWrite={canSave}
+    <div className="flex flex-col gap-5">
+      <PageHeader
+        className="mb-0"
+        breadcrumb={["Traffic", canOpenCertificates ? { label: "Certificates", href: "/certificates" } : "Certificates", "Settings"]}
+        title="Certificate settings"
       />
-    </SettingsGroupForms>
+      <SettingsGroupForms
+        name="Certificate settings"
+        canSave={canSave}
+        onDirtyChange={onDirtyChange}
+        after={
+          <div id="certificate-storage" className="flex scroll-mt-20 md:scroll-mt-4 flex-col gap-4">
+            {certificateStorage ? (
+              <CertificateStorageSection
+                view={certificateStorage.view}
+                canWrite={certificateStorage.canWrite}
+                editionLabel={certificateStorage.editionLabel}
+                save={saveCertificateStorageAction}
+                remove={removeCertificateStorageAction}
+                test={testCertificateStorageAction}
+              />
+            ) : (
+              <SectionCard title="Certificate storage" headingLevel={2} padded>
+                <RestrictedNotice permission="high_availability:read" />
+              </SectionCard>
+            )}
+          </div>
+        }
+      >
+        <AuthorityCard acme={acme} general={general} isSlave={isSlave} overrides={overrides} />
+        <DnsProvidersCard
+          dnsProvider={dnsProvider}
+          dnsProviderDefinitions={dnsProviderDefinitions}
+          isSlave={isSlave}
+          override={overrides.dnsProvider}
+          canWrite={canSave}
+        />
+        <DnsResolversCard dns={dns} isSlave={isSlave} override={overrides.dns} />
+      </SettingsGroupForms>
+    </div>
   );
 }
 
@@ -106,26 +117,23 @@ function AuthorityCard({
   general,
   isSlave,
   overrides,
-  canOpenCertificates,
 }: {
   acme: AcmeSettings | null;
   general: GeneralSettings | null;
   isSlave: boolean;
   overrides: { general: boolean; acme: boolean };
-  canOpenCertificates: boolean;
 }) {
-  const { productName } = useBranding();
   const [override, setOverride] = useState(overrides.acme);
   const [issuer, setIssuer] = useState<Issuer>(acme?.caUrl ? "custom" : "le");
   const disabled = isSlave && !override;
-  // The contact e-mail belongs to the general settings; on a replica it follows the override saved under General.
+  // The contact e-mail is a general setting; on a replica it follows the override saved under Settings, General.
   const contactDisabled = isSlave && !overrides.general;
   return (
-    <SectionCard title="Certificate authority" headingLevel={3} divided={false}>
+    <SectionCard id="acme" className="scroll-mt-20 md:scroll-mt-4" title="Certificate authority" headingLevel={2} divided={false}>
       <SettingsForm action={updateAcmeSettingsAction} order={0}>
         <SettingRows>
           {isSlave && <OverrideRow id="acme-override" checked={override} onCheckedChange={setOverride} />}
-          <SettingRow label="Issuer" labelId="settings-acme-issuer" hint={`Every certificate ${productName} orders comes from here.`}>
+          <SettingRow label="Issuer" labelId="settings-acme-issuer">
             <ChoiceField
               name="issuer"
               label="Issuer"
@@ -140,11 +148,7 @@ function AuthorityCard({
           </SettingRow>
           {issuer === "custom" ? (
             <>
-              <SettingRow
-                label="ACME directory URL"
-                htmlFor="settings-acme-url"
-                hint="HTTPS only. For an internal CA such as OpenBao, Step-CA or Windows ADCS."
-              >
+              <SettingRow label="ACME directory URL" htmlFor="settings-acme-url" hint="HTTPS only.">
                 <Input
                   id="settings-acme-url"
                   name="caUrl"
@@ -158,7 +162,7 @@ function AuthorityCard({
               <SettingRow
                 label="CA root certificate"
                 htmlFor="settings-acme-root"
-                hint="Optional: only when the CA's own TLS certificate chains to a root outside the system trust store. PEM, the root or the chain."
+                hint="Only if the CA's own TLS certificate is not publicly trusted. PEM."
               >
                 <Textarea
                   id="settings-acme-root"
@@ -185,7 +189,7 @@ function AuthorityCard({
             label="Contact e-mail"
             htmlFor="settings-acme-email"
             hint="The CA sends expiry notices here."
-            note={contactDisabled ? "On this replica it follows the master unless General overrides the master's settings." : undefined}
+            note={contactDisabled ? "Follows the master unless Settings, General overrides it on this replica." : undefined}
           >
             <Input
               id="settings-acme-email"
@@ -196,53 +200,39 @@ function AuthorityCard({
               className="w-[320px] max-w-full"
             />
           </SettingRow>
-          {/* Saved with the e-mail: the primary domain (edited under General) and, on a replica, its override. */}
+          {/* Saved with the e-mail: the primary domain (edited under Settings) and, on a replica, its override. */}
           <input type="hidden" name="primaryDomain" value={general?.primaryDomain ?? "ingressi.localhost"} data-untracked="" />
           {isSlave && <input type="hidden" name="overrideEnabled" value={overrides.general ? "on" : ""} data-untracked="" />}
         </SettingRows>
       </SettingsForm>
-      {canOpenCertificates && (
-        <SettingRows>
-          <SettingRow label="Certificates">
-            <Link href="/certificates" className="flex min-h-9 items-center text-[13px] text-brand underline-offset-4 hover:text-foreground hover:underline">
-              Open certificates
-            </Link>
-          </SettingRow>
-        </SettingRows>
-      )}
     </SectionCard>
   );
 }
 
-function DnsCard({
+function DnsProvidersCard({
   dnsProvider,
   dnsProviderDefinitions,
-  dns,
   isSlave,
-  overrides,
+  override: initialOverride,
   canWrite,
 }: {
   dnsProvider: DnsProviderApiStatus | null;
   dnsProviderDefinitions: DnsProviderDefinition[];
-  dns: DnsSettings | null;
   isSlave: boolean;
-  overrides: { dnsProvider: boolean; dns: boolean };
+  override: boolean;
   canWrite: boolean;
 }) {
-  const [providerOverride, setProviderOverride] = useState(overrides.dnsProvider);
-  const [dnsOverride, setDnsOverride] = useState(overrides.dns);
-  const [resolversOn, setResolversOn] = useState(dns?.enabled ?? false);
+  const [override, setOverride] = useState(initialOverride);
   const [result, setResult] = useState<ActionResult | null>(null);
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState<string | null>(null);
   const configured = dnsProvider?.providers ? Object.keys(dnsProvider.providers) : [];
-  const providerDisabled = !canWrite || pending || (isSlave && !providerOverride);
-  const resolversDisabled = isSlave && !dnsOverride;
+  const disabled = !canWrite || pending || (isSlave && !override);
 
   function run(fields: Record<string, string>) {
     const data = new FormData();
     for (const [key, value] of Object.entries(fields)) data.set(key, value);
-    if (isSlave) data.set("overrideEnabled", providerOverride ? "on" : "");
+    if (isSlave) data.set("overrideEnabled", override ? "on" : "");
     setResult(null);
     startTransition(async () => {
       try {
@@ -257,28 +247,33 @@ function DnsCard({
     const definition = dnsProviderDefinitions.find((provider) => provider.name === name);
     const fields = dnsProvider?.providers[name]?.configuredFields ?? [];
     const labels = fields.map((key) => definition?.fields.find((field) => field.key === key)?.label ?? key);
-    const secret = fields.some((key) => definition?.fields.find((field) => field.key === key)?.type === "password");
-    if (labels.length === 0) return "No credentials";
-    return `${labels.join(", ")}${secret ? " · stored encrypted" : ""}`;
+    return labels.length === 0 ? "No credentials" : labels.join(", ");
   }
+
+  const addButton = (
+    <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => setEditing("")}>
+      <Plus /> Add provider
+    </Button>
+  );
 
   return (
     <SectionCard
-      id="settings-dns-providers"
-      className="scroll-mt-4"
+      id="dns-providers"
+      className="scroll-mt-20 md:scroll-mt-4"
       title="DNS-01 providers"
-      description="Credentials stay encrypted at rest. A certificate can pick a provider other than the default."
-      headingLevel={3}
+      count={configured.length > 0 ? configured.length : undefined}
+      headingLevel={2}
+      actions={configured.length > 0 ? addButton : undefined}
       divided={false}
     >
       {isSlave && (
         <SettingRows>
-          <SettingRow label="Master settings" hint="A replica follows its master unless this is on. Applies to the provider changes below.">
+          <SettingRow label="Master settings" hint="A replica follows its master unless this is on.">
             <ToggleField
               id="dnsprovider-override"
               label="Override the master's DNS providers on this replica"
-              checked={providerOverride}
-              onCheckedChange={setProviderOverride}
+              checked={override}
+              onCheckedChange={setOverride}
             />
           </SettingRow>
         </SettingRows>
@@ -294,14 +289,10 @@ function DnsCard({
         <div className="border-t border-line">
           <EmptyState
             compact
-            headingLevel={4}
+            headingLevel={3}
             title="No DNS provider yet"
-            description="Certificates are validated over HTTP (HTTP-01). Wildcard certificates and hosts that are not reachable from the Internet need a DNS provider."
-            action={
-              <Button type="button" variant="outline" size="sm" disabled={providerDisabled} onClick={() => setEditing("")}>
-                <Plus /> Add provider
-              </Button>
-            }
+            description="Wildcard certificates and hosts not reachable from the Internet need one."
+            action={addButton}
           />
         </div>
       ) : (
@@ -342,7 +333,7 @@ function DnsCard({
                               type="button"
                               variant="outline"
                               size="sm"
-                              disabled={providerDisabled}
+                              disabled={disabled}
                               aria-label={`Make ${label} the default`}
                               onClick={() => run({ action: "set-default", provider: name })}
                             >
@@ -353,7 +344,7 @@ function DnsCard({
                             type="button"
                             variant="outline"
                             size="sm"
-                            disabled={providerDisabled}
+                            disabled={disabled}
                             aria-label={`Edit ${label} credentials`}
                             onClick={() => setEditing(name)}
                           >
@@ -363,7 +354,7 @@ function DnsCard({
                             type="button"
                             variant="danger"
                             size="sm"
-                            disabled={providerDisabled}
+                            disabled={disabled}
                             aria-label={`Remove ${label}`}
                             onClick={() => run({ action: "remove", provider: name })}
                           >
@@ -377,83 +368,15 @@ function DnsCard({
               </tbody>
             </table>
           </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-5 py-3">
-            <Button type="button" variant="outline" size="sm" disabled={providerDisabled} onClick={() => setEditing("")}>
-              <Plus /> Add provider
-            </Button>
-            <span className="min-w-0 flex-[1_1_240px] text-xs text-soft">
-              <span className="num">{dnsProviderDefinitions.length}</span> providers supported, from Cloudflare and Route 53 to RFC2136 (BIND).
-            </span>
-            {dnsProvider?.default && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={providerDisabled}
-                onClick={() => run({ action: "set-default", provider: "none" })}
-              >
-                Clear default, HTTP-01 only
+          {dnsProvider?.default && (
+            <div className="flex justify-end border-t border-line px-5 py-3">
+              <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => run({ action: "set-default", provider: "none" })}>
+                Clear default
               </Button>
-            )}
-          </div>
+            </div>
+          )}
         </>
       )}
-
-      <div id="settings-dns-resolvers" className="scroll-mt-4">
-        <SettingsForm action={updateDnsSettingsAction} order={2}>
-          <SettingRows>
-            {isSlave && <OverrideRow id="dns-override" checked={dnsOverride} onCheckedChange={setDnsOverride} />}
-            <SettingRow
-              label="Resolvers for DNS-01 checks"
-              hint="Caddy looks up the challenge record through them before asking the CA to validate. Useful with slow propagation or split-horizon DNS."
-            >
-              <ToggleField
-                id="dns-enabled"
-                name="enabled"
-                label="Use my own resolvers"
-                checked={resolversOn}
-                onCheckedChange={setResolversOn}
-                disabled={resolversDisabled}
-              />
-            </SettingRow>
-            {/* Kept in the form while off, so turning resolvers off keeps the list. */}
-            <div hidden={!resolversOn}>
-              <SettingRow label="Primary resolvers" htmlFor="settings-dns-resolvers-list" hint="One address per line, for example 1.1.1.1 or 9.9.9.9.">
-                <Textarea
-                  id="settings-dns-resolvers-list"
-                  name="resolvers"
-                  placeholder={"1.1.1.1\n8.8.8.8"}
-                  defaultValue={dns?.resolvers?.join("\n") ?? ""}
-                  rows={2}
-                  disabled={resolversDisabled}
-                  className="num min-h-0"
-                />
-              </SettingRow>
-              <SettingRow label="Fallback resolvers" htmlFor="settings-dns-fallbacks">
-                <Textarea
-                  id="settings-dns-fallbacks"
-                  name="fallbacks"
-                  placeholder={"8.8.4.4\n1.0.0.1"}
-                  defaultValue={dns?.fallbacks?.join("\n") ?? ""}
-                  rows={2}
-                  disabled={resolversDisabled}
-                  className="num min-h-0"
-                />
-              </SettingRow>
-              <SettingRow label="Query timeout" htmlFor="settings-dns-timeout" hint="For example 5s or 10s.">
-                <Input
-                  id="settings-dns-timeout"
-                  name="timeout"
-                  placeholder="5s"
-                  defaultValue={dns?.timeout ?? ""}
-                  disabled={resolversDisabled}
-                  className="num w-[120px]"
-                />
-              </SettingRow>
-            </div>
-          </SettingRows>
-        </SettingsForm>
-      </div>
 
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
@@ -463,7 +386,7 @@ function DnsCard({
               definitions={dnsProviderDefinitions}
               configured={configured}
               isSlave={isSlave}
-              override={providerOverride}
+              override={override}
               onDone={(message) => {
                 setEditing(null);
                 setResult({ success: true, message });
@@ -473,6 +396,66 @@ function DnsCard({
           )}
         </DialogContent>
       </Dialog>
+    </SectionCard>
+  );
+}
+
+function DnsResolversCard({ dns, isSlave, override: initialOverride }: { dns: DnsSettings | null; isSlave: boolean; override: boolean }) {
+  const [override, setOverride] = useState(initialOverride);
+  const [resolversOn, setResolversOn] = useState(dns?.enabled ?? false);
+  const disabled = isSlave && !override;
+  return (
+    <SectionCard id="dns-resolvers" className="scroll-mt-20 md:scroll-mt-4" title="DNS-01 resolvers" headingLevel={2} divided={false}>
+      <SettingsForm action={updateDnsSettingsAction} order={2}>
+        <SettingRows>
+          {isSlave && <OverrideRow id="dns-override" checked={override} onCheckedChange={setOverride} />}
+          <SettingRow label="Own resolvers" hint="For slow propagation or split-horizon DNS.">
+            <ToggleField
+              id="dns-enabled"
+              name="enabled"
+              label="Use my own resolvers"
+              checked={resolversOn}
+              onCheckedChange={setResolversOn}
+              disabled={disabled}
+            />
+          </SettingRow>
+          {/* Kept in the form while off, so turning resolvers off keeps the list. */}
+          <div hidden={!resolversOn}>
+            <SettingRow label="Primary resolvers" htmlFor="settings-dns-resolvers-list" hint="One per line.">
+              <Textarea
+                id="settings-dns-resolvers-list"
+                name="resolvers"
+                placeholder={"1.1.1.1\n8.8.8.8"}
+                defaultValue={dns?.resolvers?.join("\n") ?? ""}
+                rows={2}
+                disabled={disabled}
+                className="num min-h-0"
+              />
+            </SettingRow>
+            <SettingRow label="Fallback resolvers" htmlFor="settings-dns-fallbacks">
+              <Textarea
+                id="settings-dns-fallbacks"
+                name="fallbacks"
+                placeholder={"8.8.4.4\n1.0.0.1"}
+                defaultValue={dns?.fallbacks?.join("\n") ?? ""}
+                rows={2}
+                disabled={disabled}
+                className="num min-h-0"
+              />
+            </SettingRow>
+            <SettingRow label="Query timeout" htmlFor="settings-dns-timeout">
+              <Input
+                id="settings-dns-timeout"
+                name="timeout"
+                placeholder="5s"
+                defaultValue={dns?.timeout ?? ""}
+                disabled={disabled}
+                className="num w-[120px]"
+              />
+            </SettingRow>
+          </div>
+        </SettingRows>
+      </SettingsForm>
     </SectionCard>
   );
 }
@@ -524,9 +507,7 @@ function ProviderDialogBody({
       <DialogHeader>
         <DialogTitle>{isUpdate ? `Edit ${definition?.displayName ?? selected}` : "Add a DNS provider"}</DialogTitle>
         <DialogDescription>
-          {isUpdate
-            ? "Fields left blank keep their stored values. Secrets are stored encrypted and never shown again."
-            : "Credentials are stored encrypted. Added while no provider is the default, it becomes the default."}
+          {isUpdate ? "Blank fields keep their stored values." : "It becomes the default if there is none."}
         </DialogDescription>
       </DialogHeader>
       <input type="hidden" name="action" value="save" />
@@ -557,9 +538,6 @@ function ProviderDialogBody({
             </SelectContent>
           </Select>
         )}
-        <p className="text-xs text-soft">
-          <span className="num">{definitions.length}</span> providers supported.
-        </p>
       </div>
       {definition && (
         <>

@@ -157,10 +157,7 @@ function SwitchRow({ id, checked, onChange, disabled, children }: { id: string; 
 }
 
 const SCOPE_HINTS: Partial<Record<RuleType, string>> = {
-  cert_expiring: "Chosen hosts: the imported certificates they use and the certificates Caddy manages for them. CA and client certificates belong to no host, so only a rule for all hosts covers them.",
-  upstream_down: "Chosen hosts: the upstreams of those hosts.",
-  waf_spike: "Chosen hosts: requests blocked on their domains.",
-  error_rate: "Chosen hosts: their traffic.",
+  cert_expiring: "CA and client certificates belong to no host: only a rule for all hosts covers them.",
 };
 
 type Props = {
@@ -279,7 +276,7 @@ export default function RuleEditor({ open, rule, onClose, channels, proxyHosts, 
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">{RULE_TYPE_DESCRIPTIONS[form.type]}</p>
-          {rule && <p className="text-xs text-soft">The condition of a rule cannot be changed; create a new rule instead.</p>}
+          {rule && <p className="text-xs text-soft">The condition cannot be changed; create a new rule instead.</p>}
         </div>
 
         {(form.type === "cert_expiring" || form.type === "license_expiring") && (
@@ -288,10 +285,10 @@ export default function RuleEditor({ open, rule, onClose, channels, proxyHosts, 
         {form.type === "cert_expiring" && (
           <div className="flex flex-col gap-2.5">
             <SwitchRow id="rule-client-certs" checked={form.includeClientCertificates} onChange={(checked) => set("includeClientCertificates", checked)}>
-              Include issued client certificates (revoked ones are ignored)
+              Include issued client certificates
             </SwitchRow>
             <SwitchRow id="rule-managed-certs" checked={form.includeManagedCertificates} onChange={(checked) => set("includeManagedCertificates", checked)}>
-              Include the certificates Caddy obtains (also fires when a renewal is overdue)
+              Include the certificates Caddy obtains
             </SwitchRow>
           </div>
         )}
@@ -308,17 +305,11 @@ export default function RuleEditor({ open, rule, onClose, channels, proxyHosts, 
             label="Recent failures"
             value={form.minFails}
             onChange={(value) => set("minFails", value)}
-            hint="Failures Caddy remembers for the host's passive health check fail duration."
+            hint="Only counted on hosts with passive health checks."
           />
         )}
         {form.type === "backup_failed" && (
-          <NumberField
-            id="rule-min-failures"
-            label="Failures in a row"
-            value={form.minFailures}
-            onChange={(value) => set("minFailures", value)}
-            hint="Failed backups are retried after 5 minutes, then with growing delays; 1 alerts on the first failure."
-          />
+          <NumberField id="rule-min-failures" label="Failures in a row" value={form.minFailures} onChange={(value) => set("minFailures", value)} />
         )}
         {form.type === "waf_spike" && (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -372,10 +363,10 @@ export default function RuleEditor({ open, rule, onClose, channels, proxyHosts, 
                 </p>
               </div>
             )}
-            <p className="text-xs text-muted-foreground">{SCOPE_HINTS[form.type]}</p>
+            {SCOPE_HINTS[form.type] && <p className="text-xs text-muted-foreground">{SCOPE_HINTS[form.type]}</p>}
             {form.type === "error_rate" && (
               <SwitchRow id="rule-per-host" checked={form.perHost} onChange={(checked) => set("perHost", checked)}>
-                One alert per proxy host (off: one alert for the hosts in scope together)
+                One alert per proxy host, instead of one for all of them
               </SwitchRow>
             )}
           </fieldset>
@@ -388,7 +379,7 @@ export default function RuleEditor({ open, rule, onClose, channels, proxyHosts, 
             value={form.forMinutes}
             onChange={(value) => set("forMinutes", value)}
             suffix="min"
-            hint="0 fires at once. A condition that clears before then is forgotten without a notification."
+            hint="0 fires at once."
           />
         )}
 
@@ -428,13 +419,11 @@ export default function RuleEditor({ open, rule, onClose, channels, proxyHosts, 
           <SwitchRow id="rule-explain" checked={form.explain} disabled={!license.aiAnalyst} onChange={(checked) => set("explain", checked)}>
             Add an AI-generated explanation
           </SwitchRow>
-          <p className="pl-[42px] text-xs text-muted-foreground">
-            {!license.aiAnalyst
-              ? "Needs a license with the AI analyst."
-              : aiConfigured
-                ? "Uses the provider set up on the AI tab; the alert is sent without it if the model does not answer within 15 seconds."
-                : "Set up a provider on the AI tab first."}
-          </p>
+          {(!license.aiAnalyst || !aiConfigured) && (
+            <p className="pl-[42px] text-xs text-muted-foreground">
+              {!license.aiAnalyst ? "Needs a license with the AI analyst." : "Set up a provider on the AI tab first."}
+            </p>
+          )}
         </div>
 
         <SwitchRow id="rule-enabled" checked={form.enabled} onChange={(checked) => set("enabled", checked)}>

@@ -18,6 +18,7 @@ import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { formatBytes } from "@/components/ui/chart-format";
 import { useFormat } from "@/components/preferences/PreferencesProvider";
 import { cn } from "@/lib/utils";
@@ -52,6 +53,11 @@ type Props = {
   isSlave: boolean;
   editionLabel: string;
   minPassphraseLength: number;
+  /**
+   * Page through the runs with ?page= (the Backups page). Without it the
+   * newest runs are shown with their total, as on Change history.
+   */
+  paginateRuns?: boolean;
 };
 
 type Form = {
@@ -180,8 +186,9 @@ function RunStatus({ run }: { run: BackupRunView }) {
   return <StatusDot tone={run.warning ? "warn" : "ok"} label="Uploaded" />;
 }
 
-export default function BackupsTab({ destinations, runs, configurable, isSlave, editionLabel, minPassphraseLength }: Props) {
+export default function BackupsTab({ destinations, runs, configurable, isSlave, editionLabel, minPassphraseLength, paginateRuns = false }: Props) {
   const router = useRouter();
+  const { hrefFor: runsHrefFor } = useUrlPage();
   const fmt = useFormat();
   const { productName } = useBranding();
   const [pending, startTransition] = useTransition();
@@ -390,7 +397,7 @@ export default function BackupsTab({ destinations, runs, configurable, isSlave, 
           Scheduled backups need an active {productName} {editionLabel} license or higher.{" "}
           {destinations.length > 0 ? "Enabled destinations keep backing up on schedule; you can still disable and delete them. " : ""}
           Restoring from the dashboard needs the license too: without it, download a backup file from your bucket and load it with the
-          free import (Export or import, above).{" "}
+          free import under Change history.{" "}
           <Link href="/license" className="text-brand underline underline-offset-4">
             Manage the license
           </Link>
@@ -406,18 +413,10 @@ export default function BackupsTab({ destinations, runs, configurable, isSlave, 
       <SectionCard
         title="Backup destinations"
         count={destinations.length}
-        description="Scheduled exports of the configuration to your own S3-compatible storage"
         actions={
           <Button size="sm" onClick={openCreate} disabled={!canChange || pending} title={configurable ? undefined : LOCKED_HINT}>
             <Plus /> Add destination
           </Button>
-        }
-        footer={
-          <p className="m-0 text-xs text-soft">
-            On schedule, the configuration is exported like the free export (secrets encrypted with the destination&apos;s passphrase) and
-            uploaded to your bucket: AWS S3, Cloudflare R2, Backblaze B2, Hetzner, Wasabi, MinIO and others. Older backups beyond the
-            retention are deleted.
-          </p>
         }
       >
         {destinations.length === 0 ? (
@@ -540,10 +539,13 @@ export default function BackupsTab({ destinations, runs, configurable, isSlave, 
 
       <SectionCard
         title="Recent backups"
+        count={paginateRuns && runs.total > 0 ? runs.total : undefined}
         description={
           runs.total === 0
             ? "No backups yet"
-            : `The latest ${Math.min(runs.runs.length, runs.total)} of ${runs.total} runs. Failed backups are retried after 5 minutes, then with growing delays.`
+            : paginateRuns
+              ? undefined
+              : `The latest ${Math.min(runs.runs.length, runs.total)} of ${runs.total} runs.`
         }
         divided={runs.runs.length > 0}
       >
@@ -588,6 +590,17 @@ export default function BackupsTab({ destinations, runs, configurable, isSlave, 
               ))}
             </TableBody>
           </Table>
+        )}
+        {paginateRuns && (
+          <Pagination
+            page={runs.page}
+            perPage={runs.perPage}
+            total={runs.total}
+            noun="runs"
+            label="Pages of backup runs"
+            hrefFor={runsHrefFor}
+            className="border-t border-line px-5 py-3"
+          />
         )}
       </SectionCard>
 

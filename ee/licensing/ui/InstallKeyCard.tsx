@@ -207,9 +207,7 @@ export function InstallKeyCard({ hasLicense, nodesUsed, inUse }: InstallKeyCardP
         <h2 id={headingId} className="m-0 text-base leading-6 font-semibold">
           {hasLicense ? "Install a new key" : "Install a key"}
         </h2>
-        <p className="m-0 text-[13px] text-muted-foreground">
-          {hasLicense ? "Replaces the current key. " : ""}It is checked on this machine before anything changes.
-        </p>
+        {hasLicense && <p className="m-0 text-[13px] text-muted-foreground">Replaces the current key.</p>}
       </div>
       <div className="flex flex-col gap-1.5">
         <label htmlFor={textareaId} className="font-medium">

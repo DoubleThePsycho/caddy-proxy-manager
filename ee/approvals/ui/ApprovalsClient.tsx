@@ -4,11 +4,12 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { Banner, type BannerTone } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -24,7 +25,7 @@ export type ApprovalsTab = "requests" | "decided" | "policies";
 
 type Props = {
   initialTab: ApprovalsTab;
-  /** Open requests, oldest first. */
+  /** A page of the open requests, oldest first (?queue=). */
   open: ChangeRequestPage;
   /** The newest decided requests, for "Recently decided". */
   recent: ChangeRequestView[];
@@ -77,7 +78,8 @@ export default function ApprovalsClient({
   const [flash, setFlash] = useState<{ tone: BannerTone; text: string } | null>(null);
   const [nowMs] = useState(() => (now ? Date.parse(now) : Date.now()));
   const enabledPolicies = policies.filter((policy) => policy.enabled);
-  const pages = Math.max(1, Math.ceil(decided.total / decided.perPage));
+  const queuePages = useUrlPage("queue");
+  const decidedPages = useUrlPage();
 
   const byId = useMemo(() => {
     const map = new Map<number, ChangeRequestView>();
@@ -118,7 +120,6 @@ export default function ApprovalsClient({
           breadcrumb={["Govern", "Approvals"]}
           title="Approvals"
           count={open.total}
-          description="A change to a host that an approval policy covers waits here until someone else approves it."
           actions={
             <Button variant="outline" onClick={showPolicies}>
               <ShieldCheck />
@@ -140,7 +141,7 @@ export default function ApprovalsClient({
         {!configurable && (
           <Banner tone="info">
             Creating and changing approval policies needs an {editionLabel} license with Change approvals. Policies already set up keep
-            protecting their hosts, are shown read-only and can still be disabled or deleted; change requests keep working.{" "}
+            protecting their hosts and can still be disabled or deleted.{" "}
             <Link href="/license" className="text-brand underline underline-offset-2">
               Licensing
             </Link>
@@ -177,6 +178,15 @@ export default function ApprovalsClient({
                 onSelect={select}
                 onShowPolicies={showPolicies}
               />
+              <Pagination
+                page={open.page}
+                perPage={open.perPage}
+                total={open.total}
+                noun="requests"
+                label="Pages of open requests"
+                hrefFor={queuePages.hrefFor}
+                className="mt-3"
+              />
             </div>
             {current && (
               <div className="min-w-0 flex-[2_1_560px]">
@@ -187,7 +197,6 @@ export default function ApprovalsClient({
 
           <SectionCard
             title="Recently decided"
-            description="Applied changes are recorded as the requester's change in the audit log and in Change history"
             actions={
               <button
                 type="button"
@@ -199,7 +208,7 @@ export default function ApprovalsClient({
             }
           >
             {recent.length === 0 ? (
-              <EmptyState compact icon={null} title="No decided requests yet" description="Approved, rejected, cancelled and expired requests appear here." />
+              <EmptyState compact icon={null} title="No decided requests yet" />
             ) : (
               <DecidedTable requests={recent} selectedId={selectedId} onSelect={select} />
             )}
@@ -210,36 +219,16 @@ export default function ApprovalsClient({
           <SectionCard
             title="Decided requests"
             count={decided.total}
-            description="Applied, rejected, cancelled, expired and failed requests, newest first"
             footer={
-              pages > 1 ? (
-                <div className="flex items-center justify-center gap-2">
-                  {decided.page > 1 ? (
-                    <Button variant="outline" size="icon-sm" asChild>
-                      <Link href={`/approvals?tab=decided&page=${decided.page - 1}`} aria-label="Newer requests">
-                        <ChevronLeft />
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button variant="outline" size="icon-sm" disabled aria-label="Newer requests">
-                      <ChevronLeft />
-                    </Button>
-                  )}
-                  <span className="text-muted-foreground">
-                    Page <span className="num">{decided.page}</span> of <span className="num">{pages}</span>
-                  </span>
-                  {decided.page < pages ? (
-                    <Button variant="outline" size="icon-sm" asChild>
-                      <Link href={`/approvals?tab=decided&page=${decided.page + 1}`} aria-label="Older requests">
-                        <ChevronRight />
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button variant="outline" size="icon-sm" disabled aria-label="Older requests">
-                      <ChevronRight />
-                    </Button>
-                  )}
-                </div>
+              decided.total > decided.perPage ? (
+                <Pagination
+                  page={decided.page}
+                  perPage={decided.perPage}
+                  total={decided.total}
+                  noun="requests"
+                  label="Pages of decided requests"
+                  hrefFor={decidedPages.hrefFor}
+                />
               ) : undefined
             }
           >

@@ -5,10 +5,11 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, FileDown, FileText, Plus, Printer, Trash2 } from "lucide-react";
+import { FileDown, FileText, Plus, Printer, Trash2 } from "lucide-react";
 import { AppDialog } from "@/components/ui/AppDialog";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Pagination } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useFormat } from "@/components/preferences/PreferencesProvider";
@@ -60,7 +61,6 @@ export default function ReportsTab({
   const format = useFormat();
   const [pending, startTransition] = useTransition();
   const [confirmDelete, setConfirmDelete] = useState<StoredReportSummary | null>(null);
-  const pages = Math.max(1, Math.ceil(initial.total / initial.perPage));
   const scheduleNames = new Map(schedules.map((schedule) => [schedule.id, schedule.name]));
 
   function pageHref(page: number): string {
@@ -91,14 +91,17 @@ export default function ReportsTab({
       <SectionCard
         title="Reports"
         count={initial.total}
-        description="Each report is stored as canonical JSON with its SHA-256, recorded in the audit log when it was generated."
+        footer={
+          initial.total > initial.perPage ? (
+            <Pagination page={initial.page} perPage={initial.perPage} total={initial.total} noun="reports" label="Pages of reports" hrefFor={pageHref} />
+          ) : undefined
+        }
       >
         {initial.reports.length === 0 ? (
           <EmptyState
             compact
             icon={FileText}
             title="No reports yet"
-            description="Generated reports are stored here with their SHA-256 until you delete them."
             action={
               canWrite ? (
                 <Button variant="secondary" size="sm" onClick={onGenerate} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
@@ -172,31 +175,6 @@ export default function ReportsTab({
               ))}
             </TableBody>
           </Table>
-        )}
-        {pages > 1 && (
-          <div className="flex items-center justify-center gap-2 border-t border-line px-4 py-2.5">
-            <Button asChild={initial.page > 1} variant="outline" size="icon-sm" disabled={initial.page <= 1} aria-label="Newer reports">
-              {initial.page > 1 ? (
-                <Link href={pageHref(initial.page - 1)}>
-                  <ChevronLeft />
-                </Link>
-              ) : (
-                <ChevronLeft />
-              )}
-            </Button>
-            <span className="text-[13px] text-muted-foreground">
-              Page <span className="num">{initial.page}</span> of <span className="num">{pages}</span>
-            </span>
-            <Button asChild={initial.page < pages} variant="outline" size="icon-sm" disabled={initial.page >= pages} aria-label="Older reports">
-              {initial.page < pages ? (
-                <Link href={pageHref(initial.page + 1)}>
-                  <ChevronRight />
-                </Link>
-              ) : (
-                <ChevronRight />
-              )}
-            </Button>
-          </div>
         )}
       </SectionCard>
 

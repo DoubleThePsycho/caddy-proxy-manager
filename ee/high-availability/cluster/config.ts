@@ -323,7 +323,7 @@ export function parseHaConfig(env: Env = process.env): HaConfig | null {
   };
 }
 
-/** What the API and the Settings page show of the configuration: no secrets. */
+/** What the API and the High availability page show of the configuration: no secrets. */
 export function toClusterConfigView(config: HaConfig): ClusterConfigView {
   return {
     redis: {

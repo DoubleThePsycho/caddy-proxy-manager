@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { revalidateSettingsPages } from "./revalidate";
 import { requirePermission } from "@/src/lib/auth";
 import { applyCaddyConfig } from "@/src/lib/caddy";
 import { customDirectivesError, parseBodyLimitMib } from "@/src/lib/caddy-waf";
@@ -71,7 +72,7 @@ async function updateGeneralSettingsActionUnlocked(_prevState: ActionResult | nu
     if (mode === "slave" && !overrideEnabled) {
       await clearSetting("general");
       await syncInstances();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "General settings reset to master defaults" };
     }
     await saveGeneralSettings({
@@ -79,7 +80,7 @@ async function updateGeneralSettingsActionUnlocked(_prevState: ActionResult | nu
       acmeEmail: formData.get("acmeEmail") ? String(formData.get("acmeEmail")) : undefined
     });
     await syncInstances();
-    revalidatePath("/settings");
+    revalidateSettingsPages();
     return { success: true, message: "General settings saved successfully" };
   } catch (error) {
     console.error("Failed to save general settings:", error);
@@ -96,11 +97,11 @@ async function updateAcmeSettingsActionUnlocked(_prevState: ActionResult | null,
       await clearSetting("acme");
       try {
         await applyCaddyConfig();
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         return { success: true, message: "ACME settings reset to master defaults" };
       } catch (error) {
         console.error("Failed to apply Caddy config:", error);
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         const errorMsg = error instanceof Error ? error.message : "Unknown error";
         await syncInstances();
         return { success: true, message: `Settings reset, but could not apply to Caddy: ${errorMsg}` };
@@ -129,11 +130,11 @@ async function updateAcmeSettingsActionUnlocked(_prevState: ActionResult | null,
 
     try {
       await applyCaddyConfig();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "ACME settings saved successfully" };
     } catch (error) {
       console.error("Failed to apply Caddy config:", error);
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       await syncInstances();
       return { success: true, message: `Settings saved, but could not apply to Caddy: ${errorMsg}` };
@@ -153,11 +154,11 @@ async function updateCloudflareSettingsActionUnlocked(_prevState: ActionResult |
       await clearSetting("cloudflare");
       try {
         await applyCaddyConfig();
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         return { success: true, message: "Cloudflare settings reset to master defaults" };
       } catch (error) {
         console.error("Failed to apply Caddy config:", error);
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         const errorMsg = error instanceof Error ? error.message : "Unknown error";
         await syncInstances();
         return {
@@ -183,11 +184,11 @@ async function updateCloudflareSettingsActionUnlocked(_prevState: ActionResult |
     // Try to apply the config, but don't fail if Caddy is unreachable
     try {
       await applyCaddyConfig();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "Cloudflare settings saved and applied to Caddy successfully" };
     } catch (error) {
       console.error("Failed to apply Caddy config:", error);
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       await syncInstances();
       return {
@@ -210,11 +211,11 @@ async function updateDnsProviderSettingsActionUnlocked(_prevState: ActionResult 
       await clearSetting("dns_provider");
       try {
         await applyCaddyConfig();
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         return { success: true, message: "DNS provider settings reset to master defaults" };
       } catch (error) {
         console.error("Failed to apply Caddy config:", error);
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         const errorMsg = error instanceof Error ? error.message : "Unknown error";
         await syncInstances();
         return { success: true, message: `Settings reset, but could not apply to Caddy: ${errorMsg}` };
@@ -240,7 +241,7 @@ async function updateDnsProviderSettingsActionUnlocked(_prevState: ActionResult 
       await saveDnsProviderSettings(settings);
       await syncInstances();
       try { await applyCaddyConfig(); } catch { /* non-fatal */ }
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: `${def?.displayName ?? providerName} removed${settings.default ? `. Default is now ${settings.default}.` : "."}` };
     }
 
@@ -253,7 +254,7 @@ async function updateDnsProviderSettingsActionUnlocked(_prevState: ActionResult 
       await saveDnsProviderSettings(settings);
       await syncInstances();
       try { await applyCaddyConfig(); } catch { /* non-fatal */ }
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       const label = newDefault ? (getProviderDefinition(newDefault)?.displayName ?? newDefault) : "None";
       return { success: true, message: `Default DNS provider set to ${label}` };
     }
@@ -312,12 +313,12 @@ async function updateDnsProviderSettingsActionUnlocked(_prevState: ActionResult 
 
     try {
       await applyCaddyConfig();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       const isDefault = settings.default === providerName;
       return { success: true, message: `${def.displayName} saved${isDefault ? " (default)" : ""}` };
     } catch (error) {
       console.error("Failed to apply Caddy config:", error);
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       return { success: true, message: `Settings saved, but could not apply to Caddy: ${errorMsg}` };
     }
@@ -335,7 +336,7 @@ async function updateAuthentikSettingsActionUnlocked(_prevState: ActionResult | 
     if (mode === "slave" && !overrideEnabled) {
       await clearSetting("authentik");
       await syncInstances();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "Authentik defaults reset to master values" };
     }
     const outpostDomain = String(formData.get("outpostDomain") ?? "").trim();
@@ -353,7 +354,7 @@ async function updateAuthentikSettingsActionUnlocked(_prevState: ActionResult | 
     });
 
     await syncInstances();
-    revalidatePath("/settings");
+    revalidateSettingsPages();
     return { success: true, message: "Authentik defaults saved successfully" };
   } catch (error) {
     console.error("Failed to save Authentik settings:", error);
@@ -369,7 +370,7 @@ async function updateForwardAuthSettingsActionUnlocked(_prevState: ActionResult 
     if (mode === "slave" && !overrideEnabled) {
       await clearSetting("forward_auth");
       await syncInstances();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "Forward Auth defaults reset to master values" };
     }
     const providerRaw = String(formData.get("provider") ?? "").trim();
@@ -388,7 +389,7 @@ async function updateForwardAuthSettingsActionUnlocked(_prevState: ActionResult 
     });
 
     await syncInstances();
-    revalidatePath("/settings");
+    revalidateSettingsPages();
     return { success: true, message: "Forward Auth defaults saved successfully" };
   } catch (error) {
     console.error("Failed to save Forward Auth settings:", error);
@@ -405,11 +406,11 @@ async function updateMetricsSettingsActionUnlocked(_prevState: ActionResult | nu
       await clearSetting("metrics");
       try {
         await applyCaddyConfig();
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         return { success: true, message: "Metrics settings reset to master defaults" };
       } catch (error) {
         console.error("Failed to apply Caddy config:", error);
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         const errorMsg = error instanceof Error ? error.message : "Unknown error";
         await syncInstances();
         return {
@@ -430,11 +431,11 @@ async function updateMetricsSettingsActionUnlocked(_prevState: ActionResult | nu
     // Apply config to enable/disable metrics
     try {
       await applyCaddyConfig();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "Metrics settings saved and applied successfully" };
     } catch (error) {
       console.error("Failed to apply Caddy config:", error);
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       await syncInstances();
       return {
@@ -457,11 +458,11 @@ async function updateLoggingSettingsActionUnlocked(_prevState: ActionResult | nu
       await clearSetting("logging");
       try {
         await applyCaddyConfig();
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         return { success: true, message: "Logging settings reset to master defaults" };
       } catch (error) {
         console.error("Failed to apply Caddy config:", error);
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         const errorMsg = error instanceof Error ? error.message : "Unknown error";
         await syncInstances();
         return {
@@ -486,11 +487,11 @@ async function updateLoggingSettingsActionUnlocked(_prevState: ActionResult | nu
     // Apply config to enable/disable logging
     try {
       await applyCaddyConfig();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "Logging settings saved and applied successfully" };
     } catch (error) {
       console.error("Failed to apply Caddy config:", error);
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       await syncInstances();
       return {
@@ -521,11 +522,11 @@ async function updateTrustedProxiesSettingsActionUnlocked(_prevState: ActionResu
       await clearSetting("trusted_proxies");
       try {
         await applyCaddyConfig();
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         return { success: true, message: "Trusted proxies settings reset to master defaults" };
       } catch (error) {
         console.error("Failed to apply Caddy config:", error);
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         const errorMsg = error instanceof Error ? error.message : "Unknown error";
         await syncInstances();
         return { success: true, message: `Settings reset, but could not apply to Caddy: ${errorMsg}` };
@@ -548,11 +549,11 @@ async function updateTrustedProxiesSettingsActionUnlocked(_prevState: ActionResu
 
     try {
       await applyCaddyConfig();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "Trusted proxies settings saved and applied successfully" };
     } catch (error) {
       console.error("Failed to apply Caddy config:", error);
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       await syncInstances();
       return { success: true, message: `Settings saved, but could not apply to Caddy: ${errorMsg}` };
@@ -572,11 +573,11 @@ async function updateDnsSettingsActionUnlocked(_prevState: ActionResult | null, 
       await clearSetting("dns");
       try {
         await applyCaddyConfig();
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         return { success: true, message: "DNS settings reset to master defaults" };
       } catch (error) {
         console.error("Failed to apply Caddy config:", error);
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         const errorMsg = error instanceof Error ? error.message : "Unknown error";
         await syncInstances();
         return {
@@ -607,11 +608,11 @@ async function updateDnsSettingsActionUnlocked(_prevState: ActionResult | null, 
     // Apply config to use new DNS resolvers
     try {
       await applyCaddyConfig();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "DNS settings saved and applied successfully" };
     } catch (error) {
       console.error("Failed to apply Caddy config:", error);
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       await syncInstances();
       return {
@@ -637,11 +638,11 @@ async function updateUpstreamDnsResolutionSettingsActionUnlocked(
       await clearSetting("upstream_dns_resolution");
       try {
         await applyCaddyConfig();
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         return { success: true, message: "Upstream DNS resolution settings reset to master defaults" };
       } catch (error) {
         console.error("Failed to apply Caddy config:", error);
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         const errorMsg = error instanceof Error ? error.message : "Unknown error";
         await syncInstances();
         return {
@@ -664,11 +665,11 @@ async function updateUpstreamDnsResolutionSettingsActionUnlocked(
 
     try {
       await applyCaddyConfig();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "Upstream DNS resolution settings saved and applied successfully" };
     } catch (error) {
       console.error("Failed to apply Caddy config:", error);
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       await syncInstances();
       return {
@@ -693,7 +694,7 @@ async function updateInstanceModeActionUnlocked(_prevState: ActionResult | null,
       return { success: false, message: "Invalid instance mode" };
     }
     await setInstanceMode(mode);
-    revalidatePath("/settings");
+    revalidateSettingsPages();
     return { success: true, message: `Instance mode set to ${mode === "slave" ? "replica" : mode}` };
   } catch (error) {
     console.error("Failed to update instance mode:", error);
@@ -710,7 +711,7 @@ async function updateSlaveMasterTokenActionUnlocked(_prevState: ActionResult | n
     // If clearing, allow empty token
     if (clearToken) {
       await setSlaveMasterToken("");
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "Master sync token removed" };
     }
 
@@ -721,7 +722,7 @@ async function updateSlaveMasterTokenActionUnlocked(_prevState: ActionResult | n
         return { success: false, message: validation.error };
       }
       await setSlaveMasterToken(rawToken);
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "Master sync token updated" };
     }
 
@@ -758,7 +759,7 @@ export async function createSlaveInstanceAction(_prevState: ActionResult | null,
     }
 
     await createInstance({ name, baseUrl, apiToken, enabled: true });
-    revalidatePath("/settings");
+    revalidateSettingsPages();
     return { success: true, message: "Replica added" };
   } catch (error) {
     console.error("Failed to create slave instance:", error);
@@ -777,7 +778,7 @@ export async function deleteSlaveInstanceAction(formData: FormData): Promise<voi
     return;
   }
   await deleteInstance(id, Number(session.user.id));
-  revalidatePath("/settings");
+  revalidateSettingsPages();
 }
 
 /**
@@ -809,7 +810,7 @@ export async function updateSlaveInstanceAction(_prevState: ActionResult | null,
       }
     }
     await updateInstance(id, { name, baseUrl, ...(apiToken ? { apiToken } : {}) }, Number(session.user.id));
-    revalidatePath("/settings");
+    revalidateSettingsPages();
     return { success: true, message: `Replica "${name}" updated` };
   } catch (error) {
     console.error("Failed to update slave instance:", error);
@@ -851,7 +852,7 @@ export async function resetSlaveSyncKeyPinAction(_prevState: ActionResult | null
     const pin = "instanceId" in target
       ? await resetInstanceSyncKeyPin(target.instanceId, actorUserId)
       : await resetSyncKeyPin(target.slaveUrl, actorUserId);
-    revalidatePath("/settings");
+    revalidateSettingsPages();
     const described = describeSyncKeyPin(pin);
     return {
       success: true,
@@ -868,7 +869,7 @@ export async function resetSlaveSyncKeyPinAction(_prevState: ActionResult | null
 }
 
 /**
- * Pin the sync public key an admin read from a slave (its Settings page, or
+ * Pin the sync public key an admin read from a slave (its Instance sync page, or
  * GET /api/v1/instances/sync-key there): an instance's by `instanceId`, an
  * INSTANCE_SLAVES entry's by `slaveUrl`. Replaces any pin, with no sync that
  * trusts whatever key answers.
@@ -889,7 +890,7 @@ export async function pinSlaveSyncKeyAction(_prevState: ActionResult | null, for
     const pin = "instanceId" in target
       ? await pinInstanceSyncKey(target.instanceId, publicKey, actorUserId)
       : await pinSyncKey(target.slaveUrl, publicKey, actorUserId);
-    revalidatePath("/settings");
+    revalidateSettingsPages();
     return { success: true, message: `Sync key ${pin.keyId} pinned. Syncs are sealed to this key only.` };
   } catch (error) {
     console.error("Failed to pin slave sync key:", error);
@@ -912,7 +913,7 @@ export async function toggleSlaveInstanceAction(formData: FormData): Promise<voi
     return;
   }
   await updateInstance(id, { enabled });
-  revalidatePath("/settings");
+  revalidateSettingsPages();
 }
 
 function parseRedirectUrl(raw: FormDataEntryValue | null): string {
@@ -1001,11 +1002,11 @@ async function updateGeoBlockSettingsActionUnlocked(_prevState: ActionResult | n
 
     try {
       await applyCaddyConfig();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "Geoblocking settings saved and applied successfully" };
     } catch (error) {
       console.error("Failed to apply Caddy config:", error);
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       await syncInstances();
       return {
@@ -1037,11 +1038,11 @@ async function updateErrorPagesSettingsActionUnlocked(_prevState: ActionResult |
 
     try {
       await applyCaddyConfig();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "Error pages saved and applied successfully" };
     } catch (error) {
       console.error("Failed to apply Caddy config:", error);
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       await syncInstances();
       return { success: true, message: `Settings saved, but could not apply to Caddy: ${errorMsg}` };
@@ -1088,7 +1089,7 @@ async function updateRateLimitSettingsActionUnlocked(_prevState: ActionResult | 
         } catch (restoreError) {
           console.error("Failed to reapply the previous Caddy config:", restoreError);
         }
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         return { success: false, message: `Caddy did not accept the rate limiting settings, so they were not saved: ${errorMsg}` };
       }
       applyWarning = errorMsg;
@@ -1101,7 +1102,7 @@ async function updateRateLimitSettingsActionUnlocked(_prevState: ActionResult | 
       summary: "Updated rate limiting defaults",
       data: settings,
     });
-    revalidatePath("/settings");
+    revalidateSettingsPages();
     return applyWarning
       ? { success: true, message: `Settings saved, but could not apply to Caddy: ${applyWarning}` }
       : { success: true, message: "Rate limiting settings saved and applied successfully" };
@@ -1139,11 +1140,11 @@ async function updateDefaultResponseSettingsActionUnlocked(
       await clearSetting("default_response");
       try {
         await applyCaddyConfig();
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         return { success: true, message: "Default response reset to master settings" };
       } catch (error) {
         console.error("Failed to apply Caddy config:", error);
-        revalidatePath("/settings");
+        revalidateSettingsPages();
         const errorMsg = error instanceof Error ? error.message : "Unknown error";
         await syncInstances();
         return { success: true, message: `Settings reset, but could not apply to Caddy: ${errorMsg}` };
@@ -1176,11 +1177,11 @@ async function updateDefaultResponseSettingsActionUnlocked(
 
     try {
       await applyCaddyConfig();
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       return { success: true, message: "Default response saved and applied successfully" };
     } catch (error) {
       console.error("Failed to apply Caddy config:", error);
-      revalidatePath("/settings");
+      revalidateSettingsPages();
       const errorMsg = error instanceof Error ? error.message : "Unknown error";
       await syncInstances();
       return { success: true, message: `Settings saved, but could not apply to Caddy: ${errorMsg}` };
@@ -1201,7 +1202,7 @@ export async function syncSlaveInstancesAction(_prevState: ActionResult | null, 
       return { success: false, message: "Instance mode must be set to master to sync replicas" };
     }
     const result = await syncInstances();
-    revalidatePath("/settings");
+    revalidateSettingsPages();
 
     const parts: string[] = [];
     if (result.success > 0) parts.push(`${result.success} succeeded`);
@@ -1239,7 +1240,7 @@ async function removeWafRuleGloballyActionUnlocked(ruleId: number): Promise<Acti
     for (const exclusion of whole) {
       await deleteWafExclusion(exclusion.id, Number(session.user.id), { apply: applyCaddyConfig });
     }
-    revalidatePath("/settings");
+    revalidateSettingsPages();
     revalidatePath("/waf");
     revalidatePath("/security");
     return { success: true, message: `Rule ${ruleId} removed from exclusions.` };
@@ -1260,7 +1261,7 @@ async function suppressWafRuleGloballyActionUnlocked(ruleId: number): Promise<Ac
       Number(session.user.id),
       { apply: applyCaddyConfig }
     );
-    revalidatePath("/settings");
+    revalidateSettingsPages();
     revalidatePath("/waf");
     revalidatePath("/security");
     return { success: true, message: `Rule ${ruleId} suppressed globally.` };
@@ -1302,7 +1303,7 @@ export async function createOAuthProviderAction(data: {
     summary: `OAuth provider "${data.name}" created`,
     data: JSON.stringify({ providerId: provider.id }),
   });
-  revalidatePath("/settings");
+  revalidateSettingsPages();
   return toOAuthProviderView(provider);
 }
 
@@ -1336,7 +1337,7 @@ export async function updateOAuthProviderAction(
     summary: `Updated OAuth provider "${id}"`,
     data: JSON.stringify({ providerId: id, fields: Object.keys(data) }),
   });
-  revalidatePath("/settings");
+  revalidateSettingsPages();
   return updated ? toOAuthProviderView(updated) : null;
 }
 
@@ -1356,7 +1357,7 @@ export async function deleteOAuthProviderAction(id: string) {
     summary: `Deleted OAuth provider "${existing?.name ?? id}"`,
     data: JSON.stringify({ providerId: id }),
   });
-  revalidatePath("/settings");
+  revalidateSettingsPages();
 }
 
 export async function suppressWafRuleForHostAction(ruleId: number, hostname: string): Promise<ActionResult> {
@@ -1445,7 +1446,7 @@ async function updateWafSettingsActionUnlocked(_prevState: ActionResult | null, 
       return { success: true, message: `Settings saved, but could not apply to Caddy: ${errorMsg}` };
     }
 
-    revalidatePath("/settings");
+    revalidateSettingsPages();
     revalidatePath("/waf");
     return { success: true, message: "WAF settings saved." };
   } catch (error) {

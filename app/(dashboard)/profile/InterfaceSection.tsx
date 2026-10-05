@@ -91,12 +91,7 @@ export default function InterfaceSection() {
 
   return (
     <section aria-labelledby="ui-title" className="flex flex-col gap-5 rounded-xl border bg-card p-6">
-      <div className="flex flex-col gap-1">
-        <h2 id="ui-title" className="text-base font-semibold">Interface</h2>
-        <span className="text-sm text-muted-foreground">
-          Theme, time zone and number format follow your account to every browser. Exports and the API stay in UTC.
-        </span>
-      </div>
+      <h2 id="ui-title" className="text-base font-semibold">Interface</h2>
 
       {error && (
         <Alert variant="destructive">

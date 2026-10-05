@@ -203,8 +203,7 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
     <div className="flex min-w-0 flex-col gap-4" data-testid="roles-tab">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
         <p className="m-0 min-w-0 flex-[1_1_420px] text-[13px] text-muted-foreground">
-          Each user has one role. Built-in roles cannot be changed; custom roles hold the permissions you choose, optionally limited
-          to hosts and certificates that carry one of their tags.
+          Custom roles hold the permissions you choose, optionally limited to hosts and certificates with one of their tags.
         </p>
         {canEdit && (
           <Button variant="outline" onClick={() => startDraft(null)} data-testid="new-custom-role">
@@ -216,8 +215,8 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
 
       {!licensed && (
         <Banner tone="info" title={`Custom roles need a ${editionLabel} license.`}>
-          Creating, changing and assigning custom roles needs an active {productName} {editionLabel} license or higher. Existing roles
-          keep working and can still be deleted or taken away.{" "}
+          Creating, changing and assigning custom roles needs an active {productName} {editionLabel} license or higher. You can still delete
+          roles and take them away.{" "}
           <Link href="/license" className="text-brand underline-offset-4 hover:underline">Licensing</Link>
         </Banner>
       )}
@@ -361,12 +360,6 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
           })}
         </ul>
       </section>
-
-      <p className="m-0 text-xs text-soft">
-        A role is administrator-level when it can decide who signs in or what the instance is: single sign-on, the MFA policy, LDAP,
-        SCIM, the license, access reviews, approval policies, or user management together with settings or approving. Only
-        administrators create or assign such roles.
-      </p>
 
       {draft && (
         <RoleEditorDialog initial={draft} catalogue={catalogue} actor={actor} saveRole={saveRole} onClose={() => setDraft(null)} />

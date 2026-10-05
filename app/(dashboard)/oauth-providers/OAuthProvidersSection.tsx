@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -29,7 +28,7 @@ import {
   createOAuthProviderAction,
   updateOAuthProviderAction,
   deleteOAuthProviderAction,
-} from "./actions";
+} from "../settings/actions";
 
 interface OAuthProvidersSectionProps {
   initialProviders: OAuthProviderView[];
@@ -207,20 +206,25 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
     <SectionCard
       title="Providers"
       count={providers.length}
-      description="Dashboard sign-in through an OpenID Connect or OAuth provider. SAML and LDAP are under Sign-in and directories."
-      headingLevel={3}
+      headingLevel={2}
       actions={
-        <Button type="button" variant="outline" size="sm" onClick={openAddDialog}>
-          <Plus /> Add provider
-        </Button>
+        providers.length > 0 ? (
+          <Button type="button" variant="outline" size="sm" onClick={openAddDialog}>
+            <Plus /> Add provider
+          </Button>
+        ) : undefined
       }
     >
       {providers.length === 0 ? (
         <EmptyState
           compact
-          headingLevel={4}
+          headingLevel={3}
           title="No OAuth provider yet"
-          description="Add a provider to let people sign in to the dashboard with it."
+          action={
+            <Button type="button" variant="outline" size="sm" onClick={openAddDialog}>
+              <Plus /> Add provider
+            </Button>
+          }
         />
       ) : (
         <ul className="m-0 list-none divide-y divide-line p-0">
@@ -313,16 +317,11 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
           else closeDialog();
         }}
       >
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto" aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>
               {editingProvider ? "Edit OAuth provider" : "Add an OAuth provider"}
             </DialogTitle>
-            <DialogDescription>
-              {editingProvider
-                ? "Change how this provider signs people in."
-                : "An OpenID Connect or OAuth provider people can sign in to the dashboard with."}
-            </DialogDescription>
           </DialogHeader>
 
           {error && (
@@ -431,9 +430,7 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
                 placeholder="https://accounts.google.com"
                 className="num"
               />
-              <p className="text-xs text-muted-foreground">
-                For OIDC providers, the issuer URL enables automatic discovery of endpoints.
-              </p>
+              <p className="text-xs text-muted-foreground">For OIDC, the endpoints below are discovered from it.</p>
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -491,9 +488,8 @@ export default function OAuthProvidersSection({ initialProviders, baseUrl }: OAu
               </Label>
             </div>
             <p className="text-xs text-muted-foreground -mt-1">
-              Automatically link OAuth accounts to existing users with the same email address, whether or not
-              the provider has verified it. Only enable it for a provider where users cannot set an email
-              address they do not own.
+              Links a sign-in to the existing user with the same e-mail address, verified or not. Only for providers where users
+              cannot set an address they do not own.
             </p>
 
             {editingProvider && (

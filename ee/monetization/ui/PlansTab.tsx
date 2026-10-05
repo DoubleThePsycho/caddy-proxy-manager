@@ -44,7 +44,7 @@ const EMPTY: Form = {
   acceptX402: false,
 };
 
-export const ANALYTICS_HINT = "Needs ClickHouse analytics: the access log pipeline records each request's answer.";
+export const ANALYTICS_HINT = "Needs ClickHouse analytics.";
 
 export default function PlansTab({
   plans,
@@ -150,13 +150,9 @@ export default function PlansTab({
 
   return (
     <>
-      <SectionCard
-        title="Plans"
-        description="What a request costs and how it is paid. Free requests are used first and reset on the 1st, UTC; a per-minute limit answers 429 beyond it. Postpaid consumers pay afterwards with a saved card, never beyond the cap."
-        actions={plans.length > 0 ? addButton : undefined}
-      >
+      <SectionCard title="Plans" actions={plans.length > 0 ? addButton : undefined}>
         {plans.length === 0 ? (
-          <EmptyState compact icon={Tags} title="No plans yet" description="A plan sets the price per request, free requests per month and a per-minute limit." action={addButton} />
+          <EmptyState compact icon={Tags} title="No plans yet" description="A plan sets what a request costs." action={addButton} />
         ) : (
           <div className="overflow-x-auto">
             <Table>
@@ -270,10 +266,10 @@ export default function PlansTab({
           <Field label={`Price per request (${currency.toUpperCase()})`} htmlFor="plan-price" hint="Up to six decimals, e.g. 0.0005">
             <Input id="plan-price" inputMode="decimal" className="num" value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })} />
           </Field>
-          <Field label="Free requests per month" htmlFor="plan-included" hint="Per consumer and calendar month (UTC)">
+          <Field label="Free requests per month" htmlFor="plan-included" hint="Per consumer and calendar month (UTC), used first">
             <Input id="plan-included" inputMode="numeric" className="num" value={form.included} onChange={(event) => setForm({ ...form, included: event.target.value })} />
           </Field>
-          <Field label="Requests per minute" htmlFor="plan-per-minute" hint="Empty for no limit">
+          <Field label="Requests per minute" htmlFor="plan-per-minute" hint="Beyond it requests get 429. Empty for no limit.">
             <Input id="plan-per-minute" inputMode="numeric" className="num" value={form.perMinute} onChange={(event) => setForm({ ...form, perMinute: event.target.value })} />
           </Field>
           <Field label="Billing" hint="Prepaid: consumers top up first. Postpaid: they save a card, usage is charged to it afterwards up to the cap.">
@@ -317,9 +313,7 @@ export default function PlansTab({
             <span className="flex flex-col gap-0.5">
               Don&apos;t charge for failed answers
               <span className="text-xs text-muted-foreground">
-                {analyticsAvailable
-                  ? "Requests your API or the gateway answers with a 5xx are credited back within a minute, from the access log."
-                  : ANALYTICS_HINT}
+                {analyticsAvailable ? "Requests answered with a 5xx are credited back within a minute." : ANALYTICS_HINT}
               </span>
             </span>
           </label>

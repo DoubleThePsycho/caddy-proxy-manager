@@ -21,7 +21,8 @@ export async function saveCertificateStorageAction(input: unknown): Promise<Cert
   const session = await requirePermission("high_availability:write");
   try {
     const view = await saveCertificateStorage(input, Number(session.user.id));
-    revalidatePath("/settings");
+    revalidatePath("/certificates/settings");
+    revalidatePath("/high-availability");
     return { ok: true, view };
   } catch (error) {
     return failure(error);
@@ -32,7 +33,8 @@ export async function removeCertificateStorageAction(): Promise<CertificateStora
   const session = await requirePermission("high_availability:write");
   try {
     const view = await removeCertificateStorage(Number(session.user.id));
-    revalidatePath("/settings");
+    revalidatePath("/certificates/settings");
+    revalidatePath("/high-availability");
     return { ok: true, view };
   } catch (error) {
     return failure(error);

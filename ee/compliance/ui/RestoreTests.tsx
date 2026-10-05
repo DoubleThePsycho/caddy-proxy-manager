@@ -10,6 +10,7 @@ import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/input";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { StatusDot } from "@/components/ui/StatusDot";
@@ -37,7 +38,8 @@ export default function RestoreTests({
   canWrite,
   configurable,
 }: {
-  initial: { tests: RestoreTestView[]; total: number };
+  /** A page of the test restores, newest first (?restorePage=). */
+  initial: { tests: RestoreTestView[]; total: number; page: number; perPage: number };
   destinations: { id: number; name: string }[];
   canWrite: boolean;
   configurable: boolean;
@@ -49,6 +51,7 @@ export default function RestoreTests({
   const [form, setForm] = useState<Form>(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<RestoreTestView | null>(null);
+  const { hrefFor } = useUrlPage("restorePage");
 
   function openForm() {
     setForm(emptyForm());
@@ -98,7 +101,11 @@ export default function RestoreTests({
       id="restore-tests"
       title="Test restores"
       count={initial.total}
-      description="A backup restored on a spare instance shows the backups can be used. The backup control reads the newest successful one."
+      footer={
+        initial.total > initial.perPage ? (
+          <Pagination page={initial.page} perPage={initial.perPage} total={initial.total} noun="test restores" label="Pages of test restores" hrefFor={hrefFor} />
+        ) : undefined
+      }
       actions={
         canWrite && (
           <Button variant="secondary" size="sm" onClick={openForm} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
@@ -109,7 +116,7 @@ export default function RestoreTests({
       }
     >
       {initial.tests.length === 0 ? (
-        <EmptyState compact title="No test restore recorded yet" description="Restore a backup on a spare instance, check the hosts work, then record the test here." />
+        <EmptyState compact title="No test restore recorded yet" description="Restore a backup on a spare instance, then record it here." />
       ) : (
         <Table className="min-w-[860px]">
           <TableHeader>
@@ -227,7 +234,7 @@ export default function RestoreTests({
       </AppDialog>
 
       <AppDialog open={deleting !== null} onClose={() => setDeleting(null)} title="Delete test restore" submitLabel="Delete" onSubmit={remove} isSubmitting={pending}>
-        <p className="text-sm">The record is deleted; its deletion is recorded in the audit log. The backup control then reads the next newest test.</p>
+        <p className="text-sm">The backup control then uses the next newest test restore.</p>
       </AppDialog>
     </SectionCard>
   );

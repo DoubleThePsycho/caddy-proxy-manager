@@ -128,10 +128,7 @@ function SettingsCard({ settings, canWrite }: { settings: ScimSettingsView; canW
       padded
       contentClassName="space-y-5"
     >
-        <p className="m-0 text-[13px] text-muted-foreground">
-          Give your identity provider this URL and a SCIM token. It can then create, update and disable dashboard users and
-          manage forward-auth groups. It never sees accounts SCIM did not create unless you hand them over below.
-        </p>
+        <p className="m-0 text-[13px] text-muted-foreground">Give your identity provider this URL and a SCIM token.</p>
         <Field label="SCIM base URL (tenant URL)">
           <div className="flex gap-2">
             <Input readOnly value={settings.endpointUrl} className="num text-xs" />
@@ -153,7 +150,7 @@ function SettingsCard({ settings, canWrite }: { settings: ScimSettingsView; canW
           <Field
             label="Sign-in provider"
             htmlFor="scim-provider"
-            hint="SCIM users have no password. Their first sign-in through this OAuth/OIDC or SAML provider is linked to their account."
+            hint="SCIM users have no password; their first sign-in through this provider links their account."
           >
             <Select value={form.providerId} onValueChange={(value) => set("providerId", value)} disabled={!editable || pending}>
               <SelectTrigger id="scim-provider"><SelectValue /></SelectTrigger>
@@ -176,7 +173,7 @@ function SettingsCard({ settings, canWrite }: { settings: ScimSettingsView; canW
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Role of new SCIM users" htmlFor="scim-default-role" hint="Roles never come from SCIM attributes; only the group mappings below grant one.">
+          <Field label="Role of new SCIM users" htmlFor="scim-default-role" hint="Only the group mappings below grant another role.">
             <Select value={form.defaultRole} onValueChange={(value) => set("defaultRole", value as SettingsForm["defaultRole"])} disabled={!editable || pending}>
               <SelectTrigger id="scim-default-role"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -288,9 +285,6 @@ function TokensCard({ tokens, canWrite, configurable }: { tokens: ScimTokenView[
         </Button>
       ) : undefined}
     >
-        <p className="m-0 border-b border-line px-[18px] py-3 text-[13px] text-muted-foreground">
-          Bearer tokens for the identity provider. They work only on the SCIM endpoint, and API tokens do not work there.
-        </p>
         {tokens.length === 0 ? (
           <EmptyState compact icon={KeyRound} title="No SCIM token yet" description="Create one and paste it into your identity provider." />
         ) : (
@@ -390,13 +384,13 @@ export default function ScimClient(props: ScimClientProps) {
         className="mb-0"
         breadcrumb={["Identity", props.canReadSignIn === false ? "Sign-in and directories" : { label: "Sign-in and directories", href: "/sign-in" }, "SCIM provisioning"]}
         title="SCIM provisioning"
-        description={`Let your identity provider (Microsoft Entra ID, Okta or any SCIM 2.0 client) create, update and disable ${productName} users and keep forward-auth groups in step.`}
+        description={`Let your identity provider create, update and disable ${productName} users and groups.`}
       />
 
       {!settings.configurable && (
         <Banner tone="info" title="Read-only without a license.">
-          Turning SCIM on and changing it needs a license with SCIM provisioning ({props.editionLabel} edition). What is set up keeps
-          working and is shown read-only; you can still turn it off, revoke tokens and remove mappings.{" "}
+          Turning SCIM on and changing it needs a license with SCIM provisioning ({props.editionLabel} edition). You can still turn it
+          off, revoke tokens and remove mappings.{" "}
           <Link href="/license" className="text-brand underline-offset-4 hover:underline">Licensing</Link>
         </Banner>
       )}

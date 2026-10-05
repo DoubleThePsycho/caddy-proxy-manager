@@ -21,9 +21,9 @@ const SAFE_ALLOW_CIDR_2 = '233.252.0.0/24';  // MCAST-TEST-NET
 
 const API_GEOBLOCK = 'http://localhost:3000/api/v1/settings/geoblock';
 
-/** The Geo blocking and GeoIP group of the settings page (its default rules and save bar). */
+/** The Geo blocking page (its default rules and save bar). */
 function geoPane(page: Page) {
-  return page.locator('section[data-settings-group="geoblock"]');
+  return page.getByRole('main');
 }
 
 /**
@@ -41,8 +41,8 @@ test.describe('Geo Blocking — form persistence', () => {
 
   test.beforeEach(async ({ page }) => {
     await resetGeoblock(page);
-    await page.goto('/settings?section=geoblock');
-    await expect(page.getByRole('heading', { level: 2, name: 'Geo blocking and GeoIP' })).toBeVisible();
+    await page.goto('/geo-blocking');
+    await expect(page.getByRole('heading', { level: 1, name: 'Geo blocking' })).toBeVisible();
   });
 
   test.afterEach(async ({ page }) => {

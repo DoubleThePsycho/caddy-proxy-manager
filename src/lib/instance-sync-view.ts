@@ -6,7 +6,7 @@ import type { EnvSlaveInstance } from "./instance-sync";
  * instance-sync-key-pins.ts). Its keyId and publicKey are empty, so it
  * matches no key: syncs to the slave fail until the pin is replaced or reset,
  * rather than pinning again on first use. Kept here, with no server-only
- * imports, so the Settings page can use it in the browser.
+ * imports, so the Instance sync page can use it in the browser.
  */
 export const UNREADABLE_SYNC_KEY_PIN_SOURCE = "unreadable";
 

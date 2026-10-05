@@ -1,6 +1,6 @@
 # Default response
 
-Configure **Settings → General** (Requests for unknown hosts) to preserve Caddy's native behavior for unmatched HTTP requests (such as an automatic HTTPS redirect or empty response, depending on the generated server config), or replace it with:
+Configure **Host defaults → Requests for unknown hosts** (`/proxy-hosts/defaults`, under Proxy hosts in the sidebar) to preserve Caddy's native behavior for unmatched HTTP requests (such as an automatic HTTPS redirect or empty response, depending on the generated server config), or replace it with:
 
 - a custom HTTP status, body, and response headers (including custom HTML);
 - a redirect; or

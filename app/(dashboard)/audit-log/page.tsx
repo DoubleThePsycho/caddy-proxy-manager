@@ -15,6 +15,7 @@ import { getAuditChainStatus } from "@/ee/audit/chain-status";
 import { listAuditSinkSummaries } from "@/ee/audit/sink-summary";
 import { getAuditRetention } from "@/ee/audit/retention";
 import { dashboardOrganizationFilter } from "@/ee/multi-tenancy/view";
+import { parsePageParam } from "@/src/lib/pagination";
 import {
   EMPTY_FILTERS,
   RANGE_MS,
@@ -52,7 +53,7 @@ function readFilters(params: SearchParams): AuditFilters {
     range: isAuditRange(range) ? range : "all",
     from: first(params, "from"),
     to: first(params, "to"),
-    page: Math.max(1, Number.parseInt(first(params, "page") || "1", 10) || 1),
+    page: parsePageParam(params.page),
   };
 }
 
@@ -120,13 +121,16 @@ export default async function AuditLogPage({ searchParams }: PageProps) {
   // The hash chain and the sinks span every organisation: provider level only.
   const canStreaming = providerLevel && can(access, "audit_streaming:read");
   const now = Date.now();
-  const filters = readFilters(await searchParams);
-  const { filter, invalid } = parseFilters(filters, now);
+  const requested = readFilters(await searchParams);
+  const { filter, invalid } = parseFilters(requested, now);
   const scoped = { ...filter, organizationId };
 
-  const [records, total, inRange, facets, licensed, chain, sinks, retention] = await Promise.all([
+  // A page past the last one shows the last.
+  const total = await countAuditEventsMatching(scoped);
+  const filters = { ...requested, page: Math.min(requested.page, Math.max(1, Math.ceil(total / PER_PAGE))) };
+
+  const [records, inRange, facets, licensed, chain, sinks, retention] = await Promise.all([
     queryAuditEvents(scoped, { limit: PER_PAGE, offset: (filters.page - 1) * PER_PAGE }),
-    countAuditEventsMatching(scoped),
     hasNarrowingFilters(filters) ? countAuditEventsMatching({ from: filter.from, to: filter.to, organizationId }) : Promise.resolve(null),
     listAuditFacets(organizationId),
     isFeatureConfigurable("audit_streaming"),

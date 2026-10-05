@@ -46,6 +46,11 @@ updates:
           - "patch"
     # Security updates always get their own PR
     versioning-strategy: increase
+    ignore:
+      # Kept at the versions swagger-client pins, so the API reference loads one copy; update them with
+      # swagger-ui-react when its swagger-client pins others (tests/unit/api-docs-refractors.test.ts fails then).
+      - dependency-name: "@swagger-api/apidom-core"
+      - dependency-name: "@swagger-api/apidom-ns-openapi-3-1"
 
   # Pinned Caddy, xcaddy, and plugin module updates
   - package-ecosystem: "gomod"

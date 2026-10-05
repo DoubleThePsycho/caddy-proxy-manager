@@ -45,6 +45,7 @@ import {
   targets,
   TransactionEscapeError,
   transactionContext,
+  transactionEnded,
   type TransactionFrame,
   type TransactionRoot,
 } from "./executor-core";
@@ -300,12 +301,20 @@ export class PostgresExecutor {
     } catch (error) {
       frame.closed = true;
       root.closed = true;
-      await this.endTransaction(root, false, stopWatchdog);
+      try {
+        await this.endTransaction(root, false, stopWatchdog);
+      } finally {
+        transactionEnded(root);
+      }
       throw error;
     }
     frame.closed = true;
     root.closed = true;
-    await this.endTransaction(root, true, stopWatchdog);
+    try {
+      await this.endTransaction(root, true, stopWatchdog);
+    } finally {
+      transactionEnded(root);
+    }
     return result;
   }
 

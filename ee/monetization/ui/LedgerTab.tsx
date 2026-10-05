@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 "use client";
 
-import { useState, useTransition } from "react";
-import { toast } from "sonner";
+import { useTransition } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -13,7 +13,7 @@ import { formatDateTimeUtc } from "@/src/lib/date-format";
 import { cn } from "@/lib/utils";
 import type { ConsumerView, LedgerEntryView, LedgerPage } from "../types";
 import type { X402PaymentPage } from "../x402/payments";
-import { callApi, money } from "./shared";
+import { money } from "./shared";
 import { X402PaymentsTable } from "./X402Tab";
 
 const ALL = "all";
@@ -50,67 +50,46 @@ function details(entry: LedgerEntryView): string {
   return entry.description ?? entry.reference ?? "";
 }
 
+/**
+ * The ledger, a page at a time from the server: the page (?ledger=) and the
+ * filters (?consumer=, ?type=) are in the address, so back and reload keep them.
+ */
 export default function LedgerTab({
-  initial,
+  page,
+  filter,
   consumers,
   currency,
   x402Payments,
 }: {
-  initial: LedgerPage;
+  page: LedgerPage;
+  /** "all" or a consumer id; "all" or an entry type. */
+  filter: { consumer: string; type: string };
   consumers: ConsumerView[];
   currency: string;
   /** The latest x402 payments (no consumer account needed), shown under the ledger. */
   x402Payments?: X402PaymentPage;
 }) {
-  const [page, setPage] = useState<LedgerPage>(initial);
-  const [consumer, setConsumer] = useState(ALL);
-  const [type, setType] = useState(ALL);
+  const router = useRouter();
+  const pathname = usePathname() ?? "";
+  const query = useSearchParams()?.toString() ?? "";
+  const { hrefFor } = useUrlPage("ledger");
   const [pending, startTransition] = useTransition();
-  const pages = Math.max(1, Math.ceil(page.total / page.perPage));
 
-  function load(next: { page?: number; consumer?: string; type?: string }) {
-    const query = new URLSearchParams({ page: String(next.page ?? 1), perPage: String(page.perPage) });
-    const consumerValue = next.consumer ?? consumer;
-    const typeValue = next.type ?? type;
-    if (consumerValue !== ALL) query.set("consumerId", consumerValue);
-    if (typeValue !== ALL) query.set("type", typeValue);
-    startTransition(async () => {
-      try {
-        setPage(await callApi<LedgerPage>(`/ledger?${query}`));
-      } catch (error) {
-        toast.error((error as Error).message);
-      }
-    });
+  /** A new filter starts on the first page. */
+  function setFilter(key: "consumer" | "type", value: string) {
+    const params = new URLSearchParams(query);
+    if (value === ALL) params.delete(key);
+    else params.set(key, value);
+    params.delete("ledger");
+    params.set("tab", "ledger");
+    startTransition(() => router.replace(`${pathname}?${params.toString()}`, { scroll: false }));
   }
 
   return (
     <div className="flex flex-col gap-4">
-    <SectionCard
-      title="Ledger"
-      count={page.total}
-      description="Every change of a balance. Usage and failed-answer credits are one entry per consumer and hour, updated while requests come in."
-      footer={
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <span className="text-muted-foreground">
-            Page <span className="num">{page.page}</span> of <span className="num">{pages}</span>
-          </span>
-          <Button variant="outline" size="sm" disabled={pending || page.page <= 1} onClick={() => load({ page: page.page - 1 })}>
-            Previous
-          </Button>
-          <Button variant="outline" size="sm" disabled={pending || page.page >= pages} onClick={() => load({ page: page.page + 1 })}>
-            Next
-          </Button>
-        </div>
-      }
-    >
+    <SectionCard title="Ledger" count={page.total}>
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-[18px] py-3">
-        <Select
-          value={consumer}
-          onValueChange={(value) => {
-            setConsumer(value);
-            load({ consumer: value });
-          }}
-        >
+        <Select value={filter.consumer} onValueChange={(value) => setFilter("consumer", value)}>
           <SelectTrigger className="w-full sm:w-56" aria-label="Consumer">
             <SelectValue />
           </SelectTrigger>
@@ -123,13 +102,7 @@ export default function LedgerTab({
             ))}
           </SelectContent>
         </Select>
-        <Select
-          value={type}
-          onValueChange={(value) => {
-            setType(value);
-            load({ type: value });
-          }}
-        >
+        <Select value={filter.type} onValueChange={(value) => setFilter("type", value)}>
           <SelectTrigger className="w-full sm:w-44" aria-label="Entry type">
             <SelectValue />
           </SelectTrigger>
@@ -185,9 +158,12 @@ export default function LedgerTab({
           </TableBody>
         </Table>
       </div>
+      <div className="border-t border-line px-[18px] py-3 empty:hidden">
+        <Pagination page={page.page} perPage={page.perPage} total={page.total} noun="entries" label="Pages of the ledger" hrefFor={hrefFor} />
+      </div>
     </SectionCard>
     {x402Payments && (x402Payments.total > 0) && (
-      <SectionCard title="x402 payments" count={x402Payments.total} description="Paid per request with x402, by address: no consumer account. The latest 20; all of them on the x402 tab and in the API.">
+      <SectionCard title="Latest x402 payments" count={x402Payments.total}>
         <X402PaymentsTable page={x402Payments} />
       </SectionCard>
     )}

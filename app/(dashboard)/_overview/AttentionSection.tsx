@@ -76,7 +76,6 @@ export function AttentionSection({
   const items = attention.items.filter((item) => !exclude.includes(item.source));
   if (hideWhenEmpty && items.length === 0) return null;
   const silent = attention.sources.filter((source) => source.status !== "ok" && !exclude.includes(source.id));
-  const checked = attention.sources.filter((source) => source.status === "ok" && !exclude.includes(source.id));
   const count = attention.truncated && items.length === attention.items.length ? `${items.length}+` : items.length;
   return (
     <SectionCard
@@ -87,7 +86,7 @@ export function AttentionSection({
       footer={
         silent.length > 0 ? (
           <span className="text-soft">
-            {joinLabels(silent.map((source) => source.label))} did not answer in time, so {silent.length === 1 ? "its" : "their"} items may be missing.
+            {joinLabels(silent.map((source) => source.label))} did not answer in time: {silent.length === 1 ? "its" : "their"} items may be missing.
           </span>
         ) : undefined
       }
@@ -97,11 +96,6 @@ export function AttentionSection({
           compact
           icon={CircleCheck}
           title="Nothing needs attention right now"
-          description={
-            checked.length > 0
-              ? `Checked: ${joinLabels(checked.map((source) => source.label))}.`
-              : "There is nothing for your role to check here."
-          }
           className="px-[18px]"
         />
       ) : (

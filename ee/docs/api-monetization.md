@@ -61,6 +61,8 @@ API Monetization opens on **Overview**, computed from the ledger (and `GET /api/
 
 The ledger is written every few seconds, so the overview can trail the gate by that much. Amounts are summed as integer micro-units and never rounded.
 
+Consumers, proxy hosts (Hosts tab), the ledger and x402 payments show 25 rows a page, with the page in the address (`?consumers=`, `?hosts=`, `?ledger=`, `?payments=`). Consumers and hosts get a search once there are more than 25; the ledger's consumer and type filters are in the address too (`?consumer=`, `?type=`), and changing one starts on the first page. Under the ledger, the 20 latest x402 payments are shown; the x402 tab pages through all of them.
+
 ## Calling a monetized API
 
 Consumers send their key as `Authorization: Bearer ik_…` (the default) or in the header you chose for the host, for example `X-API-Key: ik_…`.

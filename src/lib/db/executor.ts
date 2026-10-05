@@ -47,6 +47,7 @@ import {
   targets,
   TransactionEscapeError,
   transactionContext,
+  transactionEnded,
   type TransactionFrame,
   type TransactionRoot,
 } from "./executor-core";
@@ -312,12 +313,18 @@ export class SqliteExecutor {
         this.endTransaction(root, false, stopWatchdog);
       } catch (rollbackError) {
         console.error("[db] Failed to roll back a transaction:", rollbackError);
+      } finally {
+        transactionEnded(root);
       }
       throw error;
     }
     frame.closed = true;
     root.closed = true;
-    this.endTransaction(root, true, stopWatchdog);
+    try {
+      this.endTransaction(root, true, stopWatchdog);
+    } finally {
+      transactionEnded(root);
+    }
     return result;
   }
 

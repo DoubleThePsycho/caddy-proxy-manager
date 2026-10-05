@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { useMemo, useState, useTransition, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Building2, Download, Filter, Info, MoreHorizontal, Plus } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionCard } from "@/components/ui/SectionCard";
@@ -12,6 +12,7 @@ import { SearchField } from "@/components/ui/SearchField";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { ProtectionPill } from "@/components/ui/ProtectionPill";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { Banner } from "@/components/ui/Banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { formatBytes, formatCount } from "@/components/ui/chart-format";
 import { cn } from "@/lib/utils";
+import { DEFAULT_PAGE_SIZE, paginate } from "@/src/lib/pagination";
 import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import type { OrganizationView } from "@/ee/multi-tenancy/service";
 import type { OrganizationDetail, OrganizationListItem, OrganizationMemberItem, OrganizationsPageData } from "@/ee/multi-tenancy/page-data";
@@ -217,6 +219,15 @@ function initials(member: OrganizationMemberItem): string {
   return letters.toUpperCase();
 }
 
+/** The page's address with `id` opened: the list keeps its page, the opened organisation's lists start over. */
+function organizationHref(query: string, id: number): string {
+  const params = new URLSearchParams(query);
+  params.delete("hosts");
+  params.delete("members");
+  params.set("organization", String(id));
+  return `/organizations?${params.toString()}`;
+}
+
 function memberLine(member: OrganizationMemberItem, organizationEnabled: boolean, now: Date): string {
   if (!organizationEnabled) return "Cannot sign in: organisation disabled";
   if (member.status !== "active") return "Account disabled";
@@ -243,6 +254,8 @@ export default function OrganizationsClient({
   now: nowIso,
 }: Props) {
   const router = useRouter();
+  const query = useSearchParams()?.toString() ?? "";
+  const { page, hrefFor } = useUrlPage();
   const branding = useBranding();
   const now = useMemo(() => new Date(nowIso), [nowIso]);
   const [pending, startTransition] = useTransition();
@@ -278,6 +291,12 @@ export default function OrganizationsClient({
       organization.allowedUpstreams.some((entry) => entry.includes(needle))
     );
   });
+  const listPage = paginate(visible, page);
+
+  /** A new search or filter starts on the first page. */
+  function firstPage() {
+    if (page > 1) router.replace(hrefFor(1), { scroll: false });
+  }
 
   function run(action: () => Promise<string>) {
     setMessage(null);
@@ -426,7 +445,6 @@ export default function OrganizationsClient({
             </span>
           </>
         }
-        description="Client organisations with their own administrators, hosts, certificates, access lists and usage. Their users never see or reach another organisation."
         actions={
           <>
             {usageMonth && organizations.length > 0 && (
@@ -469,7 +487,7 @@ export default function OrganizationsClient({
           <EmptyState
             icon={Building2}
             title="No organisations yet"
-            description="Everything belongs to the provider level. An organisation gives a client its own administrators, hosts, certificates and usage report."
+            description="Everything belongs to the provider level."
             action={
               canWrite && configurable ? (
                 <Button onClick={() => openEditor("new")}>
@@ -488,13 +506,19 @@ export default function OrganizationsClient({
               type="search"
               placeholder="Name, slug or upstream"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                firstPage();
+              }}
               className="min-w-0 max-w-none flex-[1_1_280px]"
             />
             <SegmentedControl<ShowFilter>
               label="Show"
               value={filter}
-              onChange={setFilter}
+              onChange={(value) => {
+                setFilter(value);
+                firstPage();
+              }}
               options={[
                 { value: "all", label: <>All <span className="num">{counts.all}</span></> },
                 {
@@ -511,8 +535,19 @@ export default function OrganizationsClient({
           </div>
 
           <OrganizationsTable
-            organizations={visible}
+            organizations={listPage.items}
             selectedId={data.selected?.id ?? null}
+            hrefOf={(id) => organizationHref(query, id)}
+            pager={
+              <Pagination
+                page={listPage.page}
+                perPage={listPage.perPage}
+                total={listPage.total}
+                noun="organisations"
+                label="Pages of organisations"
+                hrefFor={hrefFor}
+              />
+            }
             usageLabel={usageMonth ? shortMonth(usageMonth.month) : null}
             canWrite={canWrite}
             configurable={configurable}
@@ -543,6 +578,7 @@ export default function OrganizationsClient({
 
           {opened && data.selected && (
             <OrganizationPanel
+              key={opened.id}
               organization={opened}
               detail={data.selected}
               usage={data.usage}
@@ -594,6 +630,8 @@ export default function OrganizationsClient({
 function OrganizationsTable({
   organizations,
   selectedId,
+  hrefOf,
+  pager,
   usageLabel,
   canWrite,
   configurable,
@@ -607,6 +645,10 @@ function OrganizationsTable({
 }: {
   organizations: OrganizationListItem[];
   selectedId: number | null;
+  /** The link that opens an organisation under the list. */
+  hrefOf: (id: number) => string;
+  /** The list's pager, under the rows. */
+  pager: ReactNode;
   /** "Sep": the billing month's column; null hides it (no usage permission). */
   usageLabel: string | null;
   canWrite: boolean;
@@ -622,7 +664,7 @@ function OrganizationsTable({
   const head = "border-b border-line px-2.5 py-2.5 text-left text-xs font-medium text-soft";
   return (
     <section aria-label="Organisations" className="overflow-hidden rounded-2xl border border-line bg-panel">
-      <div className="overflow-x-auto">
+      <div className="relative overflow-x-auto">
         <table className="w-full min-w-[980px] border-collapse text-[13px]">
           <thead>
             <tr>
@@ -672,7 +714,7 @@ function OrganizationsTable({
                   <td className="py-3 pr-2.5 pl-[18px]">
                     <span className="flex flex-col gap-0.5">
                       <Link
-                        href={`/organizations?organization=${organization.id}`}
+                        href={hrefOf(organization.id)}
                         scroll={false}
                         aria-current={isSelected ? "true" : undefined}
                         className="font-semibold text-foreground underline-offset-4 hover:underline"
@@ -744,6 +786,7 @@ function OrganizationsTable({
           </tbody>
         </table>
       </div>
+      <div className="border-t border-line px-[18px] py-3 empty:hidden">{pager}</div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-[18px] py-3 text-[13px] text-muted-foreground">{footer}</div>
     </section>
   );
@@ -781,7 +824,22 @@ function OrganizationPanel({
   onEdit: () => void;
   onToggle: () => void;
 }) {
+  const router = useRouter();
   const id = String(organization.id);
+  const hostPages = useUrlPage("hosts");
+  const memberPages = useUrlPage("members");
+  const [memberSearch, setMemberSearch] = useState("");
+  const memberNeedle = memberSearch.trim().toLowerCase();
+  const members = memberNeedle
+    ? detail.members.filter(
+        (member) =>
+          member.email.toLowerCase().includes(memberNeedle) ||
+          (member.name ?? "").toLowerCase().includes(memberNeedle) ||
+          member.roleLabel.toLowerCase().includes(memberNeedle)
+      )
+    : detail.members;
+  const memberPage = paginate(members, memberPages.page);
+  const hostPage = paginate(detail.hosts ?? [], hostPages.page);
   const hostsLimit = limitState(organization.counts.proxyHosts, organization.maxProxyHosts);
   const usersLimit = limitState(organization.counts.users, organization.maxUsers);
   const noUpstreams = organization.allowedUpstreams.length === 0;
@@ -839,15 +897,14 @@ function OrganizationPanel({
               {organization.disabledSince ? `Disabled since ${longDate(organization.disabledSince)}.` : "Disabled."}
             </span>{" "}
             <span className="text-muted-foreground">
-              Its users cannot sign in, their API tokens stop working and forward auth refuses them. Its hosts keep serving
-              traffic; disable them separately if needed.
+              Its users cannot sign in and their API tokens stop working. Its hosts keep serving traffic.
             </span>
           </p>
         </div>
       ) : (
         noUpstreams && (
           <Banner tone="warn" title="No allowed upstreams yet.">
-            An empty list allows nothing, so this organisation cannot proxy anywhere until you decide where it may.
+            Its users cannot add hosts until you add one.
           </Banner>
         )
       )}
@@ -883,9 +940,7 @@ function OrganizationPanel({
           contentClassName="flex flex-col gap-3 px-[18px] pb-4"
         >
           {noUpstreams ? (
-            <p className="m-0 text-[13px] text-muted-foreground">
-              None yet. An empty list allows nothing, so its users cannot add a host until you add an entry.
-            </p>
+            <p className="m-0 text-[13px] text-muted-foreground">None yet.</p>
           ) : (
             <ul className="m-0 flex list-none flex-col gap-2 p-0">
               {organization.allowedUpstreams.map((entry) => (
@@ -896,9 +951,6 @@ function OrganizationPanel({
               ))}
             </ul>
           )}
-          <p className="m-0 text-xs text-soft">
-            Organisation users can proxy only to these. Unix sockets, Caddy placeholders and port 2019 are never allowed.
-          </p>
         </SectionCard>
 
         <SectionCard
@@ -937,8 +989,7 @@ function OrganizationPanel({
               <p className="m-0 text-xs text-soft">
                 {usage.analyticsAvailable ? (
                   <>
-                    Counted over the host names it serves now, from analytics. {usage.current.label} so far:{" "}
-                    <span className="num">{formatCount(detail.currentRequests ?? 0)}</span> requests.
+                    {usage.current.label} so far: <span className="num">{formatCount(detail.currentRequests ?? 0)}</span> requests.
                   </>
                 ) : (
                   "Analytics are off, so requests, bandwidth and WAF blocks show 0."
@@ -964,11 +1015,6 @@ function OrganizationPanel({
               </Button>
             ) : undefined
           }
-          footer={
-            <span className="text-xs text-soft">
-              Hosts use only certificates and access lists of this organisation. Domains are unique across organisations.
-            </span>
-          }
         >
           {detail.hosts === null ? (
             <p className="m-0 px-[18px] py-4 text-[13px] text-muted-foreground">Your role cannot read proxy hosts.</p>
@@ -979,8 +1025,8 @@ function OrganizationPanel({
               title="No hosts yet"
               description={
                 noUpstreams
-                  ? "Add an allowed upstream first, then create a host while the dashboard shows this organisation."
-                  : "Create a host while the dashboard shows this organisation, or move hosts in."
+                  ? "Add an allowed upstream first."
+                  : "Create one while the dashboard shows this organisation, or move hosts in."
               }
               action={
                 canWrite && configurable ? (
@@ -998,7 +1044,7 @@ function OrganizationPanel({
             />
           ) : (
             <ul className="m-0 list-none p-0">
-              {detail.hosts.map((host) => (
+              {hostPage.items.map((host) => (
                 <li key={host.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-[18px] py-3 last:border-0">
                   <span className="flex min-w-0 flex-[2_1_240px] flex-col gap-0.5">
                     <Link
@@ -1028,13 +1074,23 @@ function OrganizationPanel({
                   )}
                 </li>
               ))}
-              {detail.hostsTotal > detail.hosts.length && (
+              {detail.hostsTotal > detail.hosts.length && hostPage.page === hostPage.pageCount && (
                 <li className="px-[18px] py-3 text-[13px] text-muted-foreground">
                   And <span className="num">{detail.hostsTotal - detail.hosts.length}</span> more in proxy hosts.
                 </li>
               )}
             </ul>
           )}
+          <div className="border-t border-line px-[18px] py-3 empty:hidden">
+            <Pagination
+              page={hostPage.page}
+              perPage={hostPage.perPage}
+              total={hostPage.total}
+              noun="hosts"
+              label="Pages of hosts"
+              hrefFor={hostPages.hrefFor}
+            />
+          </div>
         </SectionCard>
 
         <SectionCard
@@ -1050,18 +1106,29 @@ function OrganizationPanel({
               </Button>
             ) : undefined
           }
-          footer={
-            <span className="text-xs text-soft">
-              Organisation admins manage its hosts, certificates, access lists, groups and users. Users and viewers sign in to its
-              hosts only.
-            </span>
-          }
         >
+          {detail.members.length > DEFAULT_PAGE_SIZE && (
+            <div className="px-[18px] pt-3">
+              <SearchField
+                aria-label="Filter members"
+                type="search"
+                placeholder="E-mail, name or role"
+                value={memberSearch}
+                onChange={(event) => {
+                  setMemberSearch(event.target.value);
+                  if (memberPages.page > 1) router.replace(memberPages.hrefFor(1), { scroll: false });
+                }}
+                className="w-full max-w-none"
+              />
+            </div>
+          )}
           {detail.members.length === 0 ? (
             <EmptyState compact headingLevel={4} title="No members yet" description="Users created while the dashboard shows this organisation join it." />
+          ) : members.length === 0 ? (
+            <p className="m-0 px-[18px] py-4 text-[13px] text-muted-foreground">No members match.</p>
           ) : (
             <ul className="m-0 list-none py-1">
-              {detail.members.map((member) => (
+              {memberPage.items.map((member) => (
                 <li key={member.id} className="flex items-center gap-3 px-[18px] py-2.5">
                   <span
                     aria-hidden="true"
@@ -1087,6 +1154,16 @@ function OrganizationPanel({
               ))}
             </ul>
           )}
+          <div className="border-t border-line px-[18px] py-3 empty:hidden">
+            <Pagination
+              page={memberPage.page}
+              perPage={memberPage.perPage}
+              total={memberPage.total}
+              noun="members"
+              label="Pages of members"
+              hrefFor={memberPages.hrefFor}
+            />
+          </div>
         </SectionCard>
       </div>
     </section>

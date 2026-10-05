@@ -23,7 +23,7 @@ export const backupsAttentionProvider: AttentionProvider = {
       severity: row.consecutiveFailures >= 3 ? ("critical" as const) : ("warning" as const),
       title: `Backups to "${row.name}" are failing`,
       detail: `${row.consecutiveFailures} failure${row.consecutiveFailures === 1 ? "" : "s"} in a row; the last successful backup was ${row.lastSuccessAt ? row.lastSuccessAt.slice(0, 10) : "never"}.`,
-      actions: [{ label: "History", route: "/history" }],
+      actions: [{ label: "Backups", route: "/backups" }],
       at: row.lastRunAt,
     }));
   },

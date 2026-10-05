@@ -89,8 +89,8 @@ function onlyUnknown(dim: Dimension, rows: readonly TopRow[]): boolean {
 }
 
 const UNKNOWN_TEXT: Partial<Record<Dimension, string>> = {
-  asn: "No network is known for these requests. The GeoLite2-ASN database (the geoipupdate profile) adds the network of each request.",
-  country: "No country is known for these requests. The GeoLite2-Country database (the geoipupdate profile) adds the country of each request.",
+  asn: "No network is known for these requests. The geoipupdate profile adds the GeoLite2-ASN database.",
+  country: "No country is known for these requests. The geoipupdate profile adds the GeoLite2-Country database.",
 };
 
 type FilterHandler = (dim: Dimension, op: FilterOp, value: string) => void;

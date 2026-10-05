@@ -43,7 +43,7 @@ function replicaState(replica: ReplicaReport): ReactNode {
 }
 
 /**
- * Settings → High availability on PostgreSQL: the replicas sharing the
+ * The High availability page on PostgreSQL: the replicas sharing the
  * database, which one leads the background jobs, their heartbeats and
  * versions. Read-only: a replica joins by starting with the same database.
  */
@@ -64,9 +64,9 @@ export default function PostgresReplicasSection({
   return (
     <SectionCard
       title="Dashboard cluster"
-      description="Every replica serves the dashboard, the API and the request-path routes from one PostgreSQL database; one of them, the leader, runs the background jobs. A replica joins by starting with the same database."
+      description="A replica joins by starting with the same database."
       descriptionPlacement="below"
-      headingLevel={3}
+      headingLevel={2}
       actions={
         <>
           <Badge variant="outline">PostgreSQL mode</Badge>
@@ -104,8 +104,7 @@ export default function PostgresReplicasSection({
       )}
       {view.liveReplicas > 1 && !configurable && (
         <Banner tone="info" title={`Adding a replica needs an active ${editionLabel} license.`}>
-          The replicas that already joined keep running and restarting whatever the license says; a new one is checked once,
-          when it joins.
+          Replicas that already joined keep running.
         </Banner>
       )}
 
@@ -137,17 +136,12 @@ export default function PostgresReplicasSection({
       </div>
 
       <div className="flex flex-col">
-        <Row label="Leader election">
-          An advisory lock in PostgreSQL. The leader checks every few seconds that it still holds it and stops its background
-          jobs at once when it cannot; another replica takes over within seconds. A replica that stops hands the lead over.
-        </Row>
-        <Row label="Membership">
-          Each replica records a heartbeat every {view.heartbeatSeconds} s. One silent for {view.goneAfterSeconds} s shows as
-          gone; it is removed after {view.pruneAfterDays} days.
+        <Row label="Heartbeat">
+          Every {view.heartbeatSeconds} s. A replica silent for {view.goneAfterSeconds} s is gone, and removed after{" "}
+          {view.pruneAfterDays} days.
         </Row>
         <Row label="License">
-          One replica is free. A new replica that joins next to a running one needs an active {editionLabel} license with high
-          availability, checked once, when it joins
+          One replica is free. Each new one needs an active {editionLabel} license, checked once, when it joins
           {configurable ? ": this install has one." : "."}
         </Row>
       </div>

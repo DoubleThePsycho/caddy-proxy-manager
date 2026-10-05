@@ -299,7 +299,7 @@ async function backupControl(now: Date): Promise<LiveControl> {
   const latest = candidates.sort((a, b) => b.at.localeCompare(a.at))[0] ?? null;
   const lastBackup = destinations.map((row) => row.lastSuccessAt).filter((at): at is string => at !== null).sort().pop() ?? null;
   const failing = destinations.filter((row) => row.lastStatus === "failed").map((row) => row.name);
-  const evidence: ControlEvidence[] = [{ label: "Backup runs", route: "/history", kind: "page" }];
+  const evidence: ControlEvidence[] = [{ label: "Backup runs", route: "/backups", kind: "page" }];
   if (test) evidence.push({ label: `Test restore, ${test.testedAt.slice(0, 10)}`, route: "/compliance", kind: "record" });
   const facts = { destinations: destinations.length, lastBackupAt: lastBackup, failingDestinations: failing, lastRestoreTestAt: latest?.at ?? null, maxAgeDays: RESTORE_TEST_MAX_AGE_DAYS };
   const backups = destinations.length === 0

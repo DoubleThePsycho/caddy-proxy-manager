@@ -65,7 +65,7 @@ export default function TuningSuggestions({ initialSuggestions, canConfigure, ca
         return;
       }
       setSuggestions(result.value.suggestions);
-      if (!result.value.analyticsEnabled) setError("ClickHouse analytics is not configured, so there are no WAF events to analyze.");
+      if (!result.value.analyticsEnabled) setError("Analytics are off, so there are no WAF events to analyze.");
       else if (result.value.explanationError) toast.error(`Some AI risk assessments are missing: ${result.value.explanationError}`);
       else toast.success(`${result.value.suggestions.length} suggestion(s) from the last ${result.value.windowDays} days`);
     });
@@ -102,12 +102,7 @@ export default function TuningSuggestions({ initialSuggestions, canConfigure, ca
     <div className="flex flex-col gap-4">
       <div>
         <h2 className="m-0 text-base font-semibold">Tuning suggestions</h2>
-        <p className="mt-1 text-[13px] text-muted-foreground">
-          Likely false positives in the last 14 days of WAF events: a rule matching on one host for many different clients over
-          several days, mostly without blocking or with a low anomaly score, from clients that otherwise use the site normally.
-          Applying a suggestion excludes the rule for that proxy host; nothing is applied automatically. Rules against critical
-          attack classes (SQL injection, remote code execution, …) are never high confidence.
-        </p>
+        <p className="mt-1 text-[13px] text-muted-foreground">Likely false positives in the last 14 days of WAF events. Nothing changes until you apply one.</p>
       </div>
       {!canConfigure && (
         <Alert>
@@ -126,17 +121,17 @@ export default function TuningSuggestions({ initialSuggestions, canConfigure, ca
       )}
       {!analyticsEnabled && (
         <Alert>
-          <AlertDescription>Tuning suggestions need ClickHouse analytics, which is not configured.</AlertDescription>
+          <AlertDescription>Tuning suggestions need analytics, which are off.</AlertDescription>
         </Alert>
       )}
       <div className="flex flex-wrap items-center gap-4">
         <Button onClick={generate} disabled={!actionable || !analyticsEnabled || pending} className="gap-1.5">
           <Wand2 className="h-4 w-4" /> Find suggestions
         </Button>
-        <label className="flex items-center gap-2 text-sm">
+        <label className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <Checkbox checked={explain && aiConfigured} onCheckedChange={(checked) => setExplain(checked === true)} disabled={!actionable || !aiConfigured} />
           Add AI risk assessments (up to 5)
-          {!aiConfigured && <span className="text-xs text-muted-foreground">: set up an AI provider on the Alerts page</span>}
+          {!aiConfigured && <span className="text-xs text-muted-foreground">Needs an AI provider (Alerts → AI).</span>}
         </label>
       </div>
       {error && (
@@ -175,7 +170,7 @@ export default function TuningSuggestions({ initialSuggestions, canConfigure, ca
                 </div>
                 {evidence.pathPrefixes.length > 0 && (
                   <div className="text-sm">
-                    <p className="text-[0.62rem] font-bold uppercase tracking-wider text-muted-foreground mb-1">Paths (query strings removed)</p>
+                    <p className="text-[0.62rem] font-bold uppercase tracking-wider text-muted-foreground mb-1">Paths</p>
                     <ul className="list-disc pl-5 space-y-0.5">
                       {evidence.pathPrefixes.map((prefix) => (
                         <li key={prefix.prefix}>

@@ -2,7 +2,7 @@
  * E2E: Generic Forward Auth (Authelia etc.) — issue #188.
  *
  * Covers the UI and persistence path:
- *  - The "Generic forward auth" card of Settings → Forward auth defaults saves provider/upstream/endpoint
+ *  - The "Generic forward auth" card of Host defaults saves provider/upstream/endpoint
  *  - The host editor is prefilled from those defaults when the provider is chosen
  *  - A host created in the editor persists the split browser/API settings
  *    (apiSplit, bypass headers) and they survive an edit round-trip
@@ -25,8 +25,8 @@ test.describe('Generic Forward Auth UI', () => {
     const originalSettings = await (await page.request.get(API_FORWARD_AUTH_SETTINGS)).json() as Record<string, unknown>;
 
     try {
-      await page.goto('/settings?section=forward-auth');
-      const generic = page.locator('section[data-settings-group="forward-auth"]').locator('#settings-generic-forward-auth');
+      await page.goto('/proxy-hosts/defaults#forward-auth');
+      const generic = page.getByRole('main').locator('#generic-forward-auth');
       await expect(generic).toBeVisible({ timeout: 10_000 });
 
       await generic.getByRole('group', { name: 'Provider preset' }).getByRole('button', { name: 'Authelia' }).click();

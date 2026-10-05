@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Download } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { KpiTile } from "@/components/ui/KpiTile";
@@ -11,9 +12,12 @@ import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
+import { SearchField } from "@/components/ui/SearchField";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatBytes, formatCount } from "@/components/ui/chart-format";
 import { cn } from "@/lib/utils";
+import { DEFAULT_PAGE_SIZE, paginate } from "@/src/lib/pagination";
 import type { UsageReport } from "@/ee/multi-tenancy/usage";
 
 type Props = {
@@ -31,6 +35,9 @@ function currentMonth(): string {
 }
 
 export default function UsageClient({ initialReport, organizations, providerLevel }: Props) {
+  const router = useRouter();
+  const { page, hrefFor } = useUrlPage();
+  const [search, setSearch] = useState("");
   const [report, setReport] = useState(initialReport);
   const [month, setMonth] = useState(currentMonth());
   const [organization, setOrganization] = useState(ALL);
@@ -43,8 +50,14 @@ export default function UsageClient({ initialReport, organizations, providerLeve
     return `/api/v1/usage-reports?${params.toString()}`;
   }
 
+  /** A new month, organisation or search starts on the first page. */
+  function firstPage() {
+    if (page > 1) router.replace(hrefFor(1), { scroll: false });
+  }
+
   function load(monthValue: string, organizationValue: string) {
     setError(null);
+    firstPage();
     startTransition(async () => {
       try {
         const response = await fetch(query("json", monthValue, organizationValue));
@@ -69,6 +82,11 @@ export default function UsageClient({ initialReport, organizations, providerLeve
     { proxyHosts: 0, enabledProxyHosts: 0, users: 0, requests: 0, bytes: 0, wafBlocks: 0 }
   );
   const scope = report.rows.length === 1 ? report.rows[0].organizationName : `All ${report.rows.length} rows`;
+  const needle = search.trim().toLowerCase();
+  const matching = needle
+    ? report.rows.filter((row) => row.organizationName.toLowerCase().includes(needle) || (row.organizationSlug ?? "").includes(needle))
+    : report.rows;
+  const rowPage = paginate(matching, page);
   const head = "border-b border-line px-3 py-2.5 text-left text-xs font-medium text-soft";
   const cell = "px-3 py-3";
 
@@ -78,11 +96,6 @@ export default function UsageClient({ initialReport, organizations, providerLeve
         className="mb-0"
         breadcrumb={["Platform", "Usage"]}
         title="Usage"
-        description={
-          providerLevel
-            ? "Usage per organisation for billing: proxy hosts and users now, requests, bandwidth and WAF blocks in the period."
-            : "Your organisation's usage: proxy hosts and users now, requests, bandwidth and WAF blocks in the period."
-        }
         actions={
           <Button variant="outline" asChild>
             <a href={query("csv")} download>
@@ -167,14 +180,24 @@ export default function UsageClient({ initialReport, organizations, providerLeve
       <SectionCard
         title={providerLevel ? "By organisation" : "Your organisation"}
         count={providerLevel ? report.rows.length : undefined}
-        footer={
-          <span className="text-xs text-soft">
-            Traffic counts cover the host names each organisation serves now, as far back as analytics keep data. Hosts and users are
-            counted now, not at the end of the period.
-          </span>
-        }
+        footer={<span className="text-xs text-soft">Hosts and users are counted now, not at the end of the period.</span>}
       >
-        <div className="overflow-x-auto">
+        {report.rows.length > DEFAULT_PAGE_SIZE && (
+          <div className="border-b border-line px-[18px] py-3">
+            <SearchField
+              aria-label="Filter organisations"
+              type="search"
+              placeholder="Name or slug"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                firstPage();
+              }}
+              className="w-full sm:max-w-xs"
+            />
+          </div>
+        )}
+        <div className="relative overflow-x-auto">
           <table className={cn("w-full min-w-[720px] border-collapse text-[13px]", pending && "opacity-60")}>
             <thead>
               <tr>
@@ -199,7 +222,14 @@ export default function UsageClient({ initialReport, organizations, providerLeve
               </tr>
             </thead>
             <tbody>
-              {report.rows.map((row) => (
+              {matching.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-[18px] py-6 text-center text-muted-foreground">
+                    No organisations match.
+                  </td>
+                </tr>
+              )}
+              {rowPage.items.map((row) => (
                 <tr key={row.organizationId ?? "provider"} className="border-b border-line transition-colors last:border-0 hover:bg-panel2">
                   <td className={cn(cell, "pl-[18px]")}>
                     <span className="flex flex-col gap-0.5">
@@ -222,6 +252,16 @@ export default function UsageClient({ initialReport, organizations, providerLeve
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="border-t border-line px-[18px] py-3 empty:hidden">
+          <Pagination
+            page={rowPage.page}
+            perPage={rowPage.perPage}
+            total={rowPage.total}
+            noun="rows"
+            label="Pages of the usage report"
+            hrefFor={hrefFor}
+          />
         </div>
       </SectionCard>
     </div>

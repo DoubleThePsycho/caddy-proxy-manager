@@ -210,7 +210,7 @@ function WafEventDetail({ event, context, onClose }: { event: SecurityEvent; con
 
   let falsePositiveDetail: string;
   if (!context.canWriteWaf) falsePositiveDetail = "Adding an exclusion needs the waf:write permission.";
-  else if (state.status === "loading") falsePositiveDetail = "The suggested exclusion comes from the audit record.";
+  else if (state.status === "loading") falsePositiveDetail = "Loading the suggestion…";
   else if (allExcluded) falsePositiveDetail = "The suggested exclusions already exist.";
   else if (open.length === 1) falsePositiveDetail = open[0].description;
   else if (open.length > 1) falsePositiveDetail = `Exclude the ${open.length} rules that added to the score, each as narrowly as the record allows.`;
@@ -246,7 +246,7 @@ function WafEventDetail({ event, context, onClose }: { event: SecurityEvent; con
         <Heading>{blocked ? "Why it was blocked" : "Why it was logged"}</Heading>
         {state.status === "loading" && (
           <p role="status" className="m-0 text-[13px] text-muted-foreground">
-            Reading the audit record…
+            Loading…
           </p>
         )}
         {state.status === "error" && (
@@ -359,9 +359,9 @@ function WafEventDetail({ event, context, onClose }: { event: SecurityEvent; con
 }
 
 const SETTINGS_LINKS: Partial<Record<SecurityEvent["kind"], { label: string; href: string; needs: "settings" | "none" }>> = {
-  geo: { label: "Geoblocking settings", href: "/settings?section=geoblock", needs: "settings" },
+  geo: { label: "Geo blocking", href: "/geo-blocking", needs: "settings" },
   access: { label: "Access lists", href: "/access-lists", needs: "none" },
-  rate_limit: { label: "Rate limit settings", href: "/settings?section=rate-limit", needs: "settings" },
+  rate_limit: { label: "Rate limiting", href: "/rate-limiting", needs: "settings" },
 };
 
 /** A request stopped by a geo, access, sign-in or rate limit rule: the rule from its outcome. */

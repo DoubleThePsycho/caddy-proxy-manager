@@ -143,19 +143,13 @@ function L4HostForm({
           ? "border-primary bg-primary/5"
           : "border-border bg-background"
       )}>
-        <div>
-          <p className={cn("text-sm font-semibold", enabled ? "text-primary" : "text-foreground")}>
-            {enabled ? "L4 Host Enabled" : "L4 Host Paused"}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {enabled
-              ? "This host is active and proxying connections"
-              : "This host is disabled and will not accept connections"}
-          </p>
-        </div>
+        <p className={cn("text-sm font-semibold", enabled ? "text-primary" : "text-foreground")}>
+          {enabled ? "Enabled" : "Paused"}
+        </p>
         <Switch
           checked={enabled}
           onCheckedChange={setEnabled}
+          aria-label="Enabled"
         />
       </div>
 
@@ -199,9 +193,9 @@ function L4HostForm({
       </div>
 
       <FormField
-        label="Listen Address"
+        label="Listen address"
         htmlFor="listenAddress"
-        helperText="Format: :PORT or HOST:PORT. Make sure to expose this port in docker-compose.yml on the caddy service. Ports 80, 443 and 2019 are reserved for Caddy's own listeners."
+        helperText=":PORT or HOST:PORT. Ports 80, 443 and 2019 are Caddy's own."
       >
         <Input
           id="listenAddress"
@@ -215,7 +209,7 @@ function L4HostForm({
       <FormField
         label="Upstreams"
         htmlFor="upstreams"
-        helperText="One per line in host:port format."
+        helperText="One host:port per line."
       >
         <Textarea
           id="upstreams"
@@ -244,21 +238,17 @@ function L4HostForm({
           <SelectContent>
             <SelectItem value="none">None (catch-all)</SelectItem>
             <SelectItem value="tls_sni">TLS SNI</SelectItem>
-            <SelectItem value="http_host">HTTP Host</SelectItem>
-            <SelectItem value="proxy_protocol">Proxy Protocol</SelectItem>
+            <SelectItem value="http_host">HTTP host</SelectItem>
+            <SelectItem value="proxy_protocol">PROXY protocol</SelectItem>
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
-          Match incoming connections before proxying. &apos;None&apos; matches
-          all connections on this port.
-        </p>
       </div>
 
       {(matcherType === "tls_sni" || matcherType === "http_host") && (
         <FormField
-          label={matcherType === "tls_sni" ? "SNI Hostnames" : "HTTP Hostnames"}
+          label={matcherType === "tls_sni" ? "SNI hostnames" : "HTTP hostnames"}
           htmlFor="matcherValue"
-          helperText="Comma-separated list of hostnames to match."
+          helperText="Comma-separated."
         >
           <Input
             id="matcherValue"
@@ -277,7 +267,7 @@ function L4HostForm({
             name="tlsTermination"
             defaultChecked={initialData?.tlsTermination ?? false}
           />
-          <Label htmlFor="tlsTermination">TLS Termination</Label>
+          <Label htmlFor="tlsTermination">TLS termination</Label>
         </div>
       )}
 
@@ -324,7 +314,7 @@ function L4HostForm({
               <div className="flex h-6 w-6 items-center justify-center rounded-md border border-line2 bg-raise text-muted-foreground">
                 <Layers className="h-3.5 w-3.5" />
               </div>
-              Load Balancer
+              Load balancer
             </div>
           </AccordionTrigger>
           <AccordionContent>
@@ -339,7 +329,7 @@ function L4HostForm({
                     initialData?.loadBalancer?.enabled ?? false
                   }
                 />
-                <Label htmlFor="lbEnabled">Enable Load Balancing</Label>
+                <Label htmlFor="lbEnabled">Enable load balancing</Label>
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="lbPolicy">Policy</Label>
@@ -354,16 +344,16 @@ function L4HostForm({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="random">Random</SelectItem>
-                    <SelectItem value="round_robin">Round Robin</SelectItem>
+                    <SelectItem value="round_robin">Round robin</SelectItem>
                     <SelectItem value="least_conn">
-                      Least Connections
+                      Least connections
                     </SelectItem>
-                    <SelectItem value="ip_hash">IP Hash</SelectItem>
-                    <SelectItem value="first">First Available</SelectItem>
+                    <SelectItem value="ip_hash">IP hash</SelectItem>
+                    <SelectItem value="first">First available</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <FormField label="Try Duration" htmlFor="lbTryDuration">
+              <FormField label="Try duration" htmlFor="lbTryDuration">
                 <Input
                   id="lbTryDuration"
                   name="lbTryDuration"
@@ -373,7 +363,7 @@ function L4HostForm({
                   }
                 />
               </FormField>
-              <FormField label="Try Interval" htmlFor="lbTryInterval">
+              <FormField label="Try interval" htmlFor="lbTryInterval">
                 <Input
                   id="lbTryInterval"
                   name="lbTryInterval"
@@ -385,7 +375,7 @@ function L4HostForm({
               </FormField>
 
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-2">
-                Active Health Check
+                Active health check
               </p>
               <input
                 type="hidden"
@@ -402,11 +392,11 @@ function L4HostForm({
                   }
                 />
                 <Label htmlFor="lbActiveHealthEnabled">
-                  Enable Active Health Check
+                  Enable active health check
                 </Label>
               </div>
               <FormField
-                label="Health Check Port"
+                label="Health check port"
                 htmlFor="lbActiveHealthPort"
               >
                 <Input
@@ -441,7 +431,7 @@ function L4HostForm({
               </FormField>
 
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-2">
-                Passive Health Check
+                Passive health check
               </p>
               <input
                 type="hidden"
@@ -458,11 +448,11 @@ function L4HostForm({
                   }
                 />
                 <Label htmlFor="lbPassiveHealthEnabled">
-                  Enable Passive Health Check
+                  Enable passive health check
                 </Label>
               </div>
               <FormField
-                label="Fail Duration"
+                label="Fail duration"
                 htmlFor="lbPassiveHealthFailDuration"
               >
                 <Input
@@ -475,7 +465,7 @@ function L4HostForm({
                   }
                 />
               </FormField>
-              <FormField label="Max Fails" htmlFor="lbPassiveHealthMaxFails">
+              <FormField label="Max fails" htmlFor="lbPassiveHealthMaxFails">
                 <Input
                   id="lbPassiveHealthMaxFails"
                   name="lbPassiveHealthMaxFails"
@@ -504,7 +494,7 @@ function L4HostForm({
               <div className="flex h-6 w-6 items-center justify-center rounded-md border border-line2 bg-raise text-muted-foreground">
                 <Globe className="h-3.5 w-3.5" />
               </div>
-              Custom DNS Resolvers
+              Custom DNS resolvers
             </div>
           </AccordionTrigger>
           <AccordionContent>
@@ -517,12 +507,12 @@ function L4HostForm({
                   name="dnsEnabled"
                   defaultChecked={initialData?.dnsResolver?.enabled ?? false}
                 />
-                <Label htmlFor="dnsEnabled">Enable Custom DNS</Label>
+                <Label htmlFor="dnsEnabled">Enable custom DNS</Label>
               </div>
               <FormField
-                label="DNS Resolvers"
+                label="DNS resolvers"
                 htmlFor="dnsResolvers"
-                helperText="One per line. Used for upstream hostname resolution."
+                helperText="One per line."
               >
                 <Textarea
                   id="dnsResolvers"
@@ -535,9 +525,9 @@ function L4HostForm({
                 />
               </FormField>
               <FormField
-                label="Fallback Resolvers"
+                label="Fallback resolvers"
                 htmlFor="dnsFallbacks"
-                helperText="Fallback DNS servers (one per line)."
+                helperText="One per line."
               >
                 <Textarea
                   id="dnsFallbacks"
@@ -575,7 +565,7 @@ function L4HostForm({
               <div className="flex h-6 w-6 items-center justify-center rounded-md border border-line2 bg-raise text-muted-foreground">
                 <MapPin className="h-3.5 w-3.5" />
               </div>
-              Geo Blocking
+              Geo blocking
             </div>
           </AccordionTrigger>
           <AccordionContent>
@@ -587,7 +577,7 @@ function L4HostForm({
                   name="geoblockEnabled"
                   defaultChecked={initialData?.geoblock?.enabled ?? false}
                 />
-                <Label htmlFor="geoblockEnabled">Enable Geo Blocking</Label>
+                <Label htmlFor="geoblockEnabled">Enable geo blocking</Label>
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="geoblockMode">Mode</Label>
@@ -600,21 +590,21 @@ function L4HostForm({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="merge">
-                      Merge with global settings
+                      Merge with the default rules
                     </SelectItem>
                     <SelectItem value="override">
-                      Override global settings
+                      Override the default rules
                     </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">
-                Block Rules
+                Block rules
               </p>
               <FormField
-                label="Block Countries"
+                label="Block countries"
                 htmlFor="geoblockBlockCountries"
-                helperText="ISO 3166-1 alpha-2 codes, comma-separated"
+                helperText="Two-letter country codes, comma-separated."
               >
                 <Input
                   id="geoblockBlockCountries"
@@ -626,7 +616,7 @@ function L4HostForm({
                 />
               </FormField>
               <FormField
-                label="Block Continents"
+                label="Block continents"
                 htmlFor="geoblockBlockContinents"
                 helperText="AF, AN, AS, EU, NA, OC, SA"
               >
@@ -659,7 +649,7 @@ function L4HostForm({
                   }
                 />
               </FormField>
-              <FormField label="Block IPs" htmlFor="geoblockBlockIps">
+              <FormField label="Block IP addresses" htmlFor="geoblockBlockIps">
                 <Input
                   id="geoblockBlockIps"
                   name="geoblockBlockIps"
@@ -670,10 +660,10 @@ function L4HostForm({
                 />
               </FormField>
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-2">
-                Allow Rules (override blocks)
+                Allow rules (win over block rules)
               </p>
               <FormField
-                label="Allow Countries"
+                label="Allow countries"
                 htmlFor="geoblockAllowCountries"
               >
                 <Input
@@ -686,7 +676,7 @@ function L4HostForm({
                 />
               </FormField>
               <FormField
-                label="Allow Continents"
+                label="Allow continents"
                 htmlFor="geoblockAllowContinents"
               >
                 <Input
@@ -718,7 +708,7 @@ function L4HostForm({
                   }
                 />
               </FormField>
-              <FormField label="Allow IPs" htmlFor="geoblockAllowIps">
+              <FormField label="Allow IP addresses" htmlFor="geoblockAllowIps">
                 <Input
                   id="geoblockAllowIps"
                   name="geoblockAllowIps"
@@ -730,9 +720,8 @@ function L4HostForm({
               </FormField>
               <Alert className="mt-1">
                 <AlertDescription>
-                  At L4, geo blocking uses the client&apos;s direct IP address
-                  (no X-Forwarded-For support). Blocked connections are
-                  immediately closed.
+                  Uses the client&apos;s direct address (no X-Forwarded-For at L4).
+                  Blocked connections are closed.
                 </AlertDescription>
               </Alert>
             </div>
@@ -753,7 +742,7 @@ function L4HostForm({
               <div className="flex h-6 w-6 items-center justify-center rounded-md border border-line2 bg-raise text-muted-foreground">
                 <Pin className="h-3.5 w-3.5" />
               </div>
-              Upstream DNS Pinning
+              Upstream DNS pinning
             </div>
           </AccordionTrigger>
           <AccordionContent>
@@ -763,13 +752,9 @@ function L4HostForm({
                 name="upstreamDnsResolutionPresent"
                 value="1"
               />
-              <p className="text-sm text-muted-foreground">
-                When enabled, upstream hostnames are resolved to IP addresses at
-                config time, pinning DNS resolution.
-              </p>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="upstreamDnsResolutionMode">
-                  Resolution Mode
+                  Resolution
                 </Label>
                 <Select
                   name="upstreamDnsResolutionMode"
@@ -786,7 +771,7 @@ function L4HostForm({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="inherit">
-                      Inherit from global settings
+                      As in Host defaults
                     </SelectItem>
                     <SelectItem value="enabled">Enabled</SelectItem>
                     <SelectItem value="disabled">Disabled</SelectItem>
@@ -795,7 +780,7 @@ function L4HostForm({
               </div>
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="upstreamDnsResolutionFamily">
-                  Address Family Preference
+                  Address family
                 </Label>
                 <Select
                   name="upstreamDnsResolutionFamily"
@@ -808,7 +793,7 @@ function L4HostForm({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="inherit">
-                      Inherit from global settings
+                      As in Host defaults
                     </SelectItem>
                     <SelectItem value="both">Both (IPv6 + IPv4)</SelectItem>
                     <SelectItem value="ipv6">IPv6 only</SelectItem>
@@ -850,7 +835,7 @@ export function CreateL4HostDialog({
     <AppDialog
       open={open}
       onClose={onClose}
-      title={initialData ? "Duplicate L4 Proxy Host" : "Create L4 Proxy Host"}
+      title={initialData ? "Duplicate L4 host" : "New L4 host"}
       maxWidth="lg"
       submitLabel="Create"
       onSubmit={() => {
@@ -900,9 +885,9 @@ export function EditL4HostDialog({
     <AppDialog
       open={open}
       onClose={onClose}
-      title="Edit L4 Proxy Host"
+      title="Edit L4 host"
       maxWidth="lg"
-      submitLabel="Save Changes"
+      submitLabel="Save changes"
       onSubmit={() => {
         (
           document.getElementById("edit-l4-host-form") as HTMLFormElement
@@ -945,7 +930,7 @@ export function DeleteL4HostDialog({
     <AppDialog
       open={open}
       onClose={onClose}
-      title="Delete L4 Proxy Host"
+      title="Delete L4 host"
       maxWidth="lg"
       submitLabel="Delete"
       onSubmit={() => {
@@ -967,8 +952,7 @@ export function DeleteL4HostDialog({
           </Alert>
         )}
         <p className="text-sm">
-          Are you sure you want to delete the L4 proxy host{" "}
-          <strong>{host.name}</strong>?
+          Delete <strong>{host.name}</strong>?
         </p>
         <div className="flex flex-col gap-1.5 rounded-md border bg-muted/30 px-4 py-3 text-sm">
           <div className="flex items-center gap-2">
@@ -987,7 +971,7 @@ export function DeleteL4HostDialog({
           </div>
         </div>
         <p className="text-sm text-destructive font-medium">
-          This action cannot be undone.
+          This cannot be undone.
         </p>
         <ProtectedChangeNotice approval={approval} targetType="l4_proxy_host" tags={host.tags} operations={["delete"]} />
       </form>

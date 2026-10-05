@@ -132,7 +132,7 @@ export default function PortalLoginForm({
       <PortalShell>
         <Card className="w-full max-w-sm">
           <CardHeader className="text-center space-y-1">
-            <CardTitle className="text-xl">Authentication Required</CardTitle>
+            <CardTitle className="text-xl">Authentication required</CardTitle>
             <CardDescription>No redirect destination specified.</CardDescription>
           </CardHeader>
         </Card>
@@ -148,7 +148,7 @@ export default function PortalLoginForm({
             <div className="flex justify-center mb-2">
               <Shield className="h-8 w-8 text-muted-foreground" />
             </div>
-            <CardTitle className="text-xl">Authentication Required</CardTitle>
+            <CardTitle className="text-xl">Authentication required</CardTitle>
             {targetDomain && (
               <CardDescription>
                 Sign in to access <span className="font-medium text-foreground">{targetDomain}</span>
@@ -174,9 +174,9 @@ export default function PortalLoginForm({
             <div className="flex justify-center mb-2">
               <Shield className="h-8 w-8 text-muted-foreground" />
             </div>
-            <CardTitle className="text-xl">Authorizing...</CardTitle>
+            <CardTitle className="text-xl">Signing in…</CardTitle>
             <CardDescription>
-              Signing in as {existingSession.name ?? existingSession.email}
+              {existingSession.name ?? existingSession.email}
             </CardDescription>
           </CardHeader>
         </Card>
@@ -191,7 +191,7 @@ export default function PortalLoginForm({
           <div className="flex justify-center mb-2">
             <Shield className="h-8 w-8 text-muted-foreground" />
           </div>
-          <CardTitle className="text-xl">Authentication Required</CardTitle>
+          <CardTitle className="text-xl">Authentication required</CardTitle>
           <CardDescription>
             {targetDomain
               ? <>Sign in to access <span className="font-medium text-foreground">{targetDomain}</span></>
@@ -261,7 +261,7 @@ export default function PortalLoginForm({
               />
             </div>
             <Button type="submit" className="w-full" disabled={disabled}>
-              {pending ? "Signing in..." : "Sign in"}
+              {pending ? "Signing in…" : "Sign in"}
             </Button>
           </form>
         </CardContent>

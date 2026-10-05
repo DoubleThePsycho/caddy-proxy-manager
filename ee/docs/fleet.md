@@ -10,14 +10,16 @@ For platform teams that run several nodes. A master instance already pushes its 
 - **Drift detection**: the master asks each slave which configuration it runs and shows the ones that differ from what it pushed.
 - **Pull replicas**: slaves the master cannot reach (behind NAT or a strict firewall) poll the master for their configuration instead. They join environments, rollouts and drift detection like any instance (see [Pull replicas](#pull-replicas)).
 
-Everything is on the **Fleet** page and under `/api/v1/fleet`. It works in master mode with slaves added in the dashboard (Settings → Instance Sync) and pull replicas; slaves configured with `INSTANCE_SLAVES` keep syncing as before and cannot join an environment.
+Everything is on the **Fleet** page and under `/api/v1/fleet`. It works in master mode with slaves added in the dashboard (the Instance sync page) and pull replicas; slaves configured with `INSTANCE_SLAVES` keep syncing as before and cannot join an environment.
 
 ## The Fleet page
 
-- **Environments** in promotion order, each with its promotion rule (every change, or promotion only and the revision it is pinned to), its canary settings, its nodes and its rollout. Each environment has the anchor `#environment-<id>`, which the sidebar's environment switcher links to.
-- A **rollout panel** for each running rollout: the canary, the observation with its countdown, the rest and the pin, what the revision changes against the one it replaces, and where each target stands. Aborting asks for a confirmation in place.
+- **Environments** in promotion order, each with its promotion rule (every change, or promotion only and the revision it is pinned to), its nodes and its rollout; **Edit** shows its canary settings. A card lists its first 12 nodes, and **N more** shows the rest in the nodes table. Each environment has the anchor `#environment-<id>`, which the sidebar's environment switcher links to.
+- A **rollout panel** for each running rollout: the canary, the observation with its countdown, the rest and the pin, what the revision changes against the one it replaces, and where each target stands (the first 12, then **Show all**). Aborting asks for a confirmation in place.
 - **Nodes**: the master and every replica, with how it syncs (pushed, or a pull agent with its poll interval), the release it reported, what it runs against its environment ("behind its environment", "ahead" for a canary), its last sync, its health, its drift and its certificate storage. A drifted node, or one behind its environment, shows **Re-sync**; the row menu re-syncs and moves a node to another environment.
-- **Recent rollouts** with who started them, **pull replicas** and **revisions** with their diffs.
+- **Rollouts** with who started them, **pull replicas** and **revisions** with their diffs.
+
+The nodes table, the rollouts, the revisions and the pull replicas show 25 rows a page, newest rollouts and revisions first. The page is in the address (`?nodes=`, `?rollouts=`, `?revisions=`, `?replicas=`), so back and reload keep it. With more than 25 nodes the table has a search over node names and addresses; the environment filter and the search start again on the first page.
 
 Certificate storage per node is what the configuration it last received sets (the master's own setting for nodes that receive every change, the revision's setting for pinned nodes): the backend and Redis mode only, never addresses or secrets.
 
@@ -208,8 +210,8 @@ A pull replica is a slave that fetches its configuration from the master instead
 
 ### Setting one up
 
-1. On the master: **Fleet → Pull replicas → Add pull replica** (also under Settings → Instance Sync), or `POST /api/v1/fleet/pull-replicas` with `{"name": "branch-office"}`. The reply shows the replica's credential and the environment variables it needs, once. The master keeps only the credential's SHA-256.
-2. Optionally paste the replica's sync public key (its own Settings → Instance Sync page shows it) as `syncPublicKey`: the key is pinned at once. Otherwise the first key the replica proves is pinned (trust on first use, as for pushed slaves).
+1. On the master: **Fleet → Pull replicas → Add pull replica** (also on the Instance sync page), or `POST /api/v1/fleet/pull-replicas` with `{"name": "branch-office"}`. The reply shows the replica's credential and the environment variables it needs, once. The master keeps only the credential's SHA-256.
+2. Optionally paste the replica's sync public key (its own Instance sync page shows it) as `syncPublicKey`: the key is pinned at once. Otherwise the first key the replica proves is pinned (trust on first use, as for pushed slaves).
 3. On the replica, set the variables and restart it:
 
 ```bash
@@ -220,7 +222,7 @@ INSTANCE_PULL_TOKEN=pull_…
 # INSTANCE_PULL_INTERVAL=30
 ```
 
-The replica keeps its own `SESSION_SECRET`. Its Settings → Instance Sync page shows where it polls, its last check-in and the last error.
+The replica keeps its own `SESSION_SECRET`. Its Instance sync page shows where it polls, its last check-in and the last error.
 
 | Variable | Where | Meaning |
 | --- | --- | --- |
@@ -271,7 +273,7 @@ All of these, key pins and re-syncs are audited (`fleet_pull_replica_created`, `
 - **A man in the middle without TLS** (`INSTANCE_SYNC_ALLOW_HTTP`): he sees the credential and the non-secret configuration, and could answer the replica as the master and inject configuration, as with an HTTP push. He cannot open sealed secrets, nor reuse the credential from another machine without the replica's key. The master URL must therefore be https unless explicitly allowed; redirects are never followed.
 - Configuration sent to a replica passes the same validation as a push (proxy host content, reserved L4 ports). The replica never logs the credential or the master's reply; the master's errors are fixed strings.
 - Pull replicas have their own rate limits on the master, before and after authentication.
-- A replica whose `SESSION_SECRET` is one of the public placeholders (the development fallback) cannot prove its key, since anybody could; it does not poll and says so on its Settings page.
+- A replica whose `SESSION_SECRET` is one of the public placeholders (the development fallback) cannot prove its key, since anybody could; it does not poll and says so on its Instance sync page.
 
 ### Compared with the earlier plan
 

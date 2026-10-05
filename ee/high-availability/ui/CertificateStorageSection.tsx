@@ -138,7 +138,7 @@ function Section({ title, children, footer, actions }: { title: string; children
   return (
     <SectionCard
       title={title}
-      headingLevel={3}
+      headingLevel={2}
       actions={actions}
       footer={footer ? <div className="flex flex-wrap justify-end gap-2">{footer}</div> : undefined}
       padded
@@ -354,6 +354,25 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
     });
   }
 
+  // Without the license and with nothing set up there is nothing to show but the license.
+  if (!view.configurable && !redis) {
+    return (
+      <div className="flex flex-col gap-4" data-testid="certificate-storage-section">
+        <Section title="Certificate storage" actions={<Badge variant="outline">{editionLabel}</Badge>}>
+          <p className="m-0 flex items-center gap-2 text-sm text-muted-foreground">
+            <Lock className="h-4 w-4 shrink-0" />
+            <span>
+              Shared storage in Redis or Valkey, for several Caddy nodes, needs an active {editionLabel} license.{" "}
+              <Link href="/license" className="text-brand underline-offset-4 hover:underline">
+                Manage the license
+              </Link>
+            </span>
+          </p>
+        </Section>
+      </div>
+    );
+  }
+
   const status =
     view.backend === "redis" ? (
       <Badge variant="success">Shared: Redis/Valkey</Badge>
@@ -371,11 +390,7 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
             {status}
             {view.source === "master" && <Badge variant="info">From the master</Badge>}
           </div>
-          <p className="text-muted-foreground">
-            With local storage each Caddy node keeps its own certificates and orders its own. With shared storage every node uses the same
-            Redis or Valkey: each certificate is ordered once, every node serves it, and any node behind a load balancer can answer the
-            ACME challenges. All nodes must use the same storage settings, which instance sync takes care of for replicas.
-          </p>
+          <p className="text-muted-foreground">Shared storage lets several Caddy nodes serve the same certificates.</p>
         </div>
       </Section>
 
@@ -442,7 +457,7 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
         }
       >
         <fieldset disabled={!editable || pending} className="flex flex-col">
-          <Row label="Mode" hint="Sentinel and cluster keep the storage available when one Redis/Valkey server fails.">
+          <Row label="Mode">
             <Select value={form.mode} onValueChange={(value) => update("mode", value as RedisMode)} disabled={!editable || pending}>
               <SelectTrigger aria-label="Mode">
                 <SelectValue />
@@ -458,7 +473,7 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
           </Row>
           <Row
             label={form.mode === "sentinel" ? "Sentinels" : form.mode === "cluster" ? "Cluster nodes" : "Server"}
-            hint="host:port, one per line. Every Caddy node must reach these addresses."
+            hint="host:port, one per line. Every Caddy node must reach them."
           >
             <Textarea
               aria-label="Addresses"
@@ -482,7 +497,7 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
           <Row label="User name" hint="Optional (Redis/Valkey ACL user).">
             <Input aria-label="User name" value={form.username} autoComplete="off" onChange={(event) => update("username", event.target.value)}  />
           </Row>
-          <Row label="Password" hint="Stored encrypted and synced sealed to replicas, or read by each Caddy node from its environment and never stored here.">
+          <Row label="Password">
             <SecretField
               field="password"
               label="password"
@@ -506,12 +521,12 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
               />
             </Row>
           )}
-          <Row label="Key prefix" hint="Every key starts with it. Give each cluster its own prefix to share one server.">
+          <Row label="Key prefix" hint="Give each cluster its own prefix to share one server.">
             <Input aria-label="Key prefix" value={form.keyPrefix} onChange={(event) => update("keyPrefix", event.target.value)} className="num" />
           </Row>
           <Row
             label="Encryption key"
-            hint="Optional. Caddy encrypts certificates and keys before storing them (the first 32 bytes are used). Keep a copy: without it the stored certificates cannot be read, and changing it makes Caddy order them again."
+            hint="Optional. Keep a copy: without it the stored certificates cannot be read, and changing it makes Caddy order them again."
           >
             <SecretField
               field="encryptionKey"
@@ -524,7 +539,7 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
               generate={randomKey}
             />
           </Row>
-          <Row label="TLS" hint="Connect to the server over TLS.">
+          <Row label="TLS">
             <div className="flex flex-col gap-2">
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox checked={form.tlsEnabled} onCheckedChange={(checked) => update("tlsEnabled", Boolean(checked))} disabled={!editable || pending} />

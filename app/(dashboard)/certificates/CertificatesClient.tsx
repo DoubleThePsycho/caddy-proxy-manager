@@ -15,6 +15,7 @@ import type {
   IssuedClientCertificateView,
   MtlsRoleView,
 } from "./page";
+import { NO_CLIENT_CERT_FILTERS, type ClientCertFilters } from "./client-list";
 import { CertificatesTab } from "./components/CertificatesTab";
 import { CaTab } from "./components/CaTab";
 import { ClientCertificatesTab, IssueClientCertificateMenu } from "./components/ClientCertificatesTab";
@@ -31,8 +32,8 @@ type Props = {
   canWrite: boolean;
   /** Creating a certificate needs certificates:write without a tag scope. */
   canCreateCertificate: boolean;
+  /** Shows the link to the certificate settings (ACME account, DNS providers). */
   canReadSettings: boolean;
-  acmeEmail: string | null;
   initialTab: TabId;
 };
 
@@ -51,7 +52,6 @@ export default function CertificatesClient({
   canWrite,
   canCreateCertificate,
   canReadSettings,
-  acmeEmail,
   initialTab,
 }: Props) {
   const [tab, setTab] = useState<TabId>(initialTab);
@@ -59,6 +59,8 @@ export default function CertificatesClient({
   const [importDrawer, setImportDrawer] = useState<ImportedCertView | null | false>(false);
   const [caDrawer, setCaDrawer] = useState<CaCertificateView | null | false>(false);
   const [issueFor, setIssueFor] = useState<CaCertificateView | null>(null);
+  // Kept here so a certificate authority's "Show client certificates" can set them.
+  const [clientFilters, setClientFilters] = useState<ClientCertFilters>(NO_CLIENT_CERT_FILTERS);
 
   const primary =
     tab === "certificates" ? (
@@ -84,14 +86,13 @@ export default function CertificatesClient({
       className="mb-0"
       breadcrumb={["Traffic", "Certificates"]}
       title="Certificates"
-      description="Caddy gets and renews a certificate for every host on its own. Import one only when you have to."
       actions={
         <>
           {canReadSettings && (
             <Button asChild variant="outline">
-              <Link href="/settings?section=dns-providers">
+              <Link href="/certificates/settings">
                 <SlidersHorizontal />
-                ACME and DNS providers
+                Certificate settings
               </Link>
             </Button>
           )}
@@ -108,7 +109,6 @@ export default function CertificatesClient({
       rows={overview.certificates}
       generatedAt={overview.generatedAt}
       canWrite={canWrite}
-      acmeEmail={acmeEmail}
       onEditImported={(cert) => setImportDrawer(cert)}
     />
   );
@@ -140,6 +140,11 @@ export default function CertificatesClient({
               canWrite={canWrite}
               onAdd={() => setCaDrawer(null)}
               onEdit={(ca) => setCaDrawer(ca)}
+              onIssue={setIssueFor}
+              onShowClientCertificates={(ca) => {
+                setClientFilters({ ...NO_CLIENT_CERT_FILTERS, caId: ca.id });
+                setTab("client");
+              }}
             />
           </TabsContent>
           <TabsContent value="client" className="mt-0">
@@ -150,6 +155,8 @@ export default function CertificatesClient({
               generatedAt={overview.generatedAt}
               canWrite={canWrite}
               onIssue={setIssueFor}
+              filters={clientFilters}
+              onFiltersChange={setClientFilters}
             />
           </TabsContent>
         </Tabs>

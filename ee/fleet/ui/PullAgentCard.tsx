@@ -7,7 +7,7 @@ import { formatDateTimeUtc } from "@/src/lib/date-format";
 import { CardNote, SettingRow, SettingRows } from "@/src/components/settings/settings-form";
 import type { PullAgentStatus } from "@/ee/fleet/pull-agent";
 
-/** What the Settings page knows of this replica's sync. */
+/** What the Instance sync page knows of this replica's sync. */
 export type PullAgentReplica = {
   lastSyncAt: string | null;
   lastSyncError: string | null;
@@ -24,7 +24,7 @@ export function PullAgentCard({ pull, slave }: { pull: PullAgentStatus; slave: P
   return (
     <SectionCard
       title="Master connection (pull)"
-      description="This instance is a pull replica (INSTANCE_SYNC_MODE=pull): it polls its master for its configuration and accepts no pushes. It is configured with environment variables."
+      description="Polls its master and accepts no pushes. Set with environment variables (INSTANCE_SYNC_MODE=pull)."
       headingLevel={3}
       divided={false}
     >
@@ -46,16 +46,17 @@ export function PullAgentCard({ pull, slave }: { pull: PullAgentStatus; slave: P
         <SettingRow label="Last configuration applied">
           <span className="flex min-h-9 items-center text-[13px]">{at(pull.lastAppliedAt)}</span>
         </SettingRow>
+        <SettingRow label="Sync key id">
+          <span className="num flex min-h-9 items-center text-[13px]">{slave.syncKeyId}</span>
+        </SettingRow>
+        <SettingRow label="Sync public key" hint="Changes with SESSION_SECRET.">
+          <span className="num flex min-h-9 items-center text-[13px] break-all">{slave.syncPublicKey}</span>
+        </SettingRow>
       </SettingRows>
       {pull.lastError && (
         <CardNote tone="warn">{`Last poll: ${pull.lastError}${pull.lastErrorAt ? ` (${at(pull.lastErrorAt)})` : ""}`}</CardNote>
       )}
       {slave.lastSyncError && <CardNote tone="warn">{`Last sync: ${slave.lastSyncAt ?? "never"} (${slave.lastSyncError})`}</CardNote>}
-      <CardNote>
-        This instance&rsquo;s sync key id is <span className="num">{slave.syncKeyId}</span> and its sync public key is{" "}
-        <span className="num break-all">{slave.syncPublicKey}</span>. The master pins the first key this instance proves, or an
-        administrator pins this one there when adding the replica; it changes with SESSION_SECRET.
-      </CardNote>
     </SectionCard>
   );
 }

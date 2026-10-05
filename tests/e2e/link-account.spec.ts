@@ -3,7 +3,7 @@
  *
  * This page requires a valid LINKING_REQUIRED: error param with a valid JWT linking token.
  * Without that, it redirects to /login. We test the redirect behavior and the fallback
- * "Sign in with Password Instead" button.
+ * "Sign in with a password" button.
  */
 import { test, expect } from '@playwright/test';
 

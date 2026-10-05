@@ -139,8 +139,17 @@ describe('GET /api/v1/search', () => {
     expect(titles(hosts.results, 'users').length).toBeGreaterThan(0);
 
     expect(ids((await search(ADMIN, 'game')).results, 'hosts')).toEqual([expect.stringMatching(/^l4_proxy_host:/)]);
-    expect(titles((await search(ADMIN, 'geo')).results, 'settings')).toContain('Geo blocking and GeoIP');
-    expect(titles((await search(ADMIN, 'instance sync')).results, 'settings')).toContain('Instance sync');
+    // A settings page is found by the words of the sections it holds; a section further down it on its own.
+    expect(titles((await search(ADMIN, 'geoip')).results, 'pages')).toContain('Geo blocking');
+    expect(titles((await search(ADMIN, 'instance sync')).results, 'pages')).toContain('Instance sync');
+    expect(titles((await search(ADMIN, 'acme')).results, 'pages')).toContain('Certificate settings');
+    const dns = (await search(ADMIN, 'dns-01')).results.find((r) => r.id === 'setting:dns-providers');
+    expect(dns).toMatchObject({ group: 'settings', title: 'DNS-01 providers', href: '/certificates/settings#dns-providers' });
+    expect(titles((await search(ADMIN, 'redis')).results, 'settings')).toEqual(expect.arrayContaining(['Certificate storage', 'Shared state']));
+    expect((await search(ADMIN, 'blocked')).results.find((r) => r.id === 'setting:blocked-sources')).toMatchObject({
+      group: 'settings',
+      href: '/access-lists?tab=blocked-sources',
+    });
     const apply = (await search(ADMIN, 'apply')).results.find((r) => r.id === 'action:apply-config');
     expect(apply).toMatchObject({ group: 'actions', run: 'apply_config', verb: 'Run' });
     expect(titles((await search(ADMIN, 'ada')).results, 'users')).toEqual(['Ada Admin']);
@@ -230,9 +239,10 @@ describe('GET /api/v1/search', () => {
   });
 
   it('shows settings sections whose own permission the role lacks to nobody but the holders', async () => {
-    expect(titles((await search(SETTINGS_READER, 'geo')).results, 'settings')).toContain('Geo blocking and GeoIP');
-    expect(titles((await search(SETTINGS_READER, 'sync')).results, 'settings')).not.toContain('Instance sync');
-    expect(titles((await search(SETTINGS_READER, 'oauth')).results, 'settings')).not.toContain('OAuth providers');
+    expect(titles((await search(SETTINGS_READER, 'geoip')).results, 'pages')).toContain('Geo blocking');
+    expect(titles((await search(SETTINGS_READER, 'dns')).results, 'settings')).toContain('DNS-01 providers');
+    expect(titles((await search(SETTINGS_READER, 'redis')).results, 'settings')).not.toContain('Certificate storage');
+    expect(titles((await search(SETTINGS_READER, 'redis')).results, 'settings')).not.toContain('Shared state');
     expect((await search(SETTINGS_READER, 'apply')).results.filter((r) => r.group === 'actions')).toEqual([]);
   });
 

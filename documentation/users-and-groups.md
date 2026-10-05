@@ -4,7 +4,7 @@
 
 ## Users
 
-One row per account:
+One row per account, newest first, 25 to a page; the page is kept in the address (`/users?page=2`). A search or a filter starts again at the first page.
 
 - **User:** name, e-mail and sign-in username. Tags mark you, the primary admin (the account `ADMIN_USERNAME` manages) and break-glass accounts of enforced SSO.
 - **Role:** a built-in role or a custom role with its permission count and tag scope. When an LDAP directory or SAML provider with group mappings, or SCIM with **Manage roles**, sets the role, the line says so: a role you choose here is replaced at their next sign-in.
@@ -32,6 +32,8 @@ Every change is recorded in the audit log, and the same guards apply as through 
 **Add user** creates a local account with a password. Directory, SAML and SCIM accounts arrive on their own.
 
 ## Groups
+
+The groups are listed by name, 25 to a page (`/groups?page=2`); the search looks in names, descriptions and members. A group's members dialog lists 10 members at a time, with a search once there are more; **Add a user to this group** shows the first 50 users that match its search.
 
 Forward-auth groups decide who gets through the sign-in portal of hosts protected by forward auth ([forward-auth.md](forward-auth.md)). Every request to such a host checks the user's access again, so removing a member, deleting a group or taking a host's grant away refuses the next request. With high availability shared state (Enterprise, `ee/docs/high-availability.md`) the sessions this takes access from are also ended on every web node at once. Each row shows the members, whether SCIM manages the group, the dashboard role a SCIM group-to-role mapping gives (with `scim:read`) and the hosts that let the group in (with `proxy_hosts:read`, only hosts in your tag scope). **Manage members** adds and removes people; **Edit group** renames it. A name is required, at most 100 characters and unique in its organisation; when a change is refused, the dialog says why (the name is taken, the person is already a member, the group is gone), and `POST /api/v1/groups` and `PATCH /api/v1/groups/{id}` refuse the same input with 400 or 409, and adding a member twice answers 409.
 

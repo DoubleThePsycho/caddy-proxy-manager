@@ -80,6 +80,24 @@ describe('cached values', () => {
     expect(value.current()).toBe('committed');
   });
 
+  it('reads again only once the transaction has committed, so the old value never comes back', async () => {
+    const db = createTestDb();
+    await setK(db, 'one');
+    const { value, reads } = cachedSetting(db);
+    await value.refresh();
+    await db.transaction(async () => {
+      await setK(db, 'two');
+      expect(await value.changed()).toBe('two');
+      const before = reads.count;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      // No read from outside the transaction yet: on PostgreSQL it would still see 'one'.
+      expect(reads.count).toBe(before);
+      expect(value.current()).toBe('two');
+    });
+    await cachedValuesSettled();
+    expect(value.current()).toBe('two');
+  });
+
   it('refreshes in the background once older than its TTL', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2030-01-01T00:00:00.000Z'));

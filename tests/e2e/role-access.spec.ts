@@ -15,6 +15,22 @@
 import { test, expect, type BrowserContext } from '@playwright/test';
 import { ensureLocalUser } from '../helpers/e2e-sql';
 
+/**
+ * The settings pages next to what they configure: each needs settings:read,
+ * which neither the user nor the viewer role holds (title: their heading).
+ */
+const SETTINGS_PAGES = [
+  { path: '/certificates/settings', title: 'Certificate settings' },
+  { path: '/proxy-hosts/defaults', title: 'Host defaults' },
+  { path: '/geo-blocking', title: 'Geo blocking' },
+  { path: '/rate-limiting', title: 'Rate limiting' },
+  { path: '/analytics/settings', title: 'Analytics settings' },
+  { path: '/oauth-providers', title: 'OAuth providers' },
+  { path: '/instances', title: 'Instance sync' },
+  { path: '/high-availability', title: 'High availability' },
+  { path: '/backups', title: 'Backups' },
+] as const;
+
 // Pages that require admin role (via requireAdmin in their own page.tsx)
 const ADMIN_ONLY_PAGES = [
   '/proxy-hosts',
@@ -29,6 +45,7 @@ const ADMIN_ONLY_PAGES = [
   '/users',
   '/groups',
   '/api-docs',
+  ...SETTINGS_PAGES.map((entry) => entry.path),
 ];
 
 // Pages accessible to any authenticated user
@@ -290,6 +307,37 @@ test.describe('Role-based access control', () => {
       await page.close();
     } finally {
       await adminContext.close();
+    }
+  });
+
+  test('admin role: every settings page loads with its heading', async ({ browser }, testInfo) => {
+    testInfo.setTimeout(90_000);
+    const adminContext = await browser.newContext({
+      storageState: require('path').resolve(__dirname, '../.auth/admin.json'),
+    });
+    try {
+      const page = await adminContext.newPage();
+      for (const { path, title } of SETTINGS_PAGES) {
+        const response = await page.goto(path);
+        expect(response?.status() ?? 0, path).toBeLessThan(400);
+        await expect(page.getByRole('heading', { level: 1, name: title, exact: true }), path).toBeVisible();
+      }
+      await page.close();
+    } finally {
+      await adminContext.close();
+    }
+  });
+
+  test('user role: the sidebar lists no settings page', async () => {
+    const page = await userContext.newPage();
+    try {
+      await page.goto('/');
+      await expect(page.getByRole('heading', { level: 1, name: 'Overview' })).toBeVisible({ timeout: 5_000 });
+      for (const { title } of SETTINGS_PAGES) {
+        await expect(page.getByRole('link', { name: title, exact: true }), title).toHaveCount(0);
+      }
+    } finally {
+      await page.close();
     }
   });
 

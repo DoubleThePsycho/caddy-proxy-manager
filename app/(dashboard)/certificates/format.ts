@@ -50,7 +50,7 @@ export function timeLeftText(validTo: string, now: number): string {
 
 export type RenewalView = { tone: StatusTone; label: string; detail: string };
 
-/** The renewal column: a status with one line of detail. */
+/** The renewal column: a status with one line of detail ("" when the status says it all). */
 export function renewalView(row: CertificateOverviewRow, now: number): RenewalView {
   const { state, renewFrom } = row.renewal;
   const imported = row.kind === "imported";
@@ -83,7 +83,7 @@ export function renewalView(row: CertificateOverviewRow, now: number): RenewalVi
     default:
       return imported
         ? { tone: "off", label: "Unknown", detail: "The certificate could not be read" }
-        : { tone: "off", label: "Automatic", detail: "Expiry not read yet" };
+        : { tone: "off", label: "Automatic", detail: "" };
   }
 }
 
@@ -101,11 +101,11 @@ export function expiryToneFor(row: CertificateOverviewRow): ExpiryTone {
   }
 }
 
-/** The "Obtained by" column: the method and one line of detail. */
+/** The "Obtained by" column: the method and, for DNS-01, the DNS provider (detail "" when there is none). */
 export function obtainedView(obtainedBy: CertificateObtainedBy): { label: string; detail: string } {
-  if (obtainedBy.method === "imported") return { label: "Imported", detail: "Replaced by hand" };
-  if (obtainedBy.challenge === "dns-01") return { label: "DNS-01", detail: obtainedBy.dnsProvider ?? "DNS provider" };
-  return { label: "HTTP-01", detail: "Port 80, or TLS-ALPN on 443" };
+  if (obtainedBy.method === "imported") return { label: "Imported", detail: "" };
+  if (obtainedBy.challenge === "dns-01") return { label: "DNS-01", detail: obtainedBy.dnsProvider ?? "" };
+  return { label: "HTTP-01", detail: "" };
 }
 
 /** One line for the timeline tooltip: "DNS-01 with Cloudflare · renews from 28 Nov". */

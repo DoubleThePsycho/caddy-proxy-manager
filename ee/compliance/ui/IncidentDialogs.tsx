@@ -257,8 +257,7 @@ export function AssessDialog({ incident, onClose, onSaved }: { incident: Inciden
           <p className="m-0 text-xs text-muted-foreground">
             {suggestion === "undetermined"
               ? "The answers do not decide it yet."
-              : `The answers suggest: ${CLASSIFICATION_LABELS[suggestion].toLowerCase()}.`}{" "}
-            Who classified it and when is recorded in the audit log.
+              : `The answers suggest: ${CLASSIFICATION_LABELS[suggestion].toLowerCase()}.`}
           </p>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">

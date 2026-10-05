@@ -8,7 +8,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
+const navigation = vi.hoisted(() => ({ search: new URLSearchParams() }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+  usePathname: () => '/profile',
+  useSearchParams: () => navigation.search,
+}));
 vi.mock('@/src/lib/auth-client', () => ({ authClient: { signIn: { social: vi.fn() } } }));
 
 import ProfileClient from '@/app/(dashboard)/profile/ProfileClient';
@@ -76,7 +81,7 @@ describe('profile multi-factor authentication', () => {
 
   it('explains that an account without a password uses its identity provider', () => {
     const html = render({ hasPassword: false }, { hasPassword: false });
-    expect(html).toContain('identity provider, which handles multi-factor authentication');
+    expect(html).toContain('Your identity provider handles multi-factor authentication.');
     expect(html).not.toContain('Set up authenticator app');
   });
 });
@@ -120,7 +125,7 @@ describe('profile password sign-in', () => {
   it('asks an OAuth-only user to set a password first', () => {
     const html = render({ hasPassword: false, passwordSignInBlocker: 'no-credential' });
     expect(html).toContain(SET_FIRST);
-    expect(html).toContain('You are using OAuth-only authentication');
+    expect(html).toContain('You sign in through your identity provider.');
     expect(html).not.toContain(CHANGE_ONCE);
     expect(html).not.toContain(NO_USERNAME);
   });
@@ -130,7 +135,7 @@ describe('profile password sign-in', () => {
     expect(html).toContain(NO_USERNAME);
     expect(html).toContain(`${ADMIN_SETS}, then you can set your password here`);
     expect(html).not.toContain('This page then shows it');
-    expect(html).not.toContain('You are using OAuth-only authentication');
+    expect(html).not.toContain('You sign in through your identity provider.');
   });
 });
 
@@ -169,6 +174,31 @@ describe('profile passkeys, sessions, tokens and enforced SSO', () => {
     expect(html).toContain('Italy');
     expect(html).toContain('AS64500 Example Telecom');
     expect(html).toContain('Sign out all other sessions');
+  });
+
+  it('pages a long list of sessions, the page in the address', () => {
+    const now = new Date().toISOString();
+    const sessions = Array.from({ length: 30 }, (_, index) => ({
+      id: index + 1, current: index === 0, createdAt: now, updatedAt: now, expiresAt: now, signedInAt: now, lastSeenAt: now,
+      ipAddress: `203.0.113.${index + 1}`, userAgent: null,
+      device: { browser: null, os: null, kind: 'unknown' as const, label: `Device ${index + 1}` },
+      location: null,
+    }));
+    const first = render({ signInUsername: 'alice' }, {}, { sessions: sessions as never });
+    expect(first).toContain('aria-label="Sign out Device 25"');
+    expect(first).not.toContain('aria-label="Sign out Device 26"');
+    expect(first.replace(/<[^>]+>/g, '')).toContain('1–25 of 30 sessions');
+    expect(first).toContain('href="/profile?sessions=2"');
+
+    navigation.search = new URLSearchParams('sessions=2');
+    try {
+      const second = render({ signInUsername: 'alice' }, {}, { sessions: sessions as never });
+      expect(second).toContain('aria-label="Sign out Device 26"');
+      expect(second).not.toContain('aria-label="Sign out Device 25"');
+      expect(second.replace(/<[^>]+>/g, '')).toContain('26–30 of 30 sessions');
+    } finally {
+      navigation.search = new URLSearchParams();
+    }
   });
 
   it('shows token scopes, or that a token has its owner\'s role', () => {

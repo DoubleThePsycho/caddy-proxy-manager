@@ -18,7 +18,6 @@ import {
   HIGH_ERROR_RATE,
   PROTECTION_FILTERS,
   PROTECTION_FILTER_LABELS,
-  SORT_LABELS,
   primaryDomain,
   type HostListQuery,
   type HostListRow,
@@ -34,6 +33,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Banner } from "@/components/ui/Banner";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { AppDialog } from "@/components/ui/AppDialog";
 import { formatCount, formatPercent } from "@/components/ui/chart-format";
 import { CreateHostDialog, EditHostDialog, DeleteHostDialog } from "@/components/proxy-hosts/HostDialogs";
@@ -229,6 +229,7 @@ export default function ProxyHostsClient({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { hrefFor } = useUrlPage();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showTraffic = analyticsStatus !== null && analyticsStatus !== "disabled";
@@ -271,10 +272,11 @@ export default function ProxyHostsClient({
     router.replace(rest ? `${pathname}?${rest}` : pathname, { scroll: false });
   }, [searchParams, canWrite, editTarget, pathname, router]);
 
-  function pushParams(update: (params: URLSearchParams) => void, resetPage = true) {
+  /** Changes the filters or the sort, back on page 1. */
+  function pushParams(update: (params: URLSearchParams) => void) {
     const params = new URLSearchParams(searchParams.toString());
     update(params);
-    if (resetPage) params.delete("page");
+    params.delete("page");
     const rest = params.toString();
     router.push(rest ? `${pathname}?${rest}` : pathname);
   }
@@ -318,13 +320,6 @@ export default function ProxyHostsClient({
       params.set("sortBy", key);
       params.set("sortDir", dir);
     });
-  }
-
-  function goToPage(page: number) {
-    pushParams((params) => {
-      if (page <= 1) params.delete("page");
-      else params.set("page", String(page));
-    }, false);
   }
 
   function clearFilters() {
@@ -421,10 +416,6 @@ export default function ProxyHostsClient({
 
   const filtering = Boolean(query.search) || query.status !== "all" || query.protection !== null || query.tags.length > 0;
   const { total, page, perPage } = pagination;
-  const pageCount = Math.max(1, Math.ceil(total / perPage));
-  const from = total === 0 ? 0 : (page - 1) * perPage + 1;
-  const to = Math.min(total, page * perPage);
-  const sortLabel = !showTraffic && (query.sortBy === "requests" || query.sortBy === "errors") ? SORT_LABELS.host : SORT_LABELS[query.sortBy];
   const anyEnabled = selectedRows.some((row) => row.enabled);
   const anyDisabled = selectedRows.some((row) => !row.enabled);
 
@@ -449,7 +440,7 @@ export default function ProxyHostsClient({
 
       {analyticsStatus === "unavailable" && (
         <Banner tone="warn" title="Traffic could not be read.">
-          ClickHouse did not answer, so requests, 5xx rates and traffic alerts are missing from the list.
+          ClickHouse did not answer.
         </Banner>
       )}
 
@@ -458,7 +449,6 @@ export default function ProxyHostsClient({
           <EmptyState
             icon={Server}
             title="No proxy hosts yet"
-            description="A proxy host sends the traffic for one or more domains to a service on your network, over a certificate Caddy obtains and renews."
             action={
               canWrite ? (
                 <Button asChild>
@@ -743,33 +733,15 @@ export default function ProxyHostsClient({
               </>
             )}
 
-            {total > 0 && (
-              <div className="flex flex-wrap items-center gap-2.5 border-t border-line px-[18px] py-3 text-[13px] text-muted-foreground">
-                <span>
-                  {total > perPage ? (
-                    <>
-                      <span className="num">
-                        {from}–{to}
-                      </span>{" "}
-                      of <span className="num">{total}</span>
-                    </>
-                  ) : (
-                    plural(total, "host")
-                  )}
-                  , sorted by {sortLabel}
-                </span>
-                {pageCount > 1 && (
-                  <span className="ml-auto flex gap-1.5">
-                    <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => goToPage(page - 1)}>
-                      Previous
-                    </Button>
-                    <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => goToPage(page + 1)}>
-                      Next
-                    </Button>
-                  </span>
-                )}
-              </div>
-            )}
+            <Pagination
+              page={page}
+              perPage={perPage}
+              total={total}
+              noun="hosts"
+              label="Pages of hosts"
+              hrefFor={hrefFor}
+              className="border-t border-line px-[18px] py-3"
+            />
           </section>
         </>
       )}
@@ -845,7 +817,7 @@ export default function ProxyHostsClient({
         onSubmit={() => runBulk({ type: "delete" })}
       >
         <div className="flex flex-col gap-3 text-sm">
-          <p>These hosts stop serving their domains as soon as Caddy has the new configuration:</p>
+          <p>These hosts stop serving their domains:</p>
           <ul className="flex max-h-48 flex-col gap-1 overflow-y-auto rounded-lg border border-line bg-panel2 px-3 py-2">
             {selectedRows.map((row) => (
               <li key={row.id} className="num [overflow-wrap:anywhere]">

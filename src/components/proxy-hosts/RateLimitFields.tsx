@@ -199,14 +199,9 @@ function RateLimitRulesEditor({
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        Over the limit, a client gets 429 Too Many Requests with Retry-After. Windows run from 1 second
-        to 1 hour; at most {RATE_LIMIT_LIMITS.maxEvents} requests per window. Paths are matched as the
-        client sent them, before any rewrite.
-        {showUserKeyHint && (
-          <> Per signed-in user needs this host&apos;s built-in forward auth; elsewhere, and for requests without a
-          signed-in user, it counts per client IP. Per request header counts requests without the header per
-          client IP.</>
-        )}
+        Windows from 1 second to 1 hour, at most {RATE_LIMIT_LIMITS.maxEvents} requests each. Paths match as the client
+        sent them, before any rewrite.
+        {showUserKeyHint && <> Per signed-in user needs the host&apos;s built-in sign-in; otherwise it counts per client IP.</>}
       </p>
     </div>
   );
@@ -278,9 +273,6 @@ export function RateLimitFields({ value }: { value?: ProxyHostRateLimit | null }
           </div>
           <div className="min-w-0">
             <p className="text-sm font-bold leading-snug">Rate Limiting</p>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Answer 429 to clients that send too many requests, by path and method
-            </p>
           </div>
         </div>
         <Switch
@@ -293,7 +285,7 @@ export function RateLimitFields({ value }: { value?: ProxyHostRateLimit | null }
 
       {!enabled && (
         <p className="text-xs text-muted-foreground mt-2">
-          Off: the host uses the global defaults from Settings, if they are enabled.
+          Off: the host uses the defaults from Rate limiting, if they are on.
         </p>
       )}
 
@@ -304,11 +296,7 @@ export function RateLimitFields({ value }: { value?: ProxyHostRateLimit | null }
         )}
       >
         <ModeSelector mode={mode} onChange={setMode} />
-        <p className="text-xs text-muted-foreground mt-2">
-          {mode === "merge"
-            ? "The global default rules apply as well as these."
-            : "Only these rules apply. Override with no rules turns rate limiting off for this host."}
-        </p>
+        {mode === "override" && <p className="text-xs text-muted-foreground mt-2">Only these rules apply; with none, nothing is limited.</p>}
         <div className="border-t border-border mt-3 mb-3" />
         <RateLimitRulesEditor rules={rules} onChange={setRules} />
       </div>
@@ -345,8 +333,7 @@ export function RateLimitSettingsFields({ value }: { value?: RateLimitSettings |
         <div>
           <p className="text-sm font-semibold">Default rules</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Apply to every proxy host without rate limiting of its own, and to hosts that merge with them.
-            A host that overrides them uses only its own rules.
+            Apply to hosts without rate limiting of their own and to hosts that merge with them.
           </p>
         </div>
         <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Apply the default rules" />
@@ -360,9 +347,7 @@ export function RateLimitSettingsFields({ value }: { value?: RateLimitSettings |
           Never limited
         </label>
         <p className="text-xs text-muted-foreground mt-0.5 mb-1.5">
-          Client IPs and CIDR ranges that no rule limits, such as monitoring probes. One per line;{" "}
-          <code className="font-mono">private_ranges</code> covers the private networks. Applies even when the
-          default rules are off. Client IPs are resolved through the trusted proxies.
+          IPs and CIDR ranges, one per line. <code className="font-mono">private_ranges</code> covers the private networks.
         </p>
         <Textarea
           id="rate-limit-allowlist"
@@ -379,8 +364,7 @@ export function RateLimitSettingsFields({ value }: { value?: RateLimitSettings |
           IPv6 grouping
         </label>
         <p className="text-xs text-muted-foreground mt-0.5 mb-1.5">
-          Rules keyed by client IP count IPv6 clients per network of this prefix length, since one subscriber
-          usually holds a whole /64. 128 counts every address on its own.
+          IPv6 clients are counted per network of this prefix length; 128 counts each address.
         </p>
         <Input
           id="rate-limit-ipv6-prefix"

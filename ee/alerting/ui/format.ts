@@ -129,7 +129,7 @@ export function subjectLink(subjectKey: string, hostNames: ReadonlyMap<number, s
     case "license":
       return { label: "License", description: "Expiry and the installed key", href: "/license", action: "Open the license" };
     case "backup_destination":
-      return { label: "Backups", description: "Destinations and recent runs", href: "/history?tab=backups", action: "Open backups" };
+      return { label: "Backups", description: "Destinations and recent runs", href: "/backups", action: "Open backups" };
     case "change_request":
       return { label: `Change request #${value}`, description: "The change waiting for approval", href: `/approvals?request=${encodeURIComponent(value)}`, action: "Open the request" };
     case "access_review":

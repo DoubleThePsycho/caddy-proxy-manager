@@ -76,7 +76,6 @@ export function ImportCertDrawer({ open, cert, onClose }: Props) {
               required
               autoFocus
             />
-            <p className="text-xs text-muted-foreground">A name to recognise this certificate by</p>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -87,7 +86,6 @@ export function ImportCertDrawer({ open, cert, onClose }: Props) {
               defaultValue={isEdit ? cert.domains.join("\n") : ""}
               rows={3}
             />
-            <p className="text-xs text-muted-foreground">The domains this certificate covers</p>
           </div>
 
           {/* Certificate PEM */}

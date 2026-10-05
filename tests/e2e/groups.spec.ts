@@ -22,7 +22,7 @@ test.describe('Groups tab', () => {
   test('/groups opens Users and groups on the Groups tab', async ({ page }) => {
     await expect(page.getByRole('heading', { level: 1, name: 'Users and groups' })).toBeVisible();
     await expect(page.getByRole('tab', { name: /^Groups/ })).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByText('Groups decide who gets through the sign-in portal of hosts protected by forward auth.')).toBeVisible();
+    await expect(page.getByRole('region', { name: 'Groups' })).toBeVisible();
   });
 
   test('New group opens the create dialog and Cancel closes it', async ({ page }) => {

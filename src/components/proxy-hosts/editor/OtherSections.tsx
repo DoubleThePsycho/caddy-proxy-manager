@@ -53,7 +53,6 @@ export function CertificateSection() {
       id="certificate"
       title="Certificate"
       was="certificateId"
-      description="Caddy gets and renews certificates for the domains on its own; choose one only when you have to."
       actions={
         <Link href="/certificates" className="text-[13px] text-brand underline-offset-4 hover:underline">
           All certificates
@@ -116,13 +115,10 @@ export function CertificateSection() {
             </InfoCell>
             <InfoCell label="Renewal">
               <StatusDot tone="ok" label="Automatic" />
-              <span className="text-xs text-soft">About 30 days before expiry</span>
             </InfoCell>
           </>
         ) : (
-          <p className="m-0 text-[13px] text-muted-foreground">
-            Caddy obtains a certificate for each domain over ACME once the host is saved and renews it about 30 days before it expires. Wildcard domains need a DNS provider in Settings.
-          </p>
+          <p className="m-0 text-[13px] text-muted-foreground">Obtained and renewed automatically once the host is saved.</p>
         )}
       </div>
       {uncovered.length > 0 && (
@@ -135,7 +131,6 @@ export function CertificateSection() {
           id="f-force-https"
           label="Redirect HTTP to HTTPS"
           was="sslForced"
-          description="Plain-HTTP requests get a redirect to the same address over HTTPS."
           checked={form.sslForced}
           onChange={(sslForced) => update((f) => ({ ...f, sslForced }))}
           className="pb-0"
@@ -149,13 +144,13 @@ export function HeadersSection() {
   const { form, update } = useEditor();
   return (
     <>
-      <EditorCard id="hsts" title="Strict Transport Security" description="Tells browsers to use HTTPS for this site from now on.">
+      <EditorCard id="hsts" title="Strict Transport Security">
         <div className="-mt-2 divide-y divide-line">
           <ToggleRow
             id="f-hsts"
             label="Send the HSTS header"
             was="hstsEnabled"
-            description="Strict-Transport-Security on every HTTPS response, for two years."
+            description="Browsers then use only HTTPS for two years: hard to undo."
             checked={form.hstsEnabled}
             onChange={(hstsEnabled) => update((f) => ({ ...f, hstsEnabled }))}
           />
@@ -163,15 +158,15 @@ export function HeadersSection() {
             id="f-hsts-sub"
             label="Include subdomains"
             was="hstsSubdomains"
-            description={form.hstsEnabled ? "Browsers apply it to every name under these domains too." : "Only applies while the HSTS header is sent."}
+            description={form.hstsEnabled ? "Every name under these domains must then serve HTTPS." : undefined}
             checked={form.hstsSubdomains}
             onChange={(hstsSubdomains) => update((f) => ({ ...f, hstsSubdomains }))}
           />
         </div>
       </EditorCard>
-      <EditorCard id="response-headers" title="Other response headers">
+      <EditorCard id="response-headers" title="Other headers">
         <p className="-mt-2 m-0 text-[13px] text-muted-foreground">
-          Set other request or response headers with handlers in{" "}
+          Set them in{" "}
           <a href="#advanced" className="text-brand underline-offset-4 hover:underline">
             Advanced, Raw Caddy JSON
           </a>
@@ -265,7 +260,7 @@ export function AdvancedSection() {
         <EditorCard id="organisation" title="Organisation">
           <p className="-mt-2 m-0 text-[13px] text-muted-foreground">
             {data.mode === "create" ? "The new host belongs to " : "This host belongs to "}
-            <span className="text-foreground">{data.organization}</span>. Hosts move between organisations on the Organisations page.
+            <span className="text-foreground">{data.organization}</span>.
           </p>
         </EditorCard>
       )}
@@ -273,7 +268,6 @@ export function AdvancedSection() {
         id="f-redirects"
         title="Redirects and rewrites"
         was="redirects"
-        description="Redirects answer the client; rewrites change the path before it reaches the upstream."
         actions={<AddButton onClick={() => update((f) => ({ ...f, redirects: [...f.redirects, { key: rowKey("rd"), from: "", to: "", status: 301 }] }))}>Add redirect</AddButton>}
         flush
       >
@@ -295,7 +289,7 @@ export function AdvancedSection() {
             value={form.rewritePrefix}
             onChange={(rewritePrefix) => update((f) => ({ ...f, rewritePrefix }))}
             placeholder="None"
-            hint="Put in front of every path, for apps served under a sub-path."
+            hint="Added in front of every path."
             mono
           />
           <div id="f-rewrites" tabIndex={-1} className="flex min-w-0 flex-col gap-1.5">
@@ -307,7 +301,6 @@ export function AdvancedSection() {
                 ))}
               </ul>
             )}
-            <span className="text-xs text-soft">The client's address stays the same; the upstream sees the new path.</span>
             <div>
               <AddButton onClick={() => update((f) => ({ ...f, pathRewrites: [...f.pathRewrites, { key: rowKey("rw"), from: "", to: "" }] }))}>Add rewrite</AddButton>
             </div>
@@ -319,7 +312,6 @@ export function AdvancedSection() {
         id="f-error-pages"
         title="Error pages"
         was="errorPages"
-        description="Your own body for errors, such as 502 while the upstream is down; the status code stays the same."
         actions={
           <AddButton
             onClick={() =>
@@ -335,7 +327,7 @@ export function AdvancedSection() {
         flush
       >
         {form.errorPages.length === 0 ? (
-          <p className="m-0 px-5 py-3.5 text-[13px] text-muted-foreground">Caddy's own error responses.</p>
+          <p className="m-0 px-5 py-3.5 text-[13px] text-muted-foreground">No error pages.</p>
         ) : (
           <ul className="m-0 list-none p-0 [&>li:first-child]:border-t-0">
             {form.errorPages.map((row, index) => (
@@ -345,13 +337,12 @@ export function AdvancedSection() {
         )}
       </EditorCard>
 
-      <EditorCard id="name-resolution" title="Upstream name resolution" description="Only matters when upstreams are names, not addresses.">
+      <EditorCard id="name-resolution" title="Upstream name resolution">
         <div className="-mt-2 border-b border-line">
           <ToggleRow
             id="f-dns-enabled"
             label="Own DNS resolvers"
             was="dnsResolver"
-            description="Resolve the upstream names with these servers instead of the system's."
             checked={form.dnsResolver.enabled}
             onChange={(enabled) => update((f) => ({ ...f, dnsResolver: { ...f.dnsResolver, enabled } }))}
           />
@@ -395,7 +386,6 @@ export function AdvancedSection() {
             was="upstreamDns"
             value={form.upstreamDns.mode}
             onChange={(mode) => update((f) => ({ ...f, upstreamDns: { ...f.upstreamDns, mode: mode as typeof f.upstreamDns.mode } }))}
-            hint="Pinned names are resolved when the configuration is applied and written to Caddy as addresses."
           >
             <option value="inherit">Inherit global</option>
             <option value="enabled">Enabled</option>
@@ -418,11 +408,7 @@ export function AdvancedSection() {
       <EditorCard
         id="raw-json"
         title="Raw Caddy JSON"
-        description={
-          data.isAdmin
-            ? "For what the form cannot express. Checked when you save: Caddy refuses a configuration it cannot load."
-            : "Only administrators can change custom Caddy JSON."
-        }
+        description={data.isAdmin ? undefined : "Only administrators can change custom Caddy JSON."}
       >
         <div className="grid grid-cols-[repeat(auto-fit,minmax(min(300px,100%),1fr))] gap-x-5 gap-y-3">
           <JsonField

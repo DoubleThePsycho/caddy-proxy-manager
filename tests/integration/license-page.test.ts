@@ -195,7 +195,6 @@ describe('LicensePage', () => {
     expect(html).toContain('Enterprise');
     expect(html).toContain('Verified offline');
     expect(html).toContain('LIC-PAGE');
-    expect(html).toContain('2026-test');
     expect(html).toContain('Your edition');
     expect(html).toContain('In use');
     expect(html).toContain('1 environment');
@@ -216,15 +215,14 @@ describe('LicensePage', () => {
 
 describe('LicenseClient', () => {
   function render(props: Parameters<typeof LicenseClient>[0]) {
-    return renderToStaticMarkup(createElement(LicenseClient, { now: NOW, trustedKeyIds: ['2026-10'], ...props }));
+    return renderToStaticMarkup(createElement(LicenseClient, { now: NOW, ...props }));
   }
 
   it('shows Community with the built-in key and every feature as not licensed', async () => {
     const html = render({ license: await viewOf(null) });
     expect(html).toContain('Community');
     expect(html).toContain('No license');
-    expect(html).toContain('Keys are checked on this machine');
-    expect(html).toContain('2026-10');
+    expect(html).toContain('Every free feature works without a license.');
     expect(html).toContain('Not licensed');
     expect(html).toContain('Get a license or a 14-day trial');
     expect(html).not.toContain('Remove key');

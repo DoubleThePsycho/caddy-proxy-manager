@@ -79,7 +79,13 @@ const X402_SETTINGS: X402SettingsView = {
   stripeMode: 'live', stripeReady: true, networks: [{ id: 'eip155:8453', label: 'Base' }], notEnabledAt: null, notEnabledMessage: null,
 };
 
-function render(tab: MonetizationTab, configurable = true, canManageReplicas = true, x402: Partial<X402SettingsView> = {}) {
+function render(
+  tab: MonetizationTab,
+  configurable = true,
+  canManageReplicas = true,
+  x402: Partial<X402SettingsView> = {},
+  extra: Partial<Parameters<typeof MonetizationClient>[0]> = {}
+) {
   return renderToStaticMarkup(
     createElement(MonetizationClient, {
       initialTab: tab,
@@ -112,9 +118,12 @@ function render(tab: MonetizationTab, configurable = true, canManageReplicas = t
         total: 1, page: 1, perPage: 20,
       },
       editionLabel: 'Enterprise',
+      ...extra,
     })
   );
 }
+
+const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
 describe('API monetization page', () => {
   it('opens on the overview: money paid in and charged this month, from the ledger', () => {
@@ -172,6 +181,27 @@ describe('API monetization page', () => {
     const html = render('ledger');
     expect(html).toContain('4 requests, 0 free');
     expect(html).toContain('Stripe Checkout top-up');
+  });
+
+  it('pages consumers 25 at a time and offers to filter them', () => {
+    const many = Array.from({ length: 30 }, (_, index) => ({ ...consumers[0], id: 100 + index, name: `Consumer ${String(index + 1).padStart(2, '0')}` }));
+    const html = render('consumers', true, true, {}, { consumers: many });
+    expect(html).toContain('aria-label="Filter consumers"');
+    expect(html).toContain('Consumer 25');
+    expect(html).not.toContain('Consumer 26');
+    expect(text(html)).toMatch(/1 – 25 of 30 consumers/);
+    expect(html).toContain('href="/api-monetization?consumers=2"');
+  });
+
+  it('pages the ledger on the server, with its filters in the address', () => {
+    const ledger = {
+      entries: [{ id: 51, consumerId: 7, consumerName: 'Acme', type: 'topup' as const, amountMicros: 10_000_000, balanceAfterMicros: 12_502_000, requests: 0, freeRequests: 0, reference: null, description: 'Page two', createdBy: null, createdAt: stamp, updatedAt: stamp }],
+      total: 120, page: 2, perPage: 25,
+    };
+    const html = render('ledger', true, true, {}, { ledger, ledgerFilter: { consumer: '7', type: 'topup' } });
+    expect(html).toContain('Page two');
+    expect(text(html)).toMatch(/26 – 50 of 120 entries/);
+    expect(html).toContain('href="/api-monetization?ledger=3"');
   });
 
   it('explains the license and stays read-only without one', () => {

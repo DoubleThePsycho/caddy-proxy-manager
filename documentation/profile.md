@@ -21,6 +21,8 @@ Your password, authenticator app and passkeys. See `documentation/mfa.md` for mu
 - **Last seen:** the session's last request, to the minute.
 - **Signed in:** when the session was created.
 
+The list shows 25 sessions a page; the page is in the address (`?sessions=2`), so reloading keeps it.
+
 **Sign out** ends one session; **Sign out all other sessions** ends every one except yours. Those browsers have to sign in again. Both are recorded in the audit log (`session_revoked`, `sessions_revoked`).
 
 Administrators, and custom roles with `users:read` / `users:write`, can do the same for another user through the REST API. Signing out someone else's sessions needs every permission that user's role holds, like any other change to a user.

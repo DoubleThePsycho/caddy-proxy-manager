@@ -16,7 +16,7 @@ export const fleetAttentionProvider: AttentionProvider = {
   permissions: ["fleet:read", "instances:read"],
   async collect({ access }) {
     if ((await getInstanceMode()) !== "master") return [];
-    const route = can(access, "fleet:read") ? "/fleet" : "/settings";
+    const route = can(access, "fleet:read") ? "/fleet" : "/instances";
     const open = [{ label: can(access, "fleet:read") ? "Open fleet" : "Instance sync", route }];
     const items: Omit<AttentionItem, "source">[] = [];
     for (const instance of await listFleetInstances()) {

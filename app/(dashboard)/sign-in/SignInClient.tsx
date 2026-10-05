@@ -50,7 +50,7 @@ function OidcCard({ provider, overview, can, format }: { provider: OidcSourceVie
       subtitle={provider.type === "oidc" ? "OpenID Connect provider" : "OAuth provider"}
       status={enabledStatus(provider.enabled)}
       footerNote={<>Scopes <span className="num">{provider.scopes}</span></>}
-      footerActions={can.readSettings ? <ConfigureLink href="/settings?section=oauth" name={provider.name} /> : undefined}
+      footerActions={can.readSettings ? <ConfigureLink href="/oauth-providers" name={provider.name} /> : undefined}
     >
       <LastSignInFact signIn={provider.lastSignIn} format={format} />
       <UsersFact users={provider.users} />
@@ -92,7 +92,7 @@ export default function SignInClient({ overview, can, turnOffEnforcement }: Prop
   const failing = ldap.filter((directory) => directory.enabled && directory.health?.status === "failing").length;
 
   const addItems: { label: string; href: string }[] = [];
-  if (can.readSettings && can.writeSso) addItems.push({ label: "OpenID Connect or OAuth provider", href: "/settings?section=oauth" });
+  if (can.readSettings && can.writeSso) addItems.push({ label: "OpenID Connect or OAuth provider", href: "/oauth-providers" });
   if (can.writeSso) addItems.push({ label: "SAML provider", href: "/saml" });
   if (can.writeLdap) addItems.push({ label: "LDAP directory", href: "/ldap" });
   if (can.readScim) addItems.push({ label: "SCIM provisioning", href: "/scim" });
@@ -103,7 +103,6 @@ export default function SignInClient({ overview, can, turnOffEnforcement }: Prop
         className="mb-0"
         breadcrumb={["Identity", "Sign-in and directories"]}
         title="Sign-in and directories"
-        description="How people sign in to the dashboard, and where their accounts come from."
         actions={
           <>
             {can.readUsers && (
@@ -182,7 +181,6 @@ export default function SignInClient({ overview, can, turnOffEnforcement }: Prop
           <EmptyState
             icon={KeyRound}
             title="Only local accounts so far"
-            description="Connect an identity provider or a directory so people sign in with the account they already have."
             action={addItems[0] ? (
               <Button asChild>
                 <Link href={addItems[0].href}>Add {addItems[0].label.toLowerCase()}</Link>
@@ -214,8 +212,6 @@ export default function SignInClient({ overview, can, turnOffEnforcement }: Prop
               : "SCIM provisioning is not shown: your role cannot read it."}
         </p>
       )}
-      <p className="m-0 text-xs text-soft">These settings are kept on this dashboard only; synced instances do not receive them.</p>
-
     </div>
   );
 }

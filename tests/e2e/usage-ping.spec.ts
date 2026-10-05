@@ -47,7 +47,7 @@ test.describe.serial('Usage ping', () => {
   });
 
   test('Settings shows the status and exactly what would be sent', async ({ page }) => {
-    await page.goto('/settings?section=usage-ping');
+    await page.goto('/settings#usage-ping');
     const section = page.getByTestId('usage-ping-section');
     await expect(section).toBeVisible();
     await expect(section.getByText('Off', { exact: true })).toBeVisible();

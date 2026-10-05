@@ -13,15 +13,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusDot } from "@/components/ui/StatusDot";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useFormat } from "@/components/preferences/PreferencesProvider";
 import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import type { HistorySettings } from "@/ee/config-history/settings";
 import type { SnapshotView } from "@/ee/config-history/snapshots";
 import type { RestoreResult } from "@/ee/config-history/service";
 import type { RollbackPreview, VersionList, VersionView } from "@/ee/config-history/versions";
-import { describeSchedule, type BackupDestinationView, type BackupRunsPage } from "@/ee/backups/types";
-import BackupsTab from "@/ee/backups/ui/BackupsTab";
+import { describeSchedule, type BackupDestinationView } from "@/ee/backups/types";
 import { HistorySettingsDialog } from "./HistorySettingsDialog";
 import { RollbackPanel } from "./RollbackPanel";
 import { TransferDialog } from "@/src/components/config-transfer/TransferDialog";
@@ -30,19 +28,14 @@ import { VersionTimeline } from "./VersionTimeline";
 import { compareParam, describeReload, type CompareTarget } from "./history-format";
 import { jsonInit, requestJson } from "@/src/lib/request-json";
 
-export type HistoryTab = "versions" | "backups";
-
+/** The backup destinations, for the line that links to the Backups page. */
 export type BackupsProps = {
   destinations: BackupDestinationView[];
-  runs: BackupRunsPage;
-  configurable: boolean;
-  editionLabel: string;
 };
 
 export type HistoryAllowed = { backups: boolean; export: boolean; import: boolean; write: boolean; restore: boolean };
 
 type Props = {
-  initialTab: HistoryTab;
   /** Server time of the render (ms), for the day labels of the timeline. */
   now: number;
   versions: VersionList;
@@ -70,16 +63,7 @@ type Flash = { tone: "ok" | "bad" | "warn"; text: string } | null;
 
 const ALL_ALLOWED: HistoryAllowed = { backups: true, export: true, import: true, write: true, restore: true };
 
-function TabCount({ value }: { value: number }) {
-  return (
-    <span className="num rounded-full bg-raise px-1.5 text-[11px] font-normal leading-[18px] text-muted-foreground">
-      {value.toLocaleString("en-US")}
-    </span>
-  );
-}
-
 export default function HistoryClient({
-  initialTab,
   now,
   versions: list,
   page,
@@ -101,7 +85,6 @@ export default function HistoryClient({
   const fmt = useFormat();
   const { productName } = useBranding();
   const [pending, startTransition] = useTransition();
-  const [tab, setTab] = useState<HistoryTab>(initialTab);
   const [selectedId, setSelectedId] = useState<number | null>(initialVersionId);
   const [compare, setCompare] = useState<CompareTarget>(initialCompare);
   const [flash, setFlash] = useState<Flash>(null);
@@ -127,24 +110,16 @@ export default function HistoryClient({
     null;
   const canChange = configurable && !isSlave;
 
-  // The URL holds the tab, page, version and comparison; updating it needs no server round trip.
-  function syncUrl(next: { tab?: HistoryTab; version?: number | null; compare?: CompareTarget }) {
+  // The URL holds the page, version and comparison; updating it needs no server round trip.
+  function syncUrl(next: { version?: number | null; compare?: CompareTarget }) {
     const params = new URLSearchParams();
-    const nextTab = next.tab ?? tab;
-    if (nextTab === "backups") params.set("tab", "backups");
     if (page > 1) params.set("page", String(page));
     const version = next.version === undefined ? selectedId : next.version;
-    if (nextTab === "versions" && version !== null) params.set("version", String(version));
+    if (version !== null) params.set("version", String(version));
     const target = next.compare ?? compare;
-    if (nextTab === "versions" && target !== "previous") params.set("compare", compareParam(target));
+    if (target !== "previous") params.set("compare", compareParam(target));
     const query = params.toString();
     window.history.replaceState(null, "", query ? `/history?${query}` : "/history");
-  }
-
-  function changeTab(value: string) {
-    const next = value as HistoryTab;
-    setTab(next);
-    syncUrl({ tab: next });
   }
 
   function selectVersion(version: VersionView) {
@@ -222,15 +197,16 @@ export default function HistoryClient({
   const failingDestinations = enabledDestinations.filter((destination) => destination.lastStatus === "failed");
   const onlyDestination = enabledDestinations.length === 1 ? enabledDestinations[0] : null;
   let backupSummary: ReactNode = null;
+  const backupsLink = "underline-offset-4 hover:text-foreground hover:underline";
   if (allowed.backups && enabledDestinations.length === 0) {
     backupSummary = (
-      <button type="button" className="text-left underline-offset-4 hover:text-foreground hover:underline" onClick={() => changeTab("backups")}>
+      <Link href="/backups" className={backupsLink}>
         No scheduled backups
-      </button>
+      </Link>
     );
   } else if (allowed.backups && onlyDestination) {
     backupSummary = (
-      <span>
+      <Link href="/backups" className={backupsLink}>
         Backups to {onlyDestination.name}, {describeSchedule(onlyDestination.schedule, onlyDestination.timeZone).toLowerCase()}
         {onlyDestination.lastRunAt &&
           (onlyDestination.lastStatus === "failed" ? (
@@ -238,25 +214,25 @@ export default function HistoryClient({
           ) : (
             <>, last ran {fmt.relative(onlyDestination.lastRunAt, now).toLowerCase()}</>
           ))}
-      </span>
+      </Link>
     );
   } else if (allowed.backups) {
     backupSummary = (
-      <span>
+      <Link href="/backups" className={backupsLink}>
         Backups to <span className="num">{enabledDestinations.length}</span> destinations
         {failingDestinations.length > 0 && (
           <span className="text-bad">
             , <span className="num">{failingDestinations.length}</span> failing
           </span>
         )}
-      </span>
+      </Link>
     );
   }
 
   const strip = (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-line bg-panel px-3.5 py-2.5 text-[13px] text-muted-foreground">
       <StatusDot tone={settings.enabled ? "ok" : "off"} label={settings.enabled ? "Recording on" : "Recording off"} />
-      <span>{settings.enabled ? "A version after every change Caddy accepts" : "No new versions are recorded"}</span>
+      {!settings.enabled && <span>No new versions are recorded</span>}
       <span>
         Keeps the newest <span className="num">{settings.retention.toLocaleString("en-US")}</span>
         {oldest && (
@@ -277,9 +253,7 @@ export default function HistoryClient({
       {!configurable && (
         <Banner tone="info">
           Configuration history needs an active {productName} {editionLabel} license or higher.{" "}
-          {settings.enabled || list.total > 0
-            ? "Versions already kept stay visible and recording continues if it is on; you can still turn it off and delete versions. "
-            : ""}
+          {settings.enabled || list.total > 0 ? "You can still turn recording off and delete versions. " : ""}
           <Link href="/license" className="text-brand underline underline-offset-4">
             Manage the license
           </Link>
@@ -294,7 +268,7 @@ export default function HistoryClient({
             description={
               settings.enabled
                 ? "The next change Caddy accepts is saved as the first version."
-                : "Turn recording on to keep a version of the configuration after every change, with diffs and rollback."
+                : "Turn recording on to keep a version after every change."
             }
             action={
               allowed.write && !isSlave ? (
@@ -355,12 +329,11 @@ export default function HistoryClient({
     </Banner>
   );
 
-  const header = (tabs?: ReactNode) => (
+  const header = (
     <PageHeader
       className="mb-0"
       breadcrumb={["Govern", "Change history"]}
       title="Change history"
-      description="A version of the configuration Caddy serves after every change, with diffs and rollback. Users, sign-in settings and API tokens are never part of a version, so a rollback cannot lock anybody out."
       actions={
         <>
           {allowed.write && (
@@ -383,51 +356,16 @@ export default function HistoryClient({
           )}
         </>
       }
-    >
-      {tabs}
-    </PageHeader>
+    />
   );
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">
-      {allowed.backups ? (
-        <Tabs value={tab} onValueChange={changeTab} className="flex min-w-0 flex-col gap-5">
-          {header(
-            <TabsList aria-label="Change history sections">
-              <TabsTrigger value="versions">
-                Versions <TabCount value={list.total} />
-              </TabsTrigger>
-              <TabsTrigger value="backups">
-                Backups <TabCount value={backups.destinations.length} />
-              </TabsTrigger>
-            </TabsList>
-          )}
-          {strip}
-          {slaveNotice}
-          {flashBanner}
-          <TabsContent value="versions" className="mt-0">
-            {versionsContent}
-          </TabsContent>
-          <TabsContent value="backups" className="mt-0">
-            <BackupsTab
-              destinations={backups.destinations}
-              runs={backups.runs}
-              configurable={backups.configurable}
-              isSlave={isSlave}
-              editionLabel={backups.editionLabel}
-              minPassphraseLength={limits.minPassphraseLength}
-            />
-          </TabsContent>
-        </Tabs>
-      ) : (
-        <>
-          {header()}
-          {strip}
-          {slaveNotice}
-          {flashBanner}
-          {versionsContent}
-        </>
-      )}
+      {header}
+      {strip}
+      {slaveNotice}
+      {flashBanner}
+      {versionsContent}
 
       <AppDialog
         open={saveOpen}
@@ -439,9 +377,7 @@ export default function HistoryClient({
         maxWidth="md"
       >
         <div className="flex flex-col gap-3">
-          <p className="m-0 text-sm text-muted-foreground">
-            Saves the configuration as it is now, for example before a migration, so you can compare with it and roll back to it later.
-          </p>
+          <p className="m-0 text-sm text-muted-foreground">Saves the configuration as it is now.</p>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="version-note">Note (optional)</Label>
             <Input id="version-note" placeholder="Before the upgrade" maxLength={200} value={note} onChange={(event) => setNote(event.target.value)} />

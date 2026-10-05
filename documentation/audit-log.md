@@ -4,7 +4,7 @@ Every change, sign-in and check is recorded in the audit log, linked into a tamp
 
 ## In the dashboard
 
-**Observe → Audit log** lists the events newest first, 50 to a page. The filter bar searches the summaries and narrows the list by actor, action, entity type and time range (last hour, 24 hours, 7 days, 30 days or all time); the filters are kept in the address, so a filtered view can be bookmarked or shared (`/audit-log?actor=7&entityType=proxy_host&range=7d`, `q`, `action`, `entityId`, `from`, `to` and `page` work the same way).
+**Observe → Audit log** lists the events newest first, 50 to a page; the pager under the list keeps the filters, and a page past the last shows the last. Times are shown in your time zone (**Profile**). Each node of a high availability cluster keeps its own log and hash chain. The filter bar searches the summaries and narrows the list by actor, action, entity type and time range (last hour, 24 hours, 7 days, 30 days or all time); the filters are kept in the address, so a filtered view can be bookmarked or shared (`/audit-log?actor=7&entityType=proxy_host&range=7d`, `q`, `action`, `entityId`, `from`, `to` and `page` work the same way).
 
 Expand an event to see what was recorded with it: for a configuration change the before and after of its own entity, field by field (unified or side by side, secrets masked), with links to the change in the change history and to rolling back to the version before it; for other events the data stored with them. Every event shows its hash and the previous event's hash.
 

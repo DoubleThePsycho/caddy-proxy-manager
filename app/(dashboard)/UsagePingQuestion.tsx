@@ -30,7 +30,7 @@ export default function UsagePingQuestion() {
       <div role="status" className="flex flex-wrap items-center gap-x-3.5 gap-y-2.5 rounded-xl border border-line bg-panel px-4 py-3">
         <CircleCheck aria-hidden="true" className="h-[18px] w-[18px] shrink-0 text-ok" />
         <span className="min-w-0 flex-[1_1_360px]">{ANSWERED[answered]}</span>
-        <Link href="/settings?section=usage-ping" className="text-[13px] text-brand underline-offset-4 hover:underline">
+        <Link href="/settings#usage-ping" className="text-[13px] text-brand underline-offset-4 hover:underline">
           Usage ping settings
         </Link>
       </div>
@@ -101,7 +101,7 @@ export default function UsagePingQuestion() {
         <Button variant="link" className="h-9 px-3" disabled={pending} onClick={togglePreview} aria-expanded={Boolean(payload && showPayload)}>
           {payload && showPayload ? "Hide what is sent" : "See exactly what is sent"}
         </Button>
-        <Link href="/settings?section=usage-ping" className="ml-auto text-[13px] text-brand underline-offset-4 hover:underline">
+        <Link href="/settings#usage-ping" className="ml-auto text-[13px] text-brand underline-offset-4 hover:underline">
           Privacy details in Settings
         </Link>
       </div>

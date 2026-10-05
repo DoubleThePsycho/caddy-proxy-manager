@@ -39,10 +39,7 @@ export default function CreateUserDialog({ open, onClose, roleOptions, createOrg
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Add user</DialogTitle>
-          <DialogDescription>
-            A local account that signs in with a password. People from a directory, a SAML provider or SCIM get their account at
-            their first sign-in or when the identity provider sends it.
-          </DialogDescription>
+          <DialogDescription>A local account that signs in with a password.</DialogDescription>
         </DialogHeader>
         <form
           // onSubmit rather than a form action: a form action resets the

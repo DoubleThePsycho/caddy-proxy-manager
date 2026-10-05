@@ -15,9 +15,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/input";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useFormat } from "@/src/components/preferences/PreferencesProvider";
+import { paginate } from "@/src/lib/pagination";
 import type { GroupOverviewEntry, GroupRoleMappingSummary, UserOverviewEntry } from "@/src/lib/users-overview";
 import {
   addGroupMemberAction,
@@ -36,6 +38,11 @@ type Props = {
 };
 
 type Member = GroupOverviewEntry["members"][number];
+
+/** Members per page of the members dialog. */
+const MEMBERS_PER_PAGE = 10;
+/** Users the "add a user" list shows before a search narrows it. */
+const USERS_LISTED = 50;
 
 function memberName(member: { name: string | null; email: string }): string {
   return member.name?.trim() || member.email.split("@")[0] || member.email;
@@ -56,18 +63,36 @@ async function attempt(action: () => Promise<GroupActionResult>, fallback: strin
   }
 }
 
+/** The text a group search looks in: name, description and members. */
+function groupText(group: GroupOverviewEntry): string {
+  return [group.name, group.description, ...group.members.flatMap((member) => [member.name, member.email])]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
 /** The Groups tab: forward-auth groups, their members, SCIM management, role mappings and the hosts they open. */
 export default function GroupsTab({ groups, users, canWrite }: Props) {
   const router = useRouter();
   const format = useFormat();
+  const { page, hrefFor } = useUrlPage();
+  const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<GroupOverviewEntry | "new" | null>(null);
   const [membersOf, setMembersOf] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<GroupOverviewEntry | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
   const showRoles = groups.some((group) => group.roleMappings !== null);
   const showHosts = groups.some((group) => group.hosts !== null);
-  const anyScim = groups.some((group) => group.scim !== null);
   const openGroup = groups.find((group) => group.id === membersOf) ?? null;
+  const needle = query.trim().toLowerCase();
+  const shown = needle ? groups.filter((group) => groupText(group).includes(needle)) : groups;
+  const slice = paginate(shown, page);
+
+  const search = (value: string) => {
+    setQuery(value);
+    // A new search starts again at the first page.
+    if (page > 1) window.history.replaceState(null, "", hrefFor(1));
+  };
 
   const actions = (group: GroupOverviewEntry) => (
     <DropdownMenu>
@@ -91,18 +116,27 @@ export default function GroupsTab({ groups, users, canWrite }: Props) {
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
-        <p className="m-0 min-w-0 flex-[1_1_420px] text-[13px] text-muted-foreground">
-          Groups decide who gets through the sign-in portal of hosts protected by forward auth.
-          {anyScim ? " Groups managed by SCIM follow the identity provider, so their members change there." : ""}
-        </p>
-        {canWrite && groups.length > 0 && (
-          <Button variant="outline" onClick={() => setEditing("new")}>
-            <Plus />
-            New group
-          </Button>
-        )}
-      </div>
+      {groups.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
+          <label className="flex h-[38px] min-w-0 flex-[1_1_260px] items-center gap-2 rounded-[10px] border border-line bg-panel px-3 text-soft focus-within:border-brand">
+            <Search aria-hidden="true" className="h-4 w-4 shrink-0" />
+            <span className="sr-only">Search groups</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => search(event.target.value)}
+              placeholder="Group name, description or member"
+              className="h-full min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-soft"
+            />
+          </label>
+          {canWrite && (
+            <Button variant="outline" onClick={() => setEditing("new")}>
+              <Plus />
+              New group
+            </Button>
+          )}
+        </div>
+      )}
 
       {notice && (
         <Banner tone={notice.tone} live onDismiss={() => setNotice(null)}>
@@ -115,111 +149,123 @@ export default function GroupsTab({ groups, users, canWrite }: Props) {
           <EmptyState
             icon={Users}
             title="No groups yet"
-            description="Create a group, add people to it, then let the group in on a host protected by forward auth."
+            description="Groups decide who gets through the sign-in portal of hosts protected by forward auth."
             action={canWrite ? <Button onClick={() => setEditing("new")}><Plus />New group</Button> : undefined}
           />
         ) : (
-          <Table className="min-w-[980px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead scope="col">Group</TableHead>
-                <TableHead scope="col">Members</TableHead>
-                <TableHead scope="col">Managed by</TableHead>
-                {showRoles && <TableHead scope="col">Dashboard role</TableHead>}
-                {showHosts && <TableHead scope="col">Lets members reach</TableHead>}
-                <TableHead scope="col"><span className="sr-only">Actions</span></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {groups.map((group) => {
-                const names = group.members.map(memberName);
-                return (
-                  <TableRow key={group.id} data-testid={`group-row-${group.id}`}>
-                    <TableCell className="py-3">
-                      <span className="flex flex-col gap-0.5">
-                        <button
-                          type="button"
-                          onClick={() => setMembersOf(group.id)}
-                          className="num text-left font-semibold text-foreground underline-offset-4 hover:underline"
-                        >
-                          {group.name}
-                        </button>
-                        {group.description && <span className="text-xs text-soft">{group.description}</span>}
-                      </span>
-                    </TableCell>
-                    <TableCell className="py-3">
-                      <span className="flex flex-col gap-0.5">
-                        <span>
-                          <span className="num">{group.members.length}</span> member{group.members.length === 1 ? "" : "s"}
-                        </span>
-                        {names.length > 0 && (
-                          <span className="text-xs text-soft">
-                            {names.slice(0, 3).join(", ")}
-                            {names.length > 3 ? ` and ${names.length - 3} more` : ""}
-                          </span>
-                        )}
-                      </span>
-                    </TableCell>
-                    <TableCell className="py-3">
-                      {group.scim ? (
+          <>
+            <Table className="min-w-[980px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">Group</TableHead>
+                  <TableHead scope="col">Members</TableHead>
+                  <TableHead scope="col">Managed by</TableHead>
+                  {showRoles && <TableHead scope="col">Dashboard role</TableHead>}
+                  {showHosts && <TableHead scope="col">Lets members reach</TableHead>}
+                  <TableHead scope="col"><span className="sr-only">Actions</span></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {slice.items.map((group) => {
+                  const names = group.members.map(memberName);
+                  return (
+                    <TableRow key={group.id} data-testid={`group-row-${group.id}`}>
+                      <TableCell className="py-3">
                         <span className="flex flex-col gap-0.5">
-                          <span>SCIM</span>
-                          <span className="text-xs text-soft">
-                            {group.scim.origin === "adopted" ? "Handed over" : "Created by SCIM"}, updated{" "}
-                            <span className="num">{format.date(group.scim.updatedAt)}</span>
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setMembersOf(group.id)}
+                            className="num text-left font-semibold text-foreground underline-offset-4 hover:underline"
+                          >
+                            {group.name}
+                          </button>
+                          {group.description && <span className="text-xs text-soft">{group.description}</span>}
                         </span>
-                      ) : (
-                        "Local"
-                      )}
-                    </TableCell>
-                    {showRoles && (
+                      </TableCell>
                       <TableCell className="py-3">
-                        {group.roleMappings && group.roleMappings.length > 0 ? (
+                        <span className="flex flex-col gap-0.5">
+                          <span>
+                            <span className="num">{group.members.length}</span> member{group.members.length === 1 ? "" : "s"}
+                          </span>
+                          {names.length > 0 && (
+                            <span className="text-xs text-soft">
+                              {names.slice(0, 3).join(", ")}
+                              {names.length > 3 ? ` and ${names.length - 3} more` : ""}
+                            </span>
+                          )}
+                        </span>
+                      </TableCell>
+                      <TableCell className="py-3">
+                        {group.scim ? (
                           <span className="flex flex-col gap-0.5">
-                            {group.roleMappings.map((mapping) => (
-                              <span key={`${mapping.priority}-${mapping.role}-${mapping.customRoleId}`} className="flex flex-col">
-                                <span>{mappingRole(mapping)}</span>
-                                <span className="text-xs text-soft">
-                                  Mapping, priority <span className="num">{mapping.priority}</span>
+                            <span>SCIM</span>
+                            <span className="text-xs text-soft">
+                              {group.scim.origin === "adopted" ? "Handed over" : "Created by SCIM"}, updated{" "}
+                              <span className="num">{format.date(group.scim.updatedAt)}</span>
+                            </span>
+                          </span>
+                        ) : (
+                          "Local"
+                        )}
+                      </TableCell>
+                      {showRoles && (
+                        <TableCell className="py-3">
+                          {group.roleMappings && group.roleMappings.length > 0 ? (
+                            <span className="flex flex-col gap-0.5">
+                              {group.roleMappings.map((mapping) => (
+                                <span key={`${mapping.priority}-${mapping.role}-${mapping.customRoleId}`} className="flex flex-col">
+                                  <span>{mappingRole(mapping)}</span>
+                                  <span className="text-xs text-soft">
+                                    Mapping, priority <span className="num">{mapping.priority}</span>
+                                  </span>
                                 </span>
-                              </span>
-                            ))}
-                          </span>
-                        ) : (
-                          <span className="text-soft">None</span>
-                        )}
-                      </TableCell>
-                    )}
-                    {showHosts && (
-                      <TableCell className="py-3">
-                        {group.hosts && group.hosts.length > 0 ? (
-                          <span className="flex flex-wrap gap-x-2.5 gap-y-1">
-                            {group.hosts.slice(0, 4).map((host) => (
-                              <span key={host.id} className="num">{host.domain}</span>
-                            ))}
-                            {group.hosts.length > 4 && <span className="text-soft">and {group.hosts.length - 4} more</span>}
-                          </span>
-                        ) : (
-                          <span className="text-soft">No host yet</span>
-                        )}
-                      </TableCell>
-                    )}
-                    <TableCell className="py-3 text-right">{actions(group)}</TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                              ))}
+                            </span>
+                          ) : (
+                            <span className="text-soft">None</span>
+                          )}
+                        </TableCell>
+                      )}
+                      {showHosts && (
+                        <TableCell className="py-3">
+                          {group.hosts && group.hosts.length > 0 ? (
+                            <span className="flex flex-wrap gap-x-2.5 gap-y-1">
+                              {group.hosts.slice(0, 4).map((host) => (
+                                <span key={host.id} className="num">{host.domain}</span>
+                              ))}
+                              {group.hosts.length > 4 && <span className="text-soft">and {group.hosts.length - 4} more</span>}
+                            </span>
+                          ) : (
+                            <span className="text-soft">No host yet</span>
+                          )}
+                        </TableCell>
+                      )}
+                      <TableCell className="py-3 text-right">{actions(group)}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+            {shown.length === 0 && (
+              <div className="flex flex-wrap items-center gap-3 border-t border-line px-[18px] py-5 text-[13px] text-muted-foreground">
+                <span>No group matches the search.</span>
+                <Button variant="secondary" size="sm" onClick={() => search("")}>
+                  Clear search
+                </Button>
+              </div>
+            )}
+            <Pagination
+              page={slice.page}
+              perPage={slice.perPage}
+              total={slice.total}
+              noun="groups"
+              label="Pages of groups"
+              hrefFor={hrefFor}
+              className="border-t border-line px-[18px] py-3"
+            />
+          </>
         )}
       </section>
-
-      {anyScim && (
-        <p className="m-0 text-xs text-soft">
-          Adding someone to a SCIM group by hand changes what they can reach, never their role: only memberships the identity provider
-          sends count for role mappings.
-        </p>
-      )}
 
       {editing !== null && (
         <GroupFormDialog
@@ -289,7 +335,7 @@ function GroupFormDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{group ? `Edit group ${group.name}` : "New group"}</DialogTitle>
-          <DialogDescription>Name the people it is for. You choose which hosts let the group in on each host&apos;s forward-auth settings.</DialogDescription>
+          <DialogDescription>Hosts let a group in on their forward-auth settings.</DialogDescription>
         </DialogHeader>
         <form
           className="flex flex-col gap-4"
@@ -343,6 +389,8 @@ function MembersDialog({
   onChanged: () => void;
 }) {
   const [query, setQuery] = useState("");
+  const [memberQuery, setMemberQuery] = useState("");
+  const [memberPage, setMemberPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const memberIds = new Set(group.members.map((member) => member.userId));
@@ -350,6 +398,11 @@ function MembersDialog({
   const available = (users ?? [])
     .filter((user) => !memberIds.has(user.id))
     .filter((user) => !needle || `${user.name ?? ""} ${user.email}`.toLowerCase().includes(needle));
+  const memberNeedle = memberQuery.trim().toLowerCase();
+  const members = memberNeedle
+    ? group.members.filter((member) => `${member.name ?? ""} ${member.email}`.toLowerCase().includes(memberNeedle))
+    : group.members;
+  const memberSlice = paginate(members, memberPage, MEMBERS_PER_PAGE);
 
   const change = async (run: () => Promise<GroupActionResult>, fallback: string) => {
     setPending(true);
@@ -367,8 +420,8 @@ function MembersDialog({
           <DialogTitle>Members of {group.name}</DialogTitle>
           <DialogDescription>
             {group.scim
-              ? "SCIM manages this group: the identity provider adds and removes its users. People you add here reach its hosts but never get a role from it."
-              : "Members get through the sign-in portal of every host that lets this group in."}
+              ? "The identity provider manages this group. People you add here reach its hosts but never get a role from it."
+              : `${group.members.length} member${group.members.length === 1 ? "" : "s"}`}
           </DialogDescription>
         </DialogHeader>
         <div className="flex min-h-0 flex-col gap-4 overflow-y-auto">
@@ -376,28 +429,58 @@ function MembersDialog({
           {group.members.length === 0 ? (
             <p className="m-0 text-[13px] text-muted-foreground">No members yet.</p>
           ) : (
-            <ul className="m-0 flex list-none flex-col divide-y divide-line rounded-xl border border-line p-0" aria-label="Members">
-              {group.members.map((member: Member) => (
-                <li key={member.userId} className="flex items-center gap-3 px-3 py-2">
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-[13px] font-medium">{memberName(member)}</span>
-                    <span className="truncate text-xs text-soft">{member.email}</span>
-                  </span>
-                  {canWrite && (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      title="Remove member"
-                      aria-label={`Remove ${memberName(member)}`}
-                      disabled={pending}
-                      onClick={() => change(() => removeGroupMemberAction(group.id, member.userId), "Could not remove the member.")}
-                    >
-                      <UserMinus />
-                    </Button>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <div className="flex flex-col gap-2">
+              {group.members.length > MEMBERS_PER_PAGE && (
+                <label className="flex h-9 items-center gap-2 rounded-lg border border-line bg-panel px-3 text-soft focus-within:border-brand">
+                  <Search aria-hidden="true" className="h-4 w-4 shrink-0" />
+                  <span className="sr-only">Find a member</span>
+                  <input
+                    type="search"
+                    value={memberQuery}
+                    onChange={(event) => {
+                      setMemberQuery(event.target.value);
+                      setMemberPage(1);
+                    }}
+                    placeholder="Find a member"
+                    className="h-full min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-soft"
+                  />
+                </label>
+              )}
+              {members.length === 0 ? (
+                <p className="m-0 text-[13px] text-muted-foreground">No member matches.</p>
+              ) : (
+                <ul className="m-0 flex list-none flex-col divide-y divide-line rounded-xl border border-line p-0" aria-label="Members">
+                  {memberSlice.items.map((member: Member) => (
+                    <li key={member.userId} className="flex items-center gap-3 px-3 py-2">
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-[13px] font-medium">{memberName(member)}</span>
+                        <span className="truncate text-xs text-soft">{member.email}</span>
+                      </span>
+                      {canWrite && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          title="Remove member"
+                          aria-label={`Remove ${memberName(member)}`}
+                          disabled={pending}
+                          onClick={() => change(() => removeGroupMemberAction(group.id, member.userId), "Could not remove the member.")}
+                        >
+                          <UserMinus />
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Pagination
+                page={memberSlice.page}
+                perPage={memberSlice.perPage}
+                total={memberSlice.total}
+                noun="members"
+                label="Pages of members"
+                onPageChange={setMemberPage}
+              />
+            </div>
           )}
           {canWrite && users !== null && (
             <div className="flex flex-col gap-2">
@@ -419,7 +502,7 @@ function MembersDialog({
                 </p>
               ) : (
                 <ul className="m-0 flex max-h-56 list-none flex-col divide-y divide-line overflow-y-auto rounded-xl border border-line p-0" aria-label="Users to add">
-                  {available.slice(0, 50).map((user) => (
+                  {available.slice(0, USERS_LISTED).map((user) => (
                     <li key={user.id}>
                       <button
                         type="button"
@@ -436,6 +519,11 @@ function MembersDialog({
                     </li>
                   ))}
                 </ul>
+              )}
+              {available.length > USERS_LISTED && (
+                <p className="m-0 text-xs text-soft">
+                  {USERS_LISTED} of <span className="num">{available.length}</span> shown. Search to find others.
+                </p>
               )}
             </div>
           )}

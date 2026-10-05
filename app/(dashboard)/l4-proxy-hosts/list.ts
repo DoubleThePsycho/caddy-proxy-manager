@@ -1,19 +1,73 @@
 /**
- * Filtering, sorting and the plain-language descriptions of the L4 hosts
- * page. Pure functions, shared by the server page and its client.
+ * The L4 hosts list: its query (search, filters, sort and page from the URL),
+ * filtering, counting, sorting and paging, and the plain-language
+ * descriptions of a host. Pure functions, shared by the server page and its
+ * client.
  */
 import type { L4ProxyHost } from "@/src/lib/models/l4-proxy-hosts";
+import { paginate, parsePageParam, type PageSlice } from "@/src/lib/pagination";
 
 export type L4ProtocolFilter = "all" | "tcp" | "udp";
+export type L4StatusFilter = "all" | "enabled" | "disabled";
 
 export const L4_SORT_KEYS = ["name", "protocol", "listenAddress", "upstreams", "enabled", "createdAt"] as const;
 export type L4SortKey = (typeof L4_SORT_KEYS)[number];
+export type L4SortDir = "asc" | "desc";
+
+/** The direction a column sorts in when it is picked. */
+export const L4_DEFAULT_SORT_DIR: Record<L4SortKey, L4SortDir> = {
+  name: "asc",
+  protocol: "asc",
+  listenAddress: "asc",
+  upstreams: "asc",
+  enabled: "asc",
+  createdAt: "desc",
+};
+
+/** The sort menu on narrow screens, where there are no column headings. */
+export const L4_SORT_LABELS: Record<L4SortKey, string> = {
+  createdAt: "Date added",
+  name: "Name",
+  listenAddress: "Port",
+  protocol: "Protocol",
+  upstreams: "Upstream",
+  enabled: "Status",
+};
 
 export function isL4SortKey(value: string | undefined): value is L4SortKey {
   return (L4_SORT_KEYS as readonly string[]).includes(value ?? "");
 }
 
-/** Matches name, listen address, upstreams, matcher names and tags, case-insensitively. */
+export type L4ListQuery = {
+  search: string;
+  protocol: L4ProtocolFilter;
+  status: L4StatusFilter;
+  sortBy: L4SortKey;
+  sortDir: L4SortDir;
+  page: number;
+};
+
+type RawParams = Record<string, string | string[] | undefined>;
+
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+/** The list's state from the URL; anything unknown falls back to the default. */
+export function parseL4ListQuery(params: RawParams): L4ListQuery {
+  const search = (firstParam(params.search) ?? "").trim().slice(0, 200);
+  const protocolParam = firstParam(params.protocol);
+  const protocol: L4ProtocolFilter = protocolParam === "tcp" || protocolParam === "udp" ? protocolParam : "all";
+  const statusParam = firstParam(params.status);
+  const status: L4StatusFilter = statusParam === "enabled" || statusParam === "disabled" ? statusParam : "all";
+  const sortParam = firstParam(params.sortBy);
+  const sortBy: L4SortKey = isL4SortKey(sortParam) ? sortParam : "createdAt";
+  const dirParam = firstParam(params.sortDir);
+  const sortDir: L4SortDir = dirParam === "asc" || dirParam === "desc" ? dirParam : L4_DEFAULT_SORT_DIR[sortBy];
+  return { search, protocol, status, sortBy, sortDir, page: parsePageParam(params.page) };
+}
+
+/** Matches name, listen address, upstreams, server names (SNI or HTTP Host) and tags, case-insensitively. */
 export function matchesL4Search(host: L4ProxyHost, search: string): boolean {
   const q = search.trim().toLowerCase();
   if (!q) return true;
@@ -22,28 +76,83 @@ export function matchesL4Search(host: L4ProxyHost, search: string): boolean {
   );
 }
 
+function matchesProtocol(host: L4ProxyHost, protocol: L4ProtocolFilter): boolean {
+  return protocol === "all" || host.protocol === protocol;
+}
+
+function matchesStatus(host: L4ProxyHost, status: L4StatusFilter): boolean {
+  return status === "all" || host.enabled === (status === "enabled");
+}
+
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 
-export function sortL4Hosts(hosts: readonly L4ProxyHost[], sortBy: L4SortKey, sortDir: "asc" | "desc"): L4ProxyHost[] {
-  const value = (host: L4ProxyHost): string => {
-    switch (sortBy) {
-      case "name":
-        return host.name;
-      case "protocol":
-        return host.protocol;
-      case "listenAddress":
-        return host.listenAddress;
-      case "upstreams":
-        return host.upstreams.join(",");
-      case "enabled":
-        return host.enabled ? "1" : "0";
-      case "createdAt":
-      default:
-        return host.createdAt;
+/** The port of a listen address (":5432", "0.0.0.0:53", "[::]:853"), or null. */
+export function listenPort(listenAddress: string): number | null {
+  const match = listenAddress.trim().match(/:(\d+)$/);
+  return match ? Number(match[1]) : null;
+}
+
+function compareBy(sortBy: L4SortKey, a: L4ProxyHost, b: L4ProxyHost): number {
+  switch (sortBy) {
+    case "name":
+      return collator.compare(a.name, b.name);
+    case "protocol":
+      return collator.compare(a.protocol, b.protocol);
+    case "listenAddress": {
+      // By port first: ":25" before ":853" before "0.0.0.0:2222".
+      const byPort = (listenPort(a.listenAddress) ?? Infinity) - (listenPort(b.listenAddress) ?? Infinity);
+      return (Number.isNaN(byPort) ? 0 : byPort) || collator.compare(a.listenAddress, b.listenAddress);
     }
-  };
+    case "upstreams":
+      return collator.compare(a.upstreams.join(","), b.upstreams.join(","));
+    case "enabled":
+      // Ascending: enabled hosts first.
+      return Number(b.enabled) - Number(a.enabled);
+    case "createdAt":
+    default:
+      return collator.compare(a.createdAt, b.createdAt);
+  }
+}
+
+/** Sorted by `sortBy`, then by name and id, so that every page is the same on every load. */
+export function sortL4Hosts(hosts: readonly L4ProxyHost[], sortBy: L4SortKey, sortDir: L4SortDir): L4ProxyHost[] {
   const sign = sortDir === "asc" ? 1 : -1;
-  return [...hosts].sort((a, b) => sign * collator.compare(value(a), value(b)) || a.id - b.id);
+  return [...hosts].sort((a, b) => sign * (compareBy(sortBy, a, b) || collator.compare(a.name, b.name) || a.id - b.id));
+}
+
+export type L4ListView = {
+  page: PageSlice<L4ProxyHost>;
+  /** Hosts per protocol, after the search and the status filter. */
+  protocolCounts: Record<L4ProtocolFilter, number>;
+  /** Hosts per status, after the search and the protocol filter. */
+  statusCounts: Record<L4StatusFilter, number>;
+};
+
+/** Filters, counts, sorts and pages the hosts the user may see. */
+export function buildL4ListView(hosts: readonly L4ProxyHost[], query: L4ListQuery, perPage?: number): L4ListView {
+  const searched = query.search ? hosts.filter((host) => matchesL4Search(host, query.search)) : [...hosts];
+  const byStatus = searched.filter((host) => matchesStatus(host, query.status));
+  const byProtocol = searched.filter((host) => matchesProtocol(host, query.protocol));
+  const matching = byStatus.filter((host) => matchesProtocol(host, query.protocol));
+  return {
+    page: paginate(sortL4Hosts(matching, query.sortBy, query.sortDir), query.page, perPage),
+    protocolCounts: {
+      all: byStatus.length,
+      tcp: byStatus.filter((host) => host.protocol === "tcp").length,
+      udp: byStatus.filter((host) => host.protocol === "udp").length,
+    },
+    statusCounts: {
+      all: byProtocol.length,
+      enabled: byProtocol.filter((host) => host.enabled).length,
+      disabled: byProtocol.filter((host) => !host.enabled).length,
+    },
+  };
+}
+
+/** The first server name a host matches (TLS SNI or HTTP Host) and how many more; null for other matchers. */
+export function serverNameSummary(host: L4ProxyHost): { first: string; more: number } | null {
+  if ((host.matcherType !== "tls_sni" && host.matcherType !== "http_host") || host.matcherValue.length === 0) return null;
+  return { first: host.matcherValue[0], more: host.matcherValue.length - 1 };
 }
 
 export type L4DetailItem = { label: string; value: string; mono?: boolean };
@@ -74,28 +183,6 @@ export function matcherText(host: L4ProxyHost): string {
     default:
       return host.protocol === "udp" ? "None, every datagram" : "None, every connection";
   }
-}
-
-/** The TLS column: what Caddy does with TLS on this host. */
-export function tlsView(host: L4ProxyHost): { label: string; detail: string | null; muted: boolean } {
-  if (host.protocol === "udp") return { label: "Not TLS", detail: null, muted: true };
-  if (host.tlsTermination) {
-    return {
-      label: "Terminate",
-      detail: host.matcherType === "tls_sni" && host.matcherValue.length > 0 ? host.matcherValue.join(", ") : "Any server name",
-      muted: false,
-    };
-  }
-  if (host.matcherType === "tls_sni") return { label: "Passthrough", detail: "TLS ends upstream", muted: false };
-  return { label: "Not terminated", detail: null, muted: true };
-}
-
-/** The PROXY protocol column. */
-export function proxyProtocolText(host: L4ProxyHost): string {
-  const parts: string[] = [];
-  if (host.proxyProtocolReceive) parts.push("Accepts");
-  if (host.proxyProtocolVersion) parts.push(parts.length ? `sends ${host.proxyProtocolVersion}` : `Sends ${host.proxyProtocolVersion}`);
-  return parts.length ? parts.join(", ") : "Off";
 }
 
 function geoSummary(host: L4ProxyHost): string {
@@ -156,7 +243,7 @@ function loadBalancingText(host: L4ProxyHost): string {
     const policy = POLICY_LABELS[lb.policy] ?? lb.policy;
     return lb.tryDuration ? `${policy}, keeps trying for ${lb.tryDuration}` : policy;
   }
-  return host.upstreams.length > 1 ? "Off, Caddy picks an upstream at random" : "Off, one upstream";
+  return host.upstreams.length > 1 ? "Off, random upstream" : "Off, one upstream";
 }
 
 function dnsPinningText(host: L4ProxyHost): string {

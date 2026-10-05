@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useFormat } from "@/components/preferences/PreferencesProvider";
 import { CHANNEL_TYPE_LABELS, type AlertChannelView } from "@/ee/alerting/types";
-import { AI_GENERATED_SUMMARY_LABEL, type DigestPreview, type DigestSettingsView, type NarrativeStatus } from "@/ee/ai/types";
+import type { DigestPreview, DigestSettingsView, NarrativeStatus } from "@/ee/ai/types";
 import { previewDigestAction, saveDigestSettingsAction, sendDigestAction } from "./digest-actions";
 
 const NARRATIVE_NOTES: Record<NarrativeStatus, string | null> = {
@@ -109,11 +109,6 @@ export default function DigestSection({ settings, channels, canConfigure, aiConf
       padded
       contentClassName="flex flex-col gap-4"
     >
-        <p className="m-0 max-w-3xl text-[13px] text-muted-foreground">
-          Once a day: requests and blocked requests by reason, the most attacked hosts, paths, WAF rules, countries and
-          networks, new countries and networks, expiring certificates, configuration changes, alerts and the license status.
-          Built from aggregated figures only, never log lines.
-        </p>
         {!canConfigure && (
           <Banner tone="info">
             Setting up the digest needs a license that includes the AI analyst; a digest already set up keeps being sent and
@@ -178,7 +173,7 @@ export default function DigestSection({ settings, channels, canConfigure, aiConf
           </div>
           <label className="flex items-center gap-2 text-sm md:col-span-2">
             <Switch checked={ai} onCheckedChange={setAi} disabled={!canConfigure} />
-            Add a short AI-generated summary (what happened, what to look at)
+            Add an AI-generated summary
             {!aiConfigured && <span className="text-xs text-muted-foreground">: set up an AI provider above first</span>}
           </label>
         </fieldset>
@@ -231,9 +226,6 @@ export default function DigestSection({ settings, channels, canConfigure, aiConf
                 {NARRATIVE_NOTES[preview.narrative.status]}
                 {preview.narrative.error ? ` (${preview.narrative.error})` : ""}
               </p>
-            )}
-            {preview.narrative.status === "added" && (
-              <p className="text-xs text-muted-foreground">The {AI_GENERATED_SUMMARY_LABEL.toLowerCase()} is labeled in every message.</p>
             )}
             <pre className="num max-h-[480px] overflow-auto whitespace-pre-wrap rounded-[10px] border border-line bg-background p-3 text-xs">{preview.text}</pre>
           </div>

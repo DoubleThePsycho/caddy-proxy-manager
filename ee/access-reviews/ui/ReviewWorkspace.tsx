@@ -6,9 +6,12 @@ import { Fragment, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
+import { SearchField } from "@/components/ui/SearchField";
 import { StatusDot, type StatusTone } from "@/components/ui/StatusDot";
 import { useFormat } from "@/src/components/preferences/PreferencesProvider";
 import { cn } from "@/lib/utils";
+import { paginate } from "@/src/lib/pagination";
 import type { CampaignEvidence, ItemEvidence, SubjectEvidence } from "../evidence";
 import { ITEM_KIND_LABELS, type Decision, type ItemKind, type ItemOutcome, type ReviewItemView } from "../types";
 import { callApi } from "./shared";
@@ -251,9 +254,7 @@ export function ConfirmPanel({ decisions }: { decisions: ReviewDecisions }) {
               ))}
             </ul>
           )}
-          <p className="m-0 text-xs text-soft">
-            Revocations are applied right away, through the same checks as the Users and Groups pages, and cannot be undone from here.
-          </p>
+          <p className="m-0 text-xs text-soft">Revocations apply right away and cannot be undone from here.</p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={decisions.confirm} disabled={pending}>{pending ? "Confirming…" : "Confirm"}</Button>
             <Button size="sm" variant="ghost" onClick={() => decisions.setConfirming(false)}>Cancel</Button>
@@ -385,10 +386,15 @@ function CommentCell({ item, decisions }: { item: WorkspaceItem; decisions: Revi
   return <span className={cn("text-[13px]", item.comment ? "text-foreground" : "text-soft")}>{item.comment || "No comment"}</span>;
 }
 
+/** People per page of a review table. */
+const PEOPLE_PER_PAGE = 25;
+
 /**
  * People × access: one row group per person with their sources, last
  * sign-in and last change, then each access with when it was last used,
- * the decision and a comment.
+ * the decision and a comment. Paged by person, with a search on names and
+ * e-mails; the page is in the URL (`?page=`) when `urlPage` is set, else
+ * kept here (a page with several tables).
  */
 export function ReviewTable({
   decisions,
@@ -396,6 +402,7 @@ export function ReviewTable({
   currentUserId,
   linkUsers = false,
   title = "Access to review",
+  urlPage = false,
 }: {
   decisions: ReviewDecisions;
   evidence: CampaignEvidence | null;
@@ -403,8 +410,13 @@ export function ReviewTable({
   /** Names link to the user's panel on Users and groups (users:read). */
   linkUsers?: boolean;
   title?: string;
+  urlPage?: boolean;
 }) {
   const format = useFormat();
+  const url = useUrlPage();
+  const [localPage, setLocalPage] = useState(1);
+  const [query, setQuery] = useState("");
+  const page = urlPage ? url.page : localPage;
   const itemEvidence = useMemo(() => new Map<number, ItemEvidence>((evidence?.items ?? []).map((entry) => [entry.itemId, entry])), [evidence]);
   const groups = useMemo(() => {
     const order: number[] = [];
@@ -418,12 +430,35 @@ export function ReviewTable({
     }
     return order.map((userId) => ({ userId, items: byUser.get(userId)! }));
   }, [decisions.items]);
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? groups.filter(({ items }) => `${items[0].subjectName ?? ""} ${items[0].subjectEmail}`.toLowerCase().includes(needle))
+    : groups;
+  const slice = paginate(shown, page, PEOPLE_PER_PAGE);
+
+  function search(value: string) {
+    setQuery(value);
+    // A new search starts again at the first page.
+    if (urlPage) {
+      if (url.page > 1) window.history.replaceState(null, "", url.hrefFor(1));
+    } else {
+      setLocalPage(1);
+    }
+  }
 
   return (
     <section aria-label={title} className="min-w-0 overflow-hidden rounded-2xl border border-line bg-panel">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-[18px] py-3.5">
         <h2 className="m-0 text-base leading-6 font-semibold">{title}</h2>
-        <span className="text-[13px] text-soft">Choose keep or revoke for each item, then confirm. Drafts can change until you confirm.</span>
+        {groups.length > PEOPLE_PER_PAGE && (
+          <SearchField
+            aria-label="Find a person"
+            placeholder="Find a person"
+            value={query}
+            onChange={(event) => search(event.target.value)}
+            className="w-full sm:ml-auto sm:w-64"
+          />
+        )}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1060px] border-collapse text-[13px]">
@@ -438,7 +473,7 @@ export function ReviewTable({
             </tr>
           </thead>
           <tbody>
-            {groups.map(({ userId, items }) => {
+            {slice.items.map(({ userId, items }) => {
               const subject = decisions.subjects.get(userId);
               const first = items[0];
               const name = who(first);
@@ -532,9 +567,16 @@ export function ReviewTable({
           </tbody>
         </table>
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line px-[18px] py-3 text-xs text-soft">
-        <span>Revoking an account disables it and ends its sessions; a role becomes Viewer; a group membership is removed; an API token is deleted.</span>
-      </div>
+      {shown.length === 0 && <p className="m-0 border-t border-line px-[18px] py-4 text-[13px] text-muted-foreground">Nobody matches.</p>}
+      <Pagination
+        page={slice.page}
+        perPage={slice.perPage}
+        total={slice.total}
+        noun="people"
+        label={`${title}: pages`}
+        {...(urlPage ? { hrefFor: url.hrefFor } : { onPageChange: setLocalPage })}
+        className="border-t border-line px-[18px] py-3"
+      />
     </section>
   );
 }

@@ -126,7 +126,17 @@ describe('Audit log page', () => {
     expect(html).toContain('#112');
     // A failed sign-in step is tinted as a warning.
     expect(html).toMatch(/bg-warn-tint text-warn"[^>]*>mfa_verification_failed</);
-    expect(html).toContain('Times in <span class="num">UTC</span>');
+    // Everything fits on one page: no pager.
+    expect(html).not.toContain('aria-label="Pages of events"');
+  });
+
+  it('pages the events with the shared pager, keeping the filters in each link', () => {
+    const html = render({ total: 120, page: 2, filters: { ...EMPTY_FILTERS, actor: '4', range: '7d', page: 2 } });
+    expect(html).toContain('aria-label="Pages of events"');
+    expect(html).toMatch(/<span class="num">51<\/span>–<span class="num">100<\/span> of <span class="num">120<\/span> events/);
+    expect(html).toContain('href="/audit-log?actor=4&amp;range=7d"');
+    expect(html).toContain('href="/audit-log?actor=4&amp;range=7d&amp;page=3"');
+    expect(html).toMatch(/aria-current="page"[^>]*><span class="num">2<\/span>/);
   });
 
   it('shows events of actions this release no longer records as they were stored', () => {
@@ -196,7 +206,7 @@ describe('Audit log page', () => {
   it('offers to clear the filters when nothing matches', () => {
     const html = render({ events: [], total: 0, totalInRange: 4, filters: { ...EMPTY_FILTERS, action: 'update', range: '1h' } });
     expect(html).toContain('No events match these filters.');
-    expect(html).toContain('Nothing to show');
+    expect(html).not.toContain('aria-label="Pages of events"');
   });
 });
 

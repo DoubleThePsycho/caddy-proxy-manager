@@ -42,9 +42,7 @@ export function WafCustomRules({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
         <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-0.5">
           <h2 id="waf-rules-title" className="text-base font-semibold">Custom rules</h2>
-          <span className="text-sm text-muted-foreground">
-            SecLang directives, run after the Core Rule Set on every host that follows or merges with the global settings.
-          </span>
+          <span className="text-sm text-muted-foreground">SecLang directives, run after the Core Rule Set.</span>
         </div>
         {!readOnly && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -86,15 +84,12 @@ export function WafCustomRules({
           className="min-w-0 flex-1 resize-y overflow-x-auto whitespace-pre bg-transparent px-3 py-2.5 font-mono text-[13px] leading-5 outline-none placeholder:text-muted-foreground"
         />
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
-        <span className="flex items-center gap-2" role="status">
-          <ToneDot tone={dropped.length === 0 ? "ok" : "bad"} />
-          {dropped.length === 0
-            ? `${ruleCount} ${ruleCount === 1 ? "rule" : "rules"}, checked: nothing dropped`
-            : `${dropped.length} ${dropped.length === 1 ? "line" : "lines"} would be dropped and never reach Caddy`}
-        </span>
-        <span>ModSecurity SecLang syntax. Lines the WAF cannot load are listed here before you save.</span>
-      </div>
+      <span className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+        <ToneDot tone={dropped.length === 0 ? "ok" : "bad"} />
+        {dropped.length === 0
+          ? `${ruleCount} ${ruleCount === 1 ? "rule" : "rules"}, none dropped`
+          : `${dropped.length} ${dropped.length === 1 ? "line" : "lines"} would be dropped`}
+      </span>
       {dropped.length > 0 && (
         <ul className="flex flex-col gap-1 rounded-lg border border-destructive/40 bg-destructive/5 p-3 font-mono text-xs">
           {dropped.map((line, index) => (
@@ -107,8 +102,8 @@ export function WafCustomRules({
       {storedElsewhere.length > 0 && (
         <div role="note" className="rounded-lg border bg-muted/30 p-3 text-sm">
           <p>
-            {storedElsewhere.length} custom directive {storedElsewhere.length === 1 ? "line" : "lines"} stored on proxy hosts {storedElsewhere.length === 1 ? "is" : "are"} not
-            sent to Caddy. Rewrite or remove {storedElsewhere.length === 1 ? "it" : "them"} in the host settings:
+            {storedElsewhere.length} custom directive {storedElsewhere.length === 1 ? "line" : "lines"} stored on proxy hosts{" "}
+            {storedElsewhere.length === 1 ? "is" : "are"} dropped. Rewrite or remove {storedElsewhere.length === 1 ? "it" : "them"} in the host settings:
           </p>
           <ul className="mt-2 list-disc pl-5 font-mono text-xs break-all">
             {storedElsewhere.map((report) => (

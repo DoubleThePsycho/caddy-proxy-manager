@@ -154,7 +154,7 @@ function Overview({ data }: { data: OverviewData }) {
             compact
             icon={UserRound}
             title="Nothing else to show for your role"
-            description="You can manage your profile, passkeys and API tokens. An administrator can give your role access to hosts, analytics or settings."
+            description="An administrator can give your role access to hosts, analytics or settings."
             action={
               <Button asChild variant="secondary" size="sm">
                 <Link href="/profile">Profile</Link>
@@ -174,8 +174,6 @@ function FirstRun({ data }: { data: OverviewData & { firstRun: NonNullable<Overv
   const now = useNow(data.generatedAt);
   const askUsagePing = useAskedUsagePing(data.askUsagePing);
   const { permissions, traffic, hosts, firstRun } = data;
-  const { checklist } = firstRun;
-  const nothingDone = checklist.done === 0;
   return (
     <div className="flex flex-col gap-3 md:gap-5">
       <header className="flex flex-col gap-1">
@@ -188,11 +186,6 @@ function FirstRun({ data }: { data: OverviewData & { firstRun: NonNullable<Overv
           )}
         </DateLine>
         <h1 className="m-0 text-2xl leading-8 font-semibold tracking-[-0.015em]">Welcome, {data.userName}</h1>
-        <p className="m-0 max-w-2xl text-muted-foreground">
-          {nothingDone
-            ? "Nothing is configured yet and Caddy is running. The steps below can be done in any order."
-            : `${checklist.done} of ${checklist.total} setup steps are done. The rest can be done in any order.`}
-        </p>
       </header>
 
       {askUsagePing && <UsagePingQuestion />}
@@ -211,10 +204,10 @@ function FirstRun({ data }: { data: OverviewData & { firstRun: NonNullable<Overv
                   <div className="flex min-h-[168px] flex-col items-center justify-center gap-2.5 border-b border-line2 px-4 text-center">
                     <p className="m-0 max-w-[280px] text-[13px] leading-[19px] text-muted-foreground text-pretty">
                       {traffic.status === "disabled"
-                        ? "Analytics are off, so there is nothing to chart yet."
+                        ? "Analytics are off."
                         : traffic.status === "unavailable"
-                          ? "ClickHouse did not answer, so there is nothing to chart right now."
-                          : "No requests yet. Traffic shows here as soon as a proxy host serves one."}
+                          ? "Traffic could not be read: ClickHouse did not answer."
+                          : "No requests yet."}
                     </p>
                     {traffic.status === "disabled" && (
                       <Button asChild variant="secondary" size="sm">

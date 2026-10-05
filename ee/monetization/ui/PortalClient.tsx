@@ -364,10 +364,7 @@ export default function PortalClient({ brandName, mode, token, initial = null, r
           ) : mode === "token" ? (
             <p className="text-sm text-muted-foreground">This portal link is not valid. Ask the API provider for a new one.</p>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Enter one of your API keys to see your balance and pay. If you have a personal portal link from the API
-              provider, you can use that instead.
-            </p>
+            <p className="text-sm text-muted-foreground">Enter one of your API keys to see your balance and pay.</p>
           )}
         </CardContent>
       </Card>

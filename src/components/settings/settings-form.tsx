@@ -160,7 +160,7 @@ export function SettingsForm({
 type SaveOutcome = { success: boolean; message: string };
 
 /**
- * One group of the Settings page: tracks its forms, shows the save bar under
+ * One group of a settings page: tracks its forms, shows the save bar under
  * them and reports its number of unsaved changes to the group list. Discard
  * remounts the content, so every field goes back to what was loaded.
  */

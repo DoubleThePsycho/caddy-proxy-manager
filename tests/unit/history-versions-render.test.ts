@@ -65,13 +65,12 @@ const versions: VersionView[] = [
 function render(overrides: Record<string, unknown> = {}) {
   return renderToStaticMarkup(
     createElement(HistoryClient, {
-      initialTab: 'versions',
       now: NOW,
       versions: { versions, total: 40, limit: 25, offset: 0, liveId: 212, recording: { enabled: true, retention: 200 } },
       page: 1,
       perPage: 25,
       oldest: { id: 13, createdAt: '2026-08-06T08:00:00.000Z' },
-      backups: { destinations: [], runs: { runs: [], total: 0, page: 1, perPage: 20 }, configurable: true, editionLabel: 'Business' },
+      backups: { destinations: [] },
       settings: { enabled: true, retention: 200 },
       configurable: true,
       isSlave: false,
@@ -101,14 +100,15 @@ describe('Change history page', () => {
     expect(buttonTag(html, '#211')).toContain('aria-pressed="false"');
     expect(html).toContain('>Live<');
     expect(html).toContain('Version #212');
-    expect(html).toContain('Showing <span class="num">1</span> to <span class="num">4</span> of <span class="num">40</span> versions');
-    expect(html).toContain('Older');
+    expect(html).toMatch(/<span class="num">1<\/span>–<span class="num">25<\/span> of <span class="num">40<\/span> versions/);
+    expect(html).toContain('aria-label="Pages of versions"');
+    expect(html).toContain('href="/history?page=2"');
   });
 
   it('shows recording, retention and the oldest version kept, and the actions the role allows', () => {
     const html = render();
     expect(html).toContain('Recording on');
-    expect(html).toContain('A version after every change Caddy accepts');
+    expect(html).not.toContain('No new versions are recorded');
     expect(html).toMatch(/oldest kept <span class="num">#13<\/span>/);
     expect(html).toContain('Save a version now');
     expect(html).toContain('Export or import');
@@ -117,7 +117,9 @@ describe('Change history page', () => {
     expect(readOnly).not.toContain('Save a version now');
     expect(readOnly).not.toContain('Export or import');
     expect(readOnly).not.toContain('Delete version');
-    expect(readOnly).not.toContain('role="tablist"');
+    // Without backups:read, no backups line linking to the Backups page.
+    expect(html).toContain('href="/backups"');
+    expect(readOnly).not.toContain('href="/backups"');
   });
 
   it('opens the version from the URL and links its change request', () => {
@@ -129,7 +131,7 @@ describe('Change history page', () => {
   it('explains the license and what still works without one', () => {
     const html = render({ configurable: false });
     expect(html).toContain('Configuration history needs an active Ingressi Homelab license or higher');
-    expect(html).toContain('you can still turn it off and delete versions');
+    expect(html).toContain('You can still turn recording off and delete versions');
     expect(html).toContain('Export and import are free');
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*title="Needs a license with configuration history"/);
   });

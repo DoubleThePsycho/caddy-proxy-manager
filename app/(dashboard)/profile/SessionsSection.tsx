@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Laptop, Smartphone, Tablet, MonitorSmartphone } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Pagination, useUrlPage } from "@/components/ui/Pagination";
+import { paginate } from "@/src/lib/pagination";
 import { useFormat } from "@/src/components/preferences/PreferencesProvider";
 import type { SessionView } from "@/src/lib/models/sessions";
 
@@ -33,6 +35,8 @@ export default function SessionsSection({ sessions }: { sessions: SessionView[] 
   const [note, setNote] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const others = sessions.filter((session) => !session.current);
+  const { page, hrefFor } = useUrlPage("sessions");
+  const shown = paginate(sessions, page);
 
   const signOutOne = async (session: SessionView) => {
     setPending(true);
@@ -64,9 +68,7 @@ export default function SessionsSection({ sessions }: { sessions: SessionView[] 
           <h2 id="sess-title" className="text-base font-semibold">
             Active sessions <span className="font-mono text-sm font-normal text-muted-foreground">{sessions.length}</span>
           </h2>
-          <span className="text-sm text-muted-foreground">
-            Browsers signed in to your account. Places come from the GeoLite2 country and network databases. Sign out any you do not recognise.
-          </span>
+          <span className="text-sm text-muted-foreground">Sign out any you do not recognise.</span>
         </div>
         {others.length > 0 && (
           <Button variant="outline" size="sm" className="shrink-0 text-destructive" onClick={signOutOthers} disabled={pending}>
@@ -81,7 +83,7 @@ export default function SessionsSection({ sessions }: { sessions: SessionView[] 
         </div>
       )}
 
-      <div className="overflow-x-auto">
+      <div className="relative overflow-x-auto">
         <table className="w-full min-w-[640px] text-sm">
           <thead>
             <tr className="border-b text-left text-xs text-muted-foreground">
@@ -93,7 +95,7 @@ export default function SessionsSection({ sessions }: { sessions: SessionView[] 
             </tr>
           </thead>
           <tbody>
-            {sessions.map((session) => (
+            {shown.items.map((session) => (
               <tr key={session.id} className="border-b last:border-0 hover:bg-muted/30">
                 <td className="py-3 pr-4">
                   <span className="flex items-center gap-2.5">
@@ -144,6 +146,7 @@ export default function SessionsSection({ sessions }: { sessions: SessionView[] 
           </tbody>
         </table>
       </div>
+      <Pagination page={shown.page} perPage={shown.perPage} total={shown.total} noun="sessions" label="Pages of sessions" hrefFor={hrefFor} />
     </section>
   );
 }

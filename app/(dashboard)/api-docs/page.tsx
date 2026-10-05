@@ -18,12 +18,6 @@ export default async function ApiDocsPage() {
         className="mb-0"
         breadcrumb={["Account", "API reference"]}
         title="API reference"
-        description={
-          <>
-            Every endpoint under <span className="num">/api/v1</span>, with its parameters, request bodies and responses.
-            Scripts and tools send an API token as a bearer token; you create tokens on your profile.
-          </>
-        }
         actions={
           <>
             <Button asChild variant="outline">

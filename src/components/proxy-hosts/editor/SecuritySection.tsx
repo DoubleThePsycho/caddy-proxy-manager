@@ -20,16 +20,17 @@ function WafModePicker() {
   const { form, update, data } = useEditor();
   const global = data.wafGlobal;
   const globalLabel = global ? GLOBAL_MODE[global.mode] : "blocking";
-  const modes: { value: WafHostMode; label: string; description: string; dot: string }[] = [
+  const modes: { value: WafHostMode; label: string; description?: string; dot: string }[] = [
     {
       value: "inherit",
       label: "Global mode",
-      description: global?.appliesToAll === false && !data.host?.waf ? `Follows the WAF settings, which apply only to hosts that pick a mode.` : `Follows the WAF settings: ${globalLabel} today.`,
+      // The global settings may cover only hosts that pick a mode: then inheriting means no WAF.
+      description: global?.appliesToAll === false && !data.host?.waf ? "Off: the WAF settings cover only hosts that pick a mode." : `Currently ${globalLabel}.`,
       dot: "bg-soft",
     },
-    { value: "off", label: "Off", description: "Requests are not inspected.", dot: "bg-soft" },
-    { value: "detection_only", label: "Detect only", description: "Every request is inspected and matches are logged to Security events. Nothing is blocked.", dot: "bg-warn" },
-    { value: "block", label: "Block", description: "Requests that reach the anomaly threshold get 403 and are logged.", dot: "bg-waf" },
+    { value: "off", label: "Off", dot: "bg-soft" },
+    { value: "detection_only", label: "Detect only", description: "Logs matches, blocks nothing.", dot: "bg-warn" },
+    { value: "block", label: "Block", description: "Requests over the anomaly threshold get 403.", dot: "bg-waf" },
   ];
   return (
     <div className="flex flex-col gap-1.5">
@@ -61,7 +62,7 @@ function WafModePicker() {
                 <span aria-hidden="true" className={cn("h-2 w-2 rounded-full", mode.dot)} />
                 {mode.label}
               </span>
-              <span className="text-xs leading-[17px] text-muted-foreground">{mode.description}</span>
+              {mode.description && <span className="text-xs leading-[17px] text-muted-foreground">{mode.description}</span>}
             </button>
           );
         })}
@@ -75,20 +76,14 @@ function WafCard() {
   const { form, update, data } = useEditor();
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const setWaf = (patch: Partial<WafForm>) => update((f) => ({ ...f, waf: { ...f.waf, ...patch } }));
-  const global = data.wafGlobal;
   const directivesProps = useFieldProps("f-waf-directives", true);
   // An overriding host takes nothing from the global settings: unset values are Coraza's own.
   const defaultLabel = form.waf.rules === "override" ? "Coraza default" : "Global default";
-  const tuning = [
-    global?.paranoiaLevel ? `paranoia level ${global.paranoiaLevel}` : null,
-    global?.inboundThreshold ? `anomaly threshold ${global.inboundThreshold}` : null,
-  ].filter(Boolean);
   const eventsHref = data.canReadWaf && data.host ? `/waf/events?search=${encodeURIComponent(data.host.domains[0] ?? data.host.name)}` : null;
   return (
     <EditorCard
       id="waf"
       title="Web application firewall"
-      description={`Coraza with the OWASP Core Rule Set${tuning.length > 0 ? `, ${tuning.join(", ")}` : ""}. The WAF settings page holds the global rules.`}
       actions={
         <span className="flex flex-wrap gap-3 text-[13px]">
           {eventsHref && (
@@ -117,15 +112,12 @@ function WafCard() {
                 { value: "merge", label: "Merge with global" },
                 { value: "override", label: "Override global" },
               ]}
-              hint={form.waf.rules === "merge" ? "Global exclusions and directives apply, plus the ones here." : "Only the settings on this page apply to this host."}
+              hint={form.waf.rules === "override" ? "Global exclusions and directives do not apply." : undefined}
             />
             <div className="flex items-start gap-2.5">
-              <Checkbox id="f-waf-crs" checked={form.waf.loadCrs} onCheckedChange={(checked) => setWaf({ loadCrs: checked === true })} className="mt-0.5" aria-describedby="f-waf-crs-hint" />
-              <label htmlFor="f-waf-crs" className="flex cursor-pointer flex-col gap-0.5">
-                <span className="text-[13px] font-medium">Load the OWASP Core Rule Set</span>
-                <span id="f-waf-crs-hint" className="text-xs text-soft">
-                  SQL injection, XSS, file access, remote code execution and hundreds more patterns.
-                </span>
+              <Checkbox id="f-waf-crs" checked={form.waf.loadCrs} onCheckedChange={(checked) => setWaf({ loadCrs: checked === true })} className="mt-0.5" />
+              <label htmlFor="f-waf-crs" className="cursor-pointer text-[13px] font-medium">
+                Load the OWASP Core Rule Set
               </label>
             </div>
           </div>
@@ -138,9 +130,7 @@ function WafCard() {
               <option value="ProcessPartial">Inspect the first part, pass the rest</option>
             </SelectField>
           </div>
-          <p className="-mt-2 m-0 text-xs text-soft">
-            With the Core Rule Set the WAF reads at most 12.5 MiB of a request body unless you raise it, up to 1024 MiB. Raise it for hosts that take large uploads.
-          </p>
+          <p className="-mt-2 m-0 text-xs text-soft">With the Core Rule Set the WAF reads at most 12.5 MiB of a body unless you raise it, up to 1024 MiB.</p>
           <Field
             id="f-waf-directives"
             label="Custom SecLang directives"
@@ -216,11 +206,10 @@ function ExclusionsCard() {
       id="f-waf-exclusions"
       title="Rule exclusions"
       was="wafExcluded"
-      description="These rules are turned off for this host only. Exclusions in the global WAF settings apply as well."
       flush
     >
       {form.wafExcluded.length === 0 && scoped.length === 0 ? (
-        <p className="m-0 px-5 py-3.5 text-[13px] text-muted-foreground">No rule is excluded on this host.</p>
+        <p className="m-0 px-5 py-3.5 text-[13px] text-muted-foreground">No excluded rules.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] border-collapse text-[13px]">
@@ -306,7 +295,7 @@ function ExclusionsCard() {
             Exclude rule
           </button>
           <span id="f-waf-exclude-hint" className="text-xs text-soft">
-            The rule is removed for this host with SecRuleRemoveById. Exclusions limited to a path or variable are made on the WAF settings page.
+            Exclusions for one path or variable are made in the WAF settings.
           </span>
         </div>
         {error && (
@@ -398,13 +387,17 @@ function RateLimitCard() {
   const rate = form.rateLimit;
   const mode = rate.enabled ? rate.mode : "off";
   const defaults = data.rateLimitDefaults;
-  const defaultsText = defaults?.enabled && defaults.rules > 0 ? `${defaults.rules} global default ${defaults.rules === 1 ? "rule is" : "rules are"} set.` : "No global defaults are set today.";
+  const globalRules = defaults?.enabled ? defaults.rules : 0;
+  // What is easy to get wrong: "Off" still applies the global defaults, and an override without rules limits nothing.
   const note =
     mode === "off"
-      ? `This host uses the global default rules only. ${defaultsText}`
-      : mode === "merge"
-        ? `These rules and the global defaults both apply. ${defaultsText}`
-        : "Only these rules apply. With no rules, nothing on this host is limited.";
+      ? globalRules > 0
+        ? `Off: the ${globalRules === 1 ? "global default rule applies" : `${globalRules} global default rules apply`}.`
+        : undefined
+      : mode === "override"
+        ? "Only these rules apply; with none, nothing is limited."
+        : undefined;
+  const userKeyWithoutSignIn = form.signIn !== "ingressi" && rate.rules.some((rule) => rule.by === "forward_auth_user");
   const setRules = (recipe: (rules: RateLimitRuleRow[]) => RateLimitRuleRow[]) => update((f) => ({ ...f, rateLimit: { ...f.rateLimit, rules: recipe(f.rateLimit.rules) } }));
   return (
     <EditorCard id="rate-limiting" title="Rate limiting" was="rateLimit" description={note} flush={mode !== "off"}>
@@ -445,9 +438,9 @@ function RateLimitCard() {
             <AddButton onClick={() => setRules((rules) => [...rules, rateLimitRow()])} disabled={rate.rules.length >= RATE_LIMIT_LIMITS.maxRules}>
               Add rule
             </AddButton>
-            <span className="text-xs text-soft">
-              Over a limit, clients get 429 with Retry-After. Up to {RATE_LIMIT_LIMITS.maxRules} rules per host. Counting by signed-in user needs the built-in sign-in on this host.
-            </span>
+            {userKeyWithoutSignIn && (
+              <span className="text-xs text-warn">Counting by signed-in user needs the built-in sign-in on this host; until then it counts by client IP.</span>
+            )}
           </div>
         </>
       )}

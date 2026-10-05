@@ -23,7 +23,6 @@ export function SamlSourceCard({ provider, format }: { provider: SamlSourceView;
           </ul>
         </Banner>
       ) : undefined}
-      footerNote="Started by the login page only; answers the provider sends on its own are refused"
       footerActions={<ConfigureLink href="/saml" name={provider.name} />}
     >
       <LastSignInFact signIn={provider.lastSignIn} format={format} />

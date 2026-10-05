@@ -54,11 +54,11 @@ test.describe('Two replicas: the leader', () => {
     }
   });
 
-  test('Settings → High availability shows both replicas and the license rule', async ({ page }) => {
+  test('High availability shows both replicas and the license rule', async ({ page }) => {
     const leader = await soleLeader();
     for (const replica of REPLICAS) {
-      await page.goto(`${replica.url}/settings?section=high-availability`);
-      const group = page.locator('section[data-settings-group="high-availability"]');
+      await page.goto(`${replica.url}/high-availability`);
+      const group = page.getByRole('main');
       await expect(group.getByRole('heading', { name: 'Dashboard cluster' })).toBeVisible();
       await expect(group.getByText('PostgreSQL mode').first()).toBeVisible();
       for (const other of REPLICAS) {

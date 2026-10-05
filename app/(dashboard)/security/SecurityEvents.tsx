@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useId, useState } from "react";
+import { Fragment, useEffect, useId, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
@@ -85,7 +85,6 @@ export function SecurityEvents({
     <SectionCard
       id="events"
       title="Events"
-      description="Newest first · select an event to see why it was stopped"
       actions={
         context.canReadAnalytics ? (
           <Link
@@ -151,11 +150,6 @@ export function SecurityEvents({
         <EmptyState
           compact
           title={hasFilters ? "No events match these filters" : "Nothing was stopped in this range"}
-          description={
-            hasFilters
-              ? "Remove a filter or choose a longer range."
-              : "Requests the WAF, geo rules, access lists, sign-in or rate limits stop show up here."
-          }
           action={
             hasFilters ? (
               <Button asChild size="sm" variant="outline">
@@ -250,41 +244,70 @@ export function SecurityEvents({
         </div>
       )}
 
-      {(events.page > 1 || events.hasMore) && (
-        <nav aria-label="Event pages" className="flex items-center justify-between gap-3 border-t border-line px-[18px] py-2.5 text-[13px] text-muted-foreground">
-          <span>
-            Page <span className="num">{events.page}</span>
-          </span>
-          <span className="flex gap-2">
-            {events.page > 1 ? (
-              <Button asChild size="sm" variant="outline">
-                <Link href={securityHref(query, { page: events.page - 1 }, "#events")}>
-                  <ChevronLeft aria-hidden="true" />
-                  Newer
-                </Link>
-              </Button>
-            ) : (
-              <Button size="sm" variant="outline" disabled>
-                <ChevronLeft aria-hidden="true" />
-                Newer
-              </Button>
-            )}
-            {events.hasMore ? (
-              <Button asChild size="sm" variant="outline">
-                <Link href={securityHref(query, { page: events.page + 1 }, "#events")}>
-                  Older
-                  <ChevronRight aria-hidden="true" />
-                </Link>
-              </Button>
-            ) : (
-              <Button size="sm" variant="outline" disabled>
-                Older
-                <ChevronRight aria-hidden="true" />
-              </Button>
-            )}
-          </span>
-        </nav>
-      )}
+      <EventPager
+        page={events.page}
+        shown={events.list.length}
+        perPage={events.perPage}
+        hasMore={events.hasMore}
+        hrefFor={(page) => securityHref(query, { page }, "#events")}
+      />
     </SectionCard>
+  );
+}
+
+const PAGER_ITEM =
+  "inline-flex h-8 min-w-8 items-center justify-center rounded-md border border-line2 bg-panel px-2 text-[13px] text-foreground transition-colors hover:bg-raise";
+
+/**
+ * The pager under the events, in the shared pager's look
+ * (src/components/ui/Pagination.tsx). The events are read newest first a
+ * page at a time, without counting them all, so it offers the next page
+ * while there is one instead of a total and page numbers.
+ */
+function EventPager({
+  page,
+  shown,
+  perPage,
+  hasMore,
+  hrefFor,
+}: {
+  page: number;
+  shown: number;
+  perPage: number;
+  hasMore: boolean;
+  hrefFor: (page: number) => string;
+}) {
+  if (page <= 1 && !hasMore) return null;
+  const from = (page - 1) * perPage + 1;
+  const to = from + Math.max(0, shown - 1);
+  const step = (target: number, enabled: boolean, label: string, icon: ReactNode) =>
+    enabled ? (
+      <Link href={hrefFor(target)} className={PAGER_ITEM} aria-label={label}>
+        {icon}
+      </Link>
+    ) : (
+      <span className={cn(PAGER_ITEM, "pointer-events-none opacity-40")} aria-disabled="true" aria-label={label}>
+        {icon}
+      </span>
+    );
+  return (
+    <nav aria-label="Pages of events" className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line px-[18px] py-3">
+      <span className="text-[13px] text-muted-foreground">
+        {shown > 0 ? (
+          <>
+            <span className="num">{from}</span>–<span className="num">{to}</span> events
+          </>
+        ) : (
+          <>No events on page {page}</>
+        )}
+      </span>
+      <span className="ml-auto flex items-center gap-1">
+        {step(page - 1, page > 1, "Previous page", <ChevronLeft aria-hidden="true" className="size-4" />)}
+        <span className={cn(PAGER_ITEM, "border-brand bg-brand-tint font-semibold")} aria-current="page">
+          <span className="num">{page}</span>
+        </span>
+        {step(page + 1, hasMore, "Next page", <ChevronRight aria-hidden="true" className="size-4" />)}
+      </span>
+    </nav>
   );
 }

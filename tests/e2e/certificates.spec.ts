@@ -313,11 +313,165 @@ test.describe('Certificates', () => {
   test('has certificate authority and client certificate tabs', async ({ page }) => {
     await page.goto('/certificates');
     await page.getByRole('tab', { name: /^certificate authorities/i }).click();
-    await expect(page.getByRole('heading', { name: /certificate authorities for client certificates/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Certificate authorities', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: /add certificate authority/i }).first()).toBeVisible();
 
     await page.getByRole('tab', { name: /^client certificates/i }).click();
     await expect(page.getByRole('heading', { name: /^roles/i })).toBeVisible();
     await expect(page.getByRole('heading', { name: /^client certificates/i })).toBeVisible();
+  });
+
+  test('has no footnotes and links to the certificate settings', async ({ page }) => {
+    await page.goto('/certificates');
+    await expect(page.getByRole('main').getByRole('link', { name: 'Certificate settings' })).toHaveAttribute('href', '/certificates/settings');
+    await expect(page.getByText(/ACME account|at most an hour/)).toHaveCount(0);
+  });
+});
+
+// Placeholder PEMs: the CAs and certificates below are never attached to a
+// host, so they never reach the Caddy configuration.
+const FAKE_PEM = '-----BEGIN CERTIFICATE-----\nMIIBfake\n-----END CERTIFICATE-----';
+const DAY_MS = 86_400_000;
+
+test.describe('Issued client certificates list', () => {
+  // 65 certificates through the REST API, each one a Caddy apply.
+  test.setTimeout(240_000);
+
+  test('searches, filters, sorts, pages and revokes several at once', async ({ page }) => {
+    const BASE_URL = 'http://localhost:3000';
+    const API = `${BASE_URL}/api/v1`;
+    const headers = { 'Content-Type': 'application/json', Origin: BASE_URL };
+    const run = Date.now().toString(16).toUpperCase();
+    const prefix = `e2e-list-${run.toLowerCase()}`;
+    const name = (i: number) => `${prefix}-${String(i).padStart(2, '0')}`;
+    const serial = (i: number) => `${run}${String(i).padStart(2, '0')}`;
+
+    const createCa = async (caName: string) => {
+      const res = await page.request.post(`${API}/ca-certificates`, { data: { name: caName, certificatePem: FAKE_PEM }, headers });
+      expect(res.status()).toBe(201);
+      return (await res.json()) as { id: number };
+    };
+    const mainCa = await createCa(`List CA ${run}`);
+    const otherCaName = `Other CA ${run}`;
+    const otherCa = await createCa(otherCaName);
+
+    try {
+      // 60 from the first CA, 5 from the second: 3 expired, 5 expiring within 30 days, the rest valid for a year.
+      const now = Date.now();
+      const ids: number[] = [];
+      const bodies = Array.from({ length: 65 }, (_, i) => ({
+        caCertificateId: i < 60 ? mainCa.id : otherCa.id,
+        commonName: name(i),
+        serialNumber: serial(i),
+        fingerprintSha256: `AA:BB:${String(i).padStart(2, '0')}`,
+        certificatePem: FAKE_PEM,
+        validFrom: new Date(now - 30 * DAY_MS).toISOString(),
+        validTo: new Date(now + (i < 3 ? -(i + 1) : i < 8 ? 10 + i : 365 + i) * DAY_MS).toISOString(),
+      }));
+      for (let start = 0; start < bodies.length; start += 8) {
+        const responses = await Promise.all(
+          bodies.slice(start, start + 8).map((data) => page.request.post(`${API}/client-certificates`, { data, headers }))
+        );
+        for (const res of responses) {
+          expect(res.status()).toBe(201);
+          ids.push(((await res.json()) as { id: number }).id);
+        }
+      }
+
+      await page.goto('/certificates?tab=client');
+      const list = page.getByRole('region', { name: 'Client certificates', exact: true });
+      const search = list.getByRole('searchbox', { name: 'Search client certificates' });
+      const pager = list.getByRole('navigation', { name: 'Pages of client certificates' });
+      const rowNames = list.getByRole('table').getByRole('rowheader');
+
+      // Search: the 65 of this run, 25 a page, soonest expiry first (the expired ones).
+      await search.fill(prefix);
+      await expect(pager).toContainText('1–25 of 65 client certificates');
+      await expect(rowNames).toHaveCount(25);
+      await expect(rowNames.first()).toHaveText(name(2));
+
+      await pager.getByRole('button', { name: 'Next page' }).click();
+      await expect(pager).toContainText('26–50 of 65');
+      await pager.getByRole('button', { name: 'Page 3' }).click();
+      await expect(pager).toContainText('51–65 of 65');
+      await expect(rowNames).toHaveCount(15);
+
+      // Sorting goes back to the first page.
+      await list.getByRole('button', { name: 'Common name' }).click();
+      await expect(pager).toContainText('1–25 of 65');
+      await expect(rowNames.first()).toHaveText(name(0));
+      await list.getByRole('button', { name: 'Common name' }).click();
+      await expect(rowNames.first()).toHaveText(name(64));
+
+      // By serial number: one certificate, no pager.
+      await search.fill(serial(7));
+      await expect(rowNames).toHaveCount(1);
+      await expect(rowNames.first()).toHaveText(name(7));
+      await expect(pager).toHaveCount(0);
+
+      // Status and CA filters.
+      await search.fill(prefix);
+      const status = list.getByRole('group', { name: 'Status' });
+      await status.getByRole('button', { name: /^Expired/ }).click();
+      await expect(rowNames).toHaveCount(3);
+      await status.getByRole('button', { name: /^Expiring/ }).click();
+      await expect(rowNames).toHaveCount(5);
+      await status.getByRole('button', { name: /^All/ }).click();
+      await list.getByRole('button', { name: /^CA/ }).click();
+      await page.getByRole('menuitemradio', { name: otherCaName }).click();
+      await expect(rowNames).toHaveCount(5);
+      await expect(pager).toHaveCount(0);
+      await list.getByRole('button', { name: 'Clear filters' }).first().click();
+      await expect(search).toHaveValue('');
+
+      // Select a page, then every match; clear.
+      await search.fill(prefix);
+      await list.getByRole('checkbox', { name: 'Select every client certificate on this page' }).click();
+      await expect(list.getByText('25 certificates selected')).toBeVisible();
+      await list.getByRole('button', { name: 'Select all 65 matching' }).click();
+      await expect(list.getByText('65 certificates selected')).toBeVisible();
+      await list.getByRole('button', { name: 'Clear selection' }).click();
+      await expect(list.getByText(/certificates? selected/)).toHaveCount(0);
+
+      // Revoke three at once, after a confirmation.
+      await search.fill(`${prefix}-1`);
+      await expect(rowNames).toHaveCount(10);
+      for (const i of [10, 11, 12]) await list.getByRole('checkbox', { name: `Select ${name(i)}` }).click();
+      await expect(list.getByText('3 certificates selected')).toBeVisible();
+      await list.getByRole('button', { name: 'Revoke', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: 'Revoke 3 client certificates' });
+      await expect(dialog).toContainText(name(11));
+      await expect(dialog).toContainText('This cannot be undone');
+      await dialog.getByRole('button', { name: 'Revoke 3 certificates' }).click();
+      await expect(dialog).toBeHidden({ timeout: 30_000 });
+      for (const i of [10, 11, 12]) {
+        const res = await page.request.get(`${API}/client-certificates/${ids[i]}`, { headers: { Origin: BASE_URL } });
+        expect(((await res.json()) as { revokedAt: string | null }).revokedAt).not.toBeNull();
+      }
+      await search.fill(prefix);
+      await status.getByRole('button', { name: /^Revoked/ }).click();
+      await expect(rowNames).toHaveCount(3);
+
+      // A certificate authority opens its own client certificates.
+      await page.getByRole('tab', { name: /^certificate authorities/i }).click();
+      await page.getByRole('button', { name: `More actions for ${otherCaName}` }).click();
+      await page.getByRole('menuitem', { name: 'Show client certificates' }).click();
+      await expect(page.getByRole('tab', { name: /^client certificates/i })).toHaveAttribute('aria-selected', 'true');
+      await expect(list.getByRole('button', { name: `CA: ${otherCaName}` })).toBeVisible();
+      await expect(rowNames).toHaveCount(5);
+
+      // Phones get cards, paged the same way.
+      await page.setViewportSize({ width: 390, height: 844 });
+      await list.getByRole('button', { name: 'Clear filters' }).first().click();
+      await search.fill(prefix);
+      const cards = list.getByRole('list', { name: 'Client certificates' }).getByRole('listitem');
+      await expect(cards).toHaveCount(25);
+      await expect(list.getByRole('table')).toBeHidden();
+      await expect(pager).toContainText('1–25 of 65');
+    } finally {
+      // Deleting a CA deletes the certificates it issued.
+      await page.request.delete(`${API}/ca-certificates/${mainCa.id}`, { headers }).catch(() => undefined);
+      await page.request.delete(`${API}/ca-certificates/${otherCa.id}`, { headers }).catch(() => undefined);
+    }
   });
 });

@@ -12,12 +12,14 @@ A proxy host sends the traffic for one or more domains to services on your netwo
   - a 5xx share of 5% or more over 24 hours (with at least 20 requests),
   - blocked traffic far above the host's usual,
   - a certificate that expired, whose renewal is failing, or an imported one that expires within 30 days.
-- **Requests, 24h** and **5xx**: from [analytics](analytics.md), with a bar showing each host's share of the busiest host's requests. Shown to users with `analytics:read` when ClickHouse is configured.
+- **Requests, 24h** and **5xx**: from [analytics](analytics.md), with a bar showing each host's share of the busiest host's requests. Shown to users with `analytics:read` when ClickHouse is configured. When ClickHouse does not answer, the list says so above the table and leaves out the traffic, the 5xx rates and the traffic alerts.
 - **Protection**: what applies to the host once its own settings and the global ones are combined: WAF (blocking or detection only), sign-in (SSO with dashboard accounts, Authentik, forward auth), access list, client certificates (mTLS), rate limiting and geo blocking.
 - **Certificate**: days left, issuer and expiry date, and the renewal state when Caddy is renewing it or the renewal fails (from the [certificates](certificates.md) overview; users without `certificates:read` see only whether Caddy obtains it).
 - **Tags**: select one to show only hosts with that tag.
 
 Search matches names, domains, upstreams and tags, ignoring case. The text is matched literally: `%` and `_` are ordinary characters, not wildcards (the L4 Proxy Hosts search works the same way). The status filter shows the hosts that need attention or the disabled ones; the protection and tag filters narrow the list further. The list is sorted by requests in the last 24 hours (by host name without analytics); the Host, Status, Requests and 5xx headings sort by that column.
+
+The list shows 25 hosts a page, with the pager under it. The page is in the address (`?page=2`), so back, reload and shared links keep it; changing the search, a filter or the sort goes back to the first page.
 
 Select hosts with the checkboxes to act on several at once: turn WAF blocking on, add a tag, enable, disable or delete them (after a confirmation). Each host goes through the same checks as a change to it alone: your role's tags, the change approval policies (a protected host gets a change request instead) and the audit log, which records one event per host. Caddy is applied once for the whole batch.
 

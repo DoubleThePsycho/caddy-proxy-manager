@@ -1,13 +1,17 @@
 /**
  * Server-side render of the WAF settings page (/waf): its sections, the
- * tuning shown as written, the per-host and exclusion tables, and the
- * read-only view for a role without waf:write.
+ * stored tuning, the per-host and exclusion tables with their search and
+ * pager, and the read-only view for a role without waf:write.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+  usePathname: () => '/waf',
+  useSearchParams: () => new URLSearchParams(),
+}));
 vi.mock('@/app/(dashboard)/waf/actions', () => ({
   saveWafSettingsAction: vi.fn(),
   setWafHostModeAction: vi.fn(),
@@ -77,24 +81,53 @@ describe('WAF settings page', () => {
     for (const heading of ['WAF settings', 'Global mode', 'Rule set', 'Request bodies', 'What the rules stopped', 'Per-host settings', 'Rule exclusions', 'Custom rules']) {
       expect(html).toContain(`>${heading}</h`);
     }
-    expect(html).toContain('Written as tx.blocking_paranoia_level=2, tx.detection_paranoia_level=3, tx.inbound_anomaly_score_threshold=7, tx.outbound_anomaly_score_threshold=4');
+    // The stored tuning: paranoia level 2, level 3 logged, thresholds 7 and 4 (the default).
+    expect(html).toMatch(/role="radio" aria-checked="true"[^>]*><span class="font-mono font-semibold">2<\/span> Elevated/);
+    expect(html).toMatch(/id="waf-th-in"[^>]*value="7"/);
+    expect(html).toMatch(/id="waf-th-out"[^>]*value="4"/);
     expect(html).toMatch(/role="radio" aria-checked="true"[^>]*>.*Blocking/);
     expect(html).toContain('Also log level <span class="font-mono">3</span> matches without blocking them');
-    expect(html).toContain('1 rule, checked: nothing dropped');
+    expect(html).toContain('1 rule, none dropped');
+    expect(html).not.toContain('tx.blocking_paranoia_level');
   });
 
   it('lists hosts by mode and exclusions with scope, reason and author', () => {
     const html = render(data());
     expect(html).toContain('Blocking on 1 host, detection only on 1 host');
+    expect(html).toContain('Core Rule Set 4.25');
     expect(html).toContain('Runbook pages quote SQL queries');
     expect(html).toContain('ARGS:content');
     expect(html).toContain('aria-label="Remove exclusion of rule 942100 on wiki.example.com"');
     expect(html).toContain('Restricted File Access Attempt');
+    expect(html).toContain('aria-label="Search hosts"');
+    expect(html).toContain('aria-label="Search exclusions"');
+    // Everything fits on one page: no pager.
+    expect(html).not.toContain('aria-label="Pages of hosts"');
+  });
+
+  it('pages the per-host table and the exclusions, hosts with settings of their own first', () => {
+    const base = data();
+    const plain = base.hosts[2];
+    const hosts = [
+      ...Array.from({ length: 59 }, (_, i) => ({ ...plain, id: 100 + i, name: `Host ${String(i).padStart(2, '0')}`, domains: [`h${i}.example.com`] })),
+      base.hosts[0],
+    ];
+    const exclusions = Array.from({ length: 30 }, (_, i) => ({ ...base.exclusions[0], id: 200 + i, ruleId: 920000 + i }));
+    const html = render(data({ hosts, exclusions }));
+    expect(html).toContain('aria-label="Pages of hosts"');
+    expect(html.replace(/<[^>]+>/g, '')).toContain('1–25 of 60 hosts');
+    expect(html.match(/aria-label="WAF mode of /g)?.length).toBe(25);
+    // Wiki has settings of its own, so it leads the first page although it is listed last.
+    expect(html).toContain('aria-label="WAF mode of Wiki"');
+    expect(html).not.toContain('aria-label="WAF mode of Host 30"');
+    expect(html).toContain('aria-label="Pages of exclusions"');
+    expect(html.replace(/<[^>]+>/g, '')).toContain('1–25 of 30 exclusions');
+    expect(html.match(/aria-label="Remove exclusion of rule /g)?.length).toBe(25);
   });
 
   it('is read-only without waf:write', () => {
     const html = render(data({ canWrite: false }));
-    expect(html).toContain('Changing them needs the WAF write permission');
+    expect(html).toContain('changing the WAF settings needs the waf:write permission');
     expect(html).not.toContain('Save and apply');
     expect(html).not.toContain('Add exclusion');
     expect(html).not.toContain('Remove exclusion');
@@ -102,7 +135,8 @@ describe('WAF settings page', () => {
 
   it('renders before the WAF was ever set up and without analytics', () => {
     const html = render(data({ settings: null, savedAt: null, analyticsEnabled: false, hosts: [], exclusions: [] }));
-    expect(html).toContain('No rule is excluded');
-    expect(html).toContain('Event counts need ClickHouse analytics, which are off.');
+    expect(html).toContain('No rule exclusions.');
+    expect(html).toContain('No proxy hosts yet.');
+    expect(html).toContain('Analytics are off.');
   });
 });

@@ -43,7 +43,7 @@ export default function QuestionSettingsSection({ settings, canConfigure, aiConf
     });
   }
 
-  const toggle = (key: keyof QuestionSettingsView, label: string, hint: string) => (
+  const toggle = (key: keyof QuestionSettingsView, label: string, hint?: string) => (
     <label className="flex items-start gap-3 text-sm">
       <Switch
         className="mt-0.5"
@@ -54,7 +54,7 @@ export default function QuestionSettingsSection({ settings, canConfigure, aiConf
       />
       <span className="flex flex-col gap-0.5">
         <span>{label}</span>
-        <span className="text-xs text-muted-foreground">{hint}</span>
+        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
       </span>
     </label>
   );
@@ -62,30 +62,24 @@ export default function QuestionSettingsSection({ settings, canConfigure, aiConf
   return (
     <SectionCard
       title="Analytics questions"
-      description="Plain-language questions on the Analytics page, read by this model."
-      descriptionPlacement="below"
       padded
       contentClassName="flex flex-col gap-4"
     >
       {!canConfigure && (
         <Banner tone="info">
-          Turning questions on needs a license that includes the AI analyst; they can always be turned off.{" "}
+          Turning questions on needs a license with the AI analyst.{" "}
           <Link href="/license" className="text-brand underline underline-offset-2">
-            Licensing
+            Manage the license
           </Link>
         </Banner>
       )}
-      {!aiConfigured && <p className="m-0 text-[13px] text-muted-foreground">Set up the AI provider first: questions use it.</p>}
-      {toggle("enabled", "Let users ask questions", "Anyone who can read analytics, within their organisation and host tags. Every question is recorded in the audit log.")}
-      {toggle(
-        "aiSummaries",
-        "AI-written summaries",
-        "The model writes a short summary from the aggregated result. Off, the dashboard writes it and the result is never sent."
-      )}
+      {!aiConfigured && <p className="m-0 text-[13px] text-muted-foreground">Set up the AI provider first.</p>}
+      {toggle("enabled", "Let users ask questions", "Questions are recorded in the audit log.")}
+      {toggle("aiSummaries", "AI-written summaries", "Off, the result is never sent to the model.")}
       {toggle(
         "shareRequestDetails",
         "Send client addresses, user agents and paths when a question needs them",
-        "Off (the default), they reach the model as placeholders such as [address 1]. The question itself is always sent as typed."
+        "Off, the model sees placeholders. The question is always sent as typed."
       )}
       {error && (
         <Banner tone="bad" live>

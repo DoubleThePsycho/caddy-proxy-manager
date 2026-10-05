@@ -66,7 +66,7 @@ export const PAID_ROUTES: readonly PaidRouteGroup[] = [
   {
     module: "ee/backups",
     features: ["scheduled_backups"],
-    prefixes: ["app/api/v1/backup-destinations/", "app/api/v1/backup-runs/"],
+    prefixes: ["app/(dashboard)/backups/", "app/api/v1/backup-destinations/", "app/api/v1/backup-runs/"],
   },
   {
     module: "ee/compliance",
@@ -91,7 +91,7 @@ export const PAID_ROUTES: readonly PaidRouteGroup[] = [
   {
     module: "ee/high-availability",
     features: ["high_availability"],
-    prefixes: ["app/api/v1/high-availability/", "app/api/v1/cluster/"],
+    prefixes: ["app/(dashboard)/high-availability/", "app/api/v1/high-availability/", "app/api/v1/cluster/"],
   },
   {
     module: "ee/ldap",

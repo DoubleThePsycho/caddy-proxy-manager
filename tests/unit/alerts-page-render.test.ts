@@ -71,15 +71,23 @@ const digest: DigestSettingsView = {
   lastRun: { at: stamp, trigger: 'scheduled', narrative: 'added', deliveries: [{ channelId: 2, channelName: 'Ops Slack', ok: true, error: null }] },
 };
 
-function render(tab: AlertsTab, license = { alerting: false, aiAnalyst: false }, extra: { canWrite?: boolean; firing?: FiringAlertView[] } = {}) {
+type Extra = {
+  canWrite?: boolean;
+  firing?: FiringAlertView[];
+  rules?: AlertRuleView[];
+  channels?: AlertChannelView[];
+  history?: { events: AlertEventView[]; total: number; page: number; perPage: number };
+};
+
+function render(tab: AlertsTab, license = { alerting: false, aiAnalyst: false }, extra: Extra = {}) {
   return renderToStaticMarkup(
     createElement(AlertsClient, {
       initialTab: tab,
-      channels,
-      rules,
+      channels: extra.channels ?? channels,
+      rules: extra.rules ?? rules,
       firing: extra.firing ?? firing,
       recent: events,
-      history: { events, total: 1, page: 1, perPage: 25 },
+      history: extra.history ?? { events, total: 1, page: 1, perPage: 25 },
       ai: { enabled: true, provider: 'anthropic', model: 'claude-opus-5', baseUrl: null, hasApiKey: true, configured: true, defaultModel: 'claude-opus-5' },
       digest,
       license,
@@ -101,7 +109,6 @@ describe('Alerts page', () => {
 
   it('shows the tabs with counts and the New rule button', () => {
     const html = render('firing');
-    expect(html).toContain('Rules are checked every minute on this node.');
     expect(html).toMatch(/role="tab"[^>]*>Firing <span[^>]*bg-warn-tint[^>]*>1<\/span>/);
     expect(html).toContain('New rule');
     expect(html).toMatch(/role="tab"[^>]*>AI</);
@@ -121,7 +128,6 @@ describe('Alerts page', () => {
     expect(html).toContain('Last 7 days');
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('href="/alerts?tab=history"');
-    expect(html).toContain('History is kept for 90 days.');
     // Collapsed: the AI text is only in the expanded row.
     expect(html).not.toContain('The backend stopped answering.');
   });
@@ -132,7 +138,7 @@ describe('Alerts page', () => {
 
   it('shows rules with scope, duration, severity, channels and when they fired', () => {
     const html = render('rules');
-    expect(html).toMatch(/<span class="num">2<\/span> of <span class="num">2<\/span> rule/);
+    expect(html).toMatch(/<span class="num">2<\/span> of <span class="num">2<\/span> enabled/);
     expect(html).toContain('Certificate expiring · Within 14 days · cooldown 24 h · notice when it clears');
     expect(html).toContain('All certificates, client certificates too');
     expect(html).toContain('Upstreams of 1 proxy host');
@@ -171,6 +177,31 @@ describe('Alerts page', () => {
     expect(html).toContain('The backend stopped answering.');
     expect(html).toContain('Ops Slack: failed');
     expect(html).toContain('Firing alerts');
+    // One page: no pager.
+    expect(html).not.toContain('aria-label="Pages of alert history"');
+  });
+
+  it('pages the history with the shared pager, linking each page', () => {
+    const html = render('history', undefined, { history: { events, total: 60, page: 2, perPage: 25 } });
+    expect(html).toContain('aria-label="Pages of alert history"');
+    expect(html.replace(/<[^>]+>/g, '')).toContain('26–50 of 60 alerts');
+    expect(html).toContain('href="/alerts?tab=history"');
+    expect(html).toContain('href="/alerts?tab=history&amp;page=3"');
+  });
+
+  it('searches and pages the rules and the channels', () => {
+    const manyRules = Array.from({ length: 30 }, (_, i) => ({ ...rules[0], id: 100 + i, name: `Rule ${i}` }));
+    const rulesHtml = render('rules', { alerting: true, aiAnalyst: true }, { rules: manyRules });
+    expect(rulesHtml).toContain('aria-label="Search rules"');
+    expect(rulesHtml).toContain('aria-label="Pages of rules"');
+    expect(rulesHtml.replace(/<[^>]+>/g, '')).toContain('1–25 of 30 rules');
+    expect(rulesHtml.match(/aria-label="Edit rule /g)?.length).toBe(25);
+
+    const manyChannels = Array.from({ length: 27 }, (_, i) => ({ ...channels[0], id: 100 + i, name: `Mail ${i}` }));
+    const channelsHtml = render('channels', { alerting: true, aiAnalyst: true }, { channels: manyChannels });
+    expect(channelsHtml).toContain('aria-label="Search channels"');
+    expect(channelsHtml).toContain('aria-label="Pages of channels"');
+    expect(channelsHtml.replace(/<[^>]+>/g, '')).toContain('1–25 of 27 channels');
   });
 
   it('is read-only without alerts:write', () => {

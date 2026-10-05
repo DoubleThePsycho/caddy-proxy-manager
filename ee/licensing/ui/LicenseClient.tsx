@@ -3,7 +3,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ExternalLink, Minus, ShieldCheck } from "lucide-react";
+import { Check, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
@@ -25,8 +25,6 @@ export type LicenseClientProps = {
   usage?: Partial<Record<Feature, FeatureUsage>>;
   /** The release this install runs (APP_VERSION). */
   version?: string;
-  /** Ids of the public keys built into this release. */
-  trustedKeyIds?: readonly string[];
   /** The user may install and remove keys (license:write). */
   canWrite?: boolean;
   /** The server's clock, so day counts match between the server and the browser. */
@@ -126,17 +124,7 @@ function DaysNote({ days, issuedAt }: { days: number; issuedAt: string | null })
   );
 }
 
-function CurrentLicenseCard({
-  license,
-  now,
-  trustedKeyIds,
-  canWrite,
-}: {
-  license: LicenseView;
-  now: string;
-  trustedKeyIds: readonly string[];
-  canWrite: boolean;
-}) {
+function CurrentLicenseCard({ license, now, canWrite }: { license: LicenseView; now: string; canWrite: boolean }) {
   const router = useRouter();
   const headingId = useId();
   const confirmTitleId = useId();
@@ -172,7 +160,6 @@ function CurrentLicenseCard({
   }
 
   const days = license.expiresAt ? daysUntil(license.expiresAt, now) : null;
-  const keyIds = license.keyId ? [license.keyId] : trustedKeyIds;
 
   return (
     <section aria-labelledby={headingId} className={cn(CARD, "flex-[2_1_560px] gap-4")}>
@@ -264,23 +251,6 @@ function CurrentLicenseCard({
         )}
       </div>
 
-      <div className="flex items-start gap-2.5 rounded-lg border border-line bg-background px-3.5 py-3 text-[13px]">
-        <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-ok" />
-        <span>
-          <span className="font-semibold">{valid ? "Signature checked on this machine" : "Keys are checked on this machine"}</span>{" "}
-          <span className="text-muted-foreground">
-            with public key{keyIds.length > 1 ? "s" : ""}{" "}
-            {keyIds.map((id, index) => (
-              <span key={id}>
-                {index > 0 && ", "}
-                <span className="num text-foreground">{id}</span>
-              </span>
-            ))}
-            , built into this release. The key is never sent anywhere, so air-gapped installs work the same way.
-          </span>
-        </span>
-      </div>
-
       {hasKey && canWrite && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2.5">
           <Button
@@ -294,9 +264,6 @@ function CurrentLicenseCard({
           >
             Remove key
           </Button>
-          <span className="flex-[1_1_280px] text-xs text-soft">
-            A license only controls setting paid features up. Deleting or turning one off never needs one.
-          </span>
         </div>
       )}
       {confirming && (
@@ -327,13 +294,6 @@ function CurrentLicenseCard({
   );
 }
 
-const BACKPORTED = [
-  "Fixes for security vulnerabilities",
-  "Fixes for data loss, outages and security regressions",
-  "Caddy, Go, Bun and base image updates that fix a vulnerability",
-];
-const NOT_BACKPORTED = ["New features", "Changes in behaviour", "Database migrations, unless a fix cannot be made without one"];
-
 function ReleaseLineCard({ version, ltsIncluded }: { version: string; ltsIncluded: boolean }) {
   const headingId = useId();
   const { version: running, line } = releaseLine(version);
@@ -357,64 +317,20 @@ function ReleaseLineCard({ version, ltsIncluded }: { version: string; ltsInclude
         </a>
       </div>
       <p className="m-0 text-[13px] text-muted-foreground">
-        This install runs <span className="num text-foreground">{running}</span>
+        This install runs {BRAND_NAME} <span className="num text-foreground">{running}</span>
         {line ? (
           <>
             {" "}
-            on the <span className="num text-foreground">{line}</span> line.
+            on the <span className="num text-foreground">{line}</span> line. Pin the image tag <span className="num text-foreground">:{line}</span> to
+            stay on it.
           </>
         ) : (
           "."
         )}{" "}
-        Long-term-support releases are planned; no long-term-support line has been announced yet. Once one is, one minor release a year will be
-        named long-term support in its release notes, and its line will get security and critical fixes for 24 months, and no new features.{" "}
         {ltsIncluded
-          ? "Your license will cover the backports and support for running it."
-          : "Backports and support for running a long-term-support line will come with an Enterprise license."}
+          ? "Your license will cover long-term-support backports once a long-term-support line is announced."
+          : "Long-term-support backports will come with an Enterprise license once a long-term-support line is announced."}
       </p>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(240px,100%),1fr))] gap-3">
-        <div className="flex flex-col gap-2 rounded-xl border border-line px-3.5 py-3">
-          <h3 className="m-0 text-[13px] font-semibold">To be backported</h3>
-          <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[13px]">
-            {BACKPORTED.map((item) => (
-              <li key={item} className="flex gap-2">
-                <Check aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ok" />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="flex flex-col gap-2 rounded-xl border border-line px-3.5 py-3">
-          <h3 className="m-0 text-[13px] font-semibold">Not to be backported</h3>
-          <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[13px] text-muted-foreground">
-            {NOT_BACKPORTED.map((item) => (
-              <li key={item} className="flex gap-2">
-                <Minus aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-soft" />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-      <dl className="m-0 flex flex-col">
-        <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line py-2.5">
-          <dt className="flex-[0_0_150px] text-[13px] text-muted-foreground">Supported until</dt>
-          <dd className="m-0 flex-[1_1_260px] text-[13px]">
-            24 months from a long-term-support line&apos;s first release, once one is announced; its release notes will give the date.
-          </dd>
-        </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line py-2.5">
-          <dt className="flex-[0_0_150px] text-[13px] text-muted-foreground">Stay on the line</dt>
-          <dd className="m-0 flex-[1_1_260px] text-[13px]">
-            Pin the image tag <span className="num">:{line ?? "<major>.<minor>"}</span>. <span className="num">:latest</span> moves to new
-            feature releases.
-          </dd>
-        </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line py-2.5">
-          <dt className="flex-[0_0_150px] text-[13px] text-muted-foreground">Upgrades</dt>
-          <dd className="m-0 flex-[1_1_260px] text-[13px]">Each long-term-support line will upgrade directly from the previous one.</dd>
-        </div>
-      </dl>
     </section>
   );
 }
@@ -495,7 +411,6 @@ export default function LicenseClient({
   license,
   usage = {},
   version = "unknown",
-  trustedKeyIds = [],
   canWrite = true,
   now: nowProp,
   autoUpdate,
@@ -512,7 +427,6 @@ export default function LicenseClient({
       <PageHeader
         breadcrumb={["Administration", "License"]}
         title="License"
-        description={`Paid features of ${BRAND_NAME} and the key that unlocks them. Traffic, certificates, the WAF and sign-in keep working without one.`}
         className="mb-0"
         actions={
           <Button variant="outline" asChild>
@@ -525,15 +439,13 @@ export default function LicenseClient({
       />
 
       <div className="flex flex-wrap items-start gap-5">
-        <CurrentLicenseCard license={license} now={now} trustedKeyIds={trustedKeyIds} canWrite={canWrite} />
+        <CurrentLicenseCard license={license} now={now} canWrite={canWrite} />
         {canWrite ? (
           <InstallKeyCard hasLicense={license.status !== "unlicensed"} nodesUsed={license.nodes.used} inUse={inUse} />
         ) : (
           <section className={cn(CARD, "flex-[1_1_320px] gap-1")}>
             <h2 className="m-0 text-base leading-6 font-semibold">Install a new key</h2>
-            <p className="m-0 text-[13px] text-muted-foreground">
-              Your role can see the license but not change it. Someone who may change the license installs and removes keys.
-            </p>
+            <p className="m-0 text-[13px] text-muted-foreground">Your role can see the license but not change it.</p>
           </section>
         )}
       </div>

@@ -295,7 +295,7 @@ export function StackedChartBase({
   const ticks = xTickLabels(n, xTicks);
 
   return (
-    <div className={cn("@container flex min-w-0 flex-col gap-3.5", className)}>
+    <div className={cn("@container relative flex min-w-0 flex-col gap-3.5", className)}>
       <div className="relative pl-[52px]">
         <div
           role="group"
@@ -473,33 +473,36 @@ export function StackedChartBase({
         </div>
       )}
 
-      <table className="sr-only">
-        <caption>{title}</caption>
-        <thead>
-          <tr>
-            <th scope="col">{bucketHeader}</th>
-            {series.map((s) => (
-              <th key={s.key} scope="col">
-                {s.label}
-              </th>
-            ))}
-            <th scope="col">Total</th>
-            {previous && <th scope="col">{previousLabel}</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {buckets.map((ms, i) => (
-            <tr key={i}>
-              <th scope="row">{label(ms, true)}</th>
+      {/* The hidden div clips the table: a table is as wide as its content whatever its own width. */}
+      <div className="sr-only">
+        <table>
+          <caption>{title}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{bucketHeader}</th>
               {series.map((s) => (
-                <td key={s.key}>{formatValue(valueAt(s.values, i))}</td>
+                <th key={s.key} scope="col">
+                  {s.label}
+                </th>
               ))}
-              <td>{formatValue(series.reduce((sum, s) => sum + valueAt(s.values, i), 0))}</td>
-              {previous && <td>{prev[i] === null ? "–" : formatValue(prev[i] as number)}</td>}
+              <th scope="col">Total</th>
+              {previous && <th scope="col">{previousLabel}</th>}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {buckets.map((ms, i) => (
+              <tr key={i}>
+                <th scope="row">{label(ms, true)}</th>
+                {series.map((s) => (
+                  <td key={s.key}>{formatValue(valueAt(s.values, i))}</td>
+                ))}
+                <td>{formatValue(series.reduce((sum, s) => sum + valueAt(s.values, i), 0))}</td>
+                {previous && <td>{prev[i] === null ? "–" : formatValue(prev[i] as number)}</td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

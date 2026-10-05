@@ -15,6 +15,25 @@ The settings are grouped in six sections. Each has its own address, so a link ca
 
 Rule exclusions limited to a path or a variable, and path-based mTLS access rules, are listed in their sections but saved on their own: exclusions on the WAF settings page, access rules as soon as they are added, changed or removed.
 
+## What some settings do
+
+- **Load balancing** off: Caddy picks any upstream at random, without health checks or retries. A path-based route without its own load balancing does the same with its upstreams.
+- **WebSockets**: the WAF lets WebSocket upgrade requests through without inspecting them, so long-lived streams are not cut. Caddy proxies WebSockets either way.
+- **Skip upstream certificate check**: accepts an `https://` upstream whose certificate does not match its address. Meant for upstreams with a self-signed certificate.
+- **WAF mode**: *Global mode* follows the WAF settings (when those apply only to hosts that pick a mode, a host on global mode has no WAF). *Detect only* inspects every request and logs matches to Security events without blocking; *Block* answers 403 to requests that reach the anomaly threshold. *Override global* leaves out the global exclusions and directives. With the Core Rule Set the WAF reads at most 12.5 MiB of a request body unless the host raises it (up to 1024 MiB). Custom directives run after the Core Rule Set. **Exclude rule** removes a rule for the whole host (`SecRuleRemoveById`).
+- **Rate limiting** off still applies the global default rules; *Override global* with no rules limits nothing. Over a limit, clients get 429 with `Retry-After`. See [rate-limiting.md](rate-limiting.md).
+- **Access list**: with none, anyone can reach the host; sign-in and the upstream's own checks still apply. The global Blocked sources list applies to every host.
+- **Sign-in**: *Only these paths* limits sign-in to some paths (blank: the whole host); *Never these paths* is ignored when only some paths are protected. Headers copied to the upstream cannot be sent by clients themselves. Requests carrying a *Skip sign-in* header reach the upstream without signing in, so the upstream must check them. See [forward-auth.md](forward-auth.md).
+- **Client certificates (mTLS)**: clients without a certificate from a trusted role or one of the chosen certificates cannot connect at all. Roles and client certificates are made on the Certificates page.
+- **Blocked paths** are answered with their status and body; the upstream never sees them. A path that bypasses the blocks is never blocked, even when a blocked path matches it too: allow `/secret` and block `/*` to expose only `/secret`.
+- **Geo blocking**: allow rules win over block rules. With geo blocking off on the host, only the global rules apply. Trusted proxies' `X-Forwarded-For` names the client; *Block clients whose address is unknown* blocks requests whose client cannot be told, for example behind a trusted proxy that sends no usable `X-Forwarded-For`. A redirect replaces the status and body with a 302. See [geo-blocking.md](geo-blocking.md).
+- **Certificate**: Caddy obtains a certificate for each domain over ACME once the host is saved and renews it about 30 days before it expires. Wildcard domains need a DNS provider in Certificate settings. An imported certificate is not renewed: import a new one before it expires.
+- **Strict Transport Security** tells browsers to use only HTTPS for two years; with subdomains, every name under the host's domains too. Other request or response headers are set with handlers in raw Caddy JSON.
+- **Redirects** answer the client; **rewrites** change the path the upstream sees. The path prefix is put in front of every path, for apps served under a sub-path.
+- **Error pages** replace the body of error responses (502 while the upstream is down, for example); the status code stays the same.
+- **Upstream name resolution** matters only when upstreams are names: own DNS resolvers replace the system's, and [DNS pinning](upstream-dns-pinning.md) resolves the names when the configuration is applied.
+- **Raw Caddy JSON** is checked when you save: Caddy refuses a configuration it cannot load.
+
 ## Saving
 
 The bar at the bottom counts the unsaved changes against the saved host. **Review changes** (or **Save**, or Ctrl+S) opens the review before anything is saved. It shows:

@@ -16,7 +16,7 @@ export async function saveSharedStateAction(input: unknown): Promise<SharedState
   const session = await requirePermission("high_availability:write");
   try {
     const view = await saveSharedState(input, Number(session.user.id));
-    revalidatePath("/settings");
+    revalidatePath("/high-availability");
     return { ok: true, view };
   } catch (error) {
     return failure(error);
@@ -27,7 +27,7 @@ export async function removeSharedStateAction(): Promise<SharedStateActionResult
   const session = await requirePermission("high_availability:write");
   try {
     const view = await removeSharedState(Number(session.user.id));
-    revalidatePath("/settings");
+    revalidatePath("/high-availability");
     return { ok: true, view };
   } catch (error) {
     return failure(error);

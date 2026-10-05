@@ -115,7 +115,7 @@ export default function SignInSecurity({
       setError(describePasskeyError(result.error));
       return;
     }
-    setNotice("Passkey added. You can sign in with it instead of your password and code.");
+    setNotice("Passkey added.");
     close();
   });
 
@@ -165,10 +165,7 @@ export default function SignInSecurity({
       {ssoNote && (
         <div role="note" className="flex items-start gap-2.5 rounded-lg bg-muted/60 px-3 py-2.5 text-[13px] leading-[18px]">
           <Info className="mt-px h-4 w-4 flex-none text-muted-foreground" aria-hidden="true" />
-          <span>
-            Single sign-on is enforced, so you sign in through {ssoHost ?? "your identity provider"} and its own multi-factor
-            step. Your password, authenticator app and passkeys apply again if enforcement is turned off.
-          </span>
+          <span>Single sign-on is enforced: you sign in through {ssoHost ?? "your identity provider"}.</span>
         </div>
       )}
 
@@ -205,9 +202,7 @@ export default function SignInSecurity({
               <span className="text-xs text-warn">{signInProblem}</span>
             )}
             {oauthOnlyNote && (
-              <span className="text-xs text-muted-foreground">
-                You are using OAuth-only authentication. Setting a password will allow you to sign in with either OAuth or credentials.
-              </span>
+              <span className="text-xs text-muted-foreground">You sign in through your identity provider.</span>
             )}
           </span>
           <Button variant="outline" size="sm" className="shrink-0" onClick={onChangePassword}>
@@ -222,13 +217,9 @@ export default function SignInSecurity({
               {mfa.authenticatorApp && <Badge variant="success">On</Badge>}
             </span>
             {!mfa.hasPassword ? (
-              <span className="text-xs text-muted-foreground">
-                Multi-factor authentication protects sign-in with a password. Your account signs in through an identity
-                provider, which handles multi-factor authentication.
-              </span>
+              <span className="text-xs text-muted-foreground">Your identity provider handles multi-factor authentication.</span>
             ) : mfa.authenticatorApp ? (
               <>
-                <span className="text-xs text-muted-foreground">A 6-digit code after your password at every password sign-in.</span>
                 <span className={`text-xs ${remaining !== null && remaining <= 2 ? "text-warn" : "text-muted-foreground"}`}>
                   Backup codes: {remaining === null ? "unavailable" : `${remaining} of 10 left`}
                 </span>
@@ -239,9 +230,7 @@ export default function SignInSecurity({
                 )}
               </>
             ) : (
-              <span className="text-xs text-muted-foreground">
-                A 6-digit code from an authenticator app after your password, with one-time backup codes in case you lose it.
-              </span>
+              <span className="text-xs text-muted-foreground">A 6-digit code after your password, with backup codes.</span>
             )}
           </span>
           {mfa.hasPassword && (
@@ -272,9 +261,7 @@ export default function SignInSecurity({
           <span className="flex min-w-0 flex-1 flex-col gap-2">
             <span className="flex flex-col gap-0.5">
               <span className="text-sm font-medium">Passkeys</span>
-              <span className="text-xs text-muted-foreground">
-                Sign in with Touch ID, Windows Hello or a security key instead of a password and code.
-              </span>
+              <span className="text-xs text-muted-foreground">Touch ID, Windows Hello or a security key instead of a password and code.</span>
             </span>
             {passkeys.length === 0 ? (
               <span className="text-xs text-muted-foreground">No passkeys yet.</span>
@@ -389,10 +376,7 @@ export default function SignInSecurity({
             <>
               <DialogHeader>
                 <DialogTitle>Add a passkey</DialogTitle>
-                <DialogDescription>
-                  Your browser asks for Touch ID, Windows Hello, a PIN or a security key. The passkey then signs you in without
-                  your password and code.
-                </DialogDescription>
+                <DialogDescription>Your browser asks for Touch ID, Windows Hello, a PIN or a security key.</DialogDescription>
               </DialogHeader>
               <form onSubmit={createPasskey} className="flex flex-col gap-3">
                 {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
@@ -416,7 +400,7 @@ export default function SignInSecurity({
             <>
               <DialogHeader>
                 <DialogTitle>Rename passkey</DialogTitle>
-                <DialogDescription>A name that tells you which device or key this is.</DialogDescription>
+                <DialogDescription>Which device or key this is.</DialogDescription>
               </DialogHeader>
               <form onSubmit={(event) => renamePasskey(event, dialog.passkey)} className="flex flex-col gap-3">
                 {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}

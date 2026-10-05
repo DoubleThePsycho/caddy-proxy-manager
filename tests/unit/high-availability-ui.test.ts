@@ -1,5 +1,5 @@
 /**
- * Server-side render of the Certificate Storage section of Settings
+ * Server-side render of the Certificate storage section of Certificate settings
  * (ee/high-availability/ui): read-only without a license with going back to
  * local storage still offered, read-only on a slave, the migration commands,
  * and no secret in the markup.
@@ -10,7 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
-  usePathname: () => '/settings',
+  usePathname: () => '/certificates/settings',
   useSearchParams: () => new URLSearchParams(),
 }));
 
@@ -71,6 +71,15 @@ describe('Certificate Storage section', () => {
     expect(hasButton(html, 'Remove setting')).toBe(true);
     expect(hasButton(html, 'Test connection')).toBe(true);
     expect(hasButton(html, '>Save<')).toBe(false);
+  });
+
+  it('shows only the license note without a license when nothing is set up', () => {
+    const html = render(view({ backend: 'local', redis: null }));
+    expect(html).toContain('needs an active Enterprise license');
+    expect(html).toContain('href="/license"');
+    expect(html).not.toContain('<fieldset');
+    expect(hasButton(html, 'Test connection')).toBe(false);
+    expect(hasButton(html, 'Enable shared storage')).toBe(false);
   });
 
   it('offers to enable, or to save without enabling, with the license', () => {

@@ -1,7 +1,7 @@
 /**
  * Server-side render of the redesigned certificates and L4 hosts pages:
  * the three certificate tabs, the expiry timeline, the certificate table's
- * columns and states, and the L4 table with its detail panel. No invented
+ * columns and states, and the L4 hosts list with its filters. No invented
  * traffic metrics on the L4 page.
  */
 import { describe, expect, it, vi } from 'vitest';
@@ -32,6 +32,7 @@ vi.mock('@/app/(dashboard)/l4-proxy-hosts/actions', () => ({
   deleteL4ProxyHostAction: vi.fn(),
   toggleL4ProxyHostAction: vi.fn(),
 }));
+vi.mock('@/app/(dashboard)/l4-proxy-hosts/bulk-actions', () => ({ bulkL4ProxyHostsAction: vi.fn() }));
 
 import CertificatesClient from '@/app/(dashboard)/certificates/CertificatesClient';
 import type { CaCertificateView, IssuedClientCertificateView, MtlsRoleView } from '@/app/(dashboard)/certificates/page';
@@ -112,7 +113,7 @@ const ca: CaCertificateView = {
   hasPrivateKey: true,
   createdAt: '2026-03-02T00:00:00.000Z',
   updatedAt: '2026-03-02T00:00:00.000Z',
-  issuedCerts: [],
+  issued: { active: 1, revoked: 0 },
   validTo: '2036-03-02T00:00:00.000Z',
   trustedBy: [{ id: 3, name: 'Registry', domain: 'registry.example.com' }],
 };
@@ -122,7 +123,6 @@ const clientCert: IssuedClientCertificateView = {
   commonName: 'ci-runner',
   serialNumber: 'AB',
   fingerprintSha256: 'aa',
-  certificatePem: 'pem',
   validFrom: '2026-03-12T00:00:00.000Z',
   validTo: '2027-03-12T00:00:00.000Z',
   revokedAt: null,
@@ -146,14 +146,13 @@ function renderCertificates(initialTab: 'certificates' | 'authorities' | 'client
   return renderToStaticMarkup(
     createElement(CertificatesClient, {
       overview: { generatedAt: NOW, certificates: rows },
-      caCertificates: [{ ...ca, issuedCerts: [clientCert] }],
+      caCertificates: [ca],
       clientCertificates: [clientCert],
       mtlsRoles: [role],
       showTrustAnchors,
       canWrite: true,
       canCreateCertificate: true,
       canReadSettings: true,
-      acmeEmail: 'admin@example.com',
       initialTab,
     })
   );
@@ -166,7 +165,8 @@ describe('certificates page', () => {
     for (const tab of ['Certificate authorities', 'Client certificates']) expect(html).toContain(tab);
     expect(html).toContain('Expiry, next 90 days');
     expect(html).toContain('aria-label="auth.example.com: 31 days left');
-    expect(html).toContain('href="/settings?section=dns-providers"');
+    expect(html).toContain('href="/certificates/settings"');
+    expect(html).toContain('Certificate settings');
     expect(html).toContain('Import certificate');
     for (const column of ['Domains', 'Issuer', 'Obtained by', 'Expires', 'Renewal', 'Used by']) expect(html).toContain(`>${column}</th>`);
     // ACME: served certificate, renewal date; imported: replace soon; unread: not read yet.
@@ -176,17 +176,43 @@ describe('certificates page', () => {
     expect(html).toContain('Cloudflare');
     // Used by: a proxy host and an L4 host.
     expect(html).toContain('1 proxy host, and DNS over TLS (L4)');
-    expect(html).toContain('admin@example.com');
-    expect(html).toContain('1 not shown: their expiry is not read yet.');
+    // No footnotes about the ACME account or where the expiry comes from.
+    expect(html).not.toContain('ACME account');
+    expect(html).not.toContain('at most an hour');
+    expect(html).not.toContain('not shown');
+    // One page: no pager.
+    expect(html).not.toContain('aria-label="Pages of certificates"');
+  });
+
+  it('leaves certificates expiring after 90 days off the timeline', () => {
+    const far: CertificateOverviewRow = { ...rows[1], id: 'certificate:5', certificateId: 5, domains: ['far.example.com'], validTo: day(200), daysLeft: 200, renewal: { state: 'manual', renewFrom: null } };
+    const html = renderToStaticMarkup(
+      createElement(CertificatesClient, {
+        overview: { generatedAt: NOW, certificates: [far] },
+        caCertificates: [],
+        clientCertificates: [],
+        mtlsRoles: [],
+        showTrustAnchors: false,
+        canWrite: true,
+        canCreateCertificate: true,
+        canReadSettings: true,
+        initialTab: 'certificates',
+      })
+    );
+    expect(html).not.toContain('far.example.com: 200 days left');
+    expect(html).toContain('Nothing expires in the next 90 days.');
+    expect(html).toContain('far.example.com');
   });
 
   it('renders the certificate authorities tab', () => {
     const html = renderCertificates('authorities');
-    expect(html).toContain('Certificate authorities for client certificates');
+    expect(html).toContain('>Certificate authorities</h2>');
     expect(html).toContain('Stored, encrypted');
     expect(html).toContain('2 Mar 2036');
     expect(html).toContain('More actions for Staff client CA');
     expect(html).toContain('Add certificate authority');
+    // The issued count opens the client certificates of the CA.
+    expect(html).toMatch(/<button[^>]*><span class="num">1<\/span> active<\/button>/);
   });
 
   it('renders roles and client certificates together', () => {
@@ -195,7 +221,41 @@ describe('certificates page', () => {
     expect(html).toContain('required by registry.example.com');
     expect(html).toContain('ci-runner');
     expect(html).toContain('aria-label="Revoke ci-runner"');
+    expect(html).toContain('aria-label="Select ci-runner"');
     expect(html).toContain('Issue client certificate');
+    // Search, status filter and sortable columns; a table on wide screens, cards on phones.
+    expect(html).toContain('placeholder="Common name, serial, role or CA"');
+    expect(html).toContain('aria-label="Status"');
+    expect(html).toContain('aria-sort="ascending"');
+    expect(html).toContain('<ul aria-label="Client certificates"');
+    expect(html).not.toContain('aria-label="Pages of client certificates"');
+  });
+
+  it('pages a long list of client certificates', () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({
+      ...clientCert,
+      id: 100 + i,
+      commonName: `device-${String(i).padStart(2, '0')}`,
+      validTo: day(400 + i),
+    }));
+    const html = renderToStaticMarkup(
+      createElement(CertificatesClient, {
+        overview: { generatedAt: NOW, certificates: rows },
+        caCertificates: [{ ...ca, issued: { active: 60, revoked: 0 } }],
+        clientCertificates: many,
+        mtlsRoles: [],
+        showTrustAnchors: true,
+        canWrite: true,
+        canCreateCertificate: true,
+        canReadSettings: false,
+        initialTab: 'client',
+      })
+    );
+    expect(html).toContain('aria-label="Pages of client certificates"');
+    expect(html).toMatch(/<span class="num">1<\/span>–<span class="num">25<\/span> of <span class="num">60<\/span> client certificates/);
+    expect(html).toContain('device-24');
+    expect(html).not.toContain('device-25');
+    expect(html).not.toContain('/certificates/settings');
   });
 
   it('shows only the certificate list without trust anchors', () => {
@@ -234,35 +294,49 @@ describe('L4 hosts page', () => {
     { ...base, id: 3, name: 'Mail', listenAddress: ':993', upstreams: ['dovecot:10993'], matcherType: 'none', matcherValue: [], tlsTermination: false, proxyProtocolVersion: 'v2', enabled: false, tags: [] },
   ];
 
-  function render(list: L4ProxyHost[], totalHosts = list.length) {
+  function render(list: L4ProxyHost[], totalHosts = list.length, canWrite = true) {
     return renderToStaticMarkup(
       createElement(L4ProxyHostsClient, {
         hosts: list,
         totalHosts,
         pagination: { total: list.length, page: 1, perPage: 25 },
-        initialSearch: '',
-        protocol: 'all',
+        query: { search: '', protocol: 'all', status: 'all', sortBy: 'createdAt', sortDir: 'desc', page: 1 },
         protocolCounts: { all: 3, tcp: 2, udp: 1 },
-        canWrite: true,
+        statusCounts: { all: 3, enabled: 2, disabled: 1 },
+        showTags: true,
+        canWrite,
       })
     );
   }
 
-  it('renders filters, the table and the selected host', () => {
+  it('renders the filters and one compact row per host', () => {
     const html = render(hosts);
     expect(html).toContain('L4 hosts');
     expect(html).toContain('New L4 host');
     expect(html).toContain('aria-label="Protocol"');
-    expect(html).toContain('placeholder="Name, port or upstream"');
-    for (const column of ['Name', 'Listen', 'Upstream', 'TLS', 'PROXY protocol', 'Status']) expect(html).toContain(column);
-    expect(html).toContain('Terminate');
-    expect(html).toContain('Sends v2');
+    expect(html).toContain('aria-label="Status"');
+    expect(html).toContain('placeholder="Name, port, upstream or server name"');
+    for (const column of ['Name', 'Listen', 'Upstream', 'Tags', 'Status']) expect(html).toMatch(new RegExp(`<th[^>]*>(<button[^>]*>)?${column}`));
+    // The row: the server name it routes by, the listen address, the first upstream, the status.
+    expect(html).toContain('dns.example.com');
+    expect(html).toContain(':51820');
+    expect(html).toContain('dovecot:10993');
     expect(html).toContain('Disabled');
-    // The first host is selected and detailed.
-    expect(html).toContain(':853/tcp');
-    expect(html).toContain('On, certificate for dns.example.com');
+    expect(html).toContain('network');
     expect(html).toContain('More actions for WireGuard');
+    expect(html).toContain('aria-label="Select every host on this page"');
+    // Settings live in the detail sheet, opened from the host's name: not in the rows.
+    expect(html).not.toContain('On, certificate for dns.example.com');
     expect(html).not.toMatch(/Open now|Transferred|Open connections/);
+    // Everything fits on one page: no pager.
+    expect(html).not.toContain('Pages of L4 hosts');
+  });
+
+  it('has no selection or switches for a reader', () => {
+    const html = render(hosts, 3, false);
+    expect(html).not.toContain('Select every host on this page');
+    expect(html).not.toContain('role="switch"');
+    expect(html).not.toContain('New L4 host');
   });
 
   it('shows an empty state with one action when there are no L4 hosts', () => {

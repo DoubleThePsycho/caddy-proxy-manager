@@ -87,7 +87,6 @@ export default function LastReportCard({
           icon={FileText}
           className="px-0 py-1"
           title="No report yet"
-          description="Generated reports are stored with their SHA-256 and recorded in the audit log, as evidence for the controls they support."
         />
       </SectionCard>
     );

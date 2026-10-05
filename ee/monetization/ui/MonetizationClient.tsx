@@ -41,6 +41,8 @@ type Props = {
   hosts: HostMonetizationView[];
   stripe: StripeSettingsView;
   ledger: LedgerPage;
+  /** The ledger's filters from the address ("all" or a consumer id; "all" or an entry type). */
+  ledgerFilter?: { consumer: string; type: string };
   configurable: boolean;
   canWrite: boolean;
   /** May replace or remove the Stripe account (administrator-level). */
@@ -52,7 +54,10 @@ type Props = {
   instanceMode: "standalone" | "master" | "slave";
   options: MonetizationOptionsView;
   x402: X402SettingsView;
+  /** The page of x402 payments the x402 tab shows (?payments=). */
   x402Payments: X402PaymentPage;
+  /** The latest x402 payments, under the ledger; the x402 tab's page when omitted. */
+  x402Latest?: X402PaymentPage;
   editionLabel: string;
 };
 
@@ -90,7 +95,6 @@ export default function MonetizationClient(props: Props) {
         className="mb-0"
         breadcrumb={["Platform", "API monetization"]}
         title="API monetization"
-        description="Consumers pay per request, from prepaid balances or afterwards with a saved card through your Stripe account, or with x402. Every request to a monetized host is checked before it reaches the API."
         actions={
           <>
             <Button asChild variant="outline">
@@ -136,7 +140,7 @@ export default function MonetizationClient(props: Props) {
           }
         >
           Setting up and changing API monetization needs a license with it ({props.editionLabel} edition). What is already set up keeps
-          metering and taking top-ups, is shown read-only, and can still be disabled, revoked or deleted.
+          metering and taking top-ups, and can still be disabled, revoked or deleted.
         </Banner>
       )}
 
@@ -164,10 +168,6 @@ export default function MonetizationClient(props: Props) {
         />
       </TabsContent>
       <TabsContent value="consumers" className="mt-0 flex flex-col gap-4">
-        <p className="m-0 max-w-3xl text-[13px] text-muted-foreground">
-          Who pays for requests. Prepaid consumers top up first; the overdraft allowance caps how far below zero they may go before
-          requests get 402. Postpaid consumers save a card and pay afterwards, never more than their plan&apos;s cap.
-        </p>
         <ConsumersTab
           consumers={props.consumers}
           plans={props.plans}
@@ -212,7 +212,13 @@ export default function MonetizationClient(props: Props) {
         />
       </TabsContent>
       <TabsContent value="ledger" className="mt-0">
-        <LedgerTab initial={props.ledger} consumers={props.consumers} currency={currency} x402Payments={props.x402Payments} />
+        <LedgerTab
+          page={props.ledger}
+          filter={props.ledgerFilter ?? { consumer: "all", type: "all" }}
+          consumers={props.consumers}
+          currency={currency}
+          x402Payments={props.x402Latest ?? props.x402Payments}
+        />
       </TabsContent>
 
       {adding && <ConsumerFormDialog consumer={null} plans={props.plans} currency={currency} onClose={() => setAdding(false)} />}

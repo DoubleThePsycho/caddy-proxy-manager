@@ -32,7 +32,7 @@ Nothing is derived. The e-mail address and `userName` are the values the identit
 
 ### Signing in: linking the first SSO sign-in
 
-Choose the **sign-in provider** in the SCIM settings: the OAuth/OIDC provider (Settings → OAuth providers) or SAML provider (the SAML page, `ee/docs/sso-saml.md`; its id is `saml:<id>` in the API) your users sign in with, normally the same identity provider that sends SCIM. For a SAML provider the assertion's attributes stand in for the claims below: **Link on a claim** names a SAML attribute (for example Entra ID's `http://schemas.microsoft.com/identity/claims/objectidentifier`), and since SAML has no `email_verified` claim, without a claim the first sign-in links only if **Require a verified e-mail** is off (or the identity provider sends an attribute named `email_verified` with the value `true`).
+Choose the **sign-in provider** in the SCIM settings: the OAuth/OIDC provider (the OAuth providers page) or SAML provider (the SAML page, `ee/docs/sso-saml.md`; its id is `saml:<id>` in the API) your users sign in with, normally the same identity provider that sends SCIM. For a SAML provider the assertion's attributes stand in for the claims below: **Link on a claim** names a SAML attribute (for example Entra ID's `http://schemas.microsoft.com/identity/claims/objectidentifier`), and since SAML has no `email_verified` claim, without a claim the first sign-in links only if **Require a verified e-mail** is off (or the identity provider sends an attribute named `email_verified` with the value `true`).
 
 A SCIM user has no linked identity until their first sign-in. Better Auth looks the signing-in identity up by e-mail address and links it to that account only when the provider is trusted (its **Auto-link accounts** switch) or reports the address as verified. For the sign-in provider, the address counts as verified only when every one of these holds (`ee/scim/binding.ts`):
 
@@ -71,6 +71,8 @@ SCIM keeps the identity provider's own `active` flag. The account is disabled wh
 
 SCIM groups are forward-auth groups (**Groups** page), so membership controls access to forward-auth protected hosts.
 
+On the SCIM provisioning page, the SCIM users and SCIM groups are listed 25 to a page (`?usersPage=`, `?groupsPage=`); the users get a search on name, e-mail and userName once there are more.
+
 - Creating a group whose name a group SCIM does not manage already has is refused with `409`; hand that group to SCIM first if the provider should manage it.
 - In a group handed to SCIM, SCIM only sees, adds and removes SCIM users; other members stay and are not shown.
 - Members must be SCIM users (`400` otherwise); protected accounts are refused (`403`).
@@ -78,7 +80,7 @@ SCIM groups are forward-auth groups (**Groups** page), so membership controls ac
 
 ## Setup
 
-1. Configure and enable an OAuth/OIDC provider for your identity provider (**Settings → OAuth providers**), with **Auto-link accounts** off.
+1. Configure and enable an OAuth/OIDC provider for your identity provider (the **OAuth providers** page), with **Auto-link accounts** off.
 2. Open **Sign-in and directories → SCIM provisioning**. Choose the provider as **Sign-in provider**, pick the delete mode and the default role, turn on **Accept SCIM requests** and save.
 3. Create a **SCIM token** and copy it; it is shown once.
 4. Optionally hand existing accounts and groups to SCIM, with the exact `userName` the provider sends for each user.

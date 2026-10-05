@@ -564,7 +564,8 @@ describe('syncInstances transport', () => {
       { name: 'spaced', url: 'https://spaced-slave.example.com/', token },
     ]);
     expect(await syncInstances()).toMatchObject({ total: 2, success: 2 });
-    const posted = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST').map(([url]) => String(url));
+    // Slaves are synced concurrently: the order of the requests is not fixed.
+    const posted = fetchSpy.mock.calls.filter(([, init]) => init?.method === 'POST').map(([url]) => String(url)).sort();
     expect(posted).toEqual([
       'https://good-slave.example.com/api/instances/sync',
       'https://spaced-slave.example.com/api/instances/sync',

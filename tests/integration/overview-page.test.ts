@@ -234,7 +234,7 @@ describe('nodes', () => {
     const data = await load(admin());
     expect(data.nodes).toMatchObject({ mode: 'standalone', more: 0, link: { label: 'Fleet', href: '/fleet' } });
     expect(data.nodes?.nodes).toEqual([expect.objectContaining({ key: 'self', name: 'This server', detail: 'Standalone', tone: 'ok' })]);
-    expect((await load(custom(['instances:read', 'settings:read']))).nodes?.link).toEqual({ label: 'Instance sync', href: '/settings?section=sync' });
+    expect((await load(custom(['instances:read', 'settings:read']))).nodes?.link).toEqual({ label: 'Instance sync', href: '/instances' });
     await recordCaddyApplyResult({ ok: false, code: 'CADDY_UNREACHABLE', message: 'Caddy did not answer' });
     expect((await load(admin())).nodes?.nodes[0]).toMatchObject({ detail: 'Standalone · Caddy apply failed', tone: 'bad' });
   });
