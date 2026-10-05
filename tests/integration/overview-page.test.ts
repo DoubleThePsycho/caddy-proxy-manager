@@ -219,7 +219,7 @@ describe('busiest hosts', () => {
 
   it('colours a host by the worst of its state', () => {
     const healthy = { enabled: true, errors5xx: 0, errorRate5xx: 0, certificateDaysLeft: 60, burst: null };
-    expect(hostTone(healthy)).toEqual({ tone: 'ok', label: 'Healthy' });
+    expect(hostTone(healthy)).toEqual({ tone: 'ok', label: 'No issues' });
     expect(hostTone({ ...healthy, enabled: false, certificateDaysLeft: -1 }).tone).toBe('off');
     expect(hostTone({ ...healthy, certificateDaysLeft: -1 }).label).toBe('Certificate expired');
     expect(hostTone({ ...healthy, burst: { ongoing: true } }).tone).toBe('bad');

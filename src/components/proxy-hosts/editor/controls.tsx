@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { Field, FieldError, TextField, ToggleRow, useFieldProps, AddButton, RemoveButton, WasHint } from "./fields";
-import { LB_POLICIES, parseUpstream, rowKey, SCHEMES, type LbForm, type Scheme, type UpstreamRow } from "./model";
+import { DEFAULT_PASSIVE_FAIL_DURATION, LB_POLICIES, parseUpstream, rowKey, SCHEMES, type LbForm, type Scheme, type UpstreamRow } from "./model";
 
 /** A native select styled like the inputs: keyboard and screen-reader friendly, and the platform picker on phones. */
 export function NativeSelect({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement> & { children: ReactNode }) {
@@ -187,7 +187,9 @@ export function LbFields({ lb, onChange, idPrefix }: { lb: LbForm; onChange: (lb
           label="Passive health checks"
           description="Mark an upstream unhealthy when its real responses fail or are slow."
           checked={lb.passive.enabled}
-          onChange={(enabled) => set({ passive: { ...lb.passive, enabled } })}
+          onChange={(enabled) =>
+            set({ passive: { ...lb.passive, enabled, failDuration: enabled && !lb.passive.failDuration ? DEFAULT_PASSIVE_FAIL_DURATION : lb.passive.failDuration } })
+          }
         />
         {lb.passive.enabled && (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(min(150px,100%),1fr))] gap-x-4 gap-y-3 pb-1">

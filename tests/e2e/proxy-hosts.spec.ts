@@ -298,6 +298,24 @@ test.describe('Proxy Hosts', () => {
       await expect(page.getByText('http://localhost:9779')).toBeVisible();
       await expect(page.getByText('Health checks are off')).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Changes to this host' })).toBeVisible();
+      // Nothing needs attention: that is all the status says, not that the upstreams were checked.
+      await expect(page.getByText('No issues', { exact: true }).first()).toBeVisible();
+
+      // Turn on health checks: the editor opens with passive checks on, as an unsaved change.
+      await page.getByRole('link', { name: 'Turn on health checks' }).click();
+      await expect(page).toHaveURL(new RegExp(`/proxy-hosts/${created.id}/edit#routing$`));
+      const passive = page.getByRole('switch', { name: 'Passive health checks' });
+      await expect(passive).toBeChecked();
+      await expect(passive).toBeFocused();
+      await expect(page.getByLabel('Remember failures for')).toHaveValue('30s');
+      const bar = page.getByTestId('host-editor-bar');
+      await bar.getByRole('button', { name: 'Review changes' }).click();
+      await page.getByRole('region', { name: /^Review \d+ changes? to Detail Page Host$/ }).getByRole('button', { name: 'Save changes' }).click();
+      await expect(bar.getByText('Saved', { exact: true })).toBeVisible({ timeout: 15_000 });
+
+      await page.goto(`/proxy-hosts/${created.id}`);
+      await expect(page.getByText('Passive: taken out after 1 failure within 30s.')).toBeVisible();
+      await expect(page.getByText('Health checks are off')).not.toBeVisible();
     } finally {
       await page.request.delete(`${API_PROXY_HOSTS}/${created.id}`, { headers: { Origin: origin } });
     }

@@ -6,7 +6,7 @@ Proxy hosts are created and changed on their own page: **Proxy hosts → New hos
 
 The settings are grouped in six sections. Each has its own address, so a link can open it directly, for example `/proxy-hosts/12/edit#security`.
 
-- **Routing**: domains, upstreams, load balancing with retries and active and passive health checks, WebSockets, the Host header sent upstream, skipping the upstream certificate check, and path-based routes with their own upstreams and load balancing. A new host also asks for its name and tags here.
+- **Routing**: domains, upstreams, load balancing with retries and active and passive health checks (under **Custom load balancing**; active checks need a path or a port and passive checks a time to remember failures, filled in as 30s when they are turned on, or Caddy runs neither), WebSockets, the Host header sent upstream, skipping the upstream certificate check, and path-based routes with their own upstreams and load balancing. A new host also asks for its name and tags here.
 - **Security**: the WAF mode of the host (global mode, off, detect only or block), whether its rules merge with or override the global ones, the OWASP Core Rule Set, request body limits, custom SecLang directives, the rules excluded on this host, and rate limiting.
 - **Access**: the access list, geo blocking, sign-in in front of the host (the built-in sign-in with the users and groups it lets in, Authentik, or Authelia and other forward-auth servers), client certificates (mTLS) and blocked paths.
 - **Certificate**: the certificate the host uses (Caddy's own, or one from the Certificates page) and the redirect from HTTP to HTTPS.

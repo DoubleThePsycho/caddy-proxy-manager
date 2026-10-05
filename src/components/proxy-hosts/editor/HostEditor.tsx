@@ -22,7 +22,8 @@ import { policiesCovering } from "@/ee/approvals/match";
 import { previewProxyHostEditorAction, saveProxyHostEditorAction } from "@/app/(dashboard)/proxy-hosts/editor-actions";
 import { changeGroups, formChanges, isSectionId, SECTION_LABELS, SECTIONS, type ChangeLookup, type FormChange, type SectionId } from "./changes";
 import { EditorProvider, type EditorContextValue } from "./fields";
-import { buildPayload, copyHostForm, hostToForm, LB_POLICIES, newHostForm, payloadIsEmpty, serializeUpstreams, type HostForm } from "./model";
+import { HEALTH_CHECKS_TARGET } from "@/app/(dashboard)/proxy-hosts/links";
+import { buildPayload, copyHostForm, hostToForm, LB_POLICIES, newHostForm, payloadIsEmpty, serializeUpstreams, withHealthChecksOn, type HostForm } from "./model";
 import { fieldOfServerError, validateForm, type FieldErrors } from "./validate";
 import { ReviewPanel, type PreviewState } from "./ReviewPanel";
 import { RoutingSection } from "./RoutingSection";
@@ -225,6 +226,16 @@ export function HostEditor({ data }: { data: HostEditorData }) {
   const selectFromHash = useCallback(() => {
     const hash = decodeURIComponent(window.location.hash.replace(/^#/, "")) || new URLSearchParams(window.location.search).get("section") || "";
     if (!hash) return;
+    if (hash === HEALTH_CHECKS_TARGET) {
+      // "Turn on health checks" on the host's page: they are turned on here as an unsaved change to review.
+      update(withHealthChecksOn);
+      setSection("routing");
+      // Once: a reload shows Routing as it is then.
+      window.history.replaceState(window.history.state, "", "#routing");
+      pendingFocus.current = "f-lb-passive";
+      setFocusTick((tick) => tick + 1);
+      return;
+    }
     if (isSectionId(hash)) {
       setSection(hash);
       return;
@@ -235,7 +246,7 @@ export function HostEditor({ data }: { data: HostEditorData }) {
       pendingFocus.current = hash;
       setFocusTick((tick) => tick + 1);
     }
-  }, []);
+  }, [update]);
 
   useEffect(() => {
     selectFromHash();
@@ -253,16 +264,16 @@ export function HostEditor({ data }: { data: HostEditorData }) {
     window.history.replaceState(window.history.state, "", url.toString());
   }, []);
 
-  // Focus the field a "Show" or an error link points at, once its section has rendered.
+  // Focus the field a "Show" or an error link points at, once its section has rendered. A field the
+  // same update reveals (#health-checks) is not there on the first pass: it stays pending until it is.
   useEffect(() => {
     const id = pendingFocus.current;
     if (!id) return;
-    pendingFocus.current = null;
     const target = document.getElementById(id);
-    if (target) {
-      target.scrollIntoView({ block: "center", behavior: "smooth" });
-      target.focus({ preventScroll: true });
-    }
+    if (!target) return;
+    pendingFocus.current = null;
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    target.focus({ preventScroll: true });
   }, [section, focusTick]);
 
   const goToSection = useCallback((next: SectionId, focusId?: string) => {

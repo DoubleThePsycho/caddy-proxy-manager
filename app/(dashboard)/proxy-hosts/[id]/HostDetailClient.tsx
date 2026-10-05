@@ -24,7 +24,7 @@ import { Button } from "@/components/ui/button";
 import { formatBytes, formatCount, formatPercent } from "@/components/ui/chart-format";
 import { cn } from "@/lib/utils";
 import { toggleProxyHostAction } from "../actions";
-import { hostAnalyticsHref, hostAuditHref, hostEditorHref, hostHref, historyVersionHref, siteUrl } from "../links";
+import { hostAnalyticsHref, hostAuditHref, hostEditorHref, hostHealthChecksHref, hostHref, historyVersionHref, siteUrl } from "../links";
 import { CertificateSummary, ProtectionPills, TagChips, useHostStatus } from "../host-parts";
 import { ErrorShareLine } from "./ErrorShareLine";
 
@@ -137,7 +137,7 @@ function HealthChecks({ health, hostId, upstreams, canWrite }: { health: ProxyHo
             : "Caddy keeps sending requests to an upstream that stopped answering until a check takes it out of rotation."}
         </span>
         {canWrite && (
-          <Link href={hostEditorHref(hostId, "routing")} className="mt-0.5 self-start text-brand underline-offset-4 hover:underline">
+          <Link href={hostHealthChecksHref(hostId)} className="mt-0.5 self-start text-brand underline-offset-4 hover:underline">
             Turn on health checks
           </Link>
         )}

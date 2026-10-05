@@ -196,7 +196,7 @@ export function hostTone(input: {
   if (input.burst) return { tone: "warn", label: "Had a burst of server errors" };
   if (input.errors5xx >= HOST_MIN_ERRORS && input.errorRate5xx >= HOST_WARN_ERROR_RATE) return { tone: "warn", label: "Some server errors" };
   if (days !== null && days < CERT_WARN_DAYS) return { tone: "warn", label: "Certificate expires within two weeks" };
-  return { tone: "ok", label: "Healthy" };
+  return { tone: "ok", label: "No issues" };
 }
 
 /**

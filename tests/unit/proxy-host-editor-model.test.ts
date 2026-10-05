@@ -14,6 +14,7 @@ import {
   hostToForm,
   newHostForm,
   payloadIsEmpty,
+  withHealthChecksOn,
   type HostForm,
 } from '@/src/components/proxy-hosts/editor/model';
 import { changeGroups, formChanges, type ChangeLookup } from '@/src/components/proxy-hosts/editor/changes';
@@ -288,6 +289,27 @@ describe('host editor checks', () => {
     expect(validateForm(form, context)['f-domains'].message).toContain('needs a DNS provider');
     expect(validateForm(form, { ...context, dnsProviderConfigured: true })['f-domains']).toBeUndefined();
     expect(validateForm({ ...form, certificateId: 4 }, context)['f-domains']).toBeUndefined();
+  });
+
+  it('refuses health checks that Caddy would not run', () => {
+    const base = hostToForm(host());
+    const noPath = edited(base, (f) => ({ ...f, lb: { ...f.lb, active: { ...f.lb.active, enabled: true, uri: '', port: '' } } }));
+    expect(validateForm(noPath, context)['f-lb-active-uri'].message).toContain('without a path or a port');
+    const portOnly = edited(noPath, (f) => ({ ...f, lb: { ...f.lb, active: { ...f.lb.active, port: '8081' } } }));
+    expect(validateForm(portOnly, context)['f-lb-active-uri']).toBeUndefined();
+    const noDuration = edited(base, (f) => ({ ...f, lb: { ...f.lb, passive: { ...f.lb.passive, enabled: true, failDuration: '' } } }));
+    expect(validateForm(noDuration, context)['f-lb-passive-duration'].message).toContain('counts none');
+    const withDuration = edited(noDuration, (f) => ({ ...f, lb: { ...f.lb, passive: { ...f.lb.passive, failDuration: '30s' } } }));
+    expect(validateForm(withDuration, context)['f-lb-passive-duration']).toBeUndefined();
+  });
+
+  it('turns on passive health checks that count failures, and leaves checks that are on alone', () => {
+    const off = hostToForm(host({ loadBalancer: null }));
+    const on = withHealthChecksOn(off);
+    expect(on.lb).toMatchObject({ enabled: true, passive: { enabled: true, failDuration: '30s' }, active: { enabled: false } });
+    expect(validateForm(on, context)).toEqual({});
+    const active = hostToForm(host());
+    expect(withHealthChecksOn(active)).toBe(active);
   });
 
   it('checks domains like the server', () => {

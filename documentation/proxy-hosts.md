@@ -7,7 +7,7 @@ A proxy host sends the traffic for one or more domains to services on your netwo
 **Traffic → Proxy hosts** lists every host you may see (a custom role limited to tags sees the hosts with one of its tags; an organisation user sees their organisation's). Each row shows:
 
 - **Host**: the first domain (a link to the host's page), how many more it serves, its name and its first upstream.
-- **Status**: *Healthy*, *Disabled*, *Waiting for approval* (a change to it waits in [change approvals](../ee/docs/change-approvals.md)), or the first thing that needs a look:
+- **Status**: *No issues* (none of the problems below; it does not check the upstreams, see [Upstream health](#upstream-health)), *Disabled*, *Waiting for approval* (a change to it waits in [change approvals](../ee/docs/change-approvals.md)), or the first thing that needs a look:
   - a burst of 5xx responses in the last 24 hours ("501 burst at 09:02", or "since" while it lasts),
   - a 5xx share of 5% or more over 24 hours (with at least 20 requests),
   - blocked traffic far above the host's usual,
@@ -31,7 +31,7 @@ Select a host's domain to open its page. It shows:
 
 - **What needs attention**: a 5xx burst (when it happened, how many responses, the most frequent request), unusual blocked traffic, a certificate problem, an upstream Caddy took out of rotation, or a change waiting for approval, with links to the matching requests, alerts or pages.
 - **Last 24 hours**: requests, 5xx responses and their share, distinct clients and bandwidth, a chart of served and 5xx responses per 30 minutes, and the 5xx share per 30 minutes. When an error-rate alert rule watches the host, its threshold is drawn on that line (shown to users with `alerts:read`).
-- **Upstreams**: each upstream with what Caddy reports about it, and the host's health check settings. Without health checks the page says so and links to turn them on.
+- **Upstreams**: each upstream with what Caddy reports about it, and the host's health check settings. Without health checks the page says so, and **Turn on health checks** opens the editor with passive health checks on (failures remembered for 30 seconds) as an unsaved change to review and save.
 - **Where requests go**: the busiest paths with their 5xx responses, and the status codes.
 - **Configuration**: one line per section of the host editor (routing, security, access, certificate, headers, and advanced settings when any are set), each with a link to edit it.
 - **Changes to this host**: the latest audit log entries about the host (with `audit_log:read`), with the fields each change made when [configuration history](../ee/docs/config-history.md) kept the versions around it, and a link to roll back (with `config_history:restore`).

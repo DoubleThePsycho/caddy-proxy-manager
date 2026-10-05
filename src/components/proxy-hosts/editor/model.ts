@@ -304,6 +304,31 @@ export function mibText(bytes: number | undefined): string {
 
 // ── Load balancing ────────────────────────────────────────────────────
 
+/**
+ * How long passive health checks remember a failure when the field is left
+ * empty: Caddy counts no failures without one.
+ */
+export const DEFAULT_PASSIVE_FAIL_DURATION = "30s";
+
+/**
+ * The form with health checks on, for "Turn on health checks" on the host's
+ * page: custom load balancing (where they live) and, unless a check is on
+ * already, passive checks with a fail duration, so Caddy counts failures.
+ */
+export function withHealthChecksOn(form: HostForm): HostForm {
+  const lb = form.lb;
+  const checking = lb.active.enabled || lb.passive.enabled;
+  if (lb.enabled && checking) return form;
+  return {
+    ...form,
+    lb: {
+      ...lb,
+      enabled: true,
+      passive: checking ? lb.passive : { ...lb.passive, enabled: true, failDuration: lb.passive.failDuration || DEFAULT_PASSIVE_FAIL_DURATION },
+    },
+  };
+}
+
 export function emptyLb(enabled = false): LbForm {
   return {
     enabled,

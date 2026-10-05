@@ -17,6 +17,14 @@ export function hostEditorHref(id: number, section?: HostEditorSection): string 
   return `/proxy-hosts/${id}/edit${section ? `?section=${section}` : ""}`;
 }
 
+/** The host editor's anchor that opens Routing with health checks turned on as an unsaved change. */
+export const HEALTH_CHECKS_TARGET = "health-checks";
+
+/** The host editor with health checks turned on as an unsaved change, to review and save. */
+export function hostHealthChecksHref(id: number): string {
+  return `/proxy-hosts/${id}/edit#${HEALTH_CHECKS_TARGET}`;
+}
+
 /** The audit log filtered to the host (the filters of GET /api/v1/audit-log). */
 export function hostAuditHref(id: number): string {
   return `/audit-log?entityType=proxy_host&entityId=${id}`;

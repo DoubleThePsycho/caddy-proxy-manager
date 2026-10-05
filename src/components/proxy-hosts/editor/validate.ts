@@ -99,13 +99,17 @@ export function validateLb(errors: FieldErrors, lb: LbForm, prefix: string, sect
   checkInteger(errors, `${prefix}-retries`, lb.retries, 0, 1000, section);
   if (lb.active.enabled) {
     if (lb.active.uri.trim() && !lb.active.uri.trim().startsWith("/")) errors[`${prefix}-active-uri`] = { message: "A path starts with /.", section };
+    else if (!lb.active.uri.trim() && !lb.active.port.trim())
+      errors[`${prefix}-active-uri`] = { message: "Enter the path to check, such as /health: without a path or a port Caddy runs no active checks.", section };
     checkInteger(errors, `${prefix}-active-port`, lb.active.port, 1, 65535, section, "a port");
     checkDuration(errors, `${prefix}-active-interval`, lb.active.interval, section);
     checkDuration(errors, `${prefix}-active-timeout`, lb.active.timeout, section);
     checkInteger(errors, `${prefix}-active-status`, lb.active.status, 100, 599, section, "a status code");
   }
   if (lb.passive.enabled) {
-    checkDuration(errors, `${prefix}-passive-duration`, lb.passive.failDuration, section);
+    if (!lb.passive.failDuration.trim())
+      errors[`${prefix}-passive-duration`] = { message: "Enter how long to remember failures, such as 30s: without it Caddy counts none.", section };
+    else checkDuration(errors, `${prefix}-passive-duration`, lb.passive.failDuration, section);
     checkInteger(errors, `${prefix}-passive-max`, lb.passive.maxFails, 0, 1000, section);
     checkDuration(errors, `${prefix}-passive-latency`, lb.passive.unhealthyLatency, section);
     const raw = lb.passive.unhealthyStatus.trim();

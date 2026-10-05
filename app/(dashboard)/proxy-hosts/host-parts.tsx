@@ -38,7 +38,7 @@ export function useHostStatus(row: Pick<HostListRow, "state" | "attention" | "pe
     case "pending":
       return { tone: "info", label: "Waiting for approval", detail: null };
     default:
-      return { tone: "ok", label: "Healthy", detail: null };
+      return { tone: "ok", label: "No issues", detail: null };
   }
 }
 
