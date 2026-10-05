@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         **Are you in the right place?**
-        - For support questions, please use [Discussions](https://github.com/ingres-si/caddy-proxy-manager/discussions).
+        - For support questions, please use [Discussions](https://github.com/ingres-si/ingressi/discussions).
 
   - type: textarea
     id: problem

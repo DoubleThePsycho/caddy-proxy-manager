@@ -9,10 +9,15 @@
  * several dashboard replicas share one database (high availability, phase 2),
  * the gate becomes the leader lease, set with setRuleFeedSchedulerGate, so
  * only the leader fetches. Runtime: it never checks the license.
+ *
+ * While virtual patching is coming soon (FEATURE_INFO `available` false) the
+ * scheduler does not start and a tick does nothing.
  */
+import { isFeatureAvailable } from "@/ee/licensing/features";
 import { patchesComeFromMaster } from "./store";
 import { runScheduledRuleFeedFetch } from "./service";
 import { onShutdown } from "@/src/lib/shutdown";
+import { VIRTUAL_PATCHING_FEATURE } from "./types";
 
 export const RULE_FEED_TICK_INTERVAL_MS = 60 * 60 * 1000;
 /** Lets the first Caddy apply and the other startup work settle. */
@@ -35,7 +40,7 @@ export function setRuleFeedSchedulerGate(gate: RuleFeedSchedulerGate | null): vo
 
 /** One scheduler tick: fetch when this node may and a subscription is due. */
 export async function ruleFeedTick(now: Date = new Date()): Promise<void> {
-  if (state.running) return;
+  if (state.running || !isFeatureAvailable(VIRTUAL_PATCHING_FEATURE)) return;
   state.running = true;
   try {
     if (!(await state.gate())) return;
@@ -56,14 +61,17 @@ export async function ruleFeedTick(now: Date = new Date()): Promise<void> {
 /** The pending first run, so stopping (a PostgreSQL replica that stops leading) cancels it too. */
 let firstRun: ReturnType<typeof setTimeout> | undefined;
 
-export function startRuleFeedScheduler(): void {
-  if (state.interval) return;
+/** Starts the hourly tick; false (and nothing scheduled) while virtual patching is coming soon. */
+export function startRuleFeedScheduler(): boolean {
+  if (!isFeatureAvailable(VIRTUAL_PATCHING_FEATURE)) return false;
+  if (state.interval) return true;
   clearTimeout(firstRun);
   firstRun = setTimeout(() => void ruleFeedTick(), FIRST_RUN_DELAY_MS);
   firstRun.unref?.();
   state.interval = setInterval(() => void ruleFeedTick(), RULE_FEED_TICK_INTERVAL_MS);
   state.interval.unref?.();
   onShutdown("stopping the rule feed scheduler", stopRuleFeedScheduler);
+  return true;
 }
 
 export function stopRuleFeedScheduler(): void {

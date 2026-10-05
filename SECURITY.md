@@ -7,7 +7,7 @@ We release patches for security vulnerabilities for the following versions:
 | Version | Supported          |
 | ------- | ------------------ |
 | latest  | :white_check_mark: |
-| LTS lines within their 24 months ([ee/docs/lts.md](ee/docs/lts.md)) | :white_check_mark: |
+| LTS lines within their 24 months, once announced ([ee/docs/lts.md](ee/docs/lts.md); none yet) | :white_check_mark: |
 | < 1.0   | :x:                |
 
 ## Reporting a Vulnerability
@@ -15,7 +15,7 @@ We release patches for security vulnerabilities for the following versions:
 If you discover a security vulnerability, please report it by:
 
 1. **DO NOT** open a public issue
-2. Use GitHub's private vulnerability reporting: <https://github.com/ingres-si/caddy-proxy-manager/security/advisories/new>
+2. Use GitHub's private vulnerability reporting: <https://github.com/ingres-si/ingressi/security/advisories/new>
 3. Include detailed information about the vulnerability:
    - Type of vulnerability
    - Steps to reproduce

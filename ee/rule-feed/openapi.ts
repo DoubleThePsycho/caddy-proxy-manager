@@ -4,13 +4,23 @@
  * virtual patches), spread into app/api/v1/openapi.json/route.ts.
  */
 import { VIRTUAL_PATCH_RULE_ID_MAX, VIRTUAL_PATCH_RULE_ID_MIN } from "@/src/lib/waf-exclusions";
-import { DEFAULT_RULE_FEED_URL, PACK_SEVERITIES, RULE_FEED_LIMITS, VIRTUAL_PATCH_MODES } from "./types";
+import { isFeatureAvailable } from "@/ee/licensing/features";
+import { DEFAULT_RULE_FEED_URL, PACK_SEVERITIES, RULE_FEED_LIMITS, VIRTUAL_PATCH_MODES, VIRTUAL_PATCHING_FEATURE } from "./types";
 
 const TAG = "Virtual patching";
+
+/** Virtual patching is coming soon in this release (ee/licensing/features.ts). */
+const COMING_SOON = !isFeatureAvailable(VIRTUAL_PATCHING_FEATURE);
+const soon = (summary: string) => (COMING_SOON ? `${summary} (coming soon)` : summary);
 
 export const VIRTUAL_PATCHING_OPENAPI_TAG = {
   name: TAG,
   description:
+    (COMING_SOON
+      ? "Coming soon: virtual patching is not available in this release. Subscribing, changing the feed URL, turning on automatic " +
+        "blocking, fetching, importing and turning a patch on answer 403 with any license, and no feed is fetched on a schedule; " +
+        "reading, unsubscribing, turning automatic blocking off and turning patches off work. "
+      : "") +
     "WAF rules for newly published CVEs from a signed rule feed (Enterprise edition, feature virtual_patching). The feed is fetched daily " +
     "from an https URL or imported as a file, and installed only when its Ed25519 signature matches a key this build trusts, it has not " +
     "expired, its sequence is higher than the installed one and every rule passes the SecLang allowlist; otherwise nothing changes. Each " +
@@ -42,14 +52,14 @@ export const VIRTUAL_PATCHING_OPENAPI_PATHS = {
   "/api/v1/waf/rule-feed": {
     get: {
       tags: [TAG],
-      summary: "Get the rule feed subscription and status",
+      summary: soon("Get the rule feed subscription and status"),
       description: "Permission virtual_patches:read. Available without a license.",
       operationId: "getRuleFeed",
       responses: { "200": { description: "Subscription and feed status", content: json(ref("RuleFeedStatus")) }, ...errors("401", "403") },
     },
     put: {
       tags: [TAG],
-      summary: "Subscribe to the rule feed or change the subscription",
+      summary: soon("Subscribe to the rule feed or change the subscription"),
       description:
         "Permission virtual_patches:write. Fields left out keep their value. Subscribing, changing feedUrl (https only, no credentials) and " +
         "turning autoBlockCritical on need the virtual_patching feature (403 otherwise); unsubscribing and turning automatic blocking off do " +
@@ -62,7 +72,7 @@ export const VIRTUAL_PATCHING_OPENAPI_PATHS = {
   "/api/v1/waf/rule-feed/fetch": {
     post: {
       tags: [TAG],
-      summary: "Fetch the rule feed now",
+      summary: soon("Fetch the rule feed now"),
       description:
         "Permission virtual_patches:write; needs the virtual_patching feature. Downloads the feed from the configured URL (redirects are not " +
         `followed, at most ${RULE_FEED_LIMITS.feedBytes / (1024 * 1024)} MiB), verifies it and installs its packs; the Caddy configuration ` +
@@ -74,7 +84,7 @@ export const VIRTUAL_PATCHING_OPENAPI_PATHS = {
   "/api/v1/waf/rule-feed/import": {
     post: {
       tags: [TAG],
-      summary: "Import a rule feed file",
+      summary: soon("Import a rule feed file"),
       description:
         "Permission virtual_patches:write; needs the virtual_patching feature. The body is the feed file exactly as published " +
         "({v, payload, signature}), for installs without internet access. It is verified like a fetched feed: signature, expiry, " +
@@ -87,7 +97,7 @@ export const VIRTUAL_PATCHING_OPENAPI_PATHS = {
   "/api/v1/waf/virtual-patches": {
     get: {
       tags: [TAG],
-      summary: "List virtual patches",
+      summary: soon("List virtual patches"),
       description: "Permission virtual_patches:read. Available without a license. On a replica, only the master's patches that are on.",
       operationId: "listVirtualPatches",
       responses: {
@@ -109,7 +119,7 @@ export const VIRTUAL_PATCHING_OPENAPI_PATHS = {
   "/api/v1/waf/virtual-patches/{id}": {
     get: {
       tags: [TAG],
-      summary: "Get a virtual patch",
+      summary: soon("Get a virtual patch"),
       description: "Permission virtual_patches:read.",
       operationId: "getVirtualPatch",
       parameters: [idParam],
@@ -117,7 +127,7 @@ export const VIRTUAL_PATCHING_OPENAPI_PATHS = {
     },
     put: {
       tags: [TAG],
-      summary: "Set a virtual patch's mode",
+      summary: soon("Set a virtual patch's mode"),
       description:
         "Permission virtual_patches:write. detect logs matching requests as WAF events, block answers them with 403 (on hosts whose WAF " +
         "blocks; hosts in detection only log). Turning a patch on (detect or block) needs the virtual_patching feature; off never does. " +
@@ -209,7 +219,8 @@ export const VIRTUAL_PATCHING_OPENAPI_SCHEMAS = {
         },
       },
       counts: ref("VirtualPatchCounts"),
-      configurable: { type: "boolean", description: "The license lets administrators subscribe, import and turn patches on." },
+      available: { type: "boolean", description: "Virtual patching ships in this release; false while it is coming soon." },
+      configurable: { type: "boolean", description: "Available, and the license lets administrators subscribe, import and turn patches on." },
       editable: { type: "boolean", description: "False on a sync replica." },
       source: { type: "string", enum: ["local", "master"] },
     },

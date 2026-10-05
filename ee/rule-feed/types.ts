@@ -216,7 +216,13 @@ export type VirtualPatchingView = {
   };
   patches: VirtualPatchView[];
   counts: { total: number; detect: number; block: number; off: number; withdrawn: number };
-  /** The license lets administrators subscribe, import and turn patches on. */
+  /**
+   * Virtual patching ships in this release. False while it is coming soon
+   * (ee/licensing/features.ts): nothing can be subscribed, fetched, imported
+   * or turned on, and no fetch is scheduled.
+   */
+  available: boolean;
+  /** Available, and the license lets administrators subscribe, import and turn patches on. */
   configurable: boolean;
   /** False on a sync replica, which applies its master's patches. */
   editable: boolean;

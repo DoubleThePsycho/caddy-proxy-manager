@@ -25,7 +25,7 @@ bun ee/scripts/license-sign.ts --key ~/.config/ingressi/license-signing-2026-10.
 
 Install a key from **License** in the dashboard or with `PUT /api/v1/license`. The dashboard checks the key first and shows what it grants (edition, nodes, expiry, features) before anything changes; `POST /api/v1/license/verify` does the same check without installing the key. Both need `license:write`.
 
-Keys bought online, trials and renewals come from the license server (a separate private repository, `ingres-si/license-server`) (Stripe, Cloudflare Worker), signed with a separate online key (`online-…`) that is also listed in `licensing/public-keys.ts`. Installs can fetch renewed keys themselves once a day when an administrator turns on automatic updates with the license's refresh token (`licensing/auto-update.ts`); it is off by default. Customer-facing steps: [docs/licenses.md](docs/licenses.md).
+Trials and renewals come from the license server (a separate private repository, `ingres-si/license-server`) (Stripe, Cloudflare Worker), signed with a separate online key (`online-…`) that is also listed in `licensing/public-keys.ts`. Online checkout is not open yet: keys are sold through sales@ingres.si, and the license server will issue the keys bought online once checkout opens. Installs can fetch renewed keys themselves once a day when an administrator turns on automatic updates with the license's refresh token (`licensing/auto-update.ts`); it is off by default. Customer-facing steps: [docs/licenses.md](docs/licenses.md).
 
 ## Where paid code lives
 
@@ -48,12 +48,12 @@ Every paid feature, the `ee/` module that implements it and the files in `app/` 
 | License keys (no feature: the key itself) | all | `licensing/` | `(dashboard)/license/`, `api/v1/license/` |
 | API monetization (`api_monetization`) | Enterprise | `monetization/` | `(dashboard)/api-monetization/`, `api-portal/`, `api/monetization/`, `api/v1/monetization/` |
 | Multi-tenancy (`multi_tenancy`) | MSP | `multi-tenancy/` | `(dashboard)/organizations/`, `(dashboard)/usage/`, `api/v1/organizations/`, `api/v1/usage-reports/` |
-| Virtual patching (`virtual_patching`) | Enterprise | `rule-feed/` | `api/v1/waf/rule-feed/`, `api/v1/waf/virtual-patches/` |
+| Virtual patching (`virtual_patching`, coming soon) | Enterprise | `rule-feed/` | `api/v1/waf/rule-feed/`, `api/v1/waf/virtual-patches/` |
 | SAML single sign-on (`sso_saml`) | Business | `saml/` | `(dashboard)/saml/`, `api/v1/saml-providers/` |
 | SCIM provisioning (`scim`) | Enterprise | `scim/` | `(dashboard)/scim/`, `api/v1/scim/`, `scim/` (SCIM 2.0 at `/scim/v2`) |
 | Enforced SSO (`sso_enforce`) | Business | `sso/` | `(dashboard)/sso/`, `api/v1/sso/` |
 | White-label (`white_label`) | MSP | `white-label/` | `(dashboard)/branding/`, `api/v1/branding/`, `api/branding/` |
-| Air-gapped installs and LTS (`air_gap`) | Enterprise | `scripts/airgap-bundle.sh` | none (`docs/air-gapped.md`, `docs/lts.md`) |
+| Air-gapped installs and planned LTS (`air_gap`) | Enterprise | `scripts/airgap-bundle.sh` | none (`docs/air-gapped.md`, `docs/lts.md`) |
 
 Layout of a module: route handlers in `<module>/routes/`, named after the URL below `/api/` (`/api/v1/monetization/plans/{id}` is `monetization/routes/v1/monetization/plans/[id].ts`, `/scim/v2/Users` is `scim/routes/scim/v2/Users.ts`); pages, client components and server actions in `<module>/ui/` (`ui/MonetizationPage.tsx`, `ui/actions.ts`); everything else at the top of the module.
 

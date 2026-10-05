@@ -2,6 +2,8 @@
 
 Feature id `virtual_patching`, included in the **Enterprise** edition. Code: `ee/rule-feed/` (Elastic License 2.0). The hooks it uses in the core (the reserved rule id range and the patch rules in `buildWafHandler`, the settings group in instance sync) are MIT.
 
+**Coming soon.** Virtual patching ships switched off in this release (`available: false` for `virtual_patching` in `ee/licensing/features.ts`), and the release trusts no feed signing key yet (`PRODUCTION_KEYS` in `ee/rule-feed/public-keys.ts` is empty). The License page lists it as coming soon and the WAF settings page shows a note in place of the **Virtual patches** section. Subscribing, changing the feed URL, turning on automatic blocking, fetching, importing and turning a patch on answer `403` with any license, and the daily fetch is never scheduled. Reading, unsubscribing, turning automatic blocking off and turning patches off still work. The rest of this page describes the feature as it will work once it is available.
+
 A virtual patch is a WAF rule that stops requests exploiting one known vulnerability (a CVE) while the software behind the proxy waits for its update. Ingressi gets them from a rule feed: one JSON file the vendor publishes and signs, by default at `https://feed.ingres.si/v1/feed.json`. Each patch in it names its CVE ids, the affected software and versions, a severity, references, its rules, and sample requests it matches and lets through.
 
 Patches run on every host where the WAF runs, globally or per host, in the same Coraza handler as the Core Rule Set and your custom rules. They run before the Core Rule Set rules of the same phase, so a blocking patch stops the request itself and the event names the patch. A host with the WAF off gets none.
@@ -78,6 +80,8 @@ The feed is not secret: anyone can read it. Patches that are on keep protecting 
 Sync replicas get the patches that are on with the rest of the configuration (the `virtual_patches` settings group), validate and render them again for their own WAF, and show them read-only. They never fetch. A promoted fleet revision carries the master's current patches. Patches are not part of configuration export, backups or history: fetch or import the feed again.
 
 ## License
+
+While virtual patching is coming soon, none of the following can be set up with any license (see the top of this page).
 
 Subscribing, changing the feed URL, turning on automatic blocking, fetching on demand, importing and turning a patch on (detect or block) need an active Enterprise license. Unsubscribing, turning automatic blocking off, turning a patch off and reading never do, and neither do the daily fetch of an existing subscription and the patches in the Caddy configuration.
 

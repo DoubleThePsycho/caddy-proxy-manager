@@ -187,8 +187,37 @@ export type VirtualPatchesSectionProps = {
   wafInUse: boolean;
 };
 
-/** The Virtual patches section of the WAF page: subscription, feed status and every patch with its mode. */
-export function VirtualPatchesSection({ view: initialView, canWrite, editionLabel, wafInUse }: VirtualPatchesSectionProps) {
+/**
+ * The Virtual patches section of the WAF page: subscription, feed status and
+ * every patch with its mode. While virtual patching is coming soon, a short
+ * note instead, with nothing to set up (as the License page lists it).
+ */
+export function VirtualPatchesSection(props: VirtualPatchesSectionProps) {
+  return props.view.available ? <VirtualPatchesControls {...props} /> : <VirtualPatchesComingSoon editionLabel={props.editionLabel} />;
+}
+
+function VirtualPatchesComingSoon({ editionLabel }: { editionLabel: string }) {
+  return (
+    <SectionCard
+      id="virtual-patches"
+      title="Virtual patches"
+      descriptionPlacement="below"
+      description="WAF rules for newly published CVEs, from a signed feed."
+      actions={
+        <>
+          <Badge variant="outline">{editionLabel}</Badge>
+          <Badge variant="muted">Coming soon</Badge>
+        </>
+      }
+    >
+      <p className="m-0 px-[18px] py-3.5 text-[13px] text-muted-foreground">
+        Virtual patching is coming soon in the {editionLabel} edition. This release has nothing to set up: no feed is fetched or imported.
+      </p>
+    </SectionCard>
+  );
+}
+
+function VirtualPatchesControls({ view: initialView, canWrite, editionLabel, wafInUse }: VirtualPatchesSectionProps) {
   const router = useRouter();
   const [view, setView] = useState(initialView);
   const [form, setForm] = useState<VirtualPatchingSettings>(initialView.settings);

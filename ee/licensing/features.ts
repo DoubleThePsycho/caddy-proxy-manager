@@ -139,8 +139,8 @@ export const FEATURE_INFO: Record<Feature, FeatureInfo> = {
     available: true,
   },
   air_gap: {
-    label: "Air-gapped installs and LTS",
-    description: "Offline install bundle and 24-month long-term-support releases.",
+    label: "Air-gapped installs",
+    description: "Offline install bundle for hosts without Internet access. Long-term-support releases are planned, not announced yet.",
     edition: "enterprise",
     available: true,
   },
@@ -158,7 +158,8 @@ export const FEATURE_INFO: Record<Feature, FeatureInfo> = {
   },
   api_monetization: {
     label: "API monetization",
-    description: "Charge your API's consumers per request from prepaid balances they top up through your Stripe account, enforced at the edge.",
+    description:
+      "Charge your API's consumers per request through your Stripe account, enforced at the edge: prepaid, postpaid with a hard cap, or x402 through Stripe machine payments.",
     edition: "enterprise",
     available: true,
   },
@@ -166,7 +167,8 @@ export const FEATURE_INFO: Record<Feature, FeatureInfo> = {
     label: "Virtual patching",
     description: "WAF rules for newly published CVEs from a signed feed, fetched daily or imported offline, each in detection or blocking mode.",
     edition: "enterprise",
-    available: true,
+    // Coming soon: the code ships switched off (ee/docs/virtual-patching.md).
+    available: false,
   },
 };
 
@@ -210,6 +212,27 @@ export const EDITION_LABELS: Record<Edition, string> = {
   enterprise: "Enterprise",
   msp: "MSP",
 };
+
+/** Features switched on or off by tests (setFeatureAvailableForTests). */
+const availabilityOverrides = new Map<Feature, boolean>();
+
+/**
+ * Whether the feature ships in this release (FEATURE_INFO `available`). A
+ * feature that does not cannot be set up, whatever the license: the License
+ * page lists it as coming soon and requireFeature refuses it.
+ */
+export function isFeatureAvailable(feature: Feature): boolean {
+  return availabilityOverrides.get(feature) ?? FEATURE_INFO[feature].available;
+}
+
+/** Lets tests run the code of a feature that is not available yet; null restores FEATURE_INFO. Refused outside tests. */
+export function setFeatureAvailableForTests(feature: Feature, available: boolean | null): void {
+  if (process.env.NODE_ENV !== "test") {
+    throw new Error("Feature availability can only be changed in tests");
+  }
+  if (available === null) availabilityOverrides.delete(feature);
+  else availabilityOverrides.set(feature, available);
+}
 
 export function isEdition(value: unknown): value is Edition {
   return typeof value === "string" && (EDITIONS as readonly string[]).includes(value);

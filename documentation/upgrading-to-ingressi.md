@@ -11,6 +11,7 @@ Caddy Proxy Manager is now called Ingressi. The rename reaches the names the pro
 | REST field for Ingressi forward auth on proxy hosts | `cpmForwardAuth` | `ingressiForwardAuth` | Accepted on input when `ingressiForwardAuth` is absent, and returned next to it. Deprecated. Sending both with different values is refused. |
 | SQLite database file | `caddy-proxy-manager.db` | `ingressi.db` | When `DATABASE_URL` names `ingressi.db`, the file does not exist and `caddy-proxy-manager.db` is in the same directory, the old file and its `-wal`/`-shm`/`-journal` files are renamed on start. A compose file that still names the old file keeps using it. |
 | Docker images | `ghcr.io/fuomag9/caddy-proxy-manager-{web,caddy,l4-port-manager}` | `ghcr.io/ingres-si/ingressi-{web,caddy,l4-port-manager}` (the project moved to the ingres-si GitHub organization) | Every release is pushed under both names, so watchtower and old compose files keep updating. |
+| GitHub repository | `fuomag9/caddy-proxy-manager`, then `ingres-si/caddy-proxy-manager` | `ingres-si/ingressi` | GitHub redirects both older URLs to `https://github.com/ingres-si/ingressi`. |
 | Container names in `docker-compose.yml` | `caddy-proxy-manager-*` | `ingressi-*` | The L4 port manager finds a caddy container under either name. Scripts that address containers by name need the new names once you use the new compose file. |
 | Caddy HTTP server name | `cpm` | `ingressi` | Changed. Prometheus metrics carry it as the `server` label: update dashboards and alerts that filter on `server="cpm"`. |
 | Default ClickHouse user | `cpm` | `ingressi` | The bundled ClickHouse container recreates its user from `CLICKHOUSE_USER` on every start, so nothing is needed. If you run your own ClickHouse and never set `CLICKHOUSE_USER`, set `CLICKHOUSE_USER=cpm`. |
@@ -24,7 +25,6 @@ These names predate the rename and do not change, because changing them would br
 - The proxy-host setting key `cpm_forward_auth` stored in the database, configuration exports and instance-sync payloads.
 - The key-derivation labels used to encrypt stored secrets and instance-sync payloads.
 - Environment variable names. None carried the old name.
-- The GitHub repository name: it moved to the ingres-si organization as `ingres-si/caddy-proxy-manager`, and GitHub redirects the old URLs.
 
 ## Mixed versions with instance sync
 

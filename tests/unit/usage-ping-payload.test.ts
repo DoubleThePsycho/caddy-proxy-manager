@@ -109,10 +109,10 @@ describe('payload', () => {
     expect(normalizeArch('mips64el')).toBe('other');
   });
 
-  it('lists only paid features that exist and have shipped', () => {
+  it('lists only paid features that exist and have shipped, plus virtual patching (coming soon, kept in the schema)', () => {
     for (const feature of PAID_FEATURES) {
       expect(FEATURES).toContain(feature);
-      expect(FEATURE_INFO[feature].available, feature).toBe(true);
+      expect(FEATURE_INFO[feature].available, feature).toBe(feature !== 'virtual_patching');
     }
   });
 

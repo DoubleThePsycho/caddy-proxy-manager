@@ -18,6 +18,11 @@
  *
  * A sync replica applies the patches its master turned on (instance sync)
  * and changes nothing here itself (409).
+ *
+ * While the feature is coming soon (FEATURE_INFO `available` false), nothing
+ * that sets up or turns on works, with or without a license (requireFeature
+ * answers 403), and the daily fetch never runs. Turning things off and
+ * reading still work.
  */
 import { applyCaddyConfig } from "@/src/lib/caddy";
 import { CaddyApplyError } from "@/src/lib/caddy-apply-error";
@@ -26,6 +31,7 @@ import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiConflictError, ApiValidationError } from "@/src/lib/api-errors";
 import { BRAND_NAME } from "@/src/lib/brand";
 import { nowIso } from "@/src/lib/db";
+import { isFeatureAvailable } from "@/ee/licensing/features";
 import { isFeatureConfigurable, requireFeature } from "@/ee/licensing/store";
 import { checkFeedSequence, RuleFeedError, verifyRuleFeed, type VerifiedRuleFeed } from "./feed";
 import { getTrustedRuleFeedKeys } from "./public-keys";
@@ -152,6 +158,7 @@ export async function getVirtualPatchingView(now: Date = new Date()): Promise<Vi
       off: count("off"),
       withdrawn: patches.filter((patch) => patch.withdrawnAt !== null).length,
     },
+    available: isFeatureAvailable(VIRTUAL_PATCHING_FEATURE),
     configurable,
     editable: !fromMaster,
     source: fromMaster ? "master" : "local",
@@ -479,10 +486,11 @@ export function isFetchDue(state: { lastFetchAt: string | null; lastFetchOk: boo
 
 /**
  * The daily fetch of a subscribed install (scheduler.ts). Runtime: it never
- * checks the license. Null when there is nothing to do (not subscribed, not
- * due, or a replica).
+ * checks the license. Null when there is nothing to do (virtual patching is
+ * coming soon, not subscribed, not due, or a replica).
  */
 export async function runScheduledRuleFeedFetch(now: Date = new Date()): Promise<RuleFeedRunResult | null> {
+  if (!isFeatureAvailable(VIRTUAL_PATCHING_FEATURE)) return null;
   if (await patchesComeFromMaster()) return null;
   const settings = await readVirtualPatchingSettings();
   if (!settings.subscribed) return null;

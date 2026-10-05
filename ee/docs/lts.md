@@ -1,18 +1,18 @@
 # Long-term-support releases
 
-Part of feature id `air_gap`, Enterprise edition: release lines that get security and critical fixes for 24 months without new features, for organisations that change production on a slow, audited schedule.
+Part of feature id `air_gap`, Enterprise edition: release lines that will get security and critical fixes for 24 months without new features, for organisations that change production on a slow, audited schedule.
 
-> The cadence and scope below are the proposed defaults. Confirm them before the first LTS line is announced.
+**Planned.** No LTS line has been announced yet. The policy below is the plan for the first line and may change before it is announced; the branches, image tags and backport workflow under [How it works](#how-it-works) are already in place.
 
 ## Policy
 
-- **Which releases:** one minor release a year is designated LTS in its release notes (for example 2.0). Its line is supported for 24 months from that release, so two LTS lines overlap for a year.
+- **Which releases:** one minor release a year will be designated LTS in its release notes (for example 2.0). Its line will be supported for 24 months from that release, so two LTS lines overlap for a year.
 - **What gets backported:**
   - fixes for security vulnerabilities;
   - fixes for data loss, outages and security regressions;
   - updates of Caddy, Go, Bun and base images that fix a vulnerability.
 - **What does not:** new features, behaviour changes, and database migrations, unless a fix cannot be made without one.
-- **Upgrades:** each LTS line is tested to upgrade directly from the previous LTS line.
+- **Upgrades:** each LTS line will be tested to upgrade directly from the previous LTS line.
 
 ## How it works
 
@@ -26,4 +26,4 @@ Part of feature id `air_gap`, Enterprise edition: release lines that get securit
 
 ## What the license covers
 
-LTS releases are published like every release: the free features are free on them, and paid features need a license, as always. An Enterprise subscription covers the commitment: the backport scope above for the life of the line, and support for running it.
+LTS releases will be published like every release: the free features are free on them, and paid features need a license, as always. Once a line is announced, an Enterprise subscription covers the commitment: the backport scope above for the life of the line, and support for running it.

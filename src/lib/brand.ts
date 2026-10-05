@@ -16,9 +16,9 @@ export const BRAND_WEBSITE = "https://ingres.si";
 
 /**
  * Where the documentation (documentation/ and ee/docs/ in the source
- * repository) is published. The repository keeps its pre-rename name.
+ * repository) is published.
  */
-export const DOCUMENTATION_URL = "https://github.com/ingres-si/caddy-proxy-manager/blob/develop";
+export const DOCUMENTATION_URL = "https://github.com/ingres-si/ingressi/blob/develop";
 
 /** The published page of a documentation file, such as "documentation/mfa.md". */
 export function documentationUrl(path: string): string {

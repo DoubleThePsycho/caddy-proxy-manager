@@ -316,6 +316,13 @@ describe('license page helpers', () => {
     expect(enterprise.fleet.install).toBe('idle');
   });
 
+  it('lists virtual patching as coming soon, granted by Enterprise but not configurable', () => {
+    const view = toLicenseView(evaluateEnterprise(), 1);
+    expect(view.features.find((feature) => feature.id === 'virtual_patching')).toMatchObject({ available: false, included: true, configurable: false });
+    const rows = Object.fromEntries(featureRows(view, { virtual_patching: { inUse: true, detail: '1 patch on' } }).map((row) => [row.id, row]));
+    expect(rows.virtual_patching).toMatchObject({ install: 'soon', detail: null });
+  });
+
   it('takes the key out of a key file and describes what a checked key grants', async () => {
     expect(keyFromFileText('Your key:\n\nv1.abc_DEF-1.sig-2_x\n\nThanks')).toBe('v1.abc_DEF-1.sig-2_x');
     expect(keyFromFileText('  not a key  ')).toBe('not a key');

@@ -33,13 +33,44 @@ Every change is recorded in the audit log, and the same guards apply as through 
 
 ## Groups
 
-Forward-auth groups decide who gets through the sign-in portal of hosts protected by forward auth. Every request to such a host checks the user's access again, so removing a member, deleting a group or taking a host's grant away refuses the next request. With high availability shared state (Enterprise, `ee/docs/high-availability.md`) the sessions this takes access from are also ended on every web node at once. Each row shows the members, whether SCIM manages the group, the dashboard role a SCIM group-to-role mapping gives (with `scim:read`) and the hosts that let the group in (with `proxy_hosts:read`, only hosts in your tag scope). **Manage members** adds and removes people; **Edit group** renames it. A name is required, at most 100 characters and unique in its organisation; when a change is refused, the dialog says why (the name is taken, the person is already a member, the group is gone), and `POST /api/v1/groups` and `PATCH /api/v1/groups/{id}` refuse the same input with 400 or 409, and adding a member twice answers 409.
+Forward-auth groups decide who gets through the sign-in portal of hosts protected by forward auth ([forward-auth.md](forward-auth.md)). Every request to such a host checks the user's access again, so removing a member, deleting a group or taking a host's grant away refuses the next request. With high availability shared state (Enterprise, `ee/docs/high-availability.md`) the sessions this takes access from are also ended on every web node at once. Each row shows the members, whether SCIM manages the group, the dashboard role a SCIM group-to-role mapping gives (with `scim:read`) and the hosts that let the group in (with `proxy_hosts:read`, only hosts in your tag scope). **Manage members** adds and removes people; **Edit group** renames it. A name is required, at most 100 characters and unique in its organisation; when a change is refused, the dialog says why (the name is taken, the person is already a member, the group is gone), and `POST /api/v1/groups` and `PATCH /api/v1/groups/{id}` refuse the same input with 400 or 409, and adding a member twice answers 409.
 
 Adding someone to a SCIM group by hand changes what they can reach, never their role: only memberships the identity provider sends count for role mappings.
 
 ## Roles
 
-Built-in roles are described; custom roles show their permissions grouped by area, their tag scope and who holds them. See `ee/docs/custom-roles.md`.
+Built-in roles are described (see [Built-in roles](#built-in-roles) below); custom roles show their permissions grouped by area, their tag scope and who holds them. See `ee/docs/custom-roles.md`.
+
+## Built-in roles
+
+Ingressi has three roles with increasing privileges:
+
+| Capability | Viewer | User | Admin |
+|------------|:------:|:----:|:-----:|
+| Log in to the dashboard | Yes | Yes | Yes |
+| View own profile | Yes | Yes | Yes |
+| Access forward-auth-protected apps (when granted) | Yes | Yes | Yes |
+| Manage proxy hosts, certificates, access lists | No | No | Yes |
+| Manage users, groups, and settings | No | No | Yes |
+| View analytics, audit log, and API docs | No | No | Yes |
+| Create and manage own API tokens | Yes | Yes | Yes |
+| Access role-appropriate REST API endpoints (`/api/v1/`) | Yes | Yes | Yes |
+
+New users default to the **user** role.
+
+> **Forward Auth access** is separate from role — all roles must be explicitly granted access to each protected host via the forward auth access list ([forward-auth.md](forward-auth.md#per-host-access-control)).
+
+### The primary admin
+
+The initial admin account is created from the `ADMIN_USERNAME` / `ADMIN_PASSWORD` environment variables. They are applied again only when they change, so a password later changed in the UI is kept across restarts. To recover a lost admin password, change `ADMIN_PASSWORD` (or `ADMIN_USERNAME`) and recreate the web container (`docker compose up -d`; `docker compose restart` keeps the old values): this resets the primary admin's password and its username to `ADMIN_USERNAME`, restores its admin role, re-activates it if it was disabled, and, when the password changed, signs out all of its dashboard and forward-auth sessions. A new `ADMIN_USERNAME` that another account already signs in with, or has as its email address (also as `<ADMIN_USERNAME>@localhost`), is not applied: nothing changes and the start logs `ADMIN_USERNAME "…" is not applied` until that account's username or email is changed or another `ADMIN_USERNAME` is chosen.
+
+### Deleting a user
+
+Deleting a user (**Users** page or `DELETE /api/v1/users/:id`) also deletes their sessions, the API tokens they created, their sign-in methods (password and OAuth accounts) and pending OAuth links, their forward-auth sessions and access grants, and their group memberships. Proxy hosts, L4 hosts, certificates, CAs, client certificates, access lists, mTLS roles and rules, and groups they owned or created are kept without an owner, and their audit log entries are kept without a user.
+
+### API tokens
+
+API tokens can only be created from an authenticated dashboard session; an existing bearer token cannot mint replacement credentials. Viewer and user tokens are restricted to the same user-scoped API capabilities as their owner.
 
 ## REST API
 

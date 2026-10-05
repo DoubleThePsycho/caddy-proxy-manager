@@ -2,8 +2,9 @@
  * Server-side render of the Virtual patches section of the WAF page: the
  * feed status and subscription, each patch with its CVEs and mode, the
  * read-only view without a license (only turning off stays possible), the
- * replica view, and the warnings (WAF off, feed expired, no trusted key,
- * failed fetch).
+ * replica view, the warnings (WAF off, feed expired, no trusted key,
+ * failed fetch), and the coming-soon note that replaces it all while virtual
+ * patching is not available.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -54,6 +55,7 @@ function view(overrides: Partial<VirtualPatchingView> = {}): VirtualPatchingView
     },
     patches: [patch(), patch({ id: 'ivp-2021-41773', cves: ['CVE-2021-41773'], title: 'Apache HTTP Server path traversal', severity: 'high', mode: 'block', withdrawnAt: '2026-10-03T00:00:00.000Z', example: false })],
     counts: { total: 2, detect: 1, block: 1, off: 0, withdrawn: 1 },
+    available: true,
     configurable: true,
     editable: true,
     source: 'local',
@@ -126,6 +128,19 @@ describe('Virtual patches section', () => {
     expect(page).toContain('This build trusts no feed signing key yet.');
     expect(page).toContain('Last fetch 4 Oct 2026, 06:00 UTC failed.');
     expect(page).toContain('The feed URL answered with HTTP 503. Nothing was changed.');
+  });
+
+  it('shows only a coming-soon note, with nothing to set up, while virtual patching is not available', () => {
+    const html = render(view({ available: false, configurable: false }));
+    const page = text(html);
+    expect(html).toContain('id="virtual-patches"');
+    expect(page).toContain('Coming soon');
+    expect(page).toContain('Virtual patching is coming soon in the Enterprise edition.');
+    for (const control of ['Fetch now', 'Import feed file', 'Fetch daily from', 'Save subscription', 'CVE-2021-44228', 'needs an active Enterprise license']) {
+      expect(page, control).not.toContain(control);
+    }
+    expect(html).not.toContain('<input');
+    expect(html).not.toContain('<button');
   });
 
   it('says how to start when there are no patches', () => {

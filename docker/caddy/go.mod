@@ -1,4 +1,4 @@
-module github.com/ingres-si/caddy-proxy-manager/docker/caddy
+module github.com/ingres-si/ingressi/docker/caddy
 
 go 1.26.0
 

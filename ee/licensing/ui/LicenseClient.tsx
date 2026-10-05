@@ -352,7 +352,7 @@ function ReleaseLineCard({ version, ltsIncluded }: { version: string; ltsInclude
           rel="noreferrer"
           className="ml-auto inline-flex items-center gap-1 text-[13px] text-brand underline-offset-4 hover:text-foreground hover:underline"
         >
-          Long-term support policy
+          Planned long-term support
           <ExternalLink aria-hidden="true" className="h-3 w-3" />
         </a>
       </div>
@@ -366,15 +366,15 @@ function ReleaseLineCard({ version, ltsIncluded }: { version: string; ltsInclude
         ) : (
           "."
         )}{" "}
-        One minor release a year is named long-term support in its release notes. Its line gets security and critical fixes for 24 months, and no
-        new features.{" "}
+        Long-term-support releases are planned; no long-term-support line has been announced yet. Once one is, one minor release a year will be
+        named long-term support in its release notes, and its line will get security and critical fixes for 24 months, and no new features.{" "}
         {ltsIncluded
-          ? "Your license covers the backports and support for running it."
-          : "Backports and support for running a long-term-support line come with an Enterprise license."}
+          ? "Your license will cover the backports and support for running it."
+          : "Backports and support for running a long-term-support line will come with an Enterprise license."}
       </p>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(240px,100%),1fr))] gap-3">
         <div className="flex flex-col gap-2 rounded-xl border border-line px-3.5 py-3">
-          <h3 className="m-0 text-[13px] font-semibold">Backported</h3>
+          <h3 className="m-0 text-[13px] font-semibold">To be backported</h3>
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[13px]">
             {BACKPORTED.map((item) => (
               <li key={item} className="flex gap-2">
@@ -385,7 +385,7 @@ function ReleaseLineCard({ version, ltsIncluded }: { version: string; ltsInclude
           </ul>
         </div>
         <div className="flex flex-col gap-2 rounded-xl border border-line px-3.5 py-3">
-          <h3 className="m-0 text-[13px] font-semibold">Not backported</h3>
+          <h3 className="m-0 text-[13px] font-semibold">Not to be backported</h3>
           <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[13px] text-muted-foreground">
             {NOT_BACKPORTED.map((item) => (
               <li key={item} className="flex gap-2">
@@ -399,7 +399,9 @@ function ReleaseLineCard({ version, ltsIncluded }: { version: string; ltsInclude
       <dl className="m-0 flex flex-col">
         <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line py-2.5">
           <dt className="flex-[0_0_150px] text-[13px] text-muted-foreground">Supported until</dt>
-          <dd className="m-0 flex-[1_1_260px] text-[13px]">24 months from the line&apos;s first release; its release notes give the date.</dd>
+          <dd className="m-0 flex-[1_1_260px] text-[13px]">
+            24 months from a long-term-support line&apos;s first release, once one is announced; its release notes will give the date.
+          </dd>
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line py-2.5">
           <dt className="flex-[0_0_150px] text-[13px] text-muted-foreground">Stay on the line</dt>
@@ -410,7 +412,7 @@ function ReleaseLineCard({ version, ltsIncluded }: { version: string; ltsInclude
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line py-2.5">
           <dt className="flex-[0_0_150px] text-[13px] text-muted-foreground">Upgrades</dt>
-          <dd className="m-0 flex-[1_1_260px] text-[13px]">Each long-term-support line upgrades directly from the previous one.</dd>
+          <dd className="m-0 flex-[1_1_260px] text-[13px]">Each long-term-support line will upgrade directly from the previous one.</dd>
         </div>
       </dl>
     </section>

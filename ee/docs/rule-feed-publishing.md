@@ -2,6 +2,8 @@
 
 For the vendor. How installs use the feed: [virtual-patching.md](virtual-patching.md).
 
+Virtual patching is coming soon: it ships switched off (`available: false` for `virtual_patching` in `ee/licensing/features.ts`) and no release trusts a feed key yet. Installs fetch and import nothing until a release turns it on and adds the first key below.
+
 ## Signing key
 
 ```bash

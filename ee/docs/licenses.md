@@ -6,8 +6,8 @@ A license key unlocks setting up and changing the paid features of its edition. 
 
 | Edition | Price (excluding VAT) | Nodes included | How it is sold |
 | --- | --- | --- | --- |
-| Homelab | €49 a year | 1, non-commercial use | Online |
-| Business | €890 a year, or €89 a month | 3, then €190 a year (€19 a month) per extra node | Online |
+| Homelab | €49 a year | 1, non-commercial use | Online, once checkout opens |
+| Business | €890 a year, or €89 a month | 3, then €190 a year (€19 a month) per extra node | Online, once checkout opens |
 | Enterprise | from €5,900 a year | 10, then €290 a year per extra node | Annual, usually invoiced |
 | MSP | €15 per active tenant a month, at least €1,800 a year | as agreed | Invoiced |
 
@@ -15,21 +15,20 @@ A node is the dashboard itself plus each instance sync replica it manages. Going
 
 ## Buying
 
-1. Choose a plan on [ingres.si/pricing](https://ingres.si/pricing/). Checkout is run by Stripe; Link, Stripe's payment service, is the seller of record, so it charges VAT for your country, sends the receipt and the invoice, and handles refund requests. Business plans can add extra nodes at checkout. Give your company name in the Company field: the key is issued to it.
-2. Within a few minutes, `licenses@ingres.si` e-mails the license id, the license key (also attached as a `.lic` file) and a refresh token for automatic updates. Keep that e-mail: the refresh token is sent only once.
-3. Install the key (below).
+Online checkout is not open yet. Organisations buy by writing to [sales@ingres.si](mailto:sales@ingres.si) with the edition, the number of nodes and the company name the key is issued to. Every edition is invoiced directly for now; Enterprise and MSP always are.
 
-Each renewal, yearly or monthly, issues a new key for the same license id and e-mails it. A key is valid until the end of the paid period plus a week; after that the 30-day grace period still lets you change paid features. If you cancel, nothing else happens: the last key runs out on its own.
+1. Once the order is settled, `licenses@ingres.si` e-mails the license id, the license key (also attached as a `.lic` file) and a refresh token for automatic updates. Keep that e-mail: the refresh token is sent only once.
+2. Install the key (below).
 
-Payment details, invoices, more nodes and cancellation: the billing portal linked in every license e-mail, or your orders at [app.link.com](https://app.link.com).
+Each renewal issues a new key for the same license id and e-mails it. A key is valid until the end of the paid period plus a week; after that the 30-day grace period still lets you change paid features. If you do not renew, nothing else happens: the last key runs out on its own.
 
-Enterprise and MSP are invoiced directly: ask for a quote through [ingres.si](https://ingres.si/). Their keys arrive by e-mail the same way, with a refresh token.
+Invoices, more nodes and cancellation: write to [sales@ingres.si](mailto:sales@ingres.si).
 
 ## Trial
 
 The website's trial form gives a 14-day Business (3 nodes) or Enterprise (10 nodes) trial key. Enter your company and work e-mail; a confirmation link arrives by e-mail and is valid for 48 hours. Opening it and selecting **Send the trial key** e-mails the key. A trial key shows **Trial** on the License page.
 
-There is one trial per e-mail address and per company domain every 12 months (for public mailbox providers such as Gmail, only the address counts). When the trial ends, what you set up keeps running; buy a plan to keep changing it. The purchase sends a new key with its own license id; install it over the trial key.
+A trial is one-time only: one per e-mail address and per company domain, ever (for public mailbox providers such as Gmail, only the address counts). For an extension, write to [sales@ingres.si](mailto:sales@ingres.si). When the trial ends, what you set up keeps running; buy a license (above) to keep changing it. The purchase sends a new key with its own license id; install it over the trial key.
 
 ## Installing a key
 
@@ -81,7 +80,7 @@ REST API: `GET /api/v1/license/auto-update` (`license:read`), `PUT /api/v1/licen
 
 ## Lost the key
 
-The license lookup on [ingres.si/license](https://ingres.si/license/) e-mails the active keys of an address to that address. It answers the same way whether or not the address has licenses. Refresh tokens are not sent again.
+The key is in the license e-mail, also as a `.lic` file. If that e-mail is gone, write to [sales@ingres.si](mailto:sales@ingres.si) from the address the key was sent to.
 
 ## When a license ends
 

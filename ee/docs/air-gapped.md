@@ -1,6 +1,6 @@
 # Air-gapped installs
 
-Feature id `air_gap`, Enterprise edition: an offline install bundle for hosts that cannot reach GitHub's container registry or the Internet, and long-term-support releases.
+Feature id `air_gap`, Enterprise edition: an offline install bundle for hosts that cannot reach GitHub's container registry or the Internet, and, once announced, long-term-support releases (planned).
 
 Licensing already works offline: a license key is verified against the public key built into the release and never phones home.
 
@@ -64,9 +64,9 @@ To upgrade, build a bundle of the new release, run its `install.sh` in its own d
 | AI analyst | Point it at a model server on your network (any OpenAI-compatible endpoint such as vLLM or Ollama). |
 | Alerts and digests | Use your internal SMTP relay and webhook endpoints. |
 | License | Works offline. Install renewed keys on the **License** page as usual. Automatic updates stay off, and the bundle's `.env.example` sets `LICENSE_AUTO_UPDATE_DISABLED=true` so they cannot be turned on. |
-| Virtual patches | Download the signed rule feed on a connected machine and import it under **WAF settings → Virtual patches → Import feed file**, at least as often as feeds expire (30 days). It is verified offline like a fetched one ([virtual-patching.md](virtual-patching.md)). |
+| Virtual patches | Coming soon (nothing to import in this release). Once available: download the signed rule feed on a connected machine and import it under **WAF settings → Virtual patches → Import feed file**, at least as often as feeds expire (30 days). It is verified offline like a fetched one ([virtual-patching.md](virtual-patching.md)). |
 | Usage ping | Off unless an administrator says yes, and the bundle's `.env.example` sets `USAGE_PING_DISABLED=true`: nothing is sent and the question is hidden. Keep the variable when you carry an older `.env` over ([documentation/usage-ping.md](../../documentation/usage-ping.md)). |
 
 ## Long-term-support releases
 
-Enterprise customers can stay on an LTS release line for 24 months: security and critical fixes, backported, without new features or breaking changes. Policy, branches and image tags are in [lts.md](lts.md). Build the bundle from the LTS tag like any release.
+No LTS line has been announced yet. Once one is, Enterprise customers can stay on it for 24 months: security and critical fixes, backported, without new features or breaking changes. Policy, branches and image tags are in [lts.md](lts.md). Build the bundle from the LTS tag like any release.

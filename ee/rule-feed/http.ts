@@ -56,6 +56,7 @@ export function ruleFeedStatus(view: VirtualPatchingView) {
     settings: view.settings,
     feed: view.feed,
     counts: view.counts,
+    available: view.available,
     configurable: view.configurable,
     editable: view.editable,
     source: view.source,

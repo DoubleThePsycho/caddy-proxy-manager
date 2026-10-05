@@ -1,6 +1,48 @@
 # Traffic analytics
 
-With access logging on and ClickHouse enabled (see [Analytics](../README.md#analytics) in the README), every request Caddy handles is stored for the retention window: 30 days by default, `CLICKHOUSE_RETENTION_DAYS` changes it. Nothing is sampled. Analytics is part of the Community edition.
+With access logging on and ClickHouse enabled (see [Enabling analytics](#enabling-analytics-recommended)), every request Caddy handles is stored for the retention window: 30 days by default, `CLICKHOUSE_RETENTION_DAYS` changes it. Nothing is sampled. Analytics is part of the Community edition.
+
+## Storage and retention
+
+Analytics uses a bundled ClickHouse instance for storing and querying traffic events and WAF events. Data is retained for **30 days** by default via ClickHouse's TTL. Change the window with the `CLICKHOUSE_RETENTION_DAYS` environment variable — on the next startup the existing tables' TTL is migrated to the new value and expired data is purged.
+
+### Enabling analytics (recommended)
+
+Analytics is enabled via the `clickhouse` Docker Compose profile. The default `.env.example` has it on:
+
+```env
+COMPOSE_PROFILES=clickhouse
+CLICKHOUSE_PASSWORD=
+```
+
+Set `CLICKHOUSE_PASSWORD` to a generated value (`openssl rand -base64 32`); compose refuses to start the `clickhouse` profile while it is empty.
+
+Then start (or recreate) the stack:
+
+```bash
+docker compose up -d
+```
+
+### Disabling analytics
+
+Remove `clickhouse` from `COMPOSE_PROFILES` (or leave the variable empty) and omit `CLICKHOUSE_PASSWORD`:
+
+```env
+COMPOSE_PROFILES=
+```
+
+The web container starts normally without ClickHouse. The Analytics page shows a notice explaining that ClickHouse is not enabled, and no data is collected.
+
+### Combining profiles
+
+To run both analytics and GeoIP updates ([geo-blocking.md](geo-blocking.md#geoip-setup)) simultaneously, list both profiles:
+
+```env
+COMPOSE_PROFILES=clickhouse,geoipupdate
+CLICKHOUSE_PASSWORD=…
+GEOIPUPDATE_ACCOUNT_ID=…
+GEOIPUPDATE_LICENSE_KEY=…
+```
 
 ## What each request records
 

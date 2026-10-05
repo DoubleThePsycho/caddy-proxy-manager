@@ -16,7 +16,7 @@ The settings are on the **WAF settings** page (`/waf`); the matched requests are
 
 ## Rule set and paranoia level
 
-**Load the Core Rule Set** adds the OWASP rules for SQL injection, cross-site scripting, file inclusion, remote code execution, scanners and protocol abuse. Without it only your custom rules run.
+**Load the Core Rule Set** adds the OWASP rules for SQL injection, cross-site scripting, file inclusion, remote code execution, scanners and protocol abuse (on by default when the WAF is on). Without it only your custom rules run.
 
 The **paranoia level** (1 to 4, `tx.blocking_paranoia_level`) decides how many rules run:
 
@@ -81,13 +81,34 @@ Open a WAF event on **Security events** to see why it was blocked: every rule th
 
 For each rule that added points, the event suggests the narrowest exclusion: the rule, on the host that served the request, for the request's path, on the matched variable when the record names one. **This was a false positive** opens the exclusion form with it filled in. Only add one when the request was legitimate.
 
+## Credentials in events
+
+In the event log, credential header values (`Authorization`, `Cookie`, `Set-Cookie`, API-key and token headers, …) and the cookie or credential values that rule messages echo are stored as `[redacted]`.
+
 ## Custom rules
 
 SecLang directives (`SecRule`, `SecAction`, `SecMarker`, `SecDefaultAction` and the body limit directives) run after the Core Rule Set on every host that follows or merges with the global settings. Lines that could read files, run programs or switch the WAF off are left out, and the page lists them before you save. Use ids from 9000 up; the Core Rule Set uses 900000 to 999999, and ids 1,800,000,000 to 1,800,999,999 are reserved for virtual patches.
 
+For example:
+```
+SecRule REQUEST_URI "@beginsWith /admin/" "id:9001,phase:1,deny,status:403,log,msg:'Admin path blocked'"
+```
+
+Lines that could read files, run programs or switch the WAF off are not sent to Caddy, nor are some that would make Caddy refuse the whole config:
+
+- `Include`, rule-engine and rule-mutation directives (`SecRuleEngine`, `SecRuleRemoveById`, `SecRuleUpdateActionById`, …)
+- the operators `@pmFromFile`/`@pmf`, `@ipMatchFromFile`/`@ipMatchF`, `@inspectFile` and `@validateSchema`. The data-file operators are allowed with a single `@owasp_crs/<name>.data` argument when the CRS is loaded for that host or the global handler. The operator must use Coraza's exact, case-sensitive spelling (`@pmFromFile`, `@pmf`, `@ipMatchFromFile`, `@ipMatchF`; `@pmfromfile` or `@PMF` is dropped), and `<name>.data` must be one of the 21 data files shipped with coraza-coreruleset v4.25.0 (e.g. `unix-shell.data`, `scanners-user-agents.data`)
+- the `setenv` action and `ctl:ruleEngine`, in any spacing or quoting
+- `SecRule`/`SecAction`/`SecDefaultAction` lines whose structure Coraza cannot parse (e.g. a `SecRule` without a quoted operator), and any directive continued over several lines with a trailing `\` (write each directive on one line)
+- a rule whose `id:` an earlier rule already uses, including a merge-mode host rule that reuses a global rule id (the global directives come first), since Coraza refuses duplicate ids. Ids that clash with OWASP CRS rules are not checked, so avoid 900000–999999 and the 2000xx ids of `coraza.conf-recommended` when the CRS is loaded
+
+Operator names and other rule content are not validated: a typo such as `@contians` still reaches Caddy, which then refuses the whole config.
+
+When one rule of a chain is dropped, the whole chain is dropped. Rules stored before these checks existed are not deleted: they are left out of the generated config and reported in the web container log (`[waf] <source>: N custom directive line(s) are not sent to Caddy…`). Saving a proxy host or the global WAF settings (dashboard or `PUT /api/v1/settings/waf`) is rejected only for lines the save newly drops, including turning **Load OWASP CRS** off while a rule reads an `@owasp_crs/` file, so a stored rule does not block unrelated edits. A merge-mode host that inherits the global CRS setting is not re-checked when the global CRS is turned off; its `@owasp_crs/` rules are then only reported in the log.
+
 ## Virtual patches
 
-With the Enterprise edition, the **Virtual patches** section adds rules for newly published CVEs from a signed feed, each off, in detection or blocking. See [virtual patching](../ee/docs/virtual-patching.md).
+Coming soon in the Enterprise edition: rules for newly published CVEs from a signed feed, each off, in detection or blocking. Until then the **Virtual patches** section shows a note and has nothing to set up. See [virtual patching](../ee/docs/virtual-patching.md).
 
 ## REST API
 

@@ -8,6 +8,10 @@
  * rollback when Caddy refuses the patches, fetching (redirects, size, HTTP
  * errors), instance sync to replicas, events lookup, the permission and the
  * OpenAPI entries.
+ *
+ * Virtual patching ships switched off (coming soon): these tests switch it
+ * on with setFeatureAvailableForTests, except the "coming soon" block, which
+ * checks that nothing can be set up, fetched or scheduled while it is off.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -51,13 +55,13 @@ import { applySyncPayload, buildSyncPayload } from '@/src/lib/instance-sync';
 import { canonicalSyncContent } from '@/src/lib/instance-sync-fingerprint';
 import { ADMIN_LEVEL_PERMISSIONS, PERMISSION_AREAS, isAdminLevel } from '@/src/lib/permissions';
 import { readPaidFeaturesInUse } from '@/src/lib/usage-ping/collect';
-import { EDITION_FEATURES, FEATURE_INFO } from '@/ee/licensing/features';
+import { EDITION_FEATURES, FEATURE_INFO, setFeatureAvailableForTests } from '@/ee/licensing/features';
 import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
-import { LICENSE_SETTING_KEY, LicenseRequiredError } from '@/ee/licensing/store';
+import { FeatureUnavailableError, LICENSE_SETTING_KEY, LicenseRequiredError } from '@/ee/licensing/store';
 import { setTrustedRuleFeedKeysForTests } from '@/ee/rule-feed/public-keys';
 import { findVirtualPatchRules, loadVirtualPatchDirectives, readRuleFeedState } from '@/ee/rule-feed/store';
 import { isFetchDue, runScheduledRuleFeedFetch } from '@/ee/rule-feed/service';
-import { ruleFeedTick, setRuleFeedSchedulerGate } from '@/ee/rule-feed/scheduler';
+import { ruleFeedTick, setRuleFeedSchedulerGate, startRuleFeedScheduler, stopRuleFeedScheduler } from '@/ee/rule-feed/scheduler';
 import type { RulePack, VirtualPatchView } from '@/ee/rule-feed/types';
 
 const licenseSigner = createTestSigner();
@@ -132,6 +136,7 @@ beforeEach(() => {
   delete process.env.INSTANCE_MODE;
   setTrustedLicenseKeysForTests(licenseSigner.keys);
   setTrustedRuleFeedKeysForTests(feedSigner.keys);
+  setFeatureAvailableForTests('virtual_patching', true);
 });
 
 afterEach(() => {
@@ -142,6 +147,7 @@ afterEach(() => {
 afterAll(() => {
   setTrustedLicenseKeysForTests(null);
   setTrustedRuleFeedKeysForTests(null);
+  setFeatureAvailableForTests('virtual_patching', null);
 });
 
 describe('reading', () => {
@@ -152,6 +158,7 @@ describe('reading', () => {
       settings: { subscribed: false, feedUrl: 'https://feed.ingres.si/v1/feed.json', autoBlockCritical: false },
       feed: { installed: null, expired: false, lastCheck: null, trustedKeyIds: [feedSigner.kid] },
       counts: { total: 0 },
+      available: true,
       configurable: false,
       editable: true,
       source: 'local',
@@ -493,9 +500,91 @@ describe('instance sync', () => {
   });
 });
 
+describe('coming soon', () => {
+  const UNAVAILABLE_MESSAGE = new FeatureUnavailableError('virtual_patching').message;
+
+  beforeEach(() => setFeatureAvailableForTests('virtual_patching', null));
+
+  it('ships switched off, so it reads as coming soon and not configurable even with an Enterprise license', async () => {
+    expect(FEATURE_INFO.virtual_patching.available).toBe(false);
+    expect(UNAVAILABLE_MESSAGE).toBe('Virtual patching is coming soon: it cannot be set up in this release');
+    await installLicense();
+    const { status, data } = await call(getFeed as Handler, 'GET', '/api/v1/waf/rule-feed');
+    expect(status).toBe(200);
+    expect(data).toMatchObject({ available: false, configurable: false, editable: true });
+  });
+
+  it('refuses subscribing, fetching, importing and turning a patch on with any license, and fetches nothing', async () => {
+    const fetchMock = vi.fn(async () => new Response(feed()));
+    vi.stubGlobal('fetch', fetchMock);
+    await installLicense();
+    for (const body of [{ subscribed: true }, { feedUrl: 'https://mirror.example.com/feed.json' }, { autoBlockCritical: true }]) {
+      const { status, data } = await subscribe(body);
+      expect(status, JSON.stringify(body)).toBe(403);
+      expect(data.error).toBe(UNAVAILABLE_MESSAGE);
+    }
+    const fetched = await call(fetchFeed as Handler, 'POST', '/api/v1/waf/rule-feed/fetch');
+    expect(fetched).toMatchObject({ status: 403, data: { error: UNAVAILABLE_MESSAGE } });
+    const imported = await importDocument(feed());
+    expect(imported).toMatchObject({ status: 403, data: { error: UNAVAILABLE_MESSAGE } });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(await rows()).toEqual([]);
+    expect(auditActions()).toEqual([]);
+  });
+
+  it('still turns a subscription and patches off', async () => {
+    // Set up while available (a later release), then switched off again.
+    setFeatureAvailableForTests('virtual_patching', true);
+    await installLicense();
+    await subscribe({ subscribed: true, autoBlockCritical: true });
+    await importDocument(feed());
+    setFeatureAvailableForTests('virtual_patching', null);
+
+    expect((await setMode('ivp-2021-44228', 'block'))).toMatchObject({ status: 403, data: { error: UNAVAILABLE_MESSAGE } });
+    expect((await setMode('ivp-2021-44228', 'off')).data).toMatchObject({ mode: 'off' });
+    const { status, data } = await subscribe({ subscribed: false, autoBlockCritical: false });
+    expect(status).toBe(200);
+    expect(data.settings).toMatchObject({ subscribed: false, autoBlockCritical: false });
+  });
+
+  it('never fetches on a schedule, even for a subscription that is due', async () => {
+    setFeatureAvailableForTests('virtual_patching', true);
+    await installLicense();
+    await subscribe({ subscribed: true });
+    setFeatureAvailableForTests('virtual_patching', null);
+    const fetchMock = vi.fn(async () => new Response(feed()));
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await runScheduledRuleFeedFetch(new Date(Date.now() + 3 * DAY))).toBeNull();
+    await ruleFeedTick(new Date(Date.now() + 3 * DAY));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((await readRuleFeedState()).lastCheck).toBeNull();
+
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      expect(startRuleFeedScheduler()).toBe(false);
+      expect(setIntervalSpy).not.toHaveBeenCalled();
+      expect(setTimeoutSpy).not.toHaveBeenCalled();
+    } finally {
+      setIntervalSpy.mockRestore();
+      setTimeoutSpy.mockRestore();
+      stopRuleFeedScheduler();
+    }
+  });
+
+  it('says so in the API documentation', async () => {
+    const spec = await (await getOpenApi(new NextRequest('http://localhost/api/v1/openapi.json'))).json();
+    const tag = spec.tags.find((entry: { name: string }) => entry.name === 'Virtual patching');
+    expect(tag.description).toMatch(/^Coming soon: virtual patching is not available in this release\./);
+    expect(spec.paths['/api/v1/waf/rule-feed'].put.summary).toBe('Subscribe to the rule feed or change the subscription (coming soon)');
+    expect(spec.components.schemas.RuleFeedStatus.properties.available).toMatchObject({ type: 'boolean' });
+  });
+});
+
 describe('feature, permission, usage and API documentation', () => {
-  it('ships virtual_patching in the Enterprise edition', () => {
-    expect(FEATURE_INFO.virtual_patching).toMatchObject({ label: 'Virtual patching', edition: 'enterprise', available: true });
+  it('lists virtual_patching in the Enterprise edition, coming soon', () => {
+    expect(FEATURE_INFO.virtual_patching).toMatchObject({ label: 'Virtual patching', edition: 'enterprise', available: false });
     expect(EDITION_FEATURES.enterprise).toContain('virtual_patching');
     expect(EDITION_FEATURES.business).not.toContain('virtual_patching');
     expect(EDITION_FEATURES.msp).not.toContain('virtual_patching');
