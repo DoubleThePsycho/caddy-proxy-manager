@@ -493,10 +493,10 @@ async function viewsOf(access: Access, rows: readonly RequestRow[], now = new Da
   return Promise.all(rows.map((row) => toView(access, row, reviews.get(row.id) ?? [], names, policies, now, reach)));
 }
 
-async function viewOf(access: Access, id: number): Promise<ChangeRequestView> {
+async function viewOf(access: Access, id: number, now = new Date()): Promise<ChangeRequestView> {
   const row = await getRow(id);
   if (!row) throw new ApiClientError(REQUEST_NOT_FOUND, 404);
-  return (await viewsOf(access, [row]))[0];
+  return (await viewsOf(access, [row], now))[0];
 }
 
 // ── Listing ───────────────────────────────────────────────────────────
@@ -754,7 +754,7 @@ export async function gateHostChange(params: {
     }
     return { status: "applied", request: view, message: `Emergency change applied and recorded as change request #${view.id}.` };
   }
-  const view = await viewOf(access, row.id);
+  const view = await viewOf(access, row.id, now);
   return { status: "pending", request: view, message: statusMessage(view) };
 }
 
@@ -1056,12 +1056,12 @@ export async function approveChangeRequest(access: Access, id: number, input: un
   });
   if (approvers.length < required) {
     if (required !== row.requiredApprovals) await transition(id, ["pending"], { requiredApprovals: required });
-    return await viewOf(access, id);
+    return await viewOf(access, id, now);
   }
   if (await transition(id, ["pending"], { status: "approved", requiredApprovals: required, decidedAt: now.toISOString() })) {
     if (allWindowsOpenAt(covering, now)) await applyRequest(id, access.userId, "approval", ["approved"]);
   }
-  return await viewOf(access, id);
+  return await viewOf(access, id, now);
 }
 
 /** Rejects request `id` (approvals:approve) with a comment. The requester cancels instead. */
@@ -1086,7 +1086,7 @@ export async function rejectChangeRequest(access: Access, id: number, input: unk
     summary: `Rejected change request #${id} (${row.targetName})`,
     data: { requestedBy: row.requestedBy, comment },
   });
-  return await viewOf(access, id);
+  return await viewOf(access, id, now);
 }
 
 /** Cancels request `id`: its requester, or someone holding approvals:manage. */
@@ -1111,7 +1111,7 @@ export async function cancelChangeRequest(access: Access, id: number, input: unk
     summary: `Cancelled change request #${id} (${row.targetName})`,
     data: { requestedBy: row.requestedBy, comment },
   });
-  return await viewOf(access, id);
+  return await viewOf(access, id, now);
 }
 
 /** Adds a comment to request `id` (anyone who can see it). */
@@ -1144,7 +1144,7 @@ export async function applyChangeRequestNow(access: Access, id: number, now: Dat
     );
   }
   await applyRequest(id, access.userId, "manual", ["approved"]);
-  return await viewOf(access, id);
+  return await viewOf(access, id, now);
 }
 
 function assertEmergencyAllowed(access: Access, policies: readonly PolicyRule[]): void {
@@ -1172,7 +1172,7 @@ async function applyAsEmergency(access: Access, id: number, reason: string, now:
     data: { requestedBy: row.requestedBy, reason },
   });
   await applyRequest(id, access.userId, "emergency", OPEN_STATUSES);
-  return await viewOf(access, id);
+  return await viewOf(access, id, now);
 }
 
 /**
