@@ -131,7 +131,7 @@ describe('paid routes and pages in app/', () => {
   });
 
   it('has shims to check', () => {
-    expect(paid.length).toBeGreaterThan(200);
+    expect(paid.length).toBeGreaterThan(190);
   });
 
   it('keeps only shims under the paid prefixes', () => {

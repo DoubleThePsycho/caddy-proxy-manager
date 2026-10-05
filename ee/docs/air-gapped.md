@@ -64,7 +64,6 @@ To upgrade, build a bundle of the new release, run its `install.sh` in its own d
 | AI analyst | Point it at a model server on your network (any OpenAI-compatible endpoint such as vLLM or Ollama). |
 | Alerts and digests | Use your internal SMTP relay and webhook endpoints. |
 | License | Works offline. Install renewed keys on the **License** page as usual. Automatic updates stay off, and the bundle's `.env.example` sets `LICENSE_AUTO_UPDATE_DISABLED=true` so they cannot be turned on. |
-| Virtual patches | Coming soon (nothing to import in this release). Once available: download the signed rule feed on a connected machine and import it under **WAF settings → Virtual patches → Import feed file**, at least as often as feeds expire (30 days). It is verified offline like a fetched one ([virtual-patching.md](virtual-patching.md)). |
 | Usage ping | Off unless an administrator says yes, and the bundle's `.env.example` sets `USAGE_PING_DISABLED=true`: nothing is sent and the question is hidden. Keep the variable when you carry an older `.env` over ([documentation/usage-ping.md](../../documentation/usage-ping.md)). |
 
 ## Long-term-support releases

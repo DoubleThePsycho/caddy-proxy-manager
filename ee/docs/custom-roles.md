@@ -53,7 +53,6 @@ An API token can also carry **scopes**: a list of permissions from the catalogue
 | `branding` | read, write | White-label branding: product name, logos, favicon, accent colour, sign-in texts, support contact, e-mail sender name. `write` is administrator-level. Every host. |
 | `organizations` | read, write | Client organisations (multi-tenancy, see [multi-tenancy.md](multi-tenancy.md)): `read` lists them with their members and limits; `write` creates, changes, disables and deletes them and moves hosts, certificates, access lists, groups and users between them. `write` is administrator-level. Every host. |
 | `usage_reports` | read | Usage per organisation and period, and its CSV export. Organisation users see their own organisation's. |
-| `virtual_patches` | read, write | Virtual patching (see [virtual-patching.md](virtual-patching.md)): `read` shows the rule feed subscription, the installed feed and every virtual patch with its CVE details; `write` subscribes and changes the feed URL and automatic blocking, fetches the feed now, imports a feed file and turns each patch off, to detection or to blocking. The Virtual patches section sits on the WAF page, which also needs `waf:read`. Every host. Virtual patching is coming soon: until then `write` can only turn things off. |
 | `approvals` | read, approve, emergency, manage | Change approvals (see [change-approvals.md](change-approvals.md)): `read` sees change requests on hosts the role can read (and its own) and comments or cancels its own; `approve` approves, rejects and applies other people's; `emergency` applies a protected change at once with a reason; `manage` creates, changes, disables and deletes approval policies. `emergency` and `manage` are administrator-level. |
 
 "Every host" areas are not limited by a tag scope: a scoped role that holds them sees data of every host.
@@ -676,16 +675,9 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/api/v1/waf/hosts/[id]/route.ts` | `GET` | `waf:read` |
 | `app/api/v1/waf/hosts/[id]/route.ts` | `PUT` | `waf:write` |
 | `app/api/v1/waf/hosts/route.ts` | `GET` | `waf:read` |
-| `app/api/v1/waf/rule-feed/fetch/route.ts` | `POST` | `virtual_patches:write` |
-| `app/api/v1/waf/rule-feed/import/route.ts` | `POST` | `virtual_patches:write` |
-| `app/api/v1/waf/rule-feed/route.ts` | `GET` | `virtual_patches:read` |
-| `app/api/v1/waf/rule-feed/route.ts` | `PUT` | `virtual_patches:write` |
 | `app/api/v1/waf/tuning-suggestions/[id]/apply/route.ts` | `POST` | `waf:write` |
 | `app/api/v1/waf/tuning-suggestions/[id]/dismiss/route.ts` | `POST` | `waf:write` |
 | `app/api/v1/waf/tuning-suggestions/route.ts` | `GET` | `waf:read` |
-| `app/api/v1/waf/virtual-patches/[id]/route.ts` | `GET` | `virtual_patches:read` |
-| `app/api/v1/waf/virtual-patches/[id]/route.ts` | `PUT` | `virtual_patches:write` |
-| `app/api/v1/waf/virtual-patches/route.ts` | `GET` | `virtual_patches:read` |
 | `app/api/waf-events/route.ts` | `GET` | `waf:read` |
 | `app/print/compliance/incidents/[id]/page.tsx` | `ComplianceIncidentPrintPage` | `compliance:read` |
 | `app/print/compliance/reports/[id]/page.tsx` | `ComplianceReportPrintPage` | `compliance:read` |

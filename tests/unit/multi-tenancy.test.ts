@@ -29,7 +29,7 @@ import { grantOfBuiltInRole } from '@/ee/custom-roles/escalation';
 const PROVIDER_AREAS = [
   'settings', 'instances', 'fleet', 'waf', 'l4_proxy_hosts', 'config', 'config_history', 'import', 'backups',
   'license', 'sso', 'mfa_policy', 'ldap', 'scim', 'access_reviews', 'branding', 'audit_streaming', 'monetization',
-  'alerts', 'ai', 'compliance', 'approvals', 'organizations', 'high_availability', 'virtual_patches',
+  'alerts', 'ai', 'compliance', 'approvals', 'organizations', 'high_availability',
 ];
 
 describe('organisation permissions', () => {

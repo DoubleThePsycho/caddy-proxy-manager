@@ -107,7 +107,9 @@ export function parseLicensePayload(raw: unknown): LicensePayload {
   if (typeof nodes !== "number" || !Number.isInteger(nodes) || nodes < 1 || nodes > 100_000) {
     throw new LicenseKeyError("The license key is not valid");
   }
-  if (features !== undefined && (!Array.isArray(features) || !features.every(isFeature))) {
+  // A feature this release does not know (newer, or withdrawn) is ignored:
+  // it can never grant anything here, and the rest of the key still holds.
+  if (features !== undefined && (!Array.isArray(features) || !features.every((feature) => isShortText(feature, 64)))) {
     throw new LicenseKeyError("The license key is not valid");
   }
   if (trial !== undefined && typeof trial !== "boolean") throw new LicenseKeyError("The license key is not valid");
@@ -122,7 +124,7 @@ export function parseLicensePayload(raw: unknown): LicensePayload {
     ...(email !== undefined ? { email } : {}),
     edition,
     nodes,
-    ...(features !== undefined ? { features: [...new Set(features as Feature[])] } : {}),
+    ...(features !== undefined ? { features: [...new Set((features as string[]).filter(isFeature))] } : {}),
     ...(trial !== undefined ? { trial } : {}),
     iat,
     exp,

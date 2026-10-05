@@ -386,6 +386,13 @@
       "when": 1791280000000,
       "tag": "0056_monetization_phase2",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "6",
+      "when": 1791290000000,
+      "tag": "0057_drop_virtual_patching",
+      "breakpoints": true
     }
   ]
 }

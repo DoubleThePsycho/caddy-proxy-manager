@@ -29,7 +29,6 @@ import { WafRulesStopped } from "./WafRulesStopped";
 import { WafHostsSection } from "./WafHostsSection";
 import { WafExclusionsSection } from "./WafExclusionsSection";
 import { WafCustomRules } from "./WafCustomRules";
-import { VirtualPatchesSection } from "@/ee/rule-feed/ui/VirtualPatchesSection";
 import { Segmented } from "./Segmented";
 import { hostModeSummary, ToneDot, type WafSettingsPageData } from "./waf-settings-shared";
 
@@ -587,15 +586,6 @@ export default function WafSettingsClient({ data }: { data: WafSettingsPageData 
       <WafHostsSection hosts={data.hosts} globalMode={saved.mode} appliesToAll={saved.enabled} canWrite={data.canWrite} />
 
       <WafExclusionsSection exclusions={data.exclusions} hosts={data.hosts} canWrite={data.canWrite} />
-
-      {data.virtualPatches && (
-        <VirtualPatchesSection
-          view={data.virtualPatches.view}
-          canWrite={data.virtualPatches.canWrite}
-          editionLabel={data.virtualPatches.editionLabel}
-          wafInUse={data.hosts.some((host) => host.hostEnabled && host.effectiveMode !== "off")}
-        />
-      )}
 
       <WafCustomRules
         value={form.customRules}

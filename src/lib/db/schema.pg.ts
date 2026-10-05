@@ -2173,44 +2173,6 @@ export const analyticsQuestions = pgTable(
   })
 );
 
-// ── Virtual patching ──────────────────────────────────────────────────
-
-/**
- * The virtual patches a verified rule feed delivered (ee/rule-feed), one row
- * per pack, keyed by the pack id. `rules` holds the pack's SecRule lines as
- * published (JSON array; validated again before every use), `ruleIds` their
- * ids in the reserved range (src/lib/waf-exclusions.ts), and the other JSON
- * columns the CVE details the dashboard shows. `mode` (off, detect, block)
- * is the administrator's choice. A pack missing from a newer feed keeps its
- * mode and gets `withdrawnAt`. Who changed a mode is in the audit log. The
- * subscription settings and the installed feed live in the settings
- * "virtual_patching" and "virtual_patching_state"; replicas get the patches
- * that are on through instance sync ("virtual_patches"), not this table.
- */
-export const virtualPatches = pgTable("virtual_patches", {
-  id: text("id").primaryKey(),
-  title: text("title").notNull(),
-  summary: text("summary").notNull().default(""),
-  severity: text("severity").notNull(),
-  cves: text("cves").notNull().default("[]"),
-  affected: text("affected").notNull().default("[]"),
-  referenceUrls: text("referenceUrls").notNull().default("[]"),
-  rules: text("rules").notNull().default("[]"),
-  ruleIds: text("ruleIds").notNull().default("[]"),
-  samples: text("samples").notNull().default('{"positive":[],"negative":[]}'),
-  defaultMode: text("defaultMode").notNull().default("detect"),
-  example: boolean("example").notNull().default(false),
-  publishedAt: text("publishedAt").notNull(),
-  packUpdatedAt: text("packUpdatedAt").notNull(),
-  mode: text("mode").notNull().default("off"),
-  modeChangedAt: text("modeChangedAt"),
-  /** Sequence of the feed that last delivered the pack. */
-  feedSequence: bigint("feedSequence", { mode: "number" }),
-  withdrawnAt: text("withdrawnAt"),
-  firstSeenAt: text("firstSeenAt").notNull(),
-  updatedAt: text("updatedAt").notNull()
-});
-
 // ── High availability shared state (ee) ─────────────────────────────
 
 /**

@@ -17,8 +17,6 @@ import { listDroppedWafDirectives } from "@/src/lib/caddy-waf";
 import { isAnalyticsEnabled } from "@/src/lib/clickhouse/client";
 import { wafHostView } from "@/src/lib/waf-hosts";
 import { bareRequestHost } from "@/src/lib/waf-suppression";
-import { getVirtualPatchingView } from "@/ee/rule-feed/service";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
 
 const WEEK_SECONDS = 7 * 24 * 60 * 60;
 
@@ -40,13 +38,6 @@ export default async function WafPage() {
     getWafHostCounts(from, to),
   ]);
   const ruleMessages = await getWafRuleMessages([...new Set(exclusions.map((exclusion) => exclusion.ruleId))]);
-  const virtualPatches = can(access, "virtual_patches:read")
-    ? {
-        view: await getVirtualPatchingView(),
-        canWrite: can(access, "virtual_patches:write"),
-        editionLabel: EDITION_LABELS[FEATURE_INFO.virtual_patching.edition],
-      }
-    : null;
 
   // Events are stored by request host (with any port); count them per proxy host.
   const hostIdByDomain = new Map<string, number>();
@@ -73,7 +64,6 @@ export default async function WafPage() {
     exclusions: exclusions.map((exclusion) => ({ ...exclusion, ruleMessage: ruleMessages[exclusion.ruleId] ?? null })),
     week: { from, to, summary, daily, topRules },
     droppedDirectives: listDroppedWafDirectives(settings, hosts),
-    virtualPatches,
   };
 
   return <WafSettingsClient data={data} />;

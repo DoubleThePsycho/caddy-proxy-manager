@@ -35,19 +35,6 @@ export const WAF_EXCLUSION_RULE_ID_BASE = 1_900_000_000;
 const MAX_EXCLUSION_RECORD_ID = MAX_WAF_RULE_ID - WAF_EXCLUSION_RULE_ID_BASE;
 
 /**
- * Rule ids reserved for virtual patches from the rule feed (ee/rule-feed):
- * every feed rule must use one, and a custom rule may not, so a feed can
- * neither collide with nor replace the rules an administrator wrote. Above
- * the CRS (900000-999999) and below the exclusion rules.
- */
-export const VIRTUAL_PATCH_RULE_ID_MIN = 1_800_000_000;
-export const VIRTUAL_PATCH_RULE_ID_MAX = 1_800_999_999;
-
-export function isVirtualPatchRuleId(id: number): boolean {
-  return Number.isInteger(id) && id >= VIRTUAL_PATCH_RULE_ID_MIN && id <= VIRTUAL_PATCH_RULE_ID_MAX;
-}
-
-/**
  * Variables an exclusion can name. `keyed` collections take an optional key
  * (`ARGS:content`); without one the rule skips the whole collection. The
  * others are single values and take no key.

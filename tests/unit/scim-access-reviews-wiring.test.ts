@@ -115,7 +115,7 @@ describe('OpenAPI', () => {
 describe('licensing and navigation', () => {
   it('lists SCIM and access reviews as shipped Enterprise features', () => {
     for (const feature of ['scim', 'access_reviews'] as const) {
-      expect(FEATURE_INFO[feature]).toMatchObject({ edition: 'enterprise', available: true });
+      expect(FEATURE_INFO[feature]).toMatchObject({ edition: 'enterprise' });
       expect(EDITION_FEATURES.enterprise).toContain(feature);
       expect(EDITION_FEATURES.business).not.toContain(feature);
     }

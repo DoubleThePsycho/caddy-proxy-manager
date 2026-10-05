@@ -5,13 +5,7 @@
 import { type WafSettings } from "./settings";
 import { type WafHostConfig } from "./models/proxy-hosts";
 import { crsTuningDirectives, resolveWafTuning, WAF_TUNING_KEYS, type WafTuningSettings } from "./waf-tuning";
-import {
-  buildExclusionDirectives,
-  isVirtualPatchRuleId,
-  VIRTUAL_PATCH_RULE_ID_MAX,
-  VIRTUAL_PATCH_RULE_ID_MIN,
-  type WafExclusionRule,
-} from "./waf-exclusions";
+import { buildExclusionDirectives, type WafExclusionRule } from "./waf-exclusions";
 
 // ---------------------------------------------------------------------------
 // Request body limits
@@ -198,13 +192,6 @@ export interface CustomDirectiveFilterOptions {
    * refuses a duplicate id, and Caddy then refuses the whole config.
    */
   reservedRuleIds?: ReadonlySet<number>;
-  /**
-   * Which rule ids the directives may take. "custom" (the default, for
-   * administrators' custom rules): any id outside the range reserved for
-   * virtual patches. "virtual_patch" (for the rendered rule feed): only ids
-   * inside that range, and every rule must have one.
-   */
-  ruleIdRange?: "custom" | "virtual_patch";
 }
 
 // SecRule* variants that are NOT plain SecRule (must be rejected)
@@ -352,18 +339,6 @@ function ruleIdOf(text: string): number | null {
     id = Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
   }
   return id;
-}
-
-/** Why a rule's id (null: none) is outside the ids its directives may take, or null. */
-function ruleIdRangeReason(id: number | null, range: "custom" | "virtual_patch"): string | null {
-  const reservedRange = `${VIRTUAL_PATCH_RULE_ID_MIN}-${VIRTUAL_PATCH_RULE_ID_MAX}`;
-  if (range === "virtual_patch") {
-    if (id === null) return `a virtual patch rule needs an id in the range ${reservedRange}`;
-    return isVirtualPatchRuleId(id) ? null : `rule id ${id} is outside the range reserved for virtual patches (${reservedRange})`;
-  }
-  return id !== null && isVirtualPatchRuleId(id)
-    ? `rule id ${id} is in the range reserved for virtual patches (${reservedRange}); pick another id`
-    : null;
 }
 
 /**
@@ -610,12 +585,6 @@ function filterDirectiveLines(
   for (const rule of rules) {
     if (rule.lines.some((index) => reasons[index] !== null)) continue;
     const id = ruleIdOf(rule.text);
-    const rangeReason = ruleIdRangeReason(id, options.ruleIdRange ?? "custom");
-    if (rangeReason !== null) {
-      reasons[rule.lines[0]] = rangeReason;
-      dropWith(rule.lines, rule.lines.length > rule.unitLength ? 'chained rule' : 'multi-line directive');
-      continue;
-    }
     if (id === null) continue;
     if (reserved.has(id)) {
       reasons[rule.lines[0]] =
@@ -966,18 +935,6 @@ export const WEBSOCKET_UPGRADE_MATCHER: Record<string, unknown> = {
 };
 
 /**
- * The virtual patches (ee/rule-feed) a WAF handler adds: SecRule lines the
- * feed renderer built from verified, allowlisted feed rules, every rule id in
- * the reserved range. They are the same for every handler.
- */
-export interface VirtualPatchDirectives {
-  rules: readonly string[];
-}
-
-/** The source named for dropped lines of the virtual patches. */
-export const VIRTUAL_PATCH_SOURCE = 'virtual patches';
-
-/**
  * Builds the Caddy `waf` handler object for the given WAF settings.
  *
  * Important: @-prefixed SecLang paths (e.g. @coraza.conf-recommended) resolve
@@ -990,20 +947,11 @@ export const VIRTUAL_PATCH_SOURCE = 'virtual patches';
  * `source` names where the settings came from in the warning logged when
  * custom directives are dropped: a label, or a WafDirectiveSource that splits
  * the global directives from a proxy host's own.
- *
- * Virtual patches (ee/rule-feed) go after the runtime exclusions and before
- * the CRS rules, so within a phase they run first: a patch in block mode
- * stops the request itself and the event names the patch. The renderer only
- * builds allowlisted SecRules, but they pass the custom directive filter
- * here too, holding them to the reserved id range; whatever fails is left
- * out and logged. Whole-scope exclusions (SecRuleRemoveById, below) can
- * still remove a patch rule, as an administrator chose.
  */
 export function buildWafHandler(
   waf: WafSettings,
   source: string | WafDirectiveSource = 'WAF settings',
-  exclusions: readonly WafExclusionRule[] = [],
-  virtualPatches: VirtualPatchDirectives | null = null
+  exclusions: readonly WafExclusionRule[] = []
 ): Record<string, unknown> {
   const parts: string[] = [];
   // Tuning only exists with the CRS: its SecActions set CRS variables and
@@ -1018,13 +966,6 @@ export function buildWafHandler(
     );
   }
   const generatedRuleIds = new Set([...tuning.ruleIds, ...exclusionDirectives.ruleIds]);
-  const patches = filterDirectiveLines(virtualPatches?.rules.join('\n'), {
-    crsLoaded: Boolean(waf.load_owasp_crs),
-    reservedRuleIds: generatedRuleIds,
-    ruleIdRange: 'virtual_patch',
-  });
-  if (patches.dropped.length > 0) warnDroppedDirectives(VIRTUAL_PATCH_SOURCE, patches.dropped);
-  const patchRules = patches.kept.map(({ line }) => line).filter((line) => line.trim() !== '');
 
   // `mode` is interpolated straight into the directive block, and settings are
   // stored without validation — so anything other than a known engine mode
@@ -1043,13 +984,12 @@ export function buildWafHandler(
       ...tuning.beforeRules,
       // Runtime exclusions run in phase 1 ahead of every rule they exclude.
       ...exclusionDirectives.rules,
-      ...patchRules,
       'Include @owasp_crs/*.conf',
       // Before any SecRuleRemoveById: updating a removed rule fails the config.
       ...tuning.afterRules,
     );
   } else {
-    parts.push(...exclusionDirectives.rules, ...patchRules);
+    parts.push(...exclusionDirectives.rules);
   }
 
   // Whole-scope exclusions: the legacy excluded_rule_ids lists (runtime-
@@ -1176,10 +1116,9 @@ export function buildWafHandlerEntry(
   waf: WafSettings,
   allowWebsocket = false,
   source?: string | WafDirectiveSource,
-  exclusions: readonly WafExclusionRule[] = [],
-  virtualPatches: VirtualPatchDirectives | null = null
+  exclusions: readonly WafExclusionRule[] = []
 ): Record<string, unknown> {
-  const wafHandler = buildWafHandler(waf, source, exclusions, virtualPatches);
+  const wafHandler = buildWafHandler(waf, source, exclusions);
   if (!allowWebsocket) return wafHandler;
   return {
     handler: 'subroute',

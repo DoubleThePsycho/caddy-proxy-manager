@@ -72,8 +72,6 @@ const ENTITY_AREAS: Record<string, string> = {
   waf_tuning_suggestion: "WAF",
   waf_exclusion: "WAF",
   waf_settings: "WAF",
-  virtual_patch: "WAF",
-  virtual_patching: "WAF",
   instance: "Instances",
   oauth_provider: "Authentication (SSO and MFA)",
   sso_enforcement: "Authentication (SSO and MFA)",

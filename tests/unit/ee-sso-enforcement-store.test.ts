@@ -64,8 +64,8 @@ describe('isSessionAllowedUnderSsoEnforcement', () => {
 
 describe('enforced SSO shipping', () => {
   it('is available as a Business feature, and so is SAML', () => {
-    expect(FEATURE_INFO.sso_enforce).toMatchObject({ edition: 'business', available: true });
-    expect(FEATURE_INFO.sso_saml).toMatchObject({ edition: 'business', available: true });
+    expect(FEATURE_INFO.sso_enforce).toMatchObject({ edition: 'business' });
+    expect(FEATURE_INFO.sso_saml).toMatchObject({ edition: 'business' });
   });
 
   it('puts the password form behind "Sign in with a password" on the login page when SSO is enforced', () => {

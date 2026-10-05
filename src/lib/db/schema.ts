@@ -94,7 +94,6 @@ export const ldapDirectoryHealth = tables.ldapDirectoryHealth;
 export const complianceReportSchedules = tables.complianceReportSchedules;
 export const complianceRestoreTests = tables.complianceRestoreTests;
 export const analyticsQuestions = tables.analyticsQuestions;
-export const virtualPatches = tables.virtualPatches;
 export const monetizationSharedCursors = tables.monetizationSharedCursors;
 export const monetizationSharedCredits = tables.monetizationSharedCredits;
 export const clusterNodes = tables.clusterNodes;

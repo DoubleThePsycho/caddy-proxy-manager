@@ -49,7 +49,7 @@ describe('the configuration', () => {
 
 describe('feature flag, migration and navigation', () => {
   it('ships config_history in the Homelab edition', () => {
-    expect(FEATURE_INFO.config_history).toMatchObject({ edition: 'homelab', available: true });
+    expect(FEATURE_INFO.config_history).toMatchObject({ edition: 'homelab' });
   });
 
   it('has a migration for config_snapshots in the journal', () => {

@@ -95,7 +95,6 @@ function data(overrides: Partial<SecurityPageData> = {}): SecurityPageData {
     blockedIps: ['203.0.113.66'],
     exclusionHosts: [{ id: 4, name: 'App', domains: ['app.example.com'] }],
     eventHostIds: { 'app.example.com': 4 },
-    virtualPatches: {},
     rateLimitInUse: false,
     permissions: { canWriteWaf: true, blockDisabledReason: null, canReadAnalytics: true, canReadSettings: true },
     tuning: { suggestions: [], canConfigure: false, analyticsEnabled: true, aiConfigured: false },
@@ -176,21 +175,6 @@ describe('Security events page', () => {
     expect(html).toContain('aria-pressed="true" aria-label="WAF"');
     expect(html).toContain('href="/security?range=24h&amp;kind=waf&amp;filters=%5B%7B%22dim%22%3A%22host%22%2C%22op%22%3A%22is%22%2C%22value%22%3A%22app.example.com%22%7D%5D&amp;page=2#events"');
     expect(html).toContain('href="/analytics?range=24h&amp;filters=');
-  });
-
-  it('names the CVE of an event from a virtual patch', () => {
-    const base = data();
-    const patchEvent = {
-      ts: START + 55 * STEP, kind: 'waf' as const, eventId: 'tx-3', blocked: true, host: 'app.example.com', method: 'GET', path: '/',
-      ip: '198.51.100.20', country: 'NL', ruleId: 1800000101, message: 'CVE-2021-44228 Apache Log4j JNDI lookup', severity: 'CRITICAL', status: 0,
-    };
-    const html = render(
-      data({
-        events: { ...base.events, list: [patchEvent, ...base.events.list] },
-        virtualPatches: { 1800000101: { patchId: 'ivp-2021-44228', title: 'Apache Log4j JNDI lookup', cves: ['CVE-2021-44228'] } },
-      })
-    );
-    expect(text(html)).toContain('1800000101Virtual patchCVE-2021-44228 Apache Log4j JNDI lookup');
   });
 
   it('reports a filter or range it did not use', () => {

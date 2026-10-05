@@ -83,7 +83,6 @@ describe('pg-column-types.ts', () => {
       'rate_limit_counters.expiresAtMs',
       'rate_limit_counters.heldUntilMs',
       'rate_limit_counters.windowStartMs',
-      'virtual_patches.feedSequence',
     ]);
     // Every *Micros and sizeBytes column, present and future.
     for (const column of integerColumns.filter((name) => /Micros$|\.sizeBytes$/.test(name))) {

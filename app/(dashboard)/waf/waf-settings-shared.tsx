@@ -6,7 +6,6 @@ import type { WafSettings } from "@/src/lib/settings";
 import type { WafHostView } from "@/src/lib/waf-hosts";
 import type { WafExclusion } from "@/src/lib/models/waf-exclusions";
 import type { TopWafRule, WafPeriodSummary } from "@/src/lib/models/waf-events";
-import type { VirtualPatchingView } from "@/ee/rule-feed/types";
 
 export type WafHostRow = WafHostView & { events: { count: number; blocked: number } };
 export type WafExclusionRow = WafExclusion & { ruleMessage: string | null };
@@ -26,8 +25,6 @@ export type WafSettingsPageData = {
     topRules: TopWafRule[];
   };
   droppedDirectives: DroppedWafDirectiveReport[];
-  /** Virtual patches (ee/rule-feed); absent without virtual_patches:read. */
-  virtualPatches?: { view: VirtualPatchingView; canWrite: boolean; editionLabel: string } | null;
 };
 
 const fmt = (value: number) => value.toLocaleString("en-US");

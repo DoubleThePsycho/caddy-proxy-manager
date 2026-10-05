@@ -54,7 +54,7 @@ describe('OpenAPI: LDAP directories', () => {
   });
 
   it('ships the feature with an administrator-level write permission', () => {
-    expect(FEATURE_INFO.ldap).toMatchObject({ available: true, edition: 'enterprise' });
+    expect(FEATURE_INFO.ldap).toMatchObject({ edition: 'enterprise' });
     expect(PERMISSION_AREAS.ldap).toMatchObject({ actions: ['read', 'write'], paid: true });
     expect(ADMIN_LEVEL_PERMISSIONS).toContain('ldap:write');
   });

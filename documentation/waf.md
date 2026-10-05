@@ -87,7 +87,7 @@ In the event log, credential header values (`Authorization`, `Cookie`, `Set-Cook
 
 ## Custom rules
 
-SecLang directives (`SecRule`, `SecAction`, `SecMarker`, `SecDefaultAction` and the body limit directives) run after the Core Rule Set on every host that follows or merges with the global settings. Lines that could read files, run programs or switch the WAF off are left out, and the page lists them before you save. Use ids from 9000 up; the Core Rule Set uses 900000 to 999999, and ids 1,800,000,000 to 1,800,999,999 are reserved for virtual patches.
+SecLang directives (`SecRule`, `SecAction`, `SecMarker`, `SecDefaultAction` and the body limit directives) run after the Core Rule Set on every host that follows or merges with the global settings. Lines that could read files, run programs or switch the WAF off are left out, and the page lists them before you save. Use ids from 9000 up; the Core Rule Set uses 900000 to 999999.
 
 For example:
 ```
@@ -105,10 +105,6 @@ Lines that could read files, run programs or switch the WAF off are not sent to 
 Operator names and other rule content are not validated: a typo such as `@contians` still reaches Caddy, which then refuses the whole config.
 
 When one rule of a chain is dropped, the whole chain is dropped. Rules stored before these checks existed are not deleted: they are left out of the generated config and reported in the web container log (`[waf] <source>: N custom directive line(s) are not sent to Caddy…`). Saving a proxy host or the global WAF settings (dashboard or `PUT /api/v1/settings/waf`) is rejected only for lines the save newly drops, including turning **Load OWASP CRS** off while a rule reads an `@owasp_crs/` file, so a stored rule does not block unrelated edits. A merge-mode host that inherits the global CRS setting is not re-checked when the global CRS is turned off; its `@owasp_crs/` rules are then only reported in the log.
-
-## Virtual patches
-
-Coming soon in the Enterprise edition: rules for newly published CVEs from a signed feed, each off, in detection or blocking. Until then the **Virtual patches** section shows a note and has nothing to set up. See [virtual patching](../ee/docs/virtual-patching.md).
 
 ## REST API
 

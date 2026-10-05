@@ -59,8 +59,6 @@ import { deferCaddyApplyToBatch } from "./change-batch";
 import { recordConfigSnapshotAfterApply } from "@/ee/config-history/snapshots";
 import { loadMonetizationForCaddy, type MonetizationCaddyOptions } from "@/ee/monetization/caddy-config";
 import { resolveCaddyStorage } from "@/ee/high-availability/caddy-storage";
-import { loadVirtualPatchDirectives } from "@/ee/rule-feed/store";
-import { VIRTUAL_PATCHES_SYNC_KEY } from "@/ee/rule-feed/types";
 import { CERTIFICATE_STORAGE_SETTING_KEY } from "@/ee/high-availability/types";
 import {
   CONSUMER_HEADER_PREFIX,
@@ -88,7 +86,7 @@ import { type GeoBlockMode, type WafHostConfig, type MtlsConfig, type RedirectRu
 import { buildClientAuthentication, groupMtlsDomainsByCaSet, buildMtlsRbacSubroutes, buildFingerprintCelExpression, buildValidClientCertCelExpression, resolveAllowedFingerprints, type MtlsAccessRuleLike } from "./caddy-mtls";
 import { buildRoleFingerprintMap, buildCertFingerprintMap, buildRoleCertIdMap } from "./models/mtls-roles";
 import { getAccessRulesForHosts } from "./models/mtls-access-rules";
-import { buildWafHandlerEntry, resolveEffectiveWaf, wafDirectiveSource, wafExclusionsForHost, type VirtualPatchDirectives } from "./caddy-waf";
+import { buildWafHandlerEntry, resolveEffectiveWaf, wafDirectiveSource, wafExclusionsForHost } from "./caddy-waf";
 import { listWafExclusionRows, type WafExclusionRow } from "./models/waf-exclusions";
 import {
   buildHostRateLimit,
@@ -1155,11 +1153,6 @@ type BuildProxyRoutesOptions = {
   /** WAF rule exclusion records (src/lib/models/waf-exclusions.ts); global ones have no proxyHostId. */
   wafExclusions?: readonly WafExclusionRow[];
   /**
-   * Virtual patches turned on (ee/rule-feed), rendered once and added to the
-   * WAF handler of every host where the WAF runs; null when none.
-   */
-  virtualPatches?: VirtualPatchDirectives | null;
-  /**
    * The `invoke` handler of each access list whose rules do something, by
    * list id (caddy-access-lists.ts); hosts using the list run it after geo
    * blocking.
@@ -1312,8 +1305,7 @@ async function buildProxyRoutes(
           effectiveWaf,
           Boolean(row.allowWebsocket),
           wafDirectiveSource(options.globalWaf ?? null, meta.waf, `proxy host "${row.name}" (${domains.join(", ")})`),
-          wafExclusionsForHost(options.wafExclusions ?? [], row.id, meta.waf),
-          options.virtualPatches ?? null
+          wafExclusionsForHost(options.wafExclusions ?? [], row.id, meta.waf)
         )
       );
     }
@@ -2998,7 +2990,6 @@ const CADDY_BUILD_SETTING_KEYS = [
   "logging",
   "metrics",
   CERTIFICATE_STORAGE_SETTING_KEY,
-  VIRTUAL_PATCHES_SYNC_KEY,
 ] as const;
 
 /**
@@ -3292,9 +3283,6 @@ async function buildCaddyDocumentFromDatabase() {
       monetization: await loadMonetizationForCaddy(),
       globalRateLimit,
       wafExclusions: await listWafExclusionRows(),
-      // Read whatever the license state: patches that were turned on keep
-      // protecting the hosts after it lapses.
-      virtualPatches: await loadVirtualPatchDirectives(),
       accessListInvokes: accessListConfig.invokes,
     }
   );

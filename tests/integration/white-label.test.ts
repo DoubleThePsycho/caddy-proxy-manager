@@ -233,7 +233,7 @@ describe('permissions', () => {
   });
 
   it('is available in the MSP edition', () => {
-    expect(FEATURE_INFO.white_label).toMatchObject({ edition: 'msp', available: true });
+    expect(FEATURE_INFO.white_label).toMatchObject({ edition: 'msp' });
   });
 });
 

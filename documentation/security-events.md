@@ -24,7 +24,7 @@ The range is the last hour, 24 hours, 7 days (the default) or 30 days, or a cust
 
 Select an event to open it.
 
-For a WAF event the page reads the stored audit record: every rule that matched, the anomaly points each added, the matched variable and data, the total score against the threshold, and the rule that decided. An event of a [virtual patch](../ee/docs/virtual-patching.md) is marked **Virtual patch**, names the CVE ids and links to the patch on the WAF page, where it can be set to detect or off. Then:
+For a WAF event the page reads the stored audit record: every rule that matched, the anomaly points each added, the matched variable and data, the total score against the threshold, and the rule that decided. Then:
 
 - **Nothing: this is working as intended** closes it.
 - **This was a false positive** opens the exclusion form with the narrowest exclusion the record allows: the rule, on the host that served the request, for its path, on the matched variable when the record names one. When several rules added to the score, each is listed. Review it before adding; only add one when the request was legitimate.

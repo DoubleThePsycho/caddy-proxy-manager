@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Elastic-2.0
-import { EDITION_LABELS, FEATURE_INFO, FEATURES, isFeatureAvailable, type Edition, type Feature } from "./features";
+import { EDITION_LABELS, FEATURE_INFO, FEATURES, type Edition, type Feature } from "./features";
 import { canConfigure, type LicenseState, type LicenseStatus } from "./license";
 
 export type LicenseFeatureView = {
@@ -8,11 +8,9 @@ export type LicenseFeatureView = {
   description: string;
   edition: Edition;
   editionLabel: string;
-  /** Shipped in this release (some paid features are still on the roadmap). */
-  available: boolean;
   /** Granted by the installed license. */
   included: boolean;
-  /** Administrators may set it up or change it now (never while it is coming soon). */
+  /** Administrators may set it up or change it now. */
   configurable: boolean;
 };
 
@@ -60,9 +58,8 @@ export function toLicenseView(state: LicenseState, nodesUsed: number): LicenseVi
         description: info.description,
         edition: info.edition,
         editionLabel: EDITION_LABELS[info.edition],
-        available: isFeatureAvailable(id),
         included: state.features.includes(id),
-        configurable: isFeatureAvailable(id) && canConfigure(state, id),
+        configurable: canConfigure(state, id),
       };
     }),
   };

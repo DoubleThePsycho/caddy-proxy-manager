@@ -12,7 +12,7 @@ import { ApiClientError } from "@/src/lib/api-errors";
 import { listInstances } from "@/src/lib/models/instances";
 import { getEnvSlaveInstances } from "@/src/lib/instance-sync";
 import { BRAND_NAME } from "@/src/lib/brand";
-import { EDITION_LABELS, FEATURE_INFO, isFeatureAvailable, type Feature } from "./features";
+import { EDITION_LABELS, FEATURE_INFO, type Feature } from "./features";
 import { canConfigure, evaluateLicense, LicenseKeyError, type LicenseState } from "./license";
 import { getTrustedLicenseKeys } from "./public-keys";
 
@@ -27,16 +27,6 @@ export class LicenseRequiredError extends ApiClientError {
       403
     );
     this.name = "LicenseRequiredError";
-    this.feature = feature;
-  }
-}
-
-/** The feature does not ship in this release (coming soon): nothing can set it up, whatever the license. */
-export class FeatureUnavailableError extends ApiClientError {
-  readonly feature: Feature;
-  constructor(feature: Feature) {
-    super(`${FEATURE_INFO[feature].label} is coming soon: it cannot be set up in this release`, 403);
-    this.name = "FeatureUnavailableError";
     this.feature = feature;
   }
 }
@@ -89,18 +79,13 @@ export async function removeLicenseKey(): Promise<void> {
   await clearSetting(LICENSE_SETTING_KEY);
 }
 
-/** The feature ships in this release and the license lets administrators set it up or change it. */
+/** The license lets administrators set the feature up or change it. */
 export async function isFeatureConfigurable(feature: Feature, now: Date = new Date()): Promise<boolean> {
-  return isFeatureAvailable(feature) && canConfigure(await getLicenseState(now), feature);
+  return canConfigure(await getLicenseState(now), feature);
 }
 
-/**
- * Throws a 403 client error unless the license lets administrators change
- * `feature`: FeatureUnavailableError while the feature is coming soon,
- * LicenseRequiredError otherwise.
- */
+/** Throws LicenseRequiredError (a 403 client error) unless the license lets administrators change `feature`. */
 export async function requireFeature(feature: Feature, now: Date = new Date()): Promise<void> {
-  if (!isFeatureAvailable(feature)) throw new FeatureUnavailableError(feature);
   if (!(await isFeatureConfigurable(feature, now))) {
     throw new LicenseRequiredError(feature);
   }

@@ -395,7 +395,7 @@ describe('instance sync and fleet revisions', () => {
 
 describe('feature, permission and API documentation', () => {
   it('ships high_availability in the Enterprise edition and says what it includes', () => {
-    expect(FEATURE_INFO.high_availability).toMatchObject({ edition: 'enterprise', available: true });
+    expect(FEATURE_INFO.high_availability).toMatchObject({ edition: 'enterprise' });
     expect(FEATURE_INFO.high_availability.description).toMatch(/Shared certificate storage for Caddy nodes/);
     expect(FEATURE_INFO.high_availability.description).toMatch(/A dashboard cluster: one leader and warm standbys/);
     expect(FEATURE_INFO.high_availability.description).toMatch(/PostgreSQL replicas: several dashboard containers on one PostgreSQL database/);

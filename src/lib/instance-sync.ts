@@ -46,8 +46,6 @@ import {
 import { refreshBranding } from "@/ee/white-label/store";
 import { WHITE_LABEL_SETTING_KEY } from "@/ee/white-label/types";
 import { encryptCertificateStorageSecrets } from "@/ee/high-availability/settings";
-import { readVirtualPatchSyncValue } from "@/ee/rule-feed/store";
-import { VIRTUAL_PATCHES_SYNC_KEY } from "@/ee/rule-feed/types";
 import { buildReplicaSection } from "@/ee/monetization/replica-sync";
 import { parseReplicaSection, REPLICA_SETTING_KEY } from "@/ee/monetization/replica-index";
 import {
@@ -103,13 +101,6 @@ export type SyncSettings = {
    * older slaves ignore it and keep local storage.
    */
   certificate_storage?: unknown | null;
-  /**
-   * The virtual patches the master turned on (ee/rule-feed), with their
-   * rules, which the slave validates and renders again for its own WAF.
-   * Always the master's current patches, also when a stored revision is
-   * promoted. Optional for older masters; older slaves ignore it.
-   */
-  virtual_patches?: unknown | null;
   /**
    * API monetization on replicas (ee/monetization/replica-index.ts): the
    * gate's index without balances and the monetized proxy hosts, sent while
@@ -702,7 +693,7 @@ function openSealedSyncPayload(payload: SyncPayload, fresh: boolean): SyncPayloa
 
 /** The stored configuration a payload is built from: settings as stored and table rows. */
 type SyncSource = {
-  settings: Record<(typeof SYNC_SETTING_ORDER)[number] | (typeof LIVE_SYNC_SETTINGS)[number] | typeof VIRTUAL_PATCHES_SYNC_KEY, unknown>;
+  settings: Record<(typeof SYNC_SETTING_ORDER)[number] | (typeof LIVE_SYNC_SETTINGS)[number], unknown>;
   certificates: Array<typeof certificates.$inferSelect>;
   caCertificates: Array<typeof caCertificates.$inferSelect>;
   issuedClientCertificates: Array<typeof issuedClientCertificates.$inferSelect>;
@@ -774,8 +765,6 @@ async function readLiveSyncSource(): Promise<SyncSource> {
     rate_limit: await getSetting("rate_limit"),
     certificate_storage: await getSetting("certificate_storage"),
     white_label: await getSetting(WHITE_LABEL_SETTING_KEY),
-    // Not stored as a setting: the patches that are on, read from the rule feed's table.
-    [VIRTUAL_PATCHES_SYNC_KEY]: await readVirtualPatchSyncValue(),
   };
   return {
     settings,
@@ -813,8 +802,6 @@ async function syncSourceFromContent(content: ConfigContent): Promise<SyncSource
     settings: {
       ...Object.fromEntries(SYNC_SETTING_ORDER.map((key) => [key, content.settings[key] ?? null])),
       ...Object.fromEntries(await Promise.all(LIVE_SYNC_SETTINGS.map(async (key) => [key, await getSetting(key)] as const))),
-      // Security patches are not configuration: a promoted revision carries the current ones.
-      [VIRTUAL_PATCHES_SYNC_KEY]: await readVirtualPatchSyncValue(),
     } as SyncSource["settings"],
     certificates: rows(certificates, content.tables.certificates),
     caCertificates: rows(caCertificates, content.tables.caCertificates),
@@ -1661,8 +1648,6 @@ export async function applySyncPayload(received: SyncPayload): Promise<AppliedSy
     ["rate_limit", payload.settings.rate_limit ?? null],
     ["certificate_storage", payload.settings.certificate_storage ?? null],
     [WHITE_LABEL_SETTING_KEY, payload.settings.white_label ?? null],
-    // Validated and rendered again when the WAF configuration is built (ee/rule-feed/store.ts).
-    [VIRTUAL_PATCHES_SYNC_KEY, payload.settings.virtual_patches ?? null],
     // API monetization on replicas (validated with the payload).
     [REPLICA_SETTING_KEY, payload.settings.monetization_replica ?? null],
   ];

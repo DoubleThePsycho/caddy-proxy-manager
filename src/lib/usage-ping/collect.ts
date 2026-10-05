@@ -7,7 +7,7 @@
  * A check that fails (a table that cannot be read, a setting that does not
  * parse) reports the feature as not in use rather than failing the ping.
  */
-import { count, eq, ne } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";
 import {
   accessReviewCampaigns,
@@ -27,7 +27,6 @@ import {
   proxyHosts,
   samlProviders,
   users,
-  virtualPatches,
 } from "@/src/lib/db/schema";
 import { APP_VERSION } from "@/src/lib/app-version";
 import { isAnalyticsEnabled } from "@/src/lib/clickhouse/client";
@@ -45,11 +44,9 @@ import { getAuditRetention } from "@/ee/audit/retention";
 import { getBranding } from "@/ee/white-label/store";
 import { parseStoredCertificateStorage } from "@/ee/high-availability/settings";
 import { CERTIFICATE_STORAGE_SETTING_KEY } from "@/ee/high-availability/types";
-import { readVirtualPatchingSettings } from "@/ee/rule-feed/store";
 import {
   COMMUNITY_FEATURES,
   PAID_FEATURES,
-  type FeatureField,
   type PaidFeatureField,
   type UsagePingEdition,
   type UsagePingFacts,
@@ -112,9 +109,6 @@ const PAID_FEATURE_CHECKS: Record<PaidFeatureField, Check> = {
     hasRow(
       appDb.select({ id: monetizationHosts.proxyHostId }).from(monetizationHosts).where(eq(monetizationHosts.enabled, true)).limit(1)
     ),
-  virtual_patching: async () =>
-    (await readVirtualPatchingSettings()).subscribed ||
-    (await hasRow(appDb.select({ id: virtualPatches.id }).from(virtualPatches).where(ne(virtualPatches.mode, "off")).limit(1))),
 };
 
 /**
@@ -189,7 +183,7 @@ export async function collectUsagePingFacts(role: UsagePingRole): Promise<UsageP
       // The dashboard's own node is not a replica.
       replicas: role === "master" ? Math.max(0, managedNodes - 1) : 0,
     },
-    features: { ...community, ...paid } satisfies Record<FeatureField, boolean>,
+    features: { ...community, ...paid } satisfies UsagePingFacts["features"],
     arch: process.arch,
   };
 }

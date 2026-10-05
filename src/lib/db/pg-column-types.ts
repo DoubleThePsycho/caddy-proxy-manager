@@ -181,7 +181,6 @@ export const PG_INTEGER_COLUMNS: Readonly<Record<string, Readonly<Record<string,
   compliance_restore_tests: { id: "int4", backupDestinationId: "int4", recordedBy: "int4" },
   analytics_questions: { id: "int4", userId: "int4", organizationId: "int4" },
   // Any safe integer the feed publishes (ee/rule-feed/feed.ts).
-  virtual_patches: { feedSequence: "int8" },
   // Totals of a usage epoch, which lasts as long as the shared counters do.
   monetization_shared_cursors: {
     consumerId: "int4",

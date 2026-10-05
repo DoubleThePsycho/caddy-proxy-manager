@@ -5,7 +5,6 @@
 import type { AnalyticsStatus } from "@/src/lib/analytics/run";
 import type { SecurityEvent, SecurityHost, SecurityPeak, SecurityRule, SecuritySource } from "@/src/lib/analytics/security";
 import type { WafTuningSuggestionView } from "@/ee/ai/types";
-import type { VirtualPatchRuleRef } from "@/ee/rule-feed/types";
 import type { WafExclusionHostOption } from "../waf/WafExclusionDialog";
 import type { SecurityQuery, SecuritySourceKey } from "./security-view";
 
@@ -77,8 +76,6 @@ export type SecurityPageData = {
   exclusionHosts: WafExclusionHostOption[];
   /** The proxy host serving each WAF event's host name on this page, when one does. */
   eventHostIds: Record<string, number>;
-  /** The virtual patch (CVE ids and title) of each patch rule id on this page (ee/rule-feed). */
-  virtualPatches: Record<number, VirtualPatchRuleRef>;
   /** Some host has a rate limit rule, or something was rate limited. */
   rateLimitInUse: boolean;
   permissions: {

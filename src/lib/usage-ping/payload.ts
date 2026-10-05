@@ -58,11 +58,17 @@ export const PAID_FEATURES = [
   "multi_tenancy",
   "white_label",
   "api_monetization",
-  "virtual_patching",
 ] as const satisfies readonly Feature[];
 export type PaidFeatureField = (typeof PAID_FEATURES)[number];
 
-export const FEATURE_FIELDS = [...COMMUNITY_FEATURES, ...PAID_FEATURES] as const;
+/**
+ * Features that were withdrawn: schema 1 of the receiving service requires
+ * their fields, so they are always sent as false until the next schema.
+ */
+export const WITHDRAWN_FEATURES = ["virtual_patching"] as const;
+export type WithdrawnFeatureField = (typeof WITHDRAWN_FEATURES)[number];
+
+export const FEATURE_FIELDS = [...COMMUNITY_FEATURES, ...PAID_FEATURES, ...WITHDRAWN_FEATURES] as const;
 export type FeatureField = (typeof FEATURE_FIELDS)[number];
 
 /** "community" without a valid license; otherwise the licensed edition's name only. */
@@ -102,7 +108,7 @@ export type UsagePingFacts = {
   edition: UsagePingEdition;
   role: UsagePingRole;
   counts: Record<CountField, number>;
-  features: Record<FeatureField, boolean>;
+  features: Record<Exclude<FeatureField, WithdrawnFeatureField>, boolean>;
   arch: string;
 };
 
@@ -143,7 +149,13 @@ export function buildUsagePingPayload(installId: string, facts: UsagePingFacts):
       users: bucketCount(facts.counts.users),
       replicas: facts.role === "master" ? bucketCount(facts.counts.replicas) : "0",
     },
-    features: Object.fromEntries(FEATURE_FIELDS.map((field) => [field, facts.features[field] === true])) as Record<
+    features: Object.fromEntries(
+      FEATURE_FIELDS.map((field) => [
+        field,
+        !(WITHDRAWN_FEATURES as readonly string[]).includes(field) &&
+          (facts.features as Partial<Record<FeatureField, boolean>>)[field] === true,
+      ])
+    ) as Record<
       FeatureField,
       boolean
     >,

@@ -489,24 +489,6 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
     },
   },
 
-  // Virtual patching (ee/rule-feed): the daily fetch of a subscribed rule
-  // feed, on every node that is not a sync replica (replicas get the
-  // patches from their master). A subscription that was set up keeps
-  // fetching whatever the license state. Not started while virtual
-  // patching is coming soon.
-  {
-    name: "rule feed scheduler",
-    skipInTests: true,
-    start: async () => {
-      const { startRuleFeedScheduler } = await import("../ee/rule-feed/scheduler");
-      if (startRuleFeedScheduler()) console.log("Rule feed scheduler started");
-    },
-    stop: async () => {
-      const { stopRuleFeedScheduler } = await import("../ee/rule-feed/scheduler");
-      stopRuleFeedScheduler();
-    },
-  },
-
   // Daily security digest (ee/ai): checked every minute, sent once a day
   // from the node where it is configured (not synced to slaves). A digest
   // that was set up keeps being sent whatever the license state.

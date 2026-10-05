@@ -53,7 +53,8 @@ describe('verifyLicenseKey', () => {
     ['unknown edition', { edition: 'platinum' }],
     ['zero nodes', { nodes: 0 }],
     ['fractional nodes', { nodes: 1.5 }],
-    ['unknown feature', { features: ['everything'] }],
+    ['a feature that is not text', { features: [42] }],
+    ['features that are not a list', { features: 'fleet' }],
     ['expiry before issue', { exp: '2026-01-01T00:00:00.000Z' }],
     ['unparseable date', { exp: 'next year' }],
     ['empty customer', { customer: '  ' }],
@@ -98,6 +99,13 @@ describe('evaluateLicense', () => {
   it('grants the edition features plus any extra features', () => {
     const token = signLicense(signer, licensePayload(signer, { edition: 'homelab', features: ['approvals'] }));
     const state = evaluateLicense(token, signer.keys, NOW);
+    expect(state.features.sort()).toEqual([...EDITION_FEATURES.homelab, 'approvals'].sort());
+  });
+
+  it('ignores a feature this release does not know, newer or withdrawn, and keeps the rest of the key', () => {
+    const token = signLicense(signer, licensePayload(signer, { edition: 'homelab', features: ['approvals', 'virtual_patching', 'everything'] }));
+    const state = evaluateLicense(token, signer.keys, NOW);
+    expect(state.status).toBe('active');
     expect(state.features.sort()).toEqual([...EDITION_FEATURES.homelab, 'approvals'].sort());
   });
 });

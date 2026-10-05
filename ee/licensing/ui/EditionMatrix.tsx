@@ -37,8 +37,6 @@ function InstallCell({ row, license }: { row: FeatureRow; license: LicenseView }
           Included, nothing to set up
         </span>
       );
-    case "soon":
-      return <span className="text-muted-foreground">Coming soon</span>;
     default:
       return (
         <span className="inline-flex items-center gap-2 text-muted-foreground">

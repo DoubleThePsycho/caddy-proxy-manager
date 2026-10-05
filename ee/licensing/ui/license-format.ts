@@ -51,7 +51,7 @@ export function releaseLine(version: string): { version: string; line: string | 
 }
 
 /** How a feature stands on this install, for the "On this install" column and its filters. */
-export type InstallStatus = "use" | "idle" | "included" | "out" | "soon";
+export type InstallStatus = "use" | "idle" | "included" | "out";
 
 export type FeatureRow = LicenseFeatureView & {
   install: InstallStatus;
@@ -68,7 +68,6 @@ export type FeatureRow = LicenseFeatureView & {
 export function featureRows(license: LicenseView, usage: Partial<Record<Feature, FeatureUsage>>): FeatureRow[] {
   return license.features.map((feature) => {
     const used = usage[feature.id]?.inUse;
-    if (!feature.available) return { ...feature, install: "soon", detail: null };
     if (used === true) {
       const notes = [usage[feature.id]?.detail ?? null, feature.configurable ? null : "read-only"].filter(Boolean);
       return { ...feature, install: "use", detail: notes.length > 0 ? notes.join(", ") : null };

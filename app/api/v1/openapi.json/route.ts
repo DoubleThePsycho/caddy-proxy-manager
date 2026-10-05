@@ -32,11 +32,6 @@ import { SEARCH_OPENAPI_PATHS, SEARCH_OPENAPI_SCHEMAS, SEARCH_OPENAPI_TAG } from
 import { ANALYTICS_OPENAPI_PATHS, ANALYTICS_OPENAPI_SCHEMAS, ANALYTICS_OPENAPI_TAG } from "@/src/lib/analytics/openapi";
 import { QUESTIONS_OPENAPI_PATHS, QUESTIONS_OPENAPI_SCHEMAS } from "@/ee/ai/questions/openapi";
 import { WAF_OPENAPI_PATHS, WAF_OPENAPI_SCHEMAS, WAF_OPENAPI_TAG, WAF_TUNING_OPENAPI_PROPERTIES } from "@/src/lib/waf-openapi";
-import {
-  VIRTUAL_PATCHING_OPENAPI_PATHS,
-  VIRTUAL_PATCHING_OPENAPI_SCHEMAS,
-  VIRTUAL_PATCHING_OPENAPI_TAG,
-} from "@/ee/rule-feed/openapi";
 import { ACCESS_LISTS_OPENAPI_PATHS, ACCESS_LISTS_OPENAPI_SCHEMAS, ACCESS_LISTS_OPENAPI_TAG } from "@/src/lib/access-lists-openapi";
 import { CERTIFICATE_OVERVIEW_OPENAPI_PATHS, CERTIFICATE_OVERVIEW_OPENAPI_SCHEMAS } from "@/src/lib/certificate-overview-openapi";
 import { PROXY_HOST_HEALTH_OPENAPI_PATHS, PROXY_HOST_HEALTH_OPENAPI_SCHEMAS } from "@/src/lib/proxy-host-health-openapi";
@@ -92,7 +87,6 @@ const spec = {
     ACCESS_LISTS_OPENAPI_TAG,
     { name: "Settings", description: "Application settings" },
     WAF_OPENAPI_TAG,
-    VIRTUAL_PATCHING_OPENAPI_TAG,
     USAGE_PING_OPENAPI_TAG,
     SEARCH_OPENAPI_TAG,
     { name: "Instances", description: "Multi-instance management" },
@@ -162,8 +156,6 @@ const spec = {
     ...FLEET_OPENAPI_PATHS,
     // ── WAF: exclusions, per-host modes, events ────────────────────
     ...WAF_OPENAPI_PATHS,
-    // ── Virtual patching: rule feed and patches (ee) ────────────────
-    ...VIRTUAL_PATCHING_OPENAPI_PATHS,
     // ── Usage ping ──────────────────────────────────────────────────
     ...USAGE_PING_OPENAPI_PATHS,
     ...SEARCH_OPENAPI_PATHS,
@@ -3386,7 +3378,6 @@ const spec = {
       ...ANALYTICS_OPENAPI_SCHEMAS,
       ...QUESTIONS_OPENAPI_SCHEMAS,
       ...WAF_OPENAPI_SCHEMAS,
-      ...VIRTUAL_PATCHING_OPENAPI_SCHEMAS,
       ...CERTIFICATE_OVERVIEW_OPENAPI_SCHEMAS,
       ...PROXY_HOST_HEALTH_OPENAPI_SCHEMAS,
       ...PROXY_HOST_PREVIEW_OPENAPI_SCHEMAS,
@@ -4579,7 +4570,6 @@ const spec = {
                 description: { type: "string" },
                 edition: { type: "string" },
                 editionLabel: { type: "string" },
-                available: { type: "boolean", description: "Shipped in this release" },
                 included: { type: "boolean", description: "Granted by the installed license" },
                 configurable: { type: "boolean", description: "Can be set up or changed now" },
               },

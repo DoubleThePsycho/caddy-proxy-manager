@@ -388,7 +388,6 @@ const DOCS: readonly { id: string; title: string; subtitle: string; keywords: re
   { id: "multi-tenancy", title: "Multi-tenancy", subtitle: "Client organisations and their limits", keywords: ["organisations", "organizations", "tenants", "msp"], path: "ee/docs/multi-tenancy.md" },
   { id: "white-label", title: "White-label branding", subtitle: "Product name, logos and colours", keywords: ["branding", "white label", "logo"], path: "ee/docs/white-label.md" },
   { id: "scheduled-backups", title: "Scheduled backups", subtitle: "Encrypted backups to S3-compatible storage", keywords: ["backup", "s3", "restore"], path: "ee/docs/scheduled-backups.md" },
-  { id: "virtual-patching", title: "Virtual patching", subtitle: "Coming soon: WAF rules for new CVEs from a signed feed", keywords: ["cve", "virtual patch", "rule feed", "waf"], path: "ee/docs/virtual-patching.md" },
   { id: "audit-streaming", title: "Audit streaming", subtitle: "Send the audit log to a SIEM", keywords: ["siem", "syslog", "audit", "retention"], path: "ee/docs/audit-streaming.md" },
 ];
 

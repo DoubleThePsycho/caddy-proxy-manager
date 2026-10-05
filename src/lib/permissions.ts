@@ -225,14 +225,6 @@ export const PERMISSION_AREAS = {
     instanceWide: true,
     paid: true,
   },
-  virtual_patches: {
-    label: "Virtual patches",
-    description:
-      "The rule feed subscription (feed URL, daily fetch, automatic blocking), fetching and importing feeds, and turning each virtual patch off, to detection or to blocking.",
-    actions: ["read", "write"],
-    instanceWide: true,
-    paid: true,
-  },
   usage_reports: {
     label: "Usage reports",
     description:

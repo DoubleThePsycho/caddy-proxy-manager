@@ -577,7 +577,6 @@ export default function SecurityClient({ data }: { data: SecurityPageData }) {
               blockedIps: blocked,
               ruleEvents,
               eventHostIds: data.eventHostIds,
-              virtualPatches: data.virtualPatches,
               onBlock: setBlockTarget,
               onAddExclusion: openExclusion,
             }}

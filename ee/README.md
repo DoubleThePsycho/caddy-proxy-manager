@@ -48,7 +48,6 @@ Every paid feature, the `ee/` module that implements it and the files in `app/` 
 | License keys (no feature: the key itself) | all | `licensing/` | `(dashboard)/license/`, `api/v1/license/` |
 | API monetization (`api_monetization`) | Enterprise | `monetization/` | `(dashboard)/api-monetization/`, `api-portal/`, `api/monetization/`, `api/v1/monetization/` |
 | Multi-tenancy (`multi_tenancy`) | MSP | `multi-tenancy/` | `(dashboard)/organizations/`, `(dashboard)/usage/`, `api/v1/organizations/`, `api/v1/usage-reports/` |
-| Virtual patching (`virtual_patching`, coming soon) | Enterprise | `rule-feed/` | `api/v1/waf/rule-feed/`, `api/v1/waf/virtual-patches/` |
 | SAML single sign-on (`sso_saml`) | Business | `saml/` | `(dashboard)/saml/`, `api/v1/saml-providers/` |
 | SCIM provisioning (`scim`) | Enterprise | `scim/` | `(dashboard)/scim/`, `api/v1/scim/`, `scim/` (SCIM 2.0 at `/scim/v2`) |
 | Enforced SSO (`sso_enforce`) | Business | `sso/` | `(dashboard)/sso/`, `api/v1/sso/` |
@@ -76,8 +75,7 @@ Free pages that show a paid section import its component from `ee/`; the page it
 | Dashboard layout | Access review reminder (`access-reviews/ui/AccessReviewBanner.tsx`), organization switcher (`multi-tenancy/ui/OrganizationSwitcher.tsx`), branding (`white-label/ui/`) |
 | Audit log | Export dialog and hash chain check (`audit/ui/AuditLogTools.tsx`, `audit/ui/actions.ts`), streaming strip (`audit/ui/StreamingStrip.tsx`) |
 | Analytics | Questions to the AI analyst (`ai/questions/ui/AskPanel.tsx`) |
-| Security events | WAF tuning suggestions (`ai/ui/TuningSuggestions.tsx`), virtual patch notes (`rule-feed/ui/VirtualPatchNote.tsx`) |
-| WAF | Virtual patches (`rule-feed/ui/VirtualPatchesSection.tsx`) |
+| Security events | WAF tuning suggestions (`ai/ui/TuningSuggestions.tsx`) |
 | Settings | Certificate storage, cluster, shared state and PostgreSQL replicas (`high-availability/ui/`), pull replicas (`fleet/ui/PullReplicasPanel.tsx`, `fleet/ui/PullAgentCard.tsx`), backups and branding summaries (`backups/ui/BackupsSummaryGroup.tsx`, `white-label/ui/BrandingSummaryGroup.tsx`) |
 | Users and groups | Roles tab (`custom-roles/ui/RolesTabSection.tsx`, `custom-roles/ui/RolesTab.tsx`) |
 | Proxy hosts and L4 hosts | Change approval notices (`approvals/ui/ProtectedChangeNotice.tsx`) |

@@ -57,7 +57,7 @@ describe('OpenAPI: SAML providers', () => {
   });
 
   it('ships the feature with administrator-level management in the sso area', () => {
-    expect(FEATURE_INFO.sso_saml).toMatchObject({ available: true, edition: 'business' });
+    expect(FEATURE_INFO.sso_saml).toMatchObject({ edition: 'business' });
     expect(PERMISSION_AREAS.sso.actions).toEqual(['read', 'write']);
     expect(ADMIN_LEVEL_PERMISSIONS).toContain('sso:write');
     expect(NAV_PAGES.find((page) => page.href === '/saml')?.permission).toBe('sso:read');

@@ -7,8 +7,6 @@ import { cn } from "@/lib/utils";
 import { formatCount } from "@/components/ui/chart-format";
 import type { SecurityEvent } from "@/src/lib/analytics/security";
 import type { WafEventExplanation, WafExclusionSuggestionView } from "@/src/lib/waf-event-explain";
-import type { VirtualPatchRuleRef } from "@/ee/rule-feed/types";
-import { VirtualPatchNote } from "@/ee/rule-feed/ui/VirtualPatchNote";
 import { ruleIdError } from "@/src/lib/waf-exclusions";
 import { explainWafEventAction } from "../waf/actions";
 import type { WafExclusionDraft } from "../waf/WafExclusionDialog";
@@ -29,8 +27,6 @@ export type EventDetailContext = {
   ruleEvents: ReadonlyMap<number, number>;
   /** The proxy host serving each WAF event's host name, when one does. */
   eventHostIds: Readonly<Record<string, number>>;
-  /** The virtual patch of each patch rule id on the page (ee/rule-feed). */
-  virtualPatches: Readonly<Record<number, VirtualPatchRuleRef>>;
   onBlock: (target: BlockTarget) => void;
   onAddExclusion: (draft: WafExclusionDraft) => void;
 };
@@ -162,13 +158,6 @@ function BlockChoice({ event, context }: { event: SecurityEvent; context: EventD
   );
 }
 
-/** The virtual patch whose rule an event names, if any. */
-function virtualPatchOf(event: SecurityEvent, context: EventDetailContext): VirtualPatchRuleRef | null {
-  if (event.kind !== "waf" || event.ruleId === null) return null;
-  // Keyed by rule id; only an own entry counts.
-  return Object.hasOwn(context.virtualPatches, String(event.ruleId)) ? context.virtualPatches[event.ruleId] : null;
-}
-
 type LoadState = { status: "loading" } | { status: "error"; error: string } | { status: "ready"; explanation: WafEventExplanation };
 
 /** "Why it was blocked" for a WAF event: the explain API's score breakdown, matched data and the deciding rule. */
@@ -215,7 +204,6 @@ function WafEventDetail({ event, context, onClose }: { event: SecurityEvent; con
           reason: event.eventId ? `Suggested from WAF event ${event.eventId}` : "Suggested from a WAF event",
         }
       : null;
-  const patch = virtualPatchOf(event, context);
   const suggestions = explanation?.suggestions ?? [];
   const open = suggestions.filter((suggestion) => suggestion.existingExclusionId === null);
   const allExcluded = suggestions.length > 0 && open.length === 0;
@@ -226,8 +214,6 @@ function WafEventDetail({ event, context, onClose }: { event: SecurityEvent; con
   else if (allExcluded) falsePositiveDetail = "The suggested exclusions already exist.";
   else if (open.length === 1) falsePositiveDetail = open[0].description;
   else if (open.length > 1) falsePositiveDetail = `Exclude the ${open.length} rules that added to the score, each as narrowly as the record allows.`;
-  else if (patch && (!explanation || explanation.decidingRule?.kind === "custom"))
-    falsePositiveDetail = "A virtual patch decided this; set the patch to detect or off on the WAF page, or add an exclusion for its rule.";
   else if (explanation)
     falsePositiveDetail =
       explanation.decidingRule?.kind === "custom"
@@ -258,7 +244,6 @@ function WafEventDetail({ event, context, onClose }: { event: SecurityEvent; con
     <div className="grid gap-4 rounded-xl border border-line2 bg-panel p-4 [grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr))]">
       <div className="flex min-w-0 flex-col gap-2.5">
         <Heading>{blocked ? "Why it was blocked" : "Why it was logged"}</Heading>
-        {patch && <VirtualPatchNote patch={patch} />}
         {state.status === "loading" && (
           <p role="status" className="m-0 text-[13px] text-muted-foreground">
             Reading the audit record…

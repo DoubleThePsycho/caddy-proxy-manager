@@ -10,7 +10,7 @@
  * Read-only and best effort: a check that fails reports the feature as not
  * in use, and a detail that fails is left out.
  */
-import { count, eq, ne } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";
 import {
   alertRuleStates,
@@ -20,7 +20,6 @@ import {
   monetizationHosts,
   organizations,
   samlProviders,
-  virtualPatches,
 } from "@/src/lib/db/schema";
 import { can, type Access, type Permission } from "@/src/lib/permissions";
 import { readPaidFeaturesInUse } from "@/src/lib/usage-ping/collect";
@@ -75,13 +74,6 @@ const DETAILS: Partial<Record<Feature, Detail>> = {
   multi_tenancy: {
     permission: "organizations:read",
     read: async () => plural(await countOf(appDb.select({ value: count() }).from(organizations)), "organisation", "organisations"),
-  },
-  virtual_patching: {
-    permission: "virtual_patches:read",
-    read: async () => {
-      const on = await countOf(appDb.select({ value: count() }).from(virtualPatches).where(ne(virtualPatches.mode, "off")));
-      return on > 0 ? `${plural(on, "patch", "patches")} on` : null;
-    },
   },
   api_monetization: {
     permission: "monetization:read",

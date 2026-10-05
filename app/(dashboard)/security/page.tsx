@@ -33,8 +33,6 @@ import { isProviderLevel } from "@/ee/multi-tenancy/scope";
 import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { getAiSettingsView } from "@/ee/ai/settings";
 import { listOpenSuggestions } from "@/ee/ai/waf-tuning";
-import { findVirtualPatchRules } from "@/ee/rule-feed/store";
-import { isVirtualPatchRuleId } from "@/src/lib/waf-exclusions";
 import SecurityClient from "./SecurityClient";
 import type { SecurityPageData, SecurityRange } from "./security-types";
 import { SECURITY_SOURCES, isSecuritySource, readFilters, ruleCategory, type SecurityQuery, type SecuritySourceKey } from "./security-view";
@@ -164,13 +162,6 @@ export default async function SecurityEventsPage({ searchParams }: { searchParam
   }
 
   const eventList = events.events.slice(0, PER_PAGE);
-  // Events of virtual patch rules name the CVE and link to the patch. Read
-  // without a license, like the WAF events themselves.
-  const virtualPatches = await findVirtualPatchRules(
-    [...eventList.map((event) => event.ruleId), ...rules.rules.map((rule) => rule.ruleId)].filter(
-      (id): id is number => typeof id === "number" && isVirtualPatchRuleId(id)
-    )
-  ).catch(() => ({}));
   const shownIps = [...sources.sources.map((source) => source.ip), ...eventList.map((event) => event.ip)];
   const custom = !rangeError && range.preset === "custom";
 
@@ -219,7 +210,7 @@ export default async function SecurityEventsPage({ searchParams }: { searchParam
       events: rules.totals.events,
       list: rules.rules.map((rule) => ({
         ...rule,
-        category: ruleCategory(rule.ruleId) ?? (isVirtualPatchRuleId(rule.ruleId) ? "Virtual patch" : null),
+        category: ruleCategory(rule.ruleId),
         // Matched on one host only: the exclusion dialog opens limited to it.
         exclusionHostId: rule.hostCount === 1 && rule.hosts[0] ? proxyHostForName(rule.hosts[0].host, allDomains) : null,
       })),
@@ -241,7 +232,6 @@ export default async function SecurityEventsPage({ searchParams }: { searchParam
         return id === null ? [] : [[name, id] as const];
       })
     ),
-    virtualPatches,
     rateLimitInUse:
       bySource.rate_limit > 0 || proxyHosts.some((host) => host.enabled && resolveEffectiveRateLimitRules(rateLimit, host.rateLimit).length > 0),
     permissions: {

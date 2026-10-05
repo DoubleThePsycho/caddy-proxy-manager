@@ -24,6 +24,5 @@ How licensing works: [../README.md](../README.md). Buying, trials, installing ke
 | Compliance reports (access review, change log, certificate inventory, protection coverage) and NIS2 incident notification drafts | Enterprise | [compliance-reports.md](compliance-reports.md) |
 | SCIM 2.0 provisioning (Microsoft Entra ID, Okta) | Enterprise | [scim.md](scim.md) |
 | Access reviews: periodic access recertification with records | Enterprise | [access-reviews.md](access-reviews.md) |
-| Virtual patching: WAF rules for new CVEs from a signed feed ([publishing the feed](rule-feed-publishing.md)) | Enterprise, coming soon | [virtual-patching.md](virtual-patching.md) |
 
 Every feature follows the same rule: a license is needed to set it up, enable it or change it; deleting or disabling it never needs one, and nothing that is already configured stops working when a license lapses.

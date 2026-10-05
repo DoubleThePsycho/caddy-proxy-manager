@@ -187,10 +187,6 @@ export function SecurityEvents({
                 const detailId = `${idPrefix}-event-${index}`;
                 const toggle = () => setOpenKey(open ? null : key);
                 const reason = eventReason(event);
-                const patch =
-                  event.kind === "waf" && event.ruleId !== null && Object.hasOwn(context.virtualPatches, String(event.ruleId))
-                    ? context.virtualPatches[event.ruleId]
-                    : null;
                 return (
                   <Fragment key={key}>
                     <tr
@@ -225,7 +221,6 @@ export function SecurityEvents({
                       <td className="max-w-[320px] px-2.5 py-2.5">
                         <span className="block truncate" title={event.kind === "waf" && event.ruleId !== null ? `${event.ruleId} ${reason}` : reason}>
                           {event.kind === "waf" && event.ruleId !== null && <span className="num mr-1.5 text-muted-foreground">{event.ruleId}</span>}
-                          {patch && <span className="mr-1.5 rounded bg-raise px-1.5 text-xs leading-[18px]" title={`Virtual patch for ${patch.cves.join(", ")}`}>Virtual patch</span>}
                           {reason}
                         </span>
                       </td>
