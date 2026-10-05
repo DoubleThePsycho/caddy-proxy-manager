@@ -344,13 +344,16 @@ describe('TopList', () => {
     const none = renderToStaticMarkup(createElement(TopList, { title: 'Hosts', rows }));
     expect(none).not.toContain('<button');
     const both = renderToStaticMarkup(createElement(TopList, { title: 'Countries', dimension: 'Country', rows, onInclude: vi.fn(), onExclude: vi.fn() }));
-    expect(both).toContain('aria-label="Filter: Country is app.example.com"');
+    expect(both).toContain('aria-label="Only: Country is app.example.com"');
     expect(both).toContain('aria-label="Exclude: Country is app.example.com"');
+    // Labelled in words, which the accessible names start with.
+    expect(both).toMatch(/>Only<\/button>/);
+    expect(both).toMatch(/>Exclude<\/button>/);
     // A row with a code filters on the code.
-    expect(both).toContain('aria-label="Filter: Country is IT"');
+    expect(both).toContain('aria-label="Only: Country is IT"');
     const include = renderToStaticMarkup(createElement(TopList, { title: 'Hosts', rows, onInclude: vi.fn() }));
-    expect(include).toContain('aria-label="Filter: Hosts is wiki.example.com"');
-    expect(include).not.toContain('Exclude:');
+    expect(include).toContain('aria-label="Only: Hosts is wiki.example.com"');
+    expect(include).not.toContain('Exclude');
   });
 
   it('says when nothing matches and hides the footer link then', () => {

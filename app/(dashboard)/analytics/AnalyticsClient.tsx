@@ -305,18 +305,46 @@ export default function AnalyticsClient({
 
   const update = (patch: Partial<ViewState>) => navigate({ ...state, viewId: null, ...patch });
 
-  const addFilterTo = (dim: Dimension, op: FilterOp, raw: string) => {
+  /** Adds a filter; returns the state it navigated to, or null when the filter was refused. */
+  const addFilterTo = (dim: Dimension, op: FilterOp, raw: string): ViewState | null => {
     const value = normalizeFilterValue(dim, raw);
     const problem = filterValueError(dim, value);
     if (problem) {
       toast.error(problem);
-      return;
+      return null;
     }
     if (state.filters.length >= MAX_FILTERS) {
       toast.error(`At most ${MAX_FILTERS} filters`);
-      return;
+      return null;
     }
-    update({ filters: addFilter(state.filters, { dim, op, value }) });
+    const next: ViewState = { ...state, viewId: null, filters: addFilter(state.filters, { dim, op, value }) };
+    navigate(next);
+    return next;
+  };
+
+  /**
+   * "Only" and "Exclude" on a top list row: the filter changes the whole page,
+   * so a toast says what is shown now and offers to undo it.
+   */
+  const filterFromList = (dim: Dimension, op: FilterOp, raw: string) => {
+    const before = state;
+    const after = addFilterTo(dim, op, raw);
+    if (!after) return;
+    const added = after.filters[after.filters.length - 1];
+    const what = `${DIMENSION_LABEL[dim]} is ${added.value}`;
+    toast(op === "is" ? `Showing only ${what}` : `Hiding ${what}`, {
+      description: "Every chart and list on the page follows the filters.",
+      duration: 8000,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          const current = parseViewState(new URLSearchParams(window.location.search));
+          // Nothing else changed since: back to exactly the view before. Otherwise only this filter goes.
+          if (serializeViewState(current) === serializeViewState(after)) navigate(before);
+          else navigate({ ...current, viewId: null, filters: current.filters.filter((f) => !(f.dim === added.dim && f.op === added.op && f.value === added.value)) });
+        },
+      },
+    });
   };
 
   const result = data.query.data;
@@ -464,6 +492,11 @@ export default function AnalyticsClient({
         onRemove={(_, index) => update({ filters: state.filters.filter((__, i) => i !== index) })}
         trailing={
           <>
+            {state.filters.length > 0 && (
+              <button type="button" onClick={() => update({ filters: [] })} className="text-[13px] text-brand hover:text-foreground">
+                Clear filters
+              </button>
+            )}
             <LiveStatus live={live && !data.paused} lastUpdated={data.lastUpdated} loading={data.query.loading} />
             <button type="button" onClick={() => setSaveOpen(true)} className="text-[13px] text-brand hover:text-foreground">
               Save view
@@ -528,7 +561,8 @@ export default function AnalyticsClient({
       <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-2">
         <h2 className="m-0 text-base leading-6 font-semibold">Top dimensions</h2>
         <span className="text-[13px] text-soft">
-          Hover a row, then + to filter on it or − to exclude it. Every chart and list on the page follows the filters.
+          Hover a row, then <strong className="font-semibold text-muted-foreground">Only</strong> to show just that value or{" "}
+          <strong className="font-semibold text-muted-foreground">Exclude</strong> to hide it. Every chart and list on the page follows the filters.
         </span>
       </div>
       <div className={data.top.loading && top ? "opacity-70 transition-opacity" : undefined} aria-busy={data.top.loading}>
@@ -538,7 +572,7 @@ export default function AnalyticsClient({
           loading={data.top.loading}
           failed={topFailed}
           listKey={listKey}
-          onFilter={addFilterTo}
+          onFilter={filterFromList}
         />
       </div>
 

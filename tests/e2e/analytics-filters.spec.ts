@@ -1,7 +1,8 @@
 /**
- * Filters on the analytics page: + and − on a top list row add a filter,
- * the filter bar adds one by hand, every filter lives in the URL (the back
- * button undoes it) and the lists follow them.
+ * Filters on the analytics page: Only and Exclude on a top list row add a
+ * filter and offer to undo it, the filter bar adds one by hand and clears
+ * them, every filter lives in the URL (the back button undoes it) and the
+ * lists follow them.
  *
  * Seeds traffic for two hosts straight into ClickHouse, all on one path
  * unique to the run, and opens the page filtered to that path so the hosts
@@ -48,6 +49,10 @@ test.describe('Analytics filters', () => {
     });
 
     try {
+      // On a fresh stack the web container may not have created the table yet.
+      await expect
+        .poll(async () => (await (await ch.query({ query: 'EXISTS TABLE traffic_events', format: 'JSONEachRow' })).json<{ result: number }>())[0]?.result, { timeout: 60_000 })
+        .toBe(1);
       await ch.insert({
         table: 'traffic_events',
         format: 'JSONEachRow',
@@ -60,18 +65,27 @@ test.describe('Analytics filters', () => {
       await expect(hostsPanel(page).getByText(hostA, { exact: true })).toBeVisible({ timeout: 15_000 });
       await expect(hostsPanel(page).getByText(hostB, { exact: true })).toBeVisible();
 
-      // + on a row: only that host is left.
-      await hostsPanel(page).getByRole('button', { name: `Filter: Host is ${hostA}` }).click();
+      // Only on a row: only that host is left, and the toast says so.
+      await hostsPanel(page).getByRole('button', { name: `Only: Host is ${hostA}` }).click();
       await expect(page).toHaveURL(new RegExp(`filter=host%3A${hostA.replace(/\./g, '\\.')}`));
       await expect(page.getByRole('button', { name: `Remove filter: Host is ${hostA}` })).toBeVisible();
+      await expect(page.getByText(`Showing only Host is ${hostA}`)).toBeVisible();
       await expect(hostsPanel(page).getByText(hostB, { exact: true })).not.toBeVisible({ timeout: 15_000 });
 
-      // Back undoes it.
+      // Undo in the toast takes it away again.
+      await page.getByRole('button', { name: 'Undo' }).click();
+      await expect(page.getByRole('button', { name: `Remove filter: Host is ${hostA}` })).not.toBeVisible();
+      await expect(hostsPanel(page).getByText(hostB, { exact: true })).toBeVisible({ timeout: 15_000 });
+
+      // Again; this time the back button undoes it.
+      await hostsPanel(page).getByRole('button', { name: `Only: Host is ${hostA}` }).click();
+      await expect(page.getByRole('button', { name: `Remove filter: Host is ${hostA}` })).toBeVisible();
+
       await page.goBack();
       await expect(page.getByRole('button', { name: `Remove filter: Host is ${hostA}` })).not.toBeVisible();
       await expect(hostsPanel(page).getByText(hostB, { exact: true })).toBeVisible({ timeout: 15_000 });
 
-      // − on a row excludes it; the chip removes it again.
+      // Exclude on a row hides it; the chip removes it again.
       await hostsPanel(page).getByRole('button', { name: `Exclude: Host is ${hostB}` }).click();
       const chip = page.getByRole('button', { name: `Remove filter: Host is not ${hostB}` });
       await expect(chip).toBeVisible();
@@ -94,6 +108,11 @@ test.describe('Analytics filters', () => {
       await page.getByRole('button', { name: 'Add', exact: true }).click();
       await expect(page.getByRole('button', { name: `Remove filter: Host is ${hostB}` })).toBeVisible();
       await expect(hostsPanel(page).getByText(hostA, { exact: true })).not.toBeVisible({ timeout: 15_000 });
+
+      // Clear filters removes every filter, the starting path one included.
+      await bar.getByRole('button', { name: 'Clear filters' }).click();
+      await expect(page.getByRole('button', { name: /^Remove filter:/ })).toHaveCount(0);
+      await expect(bar.getByRole('button', { name: 'Clear filters' })).not.toBeVisible();
     } finally {
       await ch
         .command({

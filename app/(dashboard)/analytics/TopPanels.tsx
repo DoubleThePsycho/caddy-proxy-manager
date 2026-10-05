@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * The top dimensions under the chart: one TopList per dimension with + / −
+ * The top dimensions under the chart: one TopList per dimension with Only / Exclude
  * to add a filter, mitigated-share tags, the status class bar, "View all"
  * (a dialog with up to 100 rows) and, on the countries panel, the world map.
  */

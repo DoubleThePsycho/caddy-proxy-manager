@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCompact, formatPercent } from "./chart-format";
+
+const FILTER_BUTTON =
+  "h-6 cursor-pointer whitespace-nowrap rounded-md border border-line2 bg-panel px-2 text-xs font-medium text-foreground hover:bg-raise";
 
 export type TopListRow = {
   /** Stable React key. */
@@ -55,9 +57,9 @@ export type TopListProps = {
    * the same on every row so the columns line up.
    */
   countWidth?: number | string;
-  /** Shows a + button on hover/focus that filters to the row. */
+  /** Shows an "Only" button on hover/focus that filters to the row. */
   onInclude?: (row: TopListRow) => void;
-  /** Shows a − button on hover/focus that excludes the row. */
+  /** Shows an "Exclude" button on hover/focus that excludes the row. */
   onExclude?: (row: TopListRow) => void;
   /** A share bar above the list (status classes 2xx/3xx/4xx/5xx). */
   segments?: readonly TopListSegment[];
@@ -75,7 +77,8 @@ export type TopListProps = {
 /**
  * A ranked list of one dimension's values, as in the analytics page's top
  * dimensions: each row with a share bar behind it, its count and share of
- * the total, and on hover + / − buttons to filter on it or exclude it.
+ * the total, and on hover "Only" and "Exclude" buttons to filter on it or
+ * exclude it.
  */
 export function TopList({
   title,
@@ -158,11 +161,13 @@ export function TopList({
                     </span>
                   )}
                   {row.href ? (
-                    <Link href={row.href} className={cn(labelClass, "text-foreground hover:text-brand")}>
+                    <Link href={row.href} title={row.label} className={cn(labelClass, "text-foreground hover:text-brand")}>
                       {row.label}
                     </Link>
                   ) : (
-                    <span className={labelClass}>{row.label}</span>
+                    <span title={row.label} className={labelClass}>
+                      {row.label}
+                    </span>
                   )}
                   {row.sub && <span className="truncate text-xs text-soft">{row.sub}</span>}
                   {row.tag && (
@@ -170,33 +175,36 @@ export function TopList({
                       {row.tag}
                     </span>
                   )}
+                  {(onInclude || onExclude) && (
+                    // Over the end of the label while the row is hovered or focused, so they
+                    // take no room from it otherwise (the label's title has it in full); in the
+                    // row on touch screens.
+                    <span className="absolute inset-y-0 right-0 flex items-center gap-1 rounded-md bg-panel2 pl-1.5 opacity-0 shadow-[-10px_0_8px_var(--panel2)] transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:static [@media(hover:none)]:ml-auto [@media(hover:none)]:bg-transparent [@media(hover:none)]:opacity-100">
+                      {onInclude && (
+                        <button
+                          type="button"
+                          aria-label={`Only: ${name} is ${value}`}
+                          title={`Show only: ${name} is ${value}`}
+                          onClick={() => onInclude(row)}
+                          className={FILTER_BUTTON}
+                        >
+                          Only
+                        </button>
+                      )}
+                      {onExclude && (
+                        <button
+                          type="button"
+                          aria-label={`Exclude: ${name} is ${value}`}
+                          title={`Hide: ${name} is ${value}`}
+                          onClick={() => onExclude(row)}
+                          className={FILTER_BUTTON}
+                        >
+                          Exclude
+                        </button>
+                      )}
+                    </span>
+                  )}
                 </span>
-                {(onInclude || onExclude) && (
-                  <span className="relative flex gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
-                    {onInclude && (
-                      <button
-                        type="button"
-                        aria-label={`Filter: ${name} is ${value}`}
-                        title="Filter to this"
-                        onClick={() => onInclude(row)}
-                        className="grid size-6 cursor-pointer place-items-center rounded-md border border-line2 bg-panel text-foreground hover:bg-raise"
-                      >
-                        <Plus aria-hidden="true" className="size-3" strokeWidth={2.6} />
-                      </button>
-                    )}
-                    {onExclude && (
-                      <button
-                        type="button"
-                        aria-label={`Exclude: ${name} is ${value}`}
-                        title="Exclude this"
-                        onClick={() => onExclude(row)}
-                        className="grid size-6 cursor-pointer place-items-center rounded-md border border-line2 bg-panel text-foreground hover:bg-raise"
-                      >
-                        <Minus aria-hidden="true" className="size-3" strokeWidth={2.6} />
-                      </button>
-                    )}
-                  </span>
-                )}
                 <span className="num relative flex-none whitespace-nowrap text-right text-[13px]" style={countColumn}>
                   {formatCount(row.count)}
                 </span>
