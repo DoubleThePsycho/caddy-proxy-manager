@@ -7,7 +7,7 @@ A proxy host sends the traffic for one or more domains to services on your netwo
 **Traffic → Proxy hosts** lists every host you may see (a custom role limited to tags sees the hosts with one of its tags; an organisation user sees their organisation's). Each row shows:
 
 - **Host**: the first domain (a link to the host's page), how many more it serves, its name and its first upstream.
-- **Status**: *No issues* (none of the problems below; it does not check the upstreams, see [Upstream health](#upstream-health)), *Disabled*, *Waiting for approval* (a change to it waits in [change approvals](../ee/docs/change-approvals.md)), or the first thing that needs a look:
+- **Status**: empty while nothing needs a look (it does not check the upstreams, see [Upstream health](#upstream-health)), or *Disabled*, *Waiting for approval* (a change to it waits in [change approvals](../ee/docs/change-approvals.md)), or the first thing that needs a look:
   - a burst of 5xx responses in the last 24 hours ("501 burst at 09:02", or "since" while it lasts),
   - a 5xx share of 5% or more over 24 hours (with at least 20 requests),
   - blocked traffic far above the host's usual,

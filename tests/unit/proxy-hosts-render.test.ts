@@ -129,7 +129,9 @@ describe('proxy hosts list', () => {
     expect(html).toContain('href="/proxy-hosts/1"');
     expect(html).toContain('+ suggest.tv.example.com');
     expect(html).toContain('http://jellyfin:8096');
-    expect(html).toContain('No issues');
+    // A host with nothing to report shows no status at all.
+    expect(html).not.toContain('No issues');
+    expect(html).not.toContain('Healthy');
     expect(html).toContain('501 burst at 09:02');
     expect(html).toContain('Disabled');
     expect(html).toContain('12,147');

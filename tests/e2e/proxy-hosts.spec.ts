@@ -298,8 +298,8 @@ test.describe('Proxy Hosts', () => {
       await expect(page.getByText('http://localhost:9779')).toBeVisible();
       await expect(page.getByText('Health checks are off')).toBeVisible();
       await expect(page.getByRole('heading', { name: 'Changes to this host' })).toBeVisible();
-      // Nothing needs attention: that is all the status says, not that the upstreams were checked.
-      await expect(page.getByText('No issues', { exact: true }).first()).toBeVisible();
+      // Nothing needs attention, so the page shows no status (it never checked the upstreams anyway).
+      await expect(page.getByText(/^(No issues|Healthy)$/)).toHaveCount(0);
 
       // Turn on health checks: the editor opens with passive checks on, as an unsaved change.
       await page.getByRole('link', { name: 'Turn on health checks' }).click();
