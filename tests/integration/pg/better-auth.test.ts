@@ -406,6 +406,9 @@ describe('linking an OAuth identity (generic OAuth)', () => {
     return { b, state: state! };
   }
 
+  /** The verification row holding a sign-in's state: Better Auth stores it as `auth-state:<state>`. */
+  const stateRow = (state: string) => verificationRow(`auth-state:${state}`);
+
   async function callback(b: AuthBrowser, providerId: string, code: string, state: string) {
     const res = await b.get(`/callback/${providerId}?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`);
     return { status: res.status, location: res.location ?? '' };
@@ -427,7 +430,7 @@ describe('linking an OAuth identity (generic OAuth)', () => {
     profiles.set('linked-code', { sub: 'idp-subject-1', id: 'idp-subject-1', email: account.email, email_verified: true, name: 'Linked' });
 
     const { b, state } = await startSignIn('trusted-idp');
-    const stored = await verificationRow(state);
+    const stored = await stateRow(state);
     expect(stored!.expiresAt).toMatch(ISO_TEXT);
     expect(Date.parse(stored!.expiresAt)).toBeGreaterThan(Date.now());
 
@@ -435,7 +438,7 @@ describe('linking an OAuth identity (generic OAuth)', () => {
     expect(res.status).toBe(302);
     expect(res.location).not.toContain('error=');
     expect(b.has('session_token')).toBe(true);
-    expect(await verificationRow(state)).toBeUndefined();
+    expect(await stateRow(state)).toBeUndefined();
 
     const linked = await ops.first(appDb.select().from(schema.accounts).where(and(
       eq(schema.accounts.userId, account.id),
