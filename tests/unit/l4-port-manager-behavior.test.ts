@@ -21,6 +21,10 @@
  * 5. A fresh apply lock at startup waits for the in-progress apply, then
  *    re-applies if the lock never clears.
  * 6. A successful apply writes status "applied".
+ * 7. At startup, a caddy container that already runs with every port of the
+ *    override is not recreated (an update of the sidecar alone must not restart
+ *    caddy, and must not race an image updater that is recreating it); one that
+ *    lacks a port is.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -83,6 +87,38 @@ exit 0
   );
 }
 
+/** A fake `docker` whose caddy container runs and publishes `bindings` (e.g. "1234/tcp 80/tcp"). */
+function writeFakeDockerRunning(bindings: string): void {
+  writeFileSync(
+    join(fakeBinDir, 'docker'),
+    `#!/bin/sh
+echo "$@" >> "${fakeDockerLogPath}"
+if echo "$@" | grep -q -- "--force-recreate caddy"; then
+  sleep 0.2
+  exit 0
+fi
+if echo "$@" | grep -q "compose.project"; then
+  echo "fake-project"
+  exit 0
+fi
+if echo "$@" | grep -q "State.Running"; then
+  echo "true"
+  exit 0
+fi
+if echo "$@" | grep -q "PortBindings"; then
+  echo "${bindings} "
+  exit 0
+fi
+if echo "$@" | grep -q "inspect"; then
+  echo "healthy"
+  exit 0
+fi
+exit 0
+`,
+    { mode: 0o755 },
+  );
+}
+
 function fakeDockerLog(): string[] {
   return readFileSync(fakeDockerLogPath, 'utf-8')
     .split('\n')
@@ -116,6 +152,8 @@ function startSidecar(): ChildProcess {
       POLL_INTERVAL: '1',
       COMPOSE_SKIP_OVERRIDE: '1',
       APPLY_LOCK_MAX_AGE: '2',
+      // The fake docker never reports a running caddy unless a test says so: don't wait for it.
+      CADDY_STARTUP_WAIT: '0',
       PATH: `${fakeBinDir}:${process.env.PATH}`,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -256,5 +294,24 @@ describe('L4 port manager entrypoint behavior (executes the real script)', () =>
     // Long poll window with no trigger change: only the startup apply should run
     await new Promise((r) => setTimeout(r, 3000));
     expect(composeUpInvocations()).toBe(1);
+  });
+  it('does not recreate a running caddy that already publishes every L4 port', { timeout: 20_000 }, async () => {
+    writeFileSync(join(dataDir, 'docker-compose.l4-ports.yml'), 'services:\n  caddy:\n    ports:\n      - "1234:1234"\n      - "5678:5678/udp"\n');
+    writeFakeDockerRunning('80/tcp 1234/tcp 443/tcp 5678/udp');
+    child = startSidecar();
+    captureOutput();
+    await waitUntil(() => readStatus()?.state === 'applied', 10_000);
+    expect(output).toContain('not recreating it');
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(composeUpInvocations()).toBe(0);
+  });
+
+  it('recreates a running caddy that lacks an L4 port of the override', { timeout: 20_000 }, async () => {
+    writeFileSync(join(dataDir, 'docker-compose.l4-ports.yml'), 'services:\n  caddy:\n    ports:\n      - "1234:1234"\n      - "5678:5678/udp"\n');
+    writeFakeDockerRunning('80/tcp 1234/tcp 443/tcp');
+    child = startSidecar();
+    captureOutput();
+    await waitUntil(() => composeUpInvocations() === 1, 10_000);
+    await waitUntil(() => readStatus()?.state === 'applied', 10_000);
   });
 });

@@ -161,8 +161,8 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
         console.log("Caddy configuration applied successfully");
       } catch (error) {
         console.error("Failed to apply Caddy configuration on startup:", error);
-        // Don't throw - Caddy might not be ready yet, or config might be applied later
-        // This ensures proxy hosts work after container restart
+        // Don't throw: Caddy may still be starting (e.g. both updated at once). The Caddy
+        // monitor applies again once Caddy answers (src/lib/caddy-monitor.ts).
       }
     },
   },
@@ -219,13 +219,21 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
     name: "ClickHouse analytics",
     start: async () => {
       const { initClickHouse } = await import("./lib/clickhouse/client");
-      try {
-        await initClickHouse();
-        console.log("ClickHouse analytics initialized");
-      } catch (error) {
-        console.error("Failed to initialize ClickHouse:", error);
-        // Don't throw - analytics is non-critical
-      }
+      // ClickHouse may still be starting (e.g. updated at the same moment): retry in the
+      // background, 5 s after the first failure, doubling up to 5 minutes, until it works.
+      // Never throws: analytics is non-critical.
+      let delay = 5_000;
+      const attempt = async (): Promise<void> => {
+        try {
+          await initClickHouse();
+          console.log("ClickHouse analytics initialized");
+        } catch (error) {
+          console.error(`Failed to initialize ClickHouse (retrying in ${delay / 1000}s):`, error);
+          setTimeout(() => void attempt(), delay).unref?.();
+          delay = Math.min(delay * 2, 300_000);
+        }
+      };
+      await attempt();
     },
   },
 

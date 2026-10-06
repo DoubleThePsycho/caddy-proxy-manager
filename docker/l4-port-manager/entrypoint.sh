@@ -2,9 +2,10 @@
 #
 # L4 Port Manager Sidecar
 #
-# On startup: always applies the current L4 ports override so the caddy
-# container has the correct ports bound (the main compose stack starts caddy
-# without the L4 ports override file).
+# On startup: makes sure the caddy container has the L4 ports bound (the main
+# compose stack starts caddy without the L4 ports override file). Caddy is only
+# recreated when it is not running with every port of the override, so a
+# restart or an image update of this sidecar does not restart caddy as well.
 #
 # During runtime: watches the trigger file for changes and re-applies when
 # the web app signals that port configuration has changed.
@@ -25,6 +26,8 @@
 #   COMPOSE_SKIP_OVERRIDE - If non-empty, skip docker-compose.override.yml (useful in test environments)
 #   COMPOSE_EXTRA_FILE    - If set, include this additional compose file (e.g. a test-specific override)
 #   APPLY_LOCK_MAX_AGE    - Seconds after which an apply lock is considered stale (default: 10)
+#   CADDY_STARTUP_WAIT    - Seconds to wait at startup for a stopped caddy container to come back, e.g.
+#                           while an image updater recreates it, before recreating it here (default: 60)
 
 set -e
 
@@ -89,6 +92,28 @@ detect_project_name() {
 
 APPLY_LOCK="$DATA_DIR/.l4-apply.lock"
 APPLY_LOCK_MAX_AGE="${APPLY_LOCK_MAX_AGE:-10}"
+CADDY_STARTUP_WAIT="${CADDY_STARTUP_WAIT:-60}"
+
+caddy_running() {
+  [ "$(docker inspect --format '{{.State.Running}}' "$(caddy_container)" 2>/dev/null)" = "true" ]
+}
+
+# True when caddy runs and publishes every port of the override file. Port
+# entries are list items like - "7881:7881" or - "7882:7882/udp"; anything this
+# cannot read counts as not bound, so caddy is recreated as before.
+ports_bound() {
+  caddy_running || return 1
+  ENTRIES=$(grep -cE '^[[:space:]]*-[[:space:]]' "$OVERRIDE_FILE" 2>/dev/null || true)
+  WANTED=$(sed -n 's/^[[:space:]]*-[[:space:]]*"\{0,1\}[0-9]\{1,5\}:\([0-9]\{1,5\}\(\/[a-z]\{3\}\)\{0,1\}\)"\{0,1\}[[:space:]]*$/\1/p' "$OVERRIDE_FILE")
+  [ -n "$WANTED" ] || return 1
+  [ "$(echo "$WANTED" | wc -l | tr -d ' ')" = "${ENTRIES:-0}" ] || return 1
+  BOUND=" $(docker inspect --format '{{range $p, $b := .HostConfig.PortBindings}}{{$p}} {{end}}' "$(caddy_container)" 2>/dev/null) "
+  for PORT in $WANTED; do
+    case "$PORT" in */*) ;; *) PORT="$PORT/tcp" ;; esac
+    case "$BOUND" in *" $PORT "*) ;; *) return 1 ;; esac
+  done
+  return 0
+}
 
 # Never let a failed apply leave the lock behind or kill the poll loop.
 # The lock must only exist while an apply is genuinely in progress.
@@ -217,8 +242,21 @@ if [ -f "$OVERRIDE_FILE" ]; then
     fi
   fi
 
-  log "Startup: applying existing L4 port override..."
-  do_apply
+  # Caddy may be stopped for a moment, e.g. while an image updater recreates it
+  # (keeping its port bindings): wait for it rather than racing to recreate it.
+  WAITED=0
+  while ! caddy_running && [ "$WAITED" -lt "$CADDY_STARTUP_WAIT" ]; do
+    sleep 2
+    WAITED=$((WAITED + 2))
+  done
+
+  if ports_bound; then
+    write_status "applied" "Caddy already publishes the L4 ports."
+    log "Startup: caddy already publishes every L4 port; not recreating it."
+  else
+    log "Startup: applying existing L4 port override..."
+    do_apply
+  fi
 else
   write_status "idle" "Port manager sidecar is running and ready."
   log "Started. No L4 port override file yet."
