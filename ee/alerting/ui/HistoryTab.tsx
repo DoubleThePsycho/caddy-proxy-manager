@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useFormat } from "@/components/preferences/PreferencesProvider";
 import type { AlertEventView } from "@/ee/alerting/types";
 import { DeliveryChip, SeverityPill } from "./parts";
+import { silencedText } from "./silence";
 
 type Props = { history: { events: AlertEventView[]; total: number; page: number; perPage: number } };
 
@@ -21,7 +22,7 @@ function Status({ event }: { event: AlertEventView }) {
 }
 
 function Delivery({ event }: { event: AlertEventView }) {
-  if (!event.notified) return <span className="text-xs text-muted-foreground">Not sent (cooldown or no channel)</span>;
+  if (!event.notified) return <span className="text-xs text-muted-foreground">{silencedText(event.silenced) ?? "Not sent (cooldown or no channel)"}</span>;
   if (event.deliveries.length === 0) return <span className="text-xs text-muted-foreground">Sending…</span>;
   return (
     <span className="flex flex-wrap gap-1">

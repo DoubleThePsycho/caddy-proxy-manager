@@ -20,6 +20,7 @@ import ChannelsTab from "./ChannelsTab";
 import HistoryTab from "./HistoryTab";
 import AiTab from "@/ee/ai/ui/AiTab";
 import RuleEditor, { type HostChoice } from "./RuleEditor";
+import { SilenceDialog, type SilenceTarget } from "./silence";
 import { buildEpisodes } from "./format";
 import { TabCount } from "./parts";
 
@@ -84,6 +85,7 @@ export default function AlertsClient({
   }
   // A new key per opening, so the editor's form starts from the rule each time.
   const [editor, setEditor] = useState<{ key: number; open: boolean; rule: AlertRuleView | null }>({ key: 0, open: false, rule: null });
+  const [silence, setSilence] = useState<{ key: number; open: boolean; target: SilenceTarget | null }>({ key: 0, open: false, target: null });
 
   const episodes = useMemo(() => buildEpisodes(recent, now - WEEK_MS), [recent, now]);
   const hostNames = useMemo(() => new Map(proxyHosts.map((host) => [host.id, host.name])), [proxyHosts]);
@@ -104,6 +106,13 @@ export default function AlertsClient({
     setEditor((current) => ({ key: current.key + 1, open: true, rule }));
   }
 
+  function openSilence(target: SilenceTarget) {
+    setSilence((current) => ({ key: current.key + 1, open: true, target }));
+  }
+
+  // Dismissed alerts and alerts of muted rules are listed, but do not need attention.
+  const active = firing.filter((alert) => !alert.dismissal && !alert.mute).length;
+
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">
       <Tabs value={tab === "history" ? "firing" : tab} onValueChange={changeTab} className="flex min-w-0 flex-col gap-5">
@@ -121,7 +130,7 @@ export default function AlertsClient({
         >
           <TabsList aria-label="Alert sections">
             <TabsTrigger value="firing">
-              Firing <TabCount value={firing.length} warn={firing.length > 0} />
+              Firing <TabCount value={firing.length} warn={active > 0} />
             </TabsTrigger>
             <TabsTrigger value="rules">
               Rules <TabCount value={rules.length} />
@@ -155,6 +164,8 @@ export default function AlertsClient({
               now={now}
               canEditRule={canEditRule}
               onEditRule={(rule) => openEditor(rule)}
+              canWrite={canWrite}
+              onDismiss={(alert) => openSilence({ kind: "dismiss", alert })}
             />
           )}
         </TabsContent>
@@ -166,6 +177,8 @@ export default function AlertsClient({
             canWrite={canWrite}
             onCreate={() => openEditor(null)}
             onEdit={(rule) => openEditor(rule)}
+            onMute={(rule) => openSilence({ kind: "mute", rule: { id: rule.id, name: rule.name } })}
+            now={now}
           />
         </TabsContent>
         <TabsContent value="channels" className="mt-0">
@@ -178,6 +191,14 @@ export default function AlertsClient({
         )}
       </Tabs>
 
+      {canWrite && (
+        <SilenceDialog
+          key={`silence-${silence.key}`}
+          open={silence.open}
+          target={silence.target}
+          onClose={() => setSilence((current) => ({ ...current, open: false }))}
+        />
+      )}
       {canWrite && (
         <RuleEditor
           key={editor.key}

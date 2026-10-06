@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { Fragment, useMemo, useState } from "react";
-import { BellRing, ChevronRight, Info, OctagonAlert, TriangleAlert, type LucideIcon } from "lucide-react";
+import { BellOff, BellRing, ChevronRight, Info, OctagonAlert, TriangleAlert, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Pagination } from "@/components/ui/Pagination";
@@ -16,6 +16,7 @@ import { paginate } from "@/src/lib/pagination";
 import type { AlertEventView, AlertRuleView, FiringAlertView, Severity } from "@/ee/alerting/types";
 import { auditLogAround, formatDuration, subjectLink, type AlertEpisode } from "./format";
 import { DeliveryChip, SeverityPill } from "./parts";
+import { SilenceMarker, silencedText, useEndSilence } from "./silence";
 
 const SEVERITY_TILE: Record<Severity, { icon: LucideIcon; className: string }> = {
   critical: { icon: OctagonAlert, className: "bg-bad-tint text-bad" },
@@ -33,10 +34,14 @@ type Props = {
   /** Whether the user may change this rule (alerts:write, and the license unless it is a Community rule). */
   canEditRule: (rule: AlertRuleView) => boolean;
   onEditRule: (rule: AlertRuleView) => void;
+  /** alerts:write: undo dismissals and mutes (never needs a license). */
+  canWrite?: boolean;
+  /** Opens the dismiss dialog (offered where canEditRule allows). */
+  onDismiss?: (alert: FiringAlertView) => void;
 };
 
-function Deliveries({ deliveries, notified }: { deliveries: AlertEventView["deliveries"]; notified: boolean }) {
-  if (!notified) return <span className="text-xs text-muted-foreground">Not sent (cooldown or no channel)</span>;
+function Deliveries({ deliveries, notified, silenced = null }: { deliveries: AlertEventView["deliveries"]; notified: boolean; silenced?: AlertEventView["silenced"] }) {
+  if (!notified) return <span className="text-xs text-muted-foreground">{silencedText(silenced) ?? "Not sent (cooldown or no channel)"}</span>;
   if (deliveries.length === 0) return <span className="text-xs text-muted-foreground">Sending…</span>;
   return (
     <span className="flex flex-wrap gap-1">
@@ -55,20 +60,45 @@ function clearsText(alert: FiringAlertView): string {
   return "No resolve notice; a PagerDuty incident is still closed";
 }
 
-function FiringCard({ alert, rule, hostNames, now, canEdit, onEditRule }: {
+function FiringCard({ alert, rule, hostNames, now, canEdit, canWrite, onEditRule, onDismiss }: {
   alert: FiringAlertView;
   rule: AlertRuleView | undefined;
   hostNames: ReadonlyMap<number, string>;
   now: number;
   canEdit: boolean;
+  canWrite: boolean;
   onEditRule: (rule: AlertRuleView) => void;
+  onDismiss?: (alert: FiringAlertView) => void;
 }) {
   const format = useFormat();
-  const tile = SEVERITY_TILE[alert.severity];
+  const undo = useEndSilence();
+  const quiet = Boolean(alert.dismissal || alert.mute);
+  const tile = quiet ? { icon: BellOff, className: "bg-raise text-muted-foreground" } : SEVERITY_TILE[alert.severity];
   const Icon = tile.icon;
   const link = subjectLink(alert.subjectKey, hostNames);
   return (
-    <article className="flex flex-col gap-4 rounded-2xl border border-line bg-panel px-5 pt-4 pb-[18px]">
+    <article className="flex flex-col gap-4 rounded-2xl border border-line bg-panel px-5 pt-4 pb-[18px]" data-silenced={quiet ? "true" : undefined}>
+      {quiet && (
+        <div className="flex flex-col gap-1.5 rounded-xl bg-panel2 px-3 py-2">
+          {alert.dismissal && (
+            <SilenceMarker
+              silence={alert.dismissal}
+              now={now}
+              undo={canWrite ? { label: "Undo", onClick: () => undo.end(alert.dismissal!), disabled: undo.pending } : undefined}
+              undoLabel={`Undo the dismissal of ${alert.title}`}
+            />
+          )}
+          {alert.mute && (
+            <SilenceMarker
+              silence={alert.mute}
+              now={now}
+              muteLabel="Rule muted"
+              undo={canWrite ? { label: "Unmute", onClick: () => undo.end(alert.mute!), disabled: undo.pending } : undefined}
+              undoLabel={`Unmute rule ${alert.ruleName}`}
+            />
+          )}
+        </div>
+      )}
       <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
         <span aria-hidden="true" className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-[10px]", tile.className)}>
           <Icon className="h-[18px] w-[18px]" strokeWidth={2} />
@@ -91,6 +121,11 @@ function FiringCard({ alert, rule, hostNames, now, canEdit, onEditRule }: {
               Edit rule
             </Button>
           )}
+          {canEdit && onDismiss && !alert.dismissal && (
+            <Button variant="secondary" size="sm" onClick={() => onDismiss(alert)} aria-label={`Dismiss ${alert.title}`}>
+              Dismiss
+            </Button>
+          )}
         </div>
       </div>
       <dl className="m-0 grid grid-cols-[repeat(auto-fit,minmax(min(200px,100%),1fr))] gap-x-5 gap-y-3 text-[13px]">
@@ -108,7 +143,9 @@ function FiringCard({ alert, rule, hostNames, now, canEdit, onEditRule }: {
           <dt className="text-xs text-soft">Notified</dt>
           <dd className="m-0">
             {alert.deliveries.length === 0 ? (
-              <span className="text-muted-foreground">Nobody (cooldown or no channel)</span>
+              <span className="text-muted-foreground">
+                {alert.silenced === "muted" ? "Nobody (rule muted)" : alert.silenced === "dismissed" ? "Nobody (dismissed)" : "Nobody (cooldown or no channel)"}
+              </span>
             ) : (
               <Deliveries deliveries={alert.deliveries} notified />
             )}
@@ -125,7 +162,10 @@ function FiringCard({ alert, rule, hostNames, now, canEdit, onEditRule }: {
 
 function deliveryLines(episode: AlertEpisode): { at: string | null; text: string }[] {
   const lines: { at: string | null; text: string }[] = [];
-  if (!episode.notified) lines.push({ at: episode.firedAt, text: "Firing: not sent (cooldown or no channel)" });
+  if (!episode.notified) {
+    const reason = episode.silenced === "muted" ? "rule muted" : episode.silenced === "dismissed" ? "dismissed" : "cooldown or no channel";
+    lines.push({ at: episode.firedAt, text: `Firing: not sent (${reason})` });
+  }
   for (const delivery of episode.deliveries) {
     lines.push({
       at: episode.firedAt,
@@ -196,7 +236,7 @@ function EpisodeDetail({ episode, hostNames }: { episode: AlertEpisode; hostName
   );
 }
 
-export default function FiringTab({ firing, episodes, rules, hostNames, now, canEditRule, onEditRule }: Props) {
+export default function FiringTab({ firing, episodes, rules, hostNames, now, canEditRule, onEditRule, canWrite = false, onDismiss }: Props) {
   const format = useFormat();
   const [open, setOpen] = useState<number | null>(null);
   const [page, setPage] = useState(1);
@@ -223,7 +263,9 @@ export default function FiringTab({ firing, episodes, rules, hostNames, now, can
               hostNames={hostNames}
               now={now}
               canEdit={ruleById.has(alert.ruleId) && canEditRule(ruleById.get(alert.ruleId)!)}
+              canWrite={canWrite}
               onEditRule={onEditRule}
+              onDismiss={onDismiss}
             />
           ))
         )}
@@ -311,7 +353,7 @@ export default function FiringTab({ firing, episodes, rules, hostNames, now, can
                         {formatDuration((episode.resolvedAt ? Date.parse(episode.resolvedAt) : now) - Date.parse(episode.firedAt))}
                       </TableCell>
                       <TableCell>
-                        <Deliveries deliveries={episode.deliveries} notified={episode.notified} />
+                        <Deliveries deliveries={episode.deliveries} notified={episode.notified} silenced={episode.silenced} />
                       </TableCell>
                     </TableRow>
                     {expanded && (

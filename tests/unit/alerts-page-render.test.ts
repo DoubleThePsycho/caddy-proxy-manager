@@ -1,8 +1,9 @@
 /**
  * Server-side render of the Alerts page: the Community notice, firing alerts
- * and the last 7 days, the rules table, channels without credentials (paid
- * ones read-only but deletable), labelled AI text, the digest, read-only
- * roles, and the page's pure helpers (episodes, links, destinations).
+ * and the last 7 days, dismissed alerts and muted rules, the rules table,
+ * channels without credentials (paid ones read-only but deletable), labelled
+ * AI text, the digest, read-only roles, and the page's pure helpers
+ * (episodes, links, destinations).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -43,7 +44,7 @@ import {
   formatMinutes,
   subjectLink,
 } from '@/ee/alerting/ui/format';
-import type { AlertChannelView, AlertEventView, AlertRuleView, FiringAlertView } from '@/ee/alerting/types';
+import type { AlertChannelView, AlertEventView, AlertRuleView, AlertSilenceView, FiringAlertView } from '@/ee/alerting/types';
 import type { DigestSettingsView } from '@/ee/ai/types';
 
 const stamp = '2026-10-02T10:00:00.000Z';
@@ -62,6 +63,15 @@ const events: AlertEventView[] = [
 const firing: FiringAlertView[] = [
   { ruleId: 2, ruleName: 'Upstreams', ruleType: 'upstream_down', subjectKey: 'upstream:10.0.0.5:8080', severity: 'critical', title: 'Upstream 10.0.0.5:8080 is failing', message: 'Check it.', firedAt: stamp, deliveries: events[0].deliveries, silenced: null, eventId: 1, notifyOnResolve: true, dismissal: null, mute: null },
 ];
+
+const dismissal: AlertSilenceView = {
+  id: 7, kind: 'dismissal', ruleId: 2, ruleName: 'Upstreams', subjectKey: 'upstream:10.0.0.5:8080', subjectTitle: 'Upstream 10.0.0.5:8080 failing',
+  until: null, note: 'Backend team is on it', createdBy: 3, createdByName: 'Alex Morgan', createdAt: '2026-10-02T10:30:00.000Z',
+};
+const mute: AlertSilenceView = {
+  id: 8, kind: 'mute', ruleId: 2, ruleName: 'Upstreams', subjectKey: null, subjectTitle: null,
+  until: '2026-10-02T18:00:00.000Z', note: null, createdBy: 3, createdByName: 'Alex Morgan', createdAt: '2026-10-02T10:30:00.000Z',
+};
 
 const digest: DigestSettingsView = {
   enabled: true,
@@ -134,6 +144,44 @@ describe('Alerts page', () => {
     expect(html).not.toContain('The backend stopped answering.');
   });
 
+  it('offers Dismiss to writers who may change the rule', () => {
+    const licensed = render('firing', { alerting: true, aiAnalyst: true });
+    expect(licensed).toContain('aria-label="Dismiss Upstream 10.0.0.5:8080 is failing"');
+    // A paid rule without the license, or a reader: no Dismiss.
+    expect(render('firing')).not.toContain('>Dismiss<');
+    expect(render('firing', { alerting: true, aiAnalyst: true }, { canWrite: false })).not.toContain('>Dismiss<');
+  });
+
+  it('keeps dismissed and muted alerts listed, marked, with Undo for writers', () => {
+    const quiet = [{ ...firing[0], dismissal, mute }];
+    const html = render('firing', { alerting: true, aiAnalyst: true }, { firing: quiet });
+    const text = html.replace(/<[^>]+>/g, '');
+    expect(text).toContain('Dismissed · Alex Morgan');
+    expect(text).toContain('Backend team is on it');
+    expect(text).toContain('Rule muted until 18:00 · Alex Morgan');
+    expect(html).toContain('aria-label="Undo the dismissal of Upstream 10.0.0.5:8080 is failing"');
+    expect(html).toContain('aria-label="Unmute rule Upstreams"');
+    // Already dismissed: no second Dismiss.
+    expect(html).not.toContain('aria-label="Dismiss Upstream');
+    // Nothing left that needs attention: the tab count is not tinted.
+    expect(html).not.toMatch(/role="tab"[^>]*>Firing <span[^>]*bg-warn-tint/);
+    expect(html).toMatch(/role="tab"[^>]*>Firing <span[^>]*>1<\/span>/);
+
+    const reader = render('firing', { alerting: true, aiAnalyst: true }, { firing: quiet, canWrite: false });
+    expect(reader.replace(/<[^>]+>/g, '')).toContain('Dismissed · Alex Morgan');
+    expect(reader).not.toContain('>Undo<');
+    expect(reader).not.toContain('>Unmute<');
+  });
+
+  it('says why a firing notification was held back', () => {
+    const muted = [{ ...firing[0], deliveries: [], silenced: 'muted' as const }];
+    expect(render('firing', undefined, { firing: muted })).toContain('Nobody (rule muted)');
+    const history = render('history', undefined, {
+      history: { events: [{ ...events[0], notified: false, deliveries: [], silenced: 'dismissed' }], total: 1, page: 1, perPage: 25 },
+    });
+    expect(history).toContain('Not sent (dismissed)');
+  });
+
   it('says when nothing is firing', () => {
     expect(render('firing', undefined, { firing: [] })).toContain('Nothing is firing');
   });
@@ -153,6 +201,26 @@ describe('Alerts page', () => {
     // The paid rule is read-only without a license but can still be deleted.
     expect(html).toMatch(/title="Needs a license with Alerting"[^>]*aria-label="Edit rule Upstreams"/);
     expect(html.match(/title="Delete"/g)?.length).toBe(2);
+  });
+
+  it('offers Mute on rules and shows a muted rule with Unmute', () => {
+    const html = render('rules', { alerting: true, aiAnalyst: true });
+    expect(html).toContain('aria-label="Mute rule Certificates"');
+    expect(html).toContain('aria-label="Mute rule Upstreams"');
+    // Without the license the paid rule cannot be muted; the Community one can.
+    const unlicensed = render('rules');
+    expect(unlicensed).toMatch(/title="Needs a license with Alerting"[^>]*aria-label="Mute rule Upstreams"/);
+    expect(unlicensed).not.toMatch(/title="Needs a license with Alerting"[^>]*aria-label="Mute rule Certificates"/);
+
+    const muted = render('rules', undefined, { rules: [rules[0], { ...rules[1], mute }] });
+    expect(muted.replace(/<[^>]+>/g, '')).toContain('Muted until 18:00');
+    // Unmuting never needs the license.
+    expect(muted).toMatch(/aria-label="Unmute rule Upstreams"/);
+    expect(muted).not.toMatch(/disabled=""[^>]*aria-label="Unmute rule Upstreams"/);
+    const reader = render('rules', undefined, { rules: [rules[0], { ...rules[1], mute }], canWrite: false });
+    expect(reader.replace(/<[^>]+>/g, '')).toMatch(/Muted until \d/);
+    expect(reader).not.toContain('Unmute');
+    expect(reader).not.toContain('Mute…');
   });
 
   it('lists channels without credentials and keeps paid ones read-only but deletable', () => {

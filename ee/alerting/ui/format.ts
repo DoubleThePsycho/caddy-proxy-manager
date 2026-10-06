@@ -213,8 +213,10 @@ export type AlertEpisode = {
   explanation: string | null;
   firedAt: string;
   resolvedAt: string | null;
-  /** Whether the firing notification went out (not held back by the cooldown, a channel was set). */
+  /** Whether the firing notification went out (not held back by the cooldown, a mute or a dismissal; a channel was set). */
   notified: boolean;
+  /** Held back by a mute or dismissal. */
+  silenced: AlertEventView["silenced"];
   deliveries: AlertEventView["deliveries"];
   /** The resolve event, when it is in the events given. */
   resolve: { at: string; notified: boolean; deliveries: AlertEventView["deliveries"] } | null;
@@ -247,6 +249,7 @@ export function buildEpisodes(events: readonly AlertEventView[], since: number):
         firedAt: event.createdAt,
         resolvedAt: event.resolvedAt,
         notified: event.notified,
+        silenced: event.silenced ?? null,
         deliveries: event.deliveries,
         resolve: event.resolvedAt
           ? { at: event.resolvedAt, notified: resolved?.notified ?? false, deliveries: resolved?.deliveries ?? [] }

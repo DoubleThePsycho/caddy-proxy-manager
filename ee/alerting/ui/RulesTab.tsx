@@ -4,7 +4,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Trash2 } from "lucide-react";
+import { BellOff, Plus, Trash2 } from "lucide-react";
 import { AppDialog } from "@/components/ui/AppDialog";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -23,6 +23,7 @@ import { deleteAlertRuleAction, setAlertRuleEnabledAction } from "./actions";
 import { conditionLine, RULE_SEVERITY } from "./format";
 import { Chip, SeverityPill } from "./parts";
 import { LOCKED_HINT } from "./RuleEditor";
+import { useEndSilence, useSilenceHeadline } from "./silence";
 
 type Props = {
   rules: AlertRuleView[];
@@ -31,6 +32,10 @@ type Props = {
   canWrite: boolean;
   onCreate: () => void;
   onEdit: (rule: AlertRuleView) => void;
+  /** Opens the mute dialog. */
+  onMute?: (rule: AlertRuleView) => void;
+  /** When the page was rendered (ms), for "Muted until 18:00". */
+  now?: number;
 };
 
 function earliest(values: (string | null)[]): string | null {
@@ -38,10 +43,12 @@ function earliest(values: (string | null)[]): string | null {
   return present[0] ?? null;
 }
 
-export default function RulesTab({ rules, channels, license, canWrite, onCreate, onEdit }: Props) {
+export default function RulesTab({ rules, channels, license, canWrite, onCreate, onEdit, onMute, now = Date.now() }: Props) {
   const router = useRouter();
   const format = useFormat();
   const [pending, startTransition] = useTransition();
+  const unmute = useEndSilence();
+  const headline = useSilenceHeadline(now);
   const [confirmDelete, setConfirmDelete] = useState<AlertRuleView | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -141,7 +148,7 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
                 <TableHead scope="col">Last fired</TableHead>
                 <TableHead scope="col" className="text-right">Enabled</TableHead>
                 {canWrite && (
-                  <TableHead scope="col" className="w-[120px]">
+                  <TableHead scope="col" className="w-[170px]">
                     <span className="sr-only">Actions</span>
                   </TableHead>
                 )}
@@ -166,6 +173,15 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
                         {rule.enabled && rule.pending.length > 0 && (
                           <span className="text-xs text-warn">
                             <span className="num">{rule.pending.length}</span> waiting out the <span className="num">{rule.forMinutes}</span> min duration
+                          </span>
+                        )}
+                        {rule.mute && (
+                          <span
+                            className="flex items-center gap-1 text-xs font-semibold text-muted-foreground"
+                            title={[rule.mute.createdByName, rule.mute.note].filter(Boolean).join(": ") || undefined}
+                          >
+                            <BellOff aria-hidden="true" className="h-3 w-3" />
+                            {headline(rule.mute)}
                           </span>
                         )}
                       </div>
@@ -229,6 +245,33 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
                     </TableCell>
                     {canWrite && (
                       <TableCell className="py-2.5 text-right whitespace-nowrap">
+                        {rule.mute ? (
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="px-2"
+                            disabled={unmute.pending}
+                            onClick={() => unmute.end(rule.mute!)}
+                            aria-label={`Unmute rule ${rule.name}`}
+                          >
+                            Unmute
+                          </Button>
+                        ) : (
+                          rule.enabled &&
+                          onMute && (
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="px-2"
+                              title={locked ? LOCKED_HINT : undefined}
+                              disabled={locked}
+                              onClick={() => onMute(rule)}
+                              aria-label={`Mute rule ${rule.name}`}
+                            >
+                              Mute…
+                            </Button>
+                          )
+                        )}
                         <Button
                           variant="link"
                           size="sm"
