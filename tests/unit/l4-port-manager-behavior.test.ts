@@ -119,6 +119,48 @@ exit 0
   );
 }
 
+/**
+ * A fake `docker` where no container has CADDY_CONTAINER_NAME: the caddy service of the
+ * sidecar's compose project is "custom-caddy" (an override's container_name), running with `bindings`.
+ */
+function writeFakeDockerCaddyByLabel(bindings: string): void {
+  writeFileSync(
+    join(fakeBinDir, 'docker'),
+    `#!/bin/sh
+echo "$@" >> "${fakeDockerLogPath}"
+if echo "$@" | grep -q -- "--force-recreate caddy"; then
+  sleep 0.2
+  exit 0
+fi
+if echo "$@" | grep -q -- "fake-caddy"; then
+  exit 1
+fi
+if [ "$1" = "ps" ]; then
+  echo "$@" | grep -q "com.docker.compose.service=caddy" && echo "custom-caddy"
+  exit 0
+fi
+if echo "$@" | grep -q "compose.project"; then
+  echo "fake-project"
+  exit 0
+fi
+if echo "$@" | grep -q "State.Running"; then
+  echo "$@" | grep -q "custom-caddy" && echo "true"
+  exit 0
+fi
+if echo "$@" | grep -q "PortBindings"; then
+  echo "${bindings} "
+  exit 0
+fi
+if echo "$@" | grep -q "inspect"; then
+  echo "healthy"
+  exit 0
+fi
+exit 0
+`,
+    { mode: 0o755 },
+  );
+}
+
 function fakeDockerLog(): string[] {
   return readFileSync(fakeDockerLogPath, 'utf-8')
     .split('\n')
@@ -313,5 +355,14 @@ describe('L4 port manager entrypoint behavior (executes the real script)', () =>
     captureOutput();
     await waitUntil(() => composeUpInvocations() === 1, 10_000);
     await waitUntil(() => readStatus()?.state === 'applied', 10_000);
+  });
+  it('finds caddy by its compose service when an override renames the container', { timeout: 20_000 }, async () => {
+    writeFileSync(join(dataDir, 'docker-compose.l4-ports.yml'), 'services:\n  caddy:\n    ports:\n      - "1234:1234"\n');
+    writeFakeDockerCaddyByLabel('80/tcp 1234/tcp');
+    child = startSidecar();
+    captureOutput();
+    await waitUntil(() => readStatus()?.state === 'applied', 10_000);
+    expect(output).toContain('not recreating it');
+    expect(composeUpInvocations()).toBe(0);
   });
 });

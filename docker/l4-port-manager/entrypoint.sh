@@ -15,8 +15,8 @@
 # Environment variables:
 #   DATA_DIR              - Path to shared data volume (default: /data)
 #   COMPOSE_DIR           - Path to compose files (default: /compose)
-#   CADDY_CONTAINER_NAME  - Caddy container name for project auto-detection (default: ingressi-caddy,
-#                           then the pre-rename caddy-proxy-manager-caddy)
+#   CADDY_CONTAINER_NAME  - Caddy container name (default: ingressi-caddy, then the "caddy" service of this
+#                           sidecar's compose project, then the pre-rename caddy-proxy-manager-caddy)
 #   COMPOSE_PROJECT_NAME  - Override compose project name (auto-detected from caddy container labels if unset)
 #   COMPOSE_HOST_DIR      - Only for non-standard bind-mount deployments: host
 #                           path passed as --project-directory so relative
@@ -62,12 +62,24 @@ write_status() {
 STATUSEOF
 }
 
-# The caddy container's name: CADDY_CONTAINER_NAME, or the pre-rename name when
-# only that container exists (compose files from before the rename).
+# The caddy container's name: CADDY_CONTAINER_NAME when it exists, else the
+# "caddy" service of this sidecar's own compose project (whatever container_name
+# an override gives it), else the pre-rename name (compose files from before the
+# rename).
 caddy_container() {
   if docker inspect "$CADDY_CONTAINER_NAME" >/dev/null 2>&1; then
     echo "$CADDY_CONTAINER_NAME"
-  elif docker inspect "$LEGACY_CADDY_CONTAINER_NAME" >/dev/null 2>&1; then
+    return
+  fi
+  OWN_PROJECT=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$(hostname)" 2>/dev/null || echo "")
+  if [ -n "$OWN_PROJECT" ]; then
+    BY_LABEL=$(docker ps -a --filter "label=com.docker.compose.project=$OWN_PROJECT" --filter "label=com.docker.compose.service=caddy" --format '{{.Names}}' 2>/dev/null | head -n 1)
+    if [ -n "$BY_LABEL" ]; then
+      echo "$BY_LABEL"
+      return
+    fi
+  fi
+  if docker inspect "$LEGACY_CADDY_CONTAINER_NAME" >/dev/null 2>&1; then
     echo "$LEGACY_CADDY_CONTAINER_NAME"
   else
     echo "$CADDY_CONTAINER_NAME"
