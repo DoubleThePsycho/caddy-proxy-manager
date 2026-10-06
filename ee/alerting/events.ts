@@ -7,6 +7,7 @@ import { appDb, toIso } from "@/src/lib/db";
 import { alertEvents, alertRules, alertRuleStates } from "@/src/lib/db/schema";
 import { isRuleType, type AlertEventView, type FiringAlertView, type Severity } from "./types";
 import { asc, desc } from "@/src/lib/db/ops";
+import { loadActiveSilences, silenceViewsByTarget, subjectId } from "./silences";
 
 type EventRow = typeof alertEvents.$inferSelect;
 
@@ -46,6 +47,7 @@ export function toAlertEventView(row: EventRow, resolvedAt: string | null = null
     deliveries: parseDeliveries(row.deliveries),
     createdAt: toIso(row.createdAt)!,
     resolvedAt: row.status === "firing" ? resolvedAt : null,
+    silenced: row.silenced === "muted" || row.silenced === "dismissed" ? row.silenced : null,
   };
 }
 
@@ -86,7 +88,11 @@ export async function listAlertEvents(options: { page: number; perPage: number; 
   return { events: rows.map((row) => toAlertEventView(row, resolutions.get(row.id) ?? null)), total, page: options.page, perPage: options.perPage };
 }
 
-/** Every subject firing now, most severe and newest first, with the event that started it. */
+/**
+ * Every subject firing now, with the event that started it and its
+ * dismissal or mute: the ones neither dismissed nor muted first, then most
+ * severe and newest first.
+ */
 export async function listFiringAlerts(): Promise<FiringAlertView[]> {
   const states = await appDb
     .select({
@@ -110,14 +116,16 @@ export async function listFiringAlerts(): Promise<FiringAlertView[]> {
     .orderBy(desc(alertEvents.id));
   const latest = new Map<string, EventRow>();
   for (const event of events) {
-    const key = `${event.ruleId}\u0000${event.subjectKey}`;
+    const key = subjectId(event.ruleId, event.subjectKey);
     if (!latest.has(key)) latest.set(key, event);
   }
+  const silences = await silenceViewsByTarget();
   const rank: Record<Severity, number> = { critical: 0, warning: 1, info: 2 };
+  const quiet = (alert: FiringAlertView) => (alert.dismissal || alert.mute ? 1 : 0);
   return states
     .filter((state) => isRuleType(state.ruleType))
     .map((state): FiringAlertView => {
-      const event = latest.get(`${state.ruleId}\u0000${state.subjectKey}`);
+      const event = latest.get(subjectId(state.ruleId, state.subjectKey));
       const view = event ? toAlertEventView(event) : null;
       return {
         ruleId: state.ruleId,
@@ -129,11 +137,29 @@ export async function listFiringAlerts(): Promise<FiringAlertView[]> {
         message: view?.message ?? "",
         firedAt: state.firedAt ? toIso(state.firedAt) : view?.createdAt ?? null,
         deliveries: view?.deliveries ?? [],
+        silenced: view?.silenced ?? null,
         eventId: view?.id ?? null,
         notifyOnResolve: state.notifyOnResolve,
+        dismissal: silences.dismissals.get(subjectId(state.ruleId, state.subjectKey)) ?? null,
+        mute: silences.mutes.get(state.ruleId) ?? null,
       };
     })
-    .sort((a, b) => rank[a.severity] - rank[b.severity] || (b.firedAt ?? "").localeCompare(a.firedAt ?? ""));
+    .sort((a, b) => quiet(a) - quiet(b) || rank[a.severity] - rank[b.severity] || (b.firedAt ?? "").localeCompare(a.firedAt ?? ""));
+}
+
+/**
+ * Alerts firing now that are neither dismissed nor muted (the sidebar badge
+ * and "Needs attention" leave the others out).
+ */
+export async function countFiringAlertsNeedingAttention(now: Date = new Date()): Promise<number> {
+  const states = await appDb
+    .select({ ruleId: alertRuleStates.ruleId, subjectKey: alertRuleStates.subjectKey })
+    .from(alertRuleStates)
+    .innerJoin(alertRules, eq(alertRules.id, alertRuleStates.ruleId))
+    .where(and(eq(alertRuleStates.status, "firing"), eq(alertRules.enabled, true)));
+  if (states.length === 0) return 0;
+  const silences = await loadActiveSilences(now);
+  return states.filter((state) => !silences.mutes.has(state.ruleId) && !silences.dismissals.has(subjectId(state.ruleId, state.subjectKey))).length;
 }
 
 /** When each rule last fired (its newest firing event in the kept history), by rule id. */

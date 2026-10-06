@@ -346,6 +346,13 @@ export async function getChannelTypes(ids: readonly number[]): Promise<Map<numbe
   return types;
 }
 
+/** Types of the channels among `ids` that still exist (a deleted one does not count). */
+export async function existingChannelTypes(ids: readonly number[]): Promise<ChannelType[]> {
+  if (ids.length === 0) return [];
+  const rows = await appDb.select({ id: alertChannels.id, type: alertChannels.type }).from(alertChannels);
+  return rows.filter((row) => ids.includes(row.id)).map((row) => row.type).filter(isChannelType);
+}
+
 function readChannelType(value: unknown): ChannelType {
   if (!isChannelType(value)) throw new ApiValidationError(`type must be one of: ${CHANNEL_TYPES.join(", ")}`);
   return value;

@@ -6,9 +6,9 @@
  * that fails is left out.
  */
 import { X509Certificate } from "node:crypto";
-import { and, count, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { appDb } from "./db";
-import { alertRuleStates, alertRules, certificates } from "./db/schema";
+import { certificates } from "./db/schema";
 import { can, type Access } from "./permissions";
 import type { NavBadge, NavBadges } from "./navigation";
 import { getInstanceMode, type InstanceMode } from "./instance-sync";
@@ -19,7 +19,7 @@ import { countPendingChangeRequests } from "@/ee/approvals/requests";
 import { getLicenseState, countManagedNodes } from "@/ee/licensing/store";
 import { EDITION_LABELS } from "@/ee/licensing/features";
 import { listEnvironmentRows, listFleetInstances } from "@/ee/fleet/environments";
-import { first } from "@/src/lib/db/ops";
+import { countFiringAlertsNeedingAttention } from "@/ee/alerting/events";
 
 const DAY_MS = 86_400_000;
 
@@ -59,15 +59,10 @@ async function safely<T>(read: () => Promise<T> | T, fallback: T): Promise<T> {
   }
 }
 
+/** Alerts firing now, without the dismissed ones and those of muted rules. */
 async function alertsBadge(access: Access): Promise<NavBadge | null> {
   if (!can(access, "alerts:read")) return null;
-  const row = await first(appDb
-    .select({ value: count() })
-    .from(alertRuleStates)
-    .innerJoin(alertRules, eq(alertRules.id, alertRuleStates.ruleId))
-    .where(and(eq(alertRuleStates.status, "firing"), eq(alertRules.enabled, true)))
-    .limit(1));
-  const firing = row?.value ?? 0;
+  const firing = await countFiringAlertsNeedingAttention();
   return firing > 0 ? { text: String(firing), tone: "warn", label: plural(firing, "alert firing", "alerts firing") } : null;
 }
 

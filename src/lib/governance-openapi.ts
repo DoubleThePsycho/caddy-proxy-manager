@@ -81,7 +81,9 @@ export const GOVERNANCE_OPENAPI_PATHS = {
     get: {
       tags: ["Alerting"],
       summary: "List alerts firing now",
-      description: "Every subject firing now, most severe and newest first, with the event that started it and the channels that were told. Permission alerts:read.",
+      description:
+        "Every subject firing now, with the event that started it, the channels that were told and its dismissal or its rule's mute " +
+        "(see /api/v1/alert-silences): those neither dismissed nor muted first, then most severe and newest first. Permission alerts:read.",
       operationId: "listFiringAlerts",
       responses: {
         "200": { description: "Firing alerts", content: json({ type: "object", properties: { alerts: { type: "array", items: ref("FiringAlert") } } }) },

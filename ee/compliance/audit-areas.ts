@@ -84,6 +84,7 @@ const ENTITY_AREAS: Record<string, string> = {
   audit_sink: "Audit log",
   alert_channel: "Alerts",
   alert_rule: "Alerts",
+  alert_silence: "Alerts",
   ai_settings: "AI analyst",
   ai_digest: "AI analyst",
   analytics_question: "AI analyst",

@@ -21,6 +21,8 @@ vi.mock('@/ee/alerting/ui/actions', () => ({
   saveAlertRuleAction: vi.fn(),
   deleteAlertRuleAction: vi.fn(),
   setAlertRuleEnabledAction: vi.fn(),
+  silenceAlertAction: vi.fn(),
+  endAlertSilenceAction: vi.fn(),
   saveAiSettingsAction: vi.fn(),
   removeAiSettingsAction: vi.fn(),
   testAiProviderAction: vi.fn(),
@@ -51,14 +53,14 @@ const channels: AlertChannelView[] = [
   { id: 2, name: 'Ops Slack', type: 'slack', enabled: true, config: { hasWebhookUrl: true, webhookUrlHint: 'https://hooks.slack.com' }, lastDeliveryAt: stamp, lastDeliveryError: 'The endpoint answered with HTTP 404', createdAt: stamp, updatedAt: stamp },
 ];
 const rules: AlertRuleView[] = [
-  { id: 1, name: 'Certificates', type: 'cert_expiring', enabled: true, params: { days: 14, includeClientCertificates: true }, channelIds: [1], cooldownMinutes: 1440, notifyOnResolve: true, explain: false, scope: { type: 'all' }, scopeLabel: 'All certificates, client certificates too', forMinutes: 0, firing: [], pending: [], lastFiredAt: null, createdAt: stamp, updatedAt: stamp },
-  { id: 2, name: 'Upstreams', type: 'upstream_down', enabled: true, params: { minFails: 1 }, channelIds: [2], cooldownMinutes: 60, notifyOnResolve: true, explain: true, scope: { type: 'hosts', proxyHostIds: [4] }, scopeLabel: 'Upstreams of 1 proxy host', forMinutes: 5, firing: [{ subjectKey: 'upstream:10.0.0.5:8080', title: 'Upstream 10.0.0.5:8080 failing', firedAt: stamp }], pending: [], lastFiredAt: stamp, createdAt: stamp, updatedAt: stamp },
+  { id: 1, name: 'Certificates', type: 'cert_expiring', enabled: true, params: { days: 14, includeClientCertificates: true }, channelIds: [1], cooldownMinutes: 1440, notifyOnResolve: true, explain: false, scope: { type: 'all' }, scopeLabel: 'All certificates, client certificates too', forMinutes: 0, firing: [], pending: [], lastFiredAt: null, mute: null, createdAt: stamp, updatedAt: stamp },
+  { id: 2, name: 'Upstreams', type: 'upstream_down', enabled: true, params: { minFails: 1 }, channelIds: [2], cooldownMinutes: 60, notifyOnResolve: true, explain: true, scope: { type: 'hosts', proxyHostIds: [4] }, scopeLabel: 'Upstreams of 1 proxy host', forMinutes: 5, firing: [{ subjectKey: 'upstream:10.0.0.5:8080', title: 'Upstream 10.0.0.5:8080 failing', firedAt: stamp }], pending: [], lastFiredAt: stamp, mute: null, createdAt: stamp, updatedAt: stamp },
 ];
 const events: AlertEventView[] = [
-  { id: 1, ruleId: 2, ruleName: 'Upstreams', ruleType: 'upstream_down', subjectKey: 'upstream:10.0.0.5:8080', status: 'firing', severity: 'critical', title: 'Upstream 10.0.0.5:8080 is failing', message: 'Check it.', explanation: 'The backend stopped answering.', notified: true, deliveries: [{ channelId: 2, channelName: 'Ops Slack', ok: false, error: 'The endpoint answered with HTTP 404' }], createdAt: stamp, resolvedAt: null },
+  { id: 1, ruleId: 2, ruleName: 'Upstreams', ruleType: 'upstream_down', subjectKey: 'upstream:10.0.0.5:8080', status: 'firing', severity: 'critical', title: 'Upstream 10.0.0.5:8080 is failing', message: 'Check it.', explanation: 'The backend stopped answering.', notified: true, deliveries: [{ channelId: 2, channelName: 'Ops Slack', ok: false, error: 'The endpoint answered with HTTP 404' }], createdAt: stamp, resolvedAt: null, silenced: null },
 ];
 const firing: FiringAlertView[] = [
-  { ruleId: 2, ruleName: 'Upstreams', ruleType: 'upstream_down', subjectKey: 'upstream:10.0.0.5:8080', severity: 'critical', title: 'Upstream 10.0.0.5:8080 is failing', message: 'Check it.', firedAt: stamp, deliveries: events[0].deliveries, eventId: 1, notifyOnResolve: true },
+  { ruleId: 2, ruleName: 'Upstreams', ruleType: 'upstream_down', subjectKey: 'upstream:10.0.0.5:8080', severity: 'critical', title: 'Upstream 10.0.0.5:8080 is failing', message: 'Check it.', firedAt: stamp, deliveries: events[0].deliveries, silenced: null, eventId: 1, notifyOnResolve: true, dismissal: null, mute: null },
 ];
 
 const digest: DigestSettingsView = {

@@ -355,6 +355,9 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/api/v1/alert-rules/[id]/route.ts` | `DELETE` | `alerts:write` |
 | `app/api/v1/alert-rules/route.ts` | `GET` | `alerts:read` |
 | `app/api/v1/alert-rules/route.ts` | `POST` | `alerts:write` |
+| `app/api/v1/alert-silences/[id]/route.ts` | `DELETE` | `alerts:write` |
+| `app/api/v1/alert-silences/route.ts` | `GET` | `alerts:read` |
+| `app/api/v1/alert-silences/route.ts` | `POST` | `alerts:write` |
 | `app/api/v1/analytics/hosts/[id]/route.ts` | `GET` | `analytics:read` |
 | `app/api/v1/analytics/hosts/route.ts` | `GET` | `analytics:read` |
 | `app/api/v1/analytics/query/route.ts` | `GET` | `analytics:read` |
@@ -702,6 +705,8 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `ee/alerting/ui/actions.ts` | `saveAlertRuleAction` | `alerts:write` |
 | `ee/alerting/ui/actions.ts` | `setAlertRuleEnabledAction` | `alerts:write` |
 | `ee/alerting/ui/actions.ts` | `deleteAlertRuleAction` | `alerts:write` |
+| `ee/alerting/ui/actions.ts` | `silenceAlertAction` | `alerts:write` |
+| `ee/alerting/ui/actions.ts` | `endAlertSilenceAction` | `alerts:write` |
 | `ee/alerting/ui/actions.ts` | `saveAiSettingsAction` | `ai:write` |
 | `ee/alerting/ui/actions.ts` | `removeAiSettingsAction` | `ai:write` |
 | `ee/alerting/ui/actions.ts` | `testAiProviderAction` | `ai:write` |

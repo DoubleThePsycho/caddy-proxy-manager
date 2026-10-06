@@ -6,6 +6,7 @@ import { requirePermission, type PermissionSession } from "@/src/lib/auth";
 import { ApiClientError } from "@/src/lib/api-errors";
 import { createAlertChannel, deleteAlertChannel, updateAlertChannel } from "@/ee/alerting/channels";
 import { createAlertRule, deleteAlertRule, updateAlertRule } from "@/ee/alerting/rules";
+import { createAlertSilence, deleteAlertSilence } from "@/ee/alerting/silences";
 import { testAlertChannel } from "@/ee/alerting/test-channel";
 import { clearAiSettings, saveAiSettings } from "@/ee/ai/settings";
 import { testAiProvider } from "@/ee/ai/explain";
@@ -79,6 +80,18 @@ export async function setAlertRuleEnabledAction(id: number, enabled: boolean): P
 
 export async function deleteAlertRuleAction(id: number): Promise<AlertActionResult> {
   return run(await requirePermission("alerts:write"), (userId) => deleteAlertRule(id, userId));
+}
+
+/** Dismisses an alert or mutes a rule ({ ruleId, subjectKey?, durationMinutes?, note? }); licensed like changing the rule. */
+export async function silenceAlertAction(input: unknown): Promise<AlertActionResult> {
+  return run(await requirePermission("alerts:write"), async (userId) => {
+    await createAlertSilence(input, userId);
+  });
+}
+
+/** Undoes a dismissal or mute; works without a license. */
+export async function endAlertSilenceAction(id: number): Promise<AlertActionResult> {
+  return run(await requirePermission("alerts:write"), (userId) => deleteAlertSilence(id, userId));
 }
 
 export async function saveAiSettingsAction(input: unknown): Promise<AlertActionResult> {

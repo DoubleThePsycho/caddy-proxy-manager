@@ -118,7 +118,7 @@ const spec = {
     { name: "Configuration History", description: "Snapshots of the configuration with diffs and rollback (paid: Homelab edition and up)" },
     { name: "Configuration", description: "Export and import the whole configuration as a passphrase-protected file" },
     { name: "Backups", description: "Scheduled, passphrase-encrypted configuration backups to S3-compatible storage (Business edition; deleting and disabling destinations never need a license)" },
-    { name: "Alerting", description: "Alert channels, rules and history (e-mail channels and certificate-expiry rules are Community; setting up the rest needs a license with alerting, deleting and disabling never do)" },
+    { name: "Alerting", description: "Alert channels, rules, history, mutes and dismissals (e-mail channels and certificate-expiry rules are Community; setting up the rest needs a license with alerting, deleting, disabling and undoing a mute never do)" },
     { name: "AI", description: "AI analyst: the AI provider, the daily security digest, WAF tuning suggestions and the settings of plain-language analytics questions (setting them up and using them needs a license with the AI analyst; removing the provider and turning the digest or questions off do not)" },
     MONETIZATION_OPENAPI_TAG,
     WHITE_LABEL_OPENAPI_TAG,
@@ -2721,6 +2721,57 @@ const spec = {
         },
       },
     },
+    "/api/v1/alert-silences": {
+      get: {
+        tags: ["Alerting"],
+        summary: "List alert mutes and dismissals",
+        description:
+          "The mutes (a whole rule, until a time) and dismissals (one alert, until a time or until it resolves) in effect, newest first. " +
+          "Dismissed alerts and alerts of muted rules stay in /api/v1/alert-events/firing, marked, and are left out of the overview's " +
+          "\"needs attention\" list and the sidebar count. Permission alerts:read.",
+        operationId: "listAlertSilences",
+        responses: {
+          "200": { description: "Mutes and dismissals", content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/AlertSilence" } } } } },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+        },
+      },
+      post: {
+        tags: ["Alerting"],
+        summary: "Dismiss an alert or mute a rule",
+        description:
+          "With a subjectKey, dismisses that alert of the rule; without one, mutes every alert of the rule. Give until or durationMinutes " +
+          "(at most 30 days); without either, the dismissal lasts until the alert resolves, which needs it to be firing now (409 otherwise). " +
+          "A mute always needs one. While covered, an alert that starts firing is recorded in the history as not notified (silenced) and " +
+          "sends nothing, so no resolve notice follows either; notifications already sent are not taken back. A new dismissal of the same " +
+          "alert, or a new mute of the same rule, replaces the previous one. Licensed like changing the rule: certificate-expiry rules that " +
+          "only notify e-mail channels need no license, other rules need one that includes alerting. Permission alerts:write.",
+        operationId: "createAlertSilence",
+        requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/AlertSilenceInput" } } } },
+        responses: {
+          "201": { description: "Created", content: { "application/json": { schema: { $ref: "#/components/schemas/AlertSilence" } } } },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "409": { description: "Dismissing until it resolves an alert that is not firing", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        },
+      },
+    },
+    "/api/v1/alert-silences/{id}": {
+      delete: {
+        tags: ["Alerting"],
+        summary: "Undo a dismissal or mute",
+        description: "Works without a license. Permission alerts:write.",
+        operationId: "deleteAlertSilence",
+        parameters: [{ $ref: "#/components/parameters/IdPath" }],
+        responses: {
+          "204": { description: "Removed" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "404": { $ref: "#/components/responses/NotFound" },
+        },
+      },
+    },
 
     // ── AI analyst (ee) ─────────────────────────────────────────────
     "/api/v1/ai/settings": {
@@ -5185,10 +5236,40 @@ const spec = {
             format: "date-time",
             description: "When the rule last fired (its newest firing event in the 90-day history); null when it has not",
           },
+          mute: { oneOf: [{ $ref: "#/components/schemas/AlertSilence" }, { type: "null" }], description: "The rule's mute in effect" },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
         },
-        required: ["id", "name", "type", "enabled", "params", "channelIds", "cooldownMinutes", "notifyOnResolve", "explain", "scope", "scopeLabel", "forMinutes", "firing", "pending", "lastFiredAt", "createdAt", "updatedAt"],
+        required: ["id", "name", "type", "enabled", "params", "channelIds", "cooldownMinutes", "notifyOnResolve", "explain", "scope", "scopeLabel", "forMinutes", "firing", "pending", "lastFiredAt", "mute", "createdAt", "updatedAt"],
+      },
+      AlertSilence: {
+        type: "object",
+        properties: {
+          id: { type: "integer" },
+          kind: { type: "string", enum: ["mute", "dismissal"], description: "mute: every alert of the rule; dismissal: one alert" },
+          ruleId: { type: "integer" },
+          ruleName: { type: "string" },
+          subjectKey: { type: ["string", "null"], description: "The dismissed alert; null for a mute", example: "certificate:3" },
+          subjectTitle: { type: ["string", "null"], description: "What the dismissed alert is about, while it fires" },
+          until: { type: ["string", "null"], format: "date-time", description: "When it ends; null for a dismissal that lasts until the alert resolves" },
+          note: { type: ["string", "null"] },
+          createdBy: { type: ["integer", "null"], description: "The user who created it" },
+          createdByName: { type: ["string", "null"] },
+          createdAt: { type: "string", format: "date-time" },
+        },
+        required: ["id", "kind", "ruleId", "ruleName", "subjectKey", "subjectTitle", "until", "note", "createdBy", "createdByName", "createdAt"],
+      },
+      AlertSilenceInput: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          ruleId: { type: "integer" },
+          subjectKey: { type: "string", maxLength: 500, description: "The alert to dismiss (as in /api/v1/alert-events/firing); omitted: mute the whole rule" },
+          until: { type: "string", format: "date-time", description: "When it ends, at most 30 days ahead" },
+          durationMinutes: { type: "integer", minimum: 1, maximum: 43200, description: "How long it lasts, instead of until" },
+          note: { type: "string", maxLength: 500 },
+        },
+        required: ["ruleId"],
       },
       AlertRuleScope: {
         description:
@@ -5227,8 +5308,11 @@ const spec = {
               },
             },
           },
+          silenced: { type: ["string", "null"], enum: ["muted", "dismissed", null], description: "Nothing was sent when it fired because the rule was muted or the alert dismissed" },
           eventId: { type: ["integer", "null"] },
           notifyOnResolve: { type: "boolean" },
+          dismissal: { oneOf: [{ $ref: "#/components/schemas/AlertSilence" }, { type: "null" }], description: "The alert's dismissal in effect" },
+          mute: { oneOf: [{ $ref: "#/components/schemas/AlertSilence" }, { type: "null" }], description: "Its rule's mute in effect" },
         },
       },
       AlertRuleInput: {
@@ -5282,7 +5366,7 @@ const spec = {
           title: { type: "string" },
           message: { type: "string" },
           explanation: { type: ["string", "null"], description: "AI-generated explanation, when one was produced" },
-          notified: { type: "boolean", description: "False when suppressed by the cooldown or when the rule has no channels" },
+          notified: { type: "boolean", description: "False when suppressed by the cooldown, a mute or a dismissal, or when the rule has no channels" },
           deliveries: {
             type: "array",
             items: {
@@ -5297,8 +5381,13 @@ const spec = {
           },
           createdAt: { type: "string", format: "date-time" },
           resolvedAt: { type: ["string", "null"], format: "date-time", description: "For a firing event: when that episode resolved; null while it fires" },
+          silenced: {
+            type: ["string", "null"],
+            enum: ["muted", "dismissed", null],
+            description: "Not notified because the rule was muted or the alert dismissed (for a resolve: its firing notification was held back so)",
+          },
         },
-        required: ["id", "ruleId", "ruleName", "ruleType", "subjectKey", "status", "severity", "title", "message", "explanation", "notified", "deliveries", "createdAt", "resolvedAt"],
+        required: ["id", "ruleId", "ruleName", "ruleType", "subjectKey", "status", "severity", "title", "message", "explanation", "notified", "deliveries", "createdAt", "resolvedAt", "silenced"],
       },
       AlertEventsResponse: {
         type: "object",

@@ -115,6 +115,7 @@ const ENTITY_LABELS: Record<string, string> = {
   mtls_role: "mTLS role",
   alert_rule: "Alert rule",
   alert_channel: "Alert channel",
+  alert_silence: "Alert mute or dismissal",
   setting: "Setting",
   settings: "Settings",
   user: "User",

@@ -45,7 +45,13 @@ export const PAID_ROUTES: readonly PaidRouteGroup[] = [
   {
     module: "ee/alerting",
     features: ["alerting"],
-    prefixes: ["app/(dashboard)/alerts/", "app/api/v1/alert-channels/", "app/api/v1/alert-events/", "app/api/v1/alert-rules/"],
+    prefixes: [
+      "app/(dashboard)/alerts/",
+      "app/api/v1/alert-channels/",
+      "app/api/v1/alert-events/",
+      "app/api/v1/alert-rules/",
+      "app/api/v1/alert-silences/",
+    ],
   },
   {
     module: "ee/approvals",

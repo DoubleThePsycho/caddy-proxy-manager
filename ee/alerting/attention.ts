@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * Attention provider: alerts firing now. Never checks the license.
+ * Attention provider: alerts firing now, except dismissed ones and those of
+ * muted rules. Never checks the license.
  */
 import type { AttentionProvider } from "@/src/lib/attention/types";
 import { listFiringAlerts } from "./events";
@@ -10,7 +11,8 @@ export const alertsAttentionProvider: AttentionProvider = {
   label: "Alerts",
   permissions: ["alerts:read"],
   async collect() {
-    return (await listFiringAlerts()).map((alert) => ({
+    const alerts = (await listFiringAlerts()).filter((alert) => !alert.dismissal && !alert.mute);
+    return alerts.map((alert) => ({
       id: `${alert.ruleId}:${alert.subjectKey}`,
       severity: alert.severity,
       title: alert.title,

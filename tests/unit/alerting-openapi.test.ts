@@ -18,6 +18,8 @@ describe('OpenAPI: alerting and AI analyst', () => {
       '/api/v1/alert-rules': ['get', 'post'],
       '/api/v1/alert-rules/{id}': ['get', 'put', 'delete'],
       '/api/v1/alert-events': ['get'],
+      '/api/v1/alert-silences': ['get', 'post'],
+      '/api/v1/alert-silences/{id}': ['delete'],
       '/api/v1/ai/settings': ['get', 'put', 'delete'],
       '/api/v1/ai/test': ['post'],
     };
@@ -31,13 +33,25 @@ describe('OpenAPI: alerting and AI analyst', () => {
     expect(spec.tags.map((tag: { name: string }) => tag.name)).toEqual(expect.arrayContaining(['Alerting', 'AI']));
 
     const documented = JSON.stringify(Object.fromEntries(Object.keys(expected).map((path) => [path, spec.paths[path]])));
-    const schemas = ['AlertChannel', 'AlertChannelInput', 'AlertChannelUpdate', 'AlertChannelConfigInput', 'AlertDeliveryResult', 'AlertRule', 'AlertRuleInput', 'AlertRuleUpdate', 'AlertRuleParams', 'AlertEvent', 'AlertEventsResponse', 'AiSettings', 'AiSettingsInput', 'AiTestResult'];
+    const schemas = ['AlertChannel', 'AlertChannelInput', 'AlertChannelUpdate', 'AlertChannelConfigInput', 'AlertDeliveryResult', 'AlertRule', 'AlertRuleInput', 'AlertRuleUpdate', 'AlertRuleParams', 'AlertEvent', 'AlertEventsResponse', 'AlertSilence', 'AlertSilenceInput', 'FiringAlert', 'AiSettings', 'AiSettingsInput', 'AiTestResult'];
     const refs = (documented + JSON.stringify(schemas.map((name) => spec.components.schemas[name]))).match(/"\$ref":"#\/components\/[^"]+"/g) ?? [];
     expect(refs.length).toBeGreaterThan(10);
     for (const ref of new Set(refs)) {
       const path = JSON.parse(`{${ref}}`).$ref.slice('#/'.length).split('/');
       expect(path.reduce((node: any, key: string) => node?.[key], spec), ref).toBeDefined();
     }
+  });
+
+  it('documents mutes and dismissals on alerts, rules and history', async () => {
+    const spec = await (await GET({ headers: { get: () => null } } as any)).json();
+    const { AlertSilenceInput, AlertSilence, AlertRule, FiringAlert, AlertEvent } = spec.components.schemas;
+    expect(Object.keys(AlertSilenceInput.properties).sort()).toEqual(['durationMinutes', 'note', 'ruleId', 'subjectKey', 'until']);
+    expect(AlertSilenceInput.additionalProperties).toBe(false);
+    expect(AlertSilence.properties.kind.enum).toEqual(['mute', 'dismissal']);
+    expect(AlertRule.required).toContain('mute');
+    expect(Object.keys(FiringAlert.properties)).toEqual(expect.arrayContaining(['dismissal', 'mute', 'silenced']));
+    expect(AlertEvent.required).toContain('silenced');
+    expect(Object.keys(spec.paths['/api/v1/alert-silences'].post.responses)).toContain('409');
   });
 
   it('documents credentials as write-only and never as output', async () => {

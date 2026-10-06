@@ -16,12 +16,18 @@
  * - An evaluator that cannot tell ("skipped") changes nothing; one that can
  *   tell about some subjects only names the others (preserveKeys and
  *   preservePrefixes), which keep their state.
+ * - A subject that starts firing while its rule is muted, or while it is
+ *   dismissed until a time still ahead (silences.ts), is recorded as not
+ *   notified with the reason ("silenced") and sends nothing, so no resolve
+ *   notice follows either. A dismissal until the subject resolves ends when
+ *   it resolves. Each run first prunes the mutes and dismissals that ended.
  *
  * Runs regardless of the license: configured alerts keep working.
  */
 import { and, eq, isNull, lt, or } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";
 import { alertEvents, alertRuleStates } from "@/src/lib/db/schema";
+import { desc } from "@/src/lib/db/ops";
 import { explainAlert } from "@/ee/ai/explain";
 import { ChannelSecretsUnavailableError, getChannelRows, recordChannelDelivery, resolveChannel } from "./channels";
 import { deliverToChannel, type DeliveryResult } from "./deliver";
@@ -29,6 +35,7 @@ import { evaluateRule, type Evaluation, type Finding } from "./evaluators";
 import { pruneAlertEvents } from "./events";
 import { cleanText, type AlertNotification } from "./format";
 import { listEnabledRules, type StoredRule } from "./rules";
+import { coverOnFiring, endDismissalsUntilResolved, loadActiveSilences, pruneAlertSilences, subjectId, type ActiveSilences } from "./silences";
 import type { Severity } from "./types";
 
 /** New firing subjects handled per rule and run; the rest wait for the next run. */
@@ -99,8 +106,19 @@ function isPreserved(evaluation: Pick<OkEvaluation, "preserveKeys" | "preservePr
   return evaluation.preservePrefixes?.some((prefix) => subjectKey.startsWith(prefix)) ?? false;
 }
 
+/** Why the firing notification of a subject's latest episode was held back, if a mute or dismissal did. */
+async function episodeSilence(ruleId: number, subjectKey: string): Promise<"muted" | "dismissed" | null> {
+  const [row] = await appDb
+    .select({ silenced: alertEvents.silenced })
+    .from(alertEvents)
+    .where(and(eq(alertEvents.ruleId, ruleId), eq(alertEvents.subjectKey, subjectKey), eq(alertEvents.status, "firing")))
+    .orderBy(desc(alertEvents.id))
+    .limit(1);
+  return row?.silenced === "muted" || row?.silenced === "dismissed" ? row.silenced : null;
+}
+
 /** Records the transitions of one rule and returns those to notify. */
-async function applyTransitions(rule: StoredRule, evaluation: OkEvaluation, channels: ChannelRow[], now: Date): Promise<{
+async function applyTransitions(rule: StoredRule, evaluation: OkEvaluation, channels: ChannelRow[], silences: ActiveSilences, now: Date): Promise<{
   transitions: Transition[];
   fired: number;
   resolved: number;
@@ -155,7 +173,12 @@ async function applyTransitions(rule: StoredRule, evaluation: OkEvaluation, chan
     fired += 1;
     const lastNotified = state?.lastNotifiedAt ? Date.parse(state.lastNotifiedAt) : NaN;
     const inCooldown = Number.isFinite(lastNotified) && now.getTime() - lastNotified < cooldownMs;
-    const notify = !inCooldown && channels.length > 0;
+    const silenced = coverOnFiring(silences, rule.id, finding.subjectKey);
+    if (silences.dismissals.get(subjectId(rule.id, finding.subjectKey))?.until === null) {
+      // Left from an episode that ended without this run seeing it resolve.
+      await endDismissalsUntilResolved(rule.id, finding.subjectKey);
+    }
+    const notify = !silenced && !inCooldown && channels.length > 0;
     const title = cleanText(finding.title, 300);
     const message = cleanText(finding.message, 4000, true);
     const eventId = await insertEvent({
@@ -169,6 +192,7 @@ async function applyTransitions(rule: StoredRule, evaluation: OkEvaluation, chan
       message,
       facts: JSON.stringify(finding.facts),
       notified: notify,
+      silenced,
       createdAt: at,
     });
     await upsertState({
@@ -202,6 +226,8 @@ async function applyTransitions(rule: StoredRule, evaluation: OkEvaluation, chan
     resolved += 1;
     const label = state.title ?? state.subjectKey;
     const notify = state.notifiedFiring && resolveChannels.length > 0;
+    // An episode whose firing notification a mute or dismissal held back sends no resolve notice either.
+    const silenced = state.notifiedFiring ? null : await episodeSilence(rule.id, state.subjectKey);
     const title = cleanText(`Resolved: ${label}`, 300);
     const message = `${label}: no longer reported by rule "${rule.name}".`;
     const eventId = await insertEvent({
@@ -215,12 +241,15 @@ async function applyTransitions(rule: StoredRule, evaluation: OkEvaluation, chan
       message,
       facts: null,
       notified: notify,
+      silenced,
       createdAt: at,
     });
     await appDb
       .update(alertRuleStates)
       .set({ status: "ok", resolvedAt: at, notifiedFiring: false, lastEvaluatedAt: at, pendingSince: null })
       .where(eq(alertRuleStates.id, state.id));
+    // A dismissal until it resolves ends here; one until a time keeps covering the subject.
+    await endDismissalsUntilResolved(rule.id, state.subjectKey);
     if (notify) {
       transitions.push({ kind: "resolved", eventId, subjectKey: state.subjectKey, title, message, severity: "info", facts: {}, channels: resolveChannels });
     }
@@ -298,6 +327,8 @@ export async function runAlertEvaluation(
   const at = now.toISOString();
   const summary: EvaluationSummary = { rules: 0, skipped: 0, fired: 0, resolved: 0, notifications: 0 };
   const pending: Promise<number>[] = [];
+  await pruneAlertSilences(now).catch(() => undefined);
+  const silences = await loadActiveSilences(now);
 
   for (const rule of await listEnabledRules()) {
     summary.rules += 1;
@@ -314,7 +345,7 @@ export async function runAlertEvaluation(
       continue;
     }
     const channels = (await getChannelRows(rule.channelIds)).filter((channel) => channel.enabled);
-    const { transitions, fired, resolved } = await applyTransitions(rule, evaluation, channels, now);
+    const { transitions, fired, resolved } = await applyTransitions(rule, evaluation, channels, silences, now);
     summary.fired += fired;
     summary.resolved += resolved;
     // Rules notify concurrently so a slow channel or model never holds up another alert.

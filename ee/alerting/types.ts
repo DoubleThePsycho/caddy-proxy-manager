@@ -148,6 +148,34 @@ export const FOR_DURATION_RULE_TYPES: readonly RuleType[] = [
 export const MAX_FOR_MINUTES = 24 * 60;
 export const MAX_SCOPE_HOSTS = 200;
 
+/** Durations offered for dismissing an alert or muting a rule (minutes): 1 hour, 8 hours, 1 day, 1 week. */
+export const SILENCE_DURATIONS = [60, 8 * 60, 24 * 60, 7 * 24 * 60] as const;
+/** The longest dismissal or mute (minutes). */
+export const MAX_SILENCE_MINUTES = 30 * 24 * 60;
+export const MAX_SILENCE_NOTE_LENGTH = 500;
+
+/**
+ * A mute (every alert of a rule, until a time) or a dismissal (one alert,
+ * until a time or until it resolves), in effect now.
+ */
+export type AlertSilenceView = {
+  id: number;
+  kind: "mute" | "dismissal";
+  ruleId: number;
+  ruleName: string;
+  /** The dismissed alert; null for a mute. */
+  subjectKey: string | null;
+  /** What the dismissed alert is about, while it fires; null otherwise. */
+  subjectTitle: string | null;
+  /** When it ends; null for a dismissal that ends when the alert resolves. */
+  until: string | null;
+  note: string | null;
+  createdBy: number | null;
+  /** The name (or e-mail) of who created it; null when unknown or deleted. */
+  createdByName: string | null;
+  createdAt: string;
+};
+
 /** Non-secret channel settings as returned by the API, with `has*` flags in place of secrets. */
 export type EmailChannelView = {
   host: string;
@@ -203,6 +231,8 @@ export type AlertRuleView = {
   pending: { subjectKey: string; title: string | null; since: string | null }[];
   /** When the rule last fired (its newest firing event in the 90-day history); null when it has not. */
   lastFiredAt: string | null;
+  /** The rule's mute in effect, if any. */
+  mute: AlertSilenceView | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -223,6 +253,8 @@ export type AlertEventView = {
   createdAt: string;
   /** For a firing event: when that episode resolved (null while it still fires or when unknown). */
   resolvedAt: string | null;
+  /** Not notified because the rule was muted or the alert dismissed; null otherwise. */
+  silenced: "muted" | "dismissed" | null;
 };
 
 /** One subject firing now, with the event that started it. */
@@ -237,8 +269,14 @@ export type FiringAlertView = {
   firedAt: string | null;
   /** Channels told when it fired. */
   deliveries: AlertEventView["deliveries"];
+  /** Nothing was sent when it fired because the rule was muted or the alert dismissed. */
+  silenced: AlertEventView["silenced"];
   eventId: number | null;
   notifyOnResolve: boolean;
+  /** This alert's dismissal in effect, if any. */
+  dismissal: AlertSilenceView | null;
+  /** Its rule's mute in effect, if any. */
+  mute: AlertSilenceView | null;
 };
 
 export function isChannelType(value: unknown): value is ChannelType {
