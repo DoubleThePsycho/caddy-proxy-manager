@@ -710,6 +710,6 @@ Nothing here is a setting: there is nothing to sync to instance sync slaves, exp
 - **L4 ports**: the l4-port-manager watches `caddy-manager-data`. Every replica writes the L4 ports files there: `web` in its data directory, the others through `L4_PORTS_DIR`, as the override does for `web-2`.
 - **One Caddy, or instance sync slaves**: see [Topologies](#topologies).
 
-## Next phases
+## Coming soon
 
-1. **Upgrades without stopping every replica.** Today an upgrade stops every PostgreSQL replica first.
+- **Upgrades without stopping every replica.** Today an upgrade stops every PostgreSQL replica first.
