@@ -195,7 +195,7 @@ describe('navigation', () => {
     const [, auditLog] = sidebar({ permissions: ['audit_streaming:read'] });
     expect([auditLog.key, auditLog.href]).toEqual(['audit-log', '/audit-log/streaming']);
     const hrefs = sidebar({ permissions: ['groups:read', 'ldap:read', 'branding:read'] }).map((entry) => [entry.key, entry.href]);
-    expect(hrefs).toEqual([['overview', '/'], ['users', '/groups'], ['sign-in', '/ldap'], ['settings', '/branding']]);
+    expect(hrefs).toEqual([['overview', '/'], ['users', '/groups'], ['sign-in', '/ldap'], ['branding', '/branding']]);
   });
 
   it('shows a reviewer without access_reviews:read their own reviews only while some are pending', () => {

@@ -46,6 +46,7 @@ export type NavEntryKey =
   | "monetization"
   | "usage"
   | "settings"
+  | "branding"
   | "license"
   | "profile"
   | "api-docs";
@@ -199,14 +200,8 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 
 /** Under the groups, above the user menu. */
 export const NAV_FOOTER: readonly NavEntry[] = [
-  {
-    key: "settings",
-    label: "Settings",
-    pages: [
-      { href: "/settings", label: "Settings", permission: "settings:read" },
-      { href: "/branding", label: "Branding", permission: "branding:read" },
-    ],
-  },
+  { key: "settings", label: "Settings", pages: [{ href: "/settings", label: "Settings", permission: "settings:read" }] },
+  { key: "branding", label: "Branding", pages: [{ href: "/branding", label: "Branding", permission: "branding:read" }] },
   { key: "license", label: "License", pages: [{ href: "/license", label: "License", permission: "license:read" }], badge: "licenseNodes" },
 ];
 

@@ -57,7 +57,7 @@ test.describe('Settings pages — load and navigation', () => {
 
   test('each page is a sub-item of its sidebar entry, marked current', async ({ page }) => {
     for (const { path, title, entry } of SETTINGS_PAGES) {
-      if (path === '/high-availability') continue; // An entry of its own, with no sub-items.
+      if (path === '/high-availability' || path === '/settings') continue; // Entries of their own, with no sub-items.
       await page.goto(path);
       const subItems = page.getByRole('list', { name: entry, exact: true });
       await expect(subItems, path).toBeVisible();

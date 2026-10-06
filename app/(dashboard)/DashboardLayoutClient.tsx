@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   ArrowLeftRight, BadgeCheck, Bell, Building2, ChartColumn, ChevronsUpDown, CircleCheck, ClipboardCheck, Coins,
-  Ellipsis, FileCheck2, FileJson2, History, KeyRound, Layers, LayoutGrid, LockKeyhole, LogOut, Menu, Network, Receipt,
+  Ellipsis, FileCheck2, FileJson2, History, KeyRound, Layers, LayoutGrid, LockKeyhole, LogOut, Menu, Network, Palette, Receipt,
   ScrollText, Search, Server, ShieldAlert, ShieldCheck, SlidersHorizontal, UserRound, Users, type LucideIcon,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -69,6 +69,7 @@ const ICONS: Record<NavEntryKey, LucideIcon> = {
   monetization: Coins,
   usage: Receipt,
   settings: SlidersHorizontal,
+  branding: Palette,
   license: BadgeCheck,
   profile: UserRound,
   "api-docs": FileJson2,
