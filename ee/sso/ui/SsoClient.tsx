@@ -237,7 +237,7 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
                 with a break-glass account.
               </p>
               <p className="m-0">Without its password, turn enforced SSO off on the server with:</p>
-              <code className="block rounded-lg border border-line bg-panel2 px-2.5 py-1.5 font-mono text-xs break-all text-foreground select-all">
+              <code className="block rounded-lg border border-line bg-panel2 px-2.5 py-1.5 font-mono text-xs [overflow-wrap:anywhere] text-foreground select-all">
                 {TURN_OFF_SSO_COMMAND}
               </code>
             </SectionCard>
