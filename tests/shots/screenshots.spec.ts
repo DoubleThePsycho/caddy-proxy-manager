@@ -7,6 +7,9 @@
  *   users-and-sign-in.png, compliance.png  → the website's site/assets/screenshots/
  *   preview.png (1200×630, og:image)        → the website's site/assets/images/
  *   dashboard.png                           → this repository's .github/assets/
+ *   host-editor-security.png, host-detail.png, security-event-detail.png,
+ *   certificates.png, access-lists.png,
+ *   audit-log.png                           → the website's feature walkthrough
  * and full-page copies under review/ for checking what each page showed.
  * Look at every image before publishing it: synthetic data only, nothing
  * half-loaded, no error banners. The License page is never captured (it
@@ -139,13 +142,43 @@ test('host editor', async ({ page }) => {
     if (await link.isVisible().catch(() => false)) {
       await link.click();
       await page.waitForTimeout(1500);
-      await page.screenshot({ path: resolve(REVIEW, `host-editor-${section.toLowerCase()}.png`), animations: 'disabled' });
+      if (section === 'Security') await capture(page, 'host-editor-security');
+      else await page.screenshot({ path: resolve(REVIEW, `host-editor-${section.toLowerCase()}.png`), animations: 'disabled' });
     }
   }
   await page.goto(`/proxy-hosts/${id}`);
   await page.waitForTimeout(3000);
-  await page.screenshot({ path: resolve(REVIEW, 'host-detail.png'), animations: 'disabled' });
+  await capture(page, 'host-detail');
 });
+
+test('security event detail', async ({ page }) => {
+  // A WAF block of the SQL injection rule: its detail says why and offers an exclusion.
+  const filters = JSON.stringify([{ dim: 'waf_rule', op: 'is', value: '942100' }]);
+  await page.goto(`/security?range=24h&kind=waf&filters=${encodeURIComponent(filters)}`);
+  const wafRow = page.locator('table tr').filter({ hasText: 'Blocked by WAF' }).filter({ hasText: '942100' }).first();
+  await expect(wafRow).toBeVisible({ timeout: 30_000 });
+  await wafRow.locator('button[aria-expanded="false"]').click();
+  const open = page.locator('table button[aria-expanded="true"]').first();
+  await expect(open).toBeVisible();
+  await page.waitForTimeout(1500);
+  await open.evaluate((button) => {
+    const row = button.closest('tr');
+    if (row) window.scrollBy(0, row.getBoundingClientRect().top - 140);
+  });
+  await capture(page, 'security-event-detail');
+});
+
+for (const [name, path] of [
+  ['certificates', '/certificates'],
+  ['access-lists', '/access-lists'],
+  ['audit-log', '/audit-log'],
+] as const) {
+  test(name, async ({ page }) => {
+    await page.goto(path);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await capture(page, name);
+  });
+}
 
 test('users and sign-in', async ({ page }) => {
   await page.goto('/users');

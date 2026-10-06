@@ -420,16 +420,82 @@ FROM (
 )
 `;
 
-/** One WAF event for every request the WAF stopped (the first specific rule, as the log parser stores it). */
+/**
+ * One WAF event for every request the WAF stopped (the first specific rule, as the log parser stores it).
+ * The SQL injection events carry a Coraza audit record (sqliRecord), so the event detail can say why
+ * each was blocked and offer an exclusion; the others have none, like events logged without one.
+ */
 export const WAF_EVENTS_SQL = `
 INSERT INTO waf_events (ts, host, client_ip, country_code, method, uri, rule_id, rule_message, severity, raw_data, blocked, tx_id)
 SELECT ts, host, client_ip, country_code, method, uri, toInt32(waf_rule_id),
        transform(waf_rule_id, {rule_ids:Array(UInt32)}, {rule_messages:Array(String)}, ''),
        transform(waf_rule_id, {rule_ids:Array(UInt32)}, {rule_severities:Array(String)}, 'critical'),
-       NULL, true, lower(hex(cityHash64(ts, client_ip, uri, host, rand())))
-FROM traffic_events
-WHERE outcome = 'waf' AND waf_rule_id != 0
+       nullIf(replaceAll(replaceAll(replaceAll(replaceAll(replaceAll(
+         transform(uri, {sqli_paths:Array(String)}, {sqli_records:Array(String)}, ''),
+         '__TX__', tx), '__HOST__', host), '__CLIENT__', client_ip), '__METHOD__', method),
+         '__NS__', concat(toString(toUnixTimestamp(ts)), '000000000')), ''),
+       true, tx
+FROM (
+  SELECT *, lower(hex(cityHash64(ts, client_ip, uri, host, rand()))) AS tx
+  FROM traffic_events
+  WHERE outcome = 'waf' AND waf_rule_id != 0
+)
 `;
+
+/** The argument and value a SQL injection path attacks: ARGS:id, 1' OR '1'='1. */
+function sqliArgument(path: string): { name: string; value: string } {
+  const query = path.slice(path.indexOf('?') + 1);
+  const [name, raw] = query.split(/=(.*)/s);
+  return { name, value: decodeURIComponent(raw) };
+}
+
+/**
+ * The Coraza audit record (SecAuditLogParts ABFHZ, as coraza-caddy writes it) of a blocked SQL injection
+ * request: rule 942100 matched, then the inbound anomaly score blocked it. __TX__, __HOST__, __CLIENT__,
+ * __METHOD__ and __NS__ are filled in per event by WAF_EVENTS_SQL.
+ */
+export function sqliRecord(path: string): string {
+  const arg = sqliArgument(path);
+  const q = (value: string) => JSON.stringify(value);
+  const line = (action: string, id: number, msg: string, data: string, severity: string, file: string) =>
+    `[client "__CLIENT__"] ${action} ${msg} [file ${q(file)}] [line "4242"] [id ${q(String(id))}] [rev ""] ` +
+    `[msg ${q(msg)}] [data ${q(data)}] [severity ${q(severity)}] [ver "OWASP_CRS/4.25.0"] [maturity "0"] [accuracy "0"] ` +
+    `[tag "attack-sqli"] [hostname "172.18.0.5"] [uri ${q(path)}] [unique_id "__TX__"]`;
+  const partH = (error: string) => ({ actionset: '', message: '', error_message: error, data: null });
+  return JSON.stringify({
+    transaction: {
+      timestamp: '',
+      unix_timestamp: '__NS__',
+      id: '__TX__',
+      client_ip: '__CLIENT__',
+      client_port: 51234,
+      host_ip: '172.18.0.5',
+      host_port: 443,
+      server_id: '',
+      request: {
+        method: '__METHOD__',
+        protocol: 'HTTP/2.0',
+        uri: path,
+        http_version: '2.0',
+        headers: { host: ['__HOST__'], 'user-agent': ['sqlmap/1.8.4#stable (https://sqlmap.org)'] },
+        body: '',
+        files: null,
+        args: {},
+        length: 0,
+      },
+      response: { protocol: '', status: 403, headers: {}, body: '' },
+      producer: { connector: 'coraza-caddy', version: 'v2.6.1', server: '', rule_engine: 'On', stopwatch: '', rulesets: ['OWASP_CRS/4.25.0'] },
+      highest_severity: '',
+      is_interrupted: true,
+    },
+    messages: [
+      partH(line('Coraza: Warning.', 942100, 'SQL Injection Attack Detected via libinjection',
+        `Matched Data: s&sos found within ARGS:${arg.name}: ${arg.value}`, 'CRITICAL', '@owasp_crs/REQUEST-942-APPLICATION-ATTACK-SQLI.conf')),
+      partH(line('Coraza: Access denied (phase 2).', 949110, 'Inbound Anomaly Score Exceeded (Total Score: 5)',
+        '', 'unknown', '@owasp_crs/REQUEST-949-BLOCKING-EVALUATION.conf')),
+    ],
+  }).replace('"__NS__"', '__NS__');
+}
 
 /**
  * Matches that stay below the anomaly threshold (protocol notices and
@@ -448,10 +514,13 @@ FROM (
 
 export function ruleParams() {
   const ids = Object.keys(CRS_RULES).map(Number);
+  const sqliPaths = [...new Set([...ATTACKS, ...PROBES].filter(([, rule]) => rule === 942100).map(([path]) => path))];
   return {
     rule_ids: ids,
     rule_messages: ids.map((id) => CRS_RULES[id].message),
     rule_severities: ids.map((id) => CRS_RULES[id].severity),
+    sqli_paths: sqliPaths,
+    sqli_records: sqliPaths.map(sqliRecord),
   };
 }
 
