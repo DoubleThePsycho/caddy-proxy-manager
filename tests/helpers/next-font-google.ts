@@ -8,5 +8,5 @@ function font(options: FontOptions = {}) {
   return { className: "font", variable: options.variable?.replace(/^--/, "") ?? "font", style: { fontFamily: "sans-serif" } };
 }
 
-export const IBM_Plex_Sans = font;
-export const IBM_Plex_Mono = font;
+export const Inter = font;
+export const JetBrains_Mono = font;

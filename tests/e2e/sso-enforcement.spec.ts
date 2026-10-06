@@ -14,7 +14,7 @@ import { webSql, writeSettingRow } from '../helpers/e2e-sql';
 
 const BASE = 'http://localhost:3000';
 const PROVIDER_NAME = 'E2E Enforced SSO';
-const COMMAND = 'docker compose exec web bun db-tools/break-glass.js turn-off-sso-enforcement';
+const RECOVERY_DOCS = /ee\/docs\/sso-enforcement\.md#recovery$/;
 
 let providerId: string | null = null;
 
@@ -69,20 +69,21 @@ test.describe.serial('Enforced SSO', () => {
     await context.close();
   });
 
-  test('the Single sign-on page shows the way back in as a note', async ({ page }) => {
+  test('the Single sign-on page links the recovery steps, with no warning', async ({ page }) => {
     setEnforcement(true, []);
     await page.goto(`${BASE}/sso`);
-    const note = page.getByTestId('no-break-glass-note');
-    await expect(note).toBeVisible();
-    await expect(note).toContainText(COMMAND);
+    await expect(page.getByRole('link', { name: 'Recovery steps' })).toHaveAttribute('href', RECOVERY_DOCS);
+    await expect(page.getByText('No break-glass administrator')).toHaveCount(0);
+    await expect(page.getByText(/docker compose/)).toHaveCount(0);
     await expect(page.getByText('Break-glass accounts (optional)')).toBeVisible();
     await expect(page.getByText(/at least one break-glass/i)).toHaveCount(0);
   });
 
-  test('the Sign-in and directories page shows the same note and no password option', async ({ page }) => {
+  test('the Sign-in and directories page shows no warning and no password option', async ({ page }) => {
     setEnforcement(true, []);
     await page.goto(`${BASE}/sign-in`);
-    await expect(page.getByTestId('no-break-glass-note')).toContainText(COMMAND);
+    await expect(page.getByRole('heading', { name: 'Single sign-on is required for the dashboard' })).toBeVisible();
+    await expect(page.getByText('No break-glass administrator')).toHaveCount(0);
     const options = page.getByRole('list', { name: 'Login page options' });
     await expect(options).toContainText(`Continue with ${PROVIDER_NAME}`);
     await expect(options).not.toContainText('Break-glass sign-in');
@@ -101,8 +102,8 @@ test.describe.serial('Enforced SSO', () => {
     await context.close();
 
     await page.goto(`${BASE}/sso`);
-    await expect(page.getByTestId('no-break-glass-note')).toHaveCount(0);
-    await expect(page.getByText(COMMAND)).toBeVisible();
+    await expect(page.getByText('Sign in with a password', { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Recovery steps' })).toHaveAttribute('href', RECOVERY_DOCS);
   });
 
   test('enforcement without a break-glass account can be turned off from the dashboard', async ({ page }) => {

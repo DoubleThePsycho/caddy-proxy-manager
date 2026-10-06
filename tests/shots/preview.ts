@@ -3,16 +3,16 @@
  * and what it does on the left, a cropped screenshot of the analytics (totals
  * and the chart) on the right, in the website's dark colours. Built as a page
  * from inline HTML and rendered by Playwright, so it follows the screenshots
- * whenever they are taken again. The fonts are the dashboard's own IBM Plex
- * files (next/font serves them from /_next/static/media), so nothing outside
- * this repository and the running stack is needed.
+ * whenever they are taken again. The fonts are the dashboard's own Inter and
+ * JetBrains Mono files (next/font serves them from /_next/static/media), so
+ * nothing outside this repository and the running stack is needed.
  */
 import type { APIRequestContext } from '@playwright/test';
 
-/** @font-face rules for "Plex" and "Plex Mono", with the weights (or the weight range of a variable font) each file covers. */
+/** @font-face rules for "Inter" and "JetBrains Mono", with the weights (or the weight range of a variable font) each file covers. */
 export type PreviewFonts = { faces: string[]; sans400: boolean; sans600: boolean; mono400: boolean };
 
-/** The latin IBM Plex Sans 400/600 and Mono 400 files of the running dashboard, embedded as data URLs (missing ones fall back to system fonts). */
+/** The latin Inter 400/600 and JetBrains Mono 400 files of the running dashboard, embedded as data URLs (missing ones fall back to system fonts). */
 export async function dashboardFonts(request: APIRequestContext): Promise<PreviewFonts> {
   const fonts: PreviewFonts = { faces: [], sans400: false, sans600: false, mono400: false };
   try {
@@ -31,8 +31,8 @@ export async function dashboardFonts(request: APIRequestContext): Promise<Previe
         const low = Number(weights[1]);
         const high = Number(weights[2] ?? weights[1]);
         const has = (weight: number) => weight >= low && weight <= high;
-        const mono = /Plex_Mono|Plex Mono/.test(family);
-        if (!mono && !/Plex_Sans|Plex Sans/.test(family)) continue;
+        const mono = /JetBrains_Mono|JetBrains Mono/.test(family);
+        if (!mono && !/\bInter\b|_Inter_/.test(family)) continue;
         const candidates: ('mono400' | 'sans400' | 'sans600')[] = mono ? ['mono400'] : ['sans400', 'sans600'];
         const keys = candidates.filter((key) => has(key.endsWith('600') ? 600 : 400) && !fonts[key]);
         if (keys.length === 0) continue;
@@ -40,9 +40,9 @@ export async function dashboardFonts(request: APIRequestContext): Promise<Previe
         const file = new URL(url.replace(/^['"]|['"]$/g, ''), `http://localhost${sheet}`).pathname;
         const body = await (await request.get(file)).body();
         const weight = low === high ? String(low) : `${low} ${high}`;
-        fonts.faces.push(`@font-face { font-family: "${mono ? 'Plex Mono' : 'Plex'}"; font-weight: ${weight}; src: url("data:font/woff2;base64,${body.toString('base64')}") format("woff2"); }`);
+        fonts.faces.push(`@font-face { font-family: "${mono ? 'JetBrains Mono' : 'Inter'}"; font-weight: ${weight}; src: url("data:font/woff2;base64,${body.toString('base64')}") format("woff2"); }`);
         for (const key of keys) fonts[key] = true;
-        console.log(`[shots] preview font: ${mono ? 'Plex Mono' : 'Plex Sans'} ${weight} (${Math.round(body.length / 1024)} KiB)`);
+        console.log(`[shots] preview font: ${mono ? 'JetBrains Mono' : 'Inter'} ${weight} (${Math.round(body.length / 1024)} KiB)`);
       }
     }
   } catch {
@@ -75,7 +75,7 @@ ${fonts.faces.join('\n')}
 html, body { width: 1200px; height: 630px; overflow: hidden; }
 body {
   background: radial-gradient(900px 520px at 85% 15%, rgba(91, 73, 220, 0.22), transparent 70%), #0e1014;
-  color: #e8eaef; font-family: "Plex", system-ui, sans-serif; position: relative;
+  color: #e8eaef; font-family: "Inter", system-ui, sans-serif; position: relative;
 }
 .grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px); background-size: 40px 40px; }
 .copy { position: absolute; left: 64px; top: 72px; width: 470px; }
@@ -84,7 +84,7 @@ body {
 h1 { margin-top: 40px; font-size: 34px; line-height: 1.22; font-weight: 600; letter-spacing: -0.01em; }
 p { margin-top: 22px; font-size: 20px; line-height: 1.5; color: #a3aab8; }
 .nowrap { white-space: nowrap; }
-.url { position: absolute; left: 64px; bottom: 56px; font-family: "Plex Mono", ui-monospace, monospace; font-size: 20px; color: #a194ff; }
+.url { position: absolute; left: 64px; bottom: 56px; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 20px; color: #a194ff; }
 .shot { position: absolute; left: 590px; top: 70px; width: ${width - shiftLeft}px; height: ${height}px; border-radius: 14px; overflow: hidden;
   border: 1px solid #343b48; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55); }
 .shot img { display: block; width: ${width}px; height: auto; margin: -${shiftTop}px 0 0 -${shiftLeft}px; }

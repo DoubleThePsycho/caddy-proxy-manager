@@ -13,7 +13,6 @@ import { useFormat } from "@/src/components/preferences/PreferencesProvider";
 import { Fact, initials, plural } from "@/src/components/sign-in/source-card";
 import type { SignInOverview } from "@/src/lib/sign-in-overview";
 import { cn } from "@/lib/utils";
-import { NoBreakGlassNote } from "./NoBreakGlassNote";
 
 type Props = {
   enforcement: SignInOverview["enforcement"];
@@ -58,7 +57,6 @@ export function EnforcementSection({ enforcement, canWriteSso, canReadAuditLog, 
     ? `Turned ${enforcement.enabled ? "on" : "off"}${enforcement.changedBy ? ` by ${enforcement.changedBy}` : ""} on ${format.date(enforcement.changedAt)}. `
     : "";
   const breakGlassCount = enforcement.breakGlass.length;
-  const breakGlassAdmin = enforcement.breakGlass.some((account) => account.validAdmin);
 
   return (
     <>
@@ -116,11 +114,6 @@ export function EnforcementSection({ enforcement, canWriteSso, canReadAuditLog, 
                 {enforcement.warnings.map((warning) => <li key={warning}>{warning}</li>)}
               </ul>
             </Banner>
-          </div>
-        )}
-        {enforcement.enabled && !breakGlassAdmin && (
-          <div className="px-5 pt-4">
-            <NoBreakGlassNote />
           </div>
         )}
 

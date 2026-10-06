@@ -1,7 +1,7 @@
 /**
  * Enforced SSO without break-glass accounts, as rendered: the login page
- * offers no password sign-in, and the Single sign-on page shows the way back
- * in (the host command) as a note, not an error.
+ * offers no password sign-in, and the Single sign-on page links the recovery
+ * steps instead of printing a host command.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -17,7 +17,7 @@ import LoginClient from '@/app/(auth)/login/LoginClient';
 import SsoClient from '@/ee/sso/ui/SsoClient';
 import type { BreakGlassCandidate, SsoEnforcementView } from '@/ee/sso/enforcement';
 
-const COMMAND = 'docker compose exec web bun db-tools/break-glass.js turn-off-sso-enforcement';
+const RECOVERY_DOCS = 'ee/docs/sso-enforcement.md#recovery';
 const provider = { id: 'corp', name: 'Corp SSO', host: 'auth.example.com' };
 
 function login(props: Record<string, unknown>): string {
@@ -82,10 +82,13 @@ function sso(enforcement: SsoEnforcementView): string {
 }
 
 describe('Single sign-on page', () => {
-  it('shows the host command as a note while enforced without a break-glass administrator', () => {
+  it('links the recovery steps, with no warning or host command, while enforced without a break-glass administrator', () => {
     const html = sso(view());
-    expect(html).toContain('No break-glass administrator');
-    expect(html).toContain(COMMAND);
+    expect(html).toContain('If the identity provider is down');
+    expect(html).toContain(RECOVERY_DOCS);
+    expect(html).not.toContain('No break-glass administrator');
+    expect(html).not.toContain('docker compose');
+    expect(html).not.toContain('Sign in with a password');
     expect(html).toContain('Break-glass accounts (optional)');
     expect(html).not.toContain('Check this setting');
     expect(html).not.toContain('at least one break-glass');
@@ -96,20 +99,16 @@ describe('Single sign-on page', () => {
       breakGlassUsernames: ['helpdesk'],
       breakGlassAccounts: [{ id: 2, username: 'helpdesk', name: null, email: 'helpdesk@example.com', role: 'user', status: 'active', passwordSignIn: true, validAdmin: false }],
     }));
-    expect(html).toContain('No break-glass administrator');
+    expect(html).not.toContain('Sign in with a password');
   });
 
-  it('shows the login-page path, and the host command once, with a break-glass administrator', () => {
+  it('shows the login-page path and the recovery link with a break-glass administrator', () => {
     const html = sso(view({
       breakGlassUsernames: ['admin'],
       breakGlassAccounts: [{ id: 1, username: 'admin', name: 'Admin', email: 'admin@example.com', role: 'admin', status: 'active', passwordSignIn: true, validAdmin: true }],
     }));
-    expect(html).not.toContain('No break-glass administrator');
-    expect(html).toContain('If the identity provider is down');
-    expect(html.split(COMMAND)).toHaveLength(2);
-  });
-
-  it('shows no note while enforcement is off', () => {
-    expect(sso(view({ enabled: false }))).not.toContain('No break-glass administrator');
+    expect(html).toContain('Sign in with a password');
+    expect(html).toContain(RECOVERY_DOCS);
+    expect(html).not.toContain('docker compose');
   });
 });

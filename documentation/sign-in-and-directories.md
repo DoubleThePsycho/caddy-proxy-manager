@@ -6,7 +6,7 @@
 
 The first card says whether single sign-on is required, who turned it on and when, and lists the break-glass accounts with their second factor, last sign-in and whether they can still sign in with a password. **Correct passwords refused, 7 days** counts the `sso_enforced_sign_in_refused` events of the audit log; **View in the audit log** opens them.
 
-**What the login page offers now** previews the buttons people see: each enabled OpenID Connect and SAML provider, each LDAP directory open for sign-in (marked unavailable while it fails its connection check), and the password form, which only break-glass accounts can use while SSO is enforced. Enforced without a break-glass account that can sign in, the login page has no password or passkey sign-in. Without a break-glass administrator, the card shows the command that turns enforcement off from the host, for when the identity provider is down.
+**What the login page offers now** previews the buttons people see: each enabled OpenID Connect and SAML provider, each LDAP directory open for sign-in (marked unavailable while it fails its connection check), and the password form, which only break-glass accounts can use while SSO is enforced. Enforced without a break-glass account that can sign in, the login page has no password or passkey sign-in. For when the identity provider is down, see [Recovery](../ee/docs/sso-enforcement.md#recovery).
 
 **Turn off** (`sso:write`) turns enforcement off after a confirmation; it never needs a license. **Change break-glass accounts** opens the Single sign-on page. See `ee/docs/sso-enforcement.md`.
 

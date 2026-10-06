@@ -209,16 +209,14 @@ describe('Sign-in and directories', () => {
     expect(html).toContain('2 sources · 1 failing');
   });
 
-  it('shows the way back in, calmly, while enforced without a break-glass administrator', () => {
-    const withAdmin = renderToStaticMarkup(createElement(SignInClient, { overview: overview(), can, turnOffEnforcement: vi.fn() }));
-    expect(withAdmin).not.toContain('No break-glass administrator');
+  it('shows no warning or host command while enforced without a break-glass administrator', () => {
     const data = overview();
     data.enforcement.breakGlass = [];
     data.loginPage = data.loginPage.filter((option) => option.kind !== 'password');
     const html = renderToStaticMarkup(createElement(SignInClient, { overview: data, can, turnOffEnforcement: vi.fn() }));
     expect(html).toContain('Password sign-in is refused for everyone, and nobody can register with a password.');
-    expect(html).toContain('No break-glass administrator');
-    expect(html).toContain('docker compose exec web bun db-tools/break-glass.js turn-off-sso-enforcement');
+    expect(html).not.toContain('No break-glass administrator');
+    expect(html).not.toContain('docker compose');
     expect(html).not.toContain('Check enforced single sign-on');
     expect(html).not.toContain('Break-glass sign-in');
   });
