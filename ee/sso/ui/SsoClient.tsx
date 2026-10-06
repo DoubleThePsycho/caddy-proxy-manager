@@ -15,6 +15,8 @@ import { SectionCard } from "@/components/ui/SectionCard";
 import { Switch } from "@/components/ui/switch";
 import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import type { BreakGlassCandidate, SsoEnforcementView } from "@/ee/sso/enforcement";
+import { TURN_OFF_SSO_COMMAND } from "@/ee/sso/recovery";
+import { NoBreakGlassNote } from "./NoBreakGlassNote";
 
 /** More break-glass candidates than this get a search box. */
 const CANDIDATE_SEARCH_FROM = 10;
@@ -52,6 +54,11 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
   const shownCandidates = needle
     ? candidates.filter((candidate) => `${candidate.username} ${candidate.name ?? ""}`.toLowerCase().includes(needle))
     : candidates;
+
+  // Break-glass accounts are optional; without an administrator among them, the note shows the way back in.
+  const breakGlassAdmin = candidates.some(
+    (candidate) => selected.has(candidate.username) && candidate.role === "admin" && candidate.status === "active"
+  );
 
   const dirty = useMemo(() => {
     const current = selectableUsernames(view);
@@ -121,12 +128,13 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
               </ul>
             </Banner>
           )}
+          {enabled && !breakGlassAdmin && <NoBreakGlassNote />}
 
           <div className="flex items-center justify-between gap-4">
             <Label htmlFor="sso-enforce" className="flex flex-col items-start gap-1">
               <span>Require single sign-on for dashboard sign-in</span>
               <span className="text-xs font-normal text-muted-foreground">
-                Turning it on needs an enabled OAuth/OIDC or SAML provider and at least one break-glass administrator.
+                Turning it on needs an enabled OAuth/OIDC or SAML provider.
               </span>
             </Label>
             <Switch
@@ -138,10 +146,9 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
           </div>
 
           <div className="flex flex-col gap-2">
-            <p className="m-0 text-sm font-medium">Break-glass accounts</p>
+            <p className="m-0 text-sm font-medium">Break-glass accounts (optional)</p>
             <p className="m-0 text-xs text-muted-foreground">
-              These accounts can still sign in with their username and password, for example while the identity provider is down.
-              Keep at least one active administrator here and store its password safely.
+              These accounts can still sign in with their password, for example while the identity provider is down.
             </p>
             {candidates.length > CANDIDATE_SEARCH_FROM && (
               <SearchField
@@ -223,16 +230,18 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
             </div>
           </SectionCard>
 
-          <SectionCard title="If the identity provider is down" padded contentClassName="flex flex-col gap-2 text-sm text-muted-foreground">
-            <p className="m-0">
-              Open the login page, choose <span className="font-medium text-foreground">Sign in with a password</span> and sign in
-              with a break-glass account.
-            </p>
-            <p className="m-0">
-              Without a working break-glass password, an operator with shell access can turn enforcement off as described in the
-              enforced SSO documentation.
-            </p>
-          </SectionCard>
+          {breakGlassAdmin && (
+            <SectionCard title="If the identity provider is down" padded contentClassName="flex flex-col gap-2 text-sm text-muted-foreground">
+              <p className="m-0">
+                On the login page, choose <span className="font-medium text-foreground">Sign in with a password</span> and sign in
+                with a break-glass account.
+              </p>
+              <p className="m-0">Without its password, turn enforced SSO off on the server with:</p>
+              <code className="block rounded-lg border border-line bg-panel2 px-2.5 py-1.5 font-mono text-xs break-all text-foreground select-all">
+                {TURN_OFF_SSO_COMMAND}
+              </code>
+            </SectionCard>
+          )}
         </div>
       </div>
     </div>

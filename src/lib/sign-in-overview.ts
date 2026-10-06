@@ -19,6 +19,7 @@ import { config } from "./config";
 import { anyPasskeyExists } from "./passkeys";
 import { listMfaAccountSummaries } from "./mfa";
 import { getSsoEnforcementView } from "@/ee/sso/enforcement";
+import { canAnyBreakGlassSignIn } from "@/ee/sso/enforcement-store";
 import { listProviders as listSamlProviders } from "@/ee/saml/providers";
 import { listDirectories } from "@/ee/ldap/directories";
 import { isDirectoryOpen } from "@/ee/ldap/sso";
@@ -456,14 +457,18 @@ export async function getSignInOverview(access: Access, now: Date = new Date()):
     });
   }
   const ssoProviders = view.ssoProviders.length > 0;
-  loginPage.push({
-    kind: "password",
-    label: view.enabled && ssoProviders ? "Break-glass sign-in" : "Username and password",
-    state: view.enabled ? "break_glass" : "offered",
-  });
+  // Enforced without a break-glass account that can sign in: the login page offers no password or passkey sign-in.
+  const localSignIn = !view.enabled || canAnyBreakGlassSignIn(view.breakGlassAccounts);
+  if (localSignIn) {
+    loginPage.push({
+      kind: "password",
+      label: view.enabled && ssoProviders ? "Break-glass sign-in" : "Username and password",
+      state: view.enabled ? "break_glass" : "offered",
+    });
+  }
   let passkeys: boolean;
   try {
-    passkeys = await anyPasskeyExists();
+    passkeys = localSignIn && await anyPasskeyExists();
   } catch {
     passkeys = false;
   }

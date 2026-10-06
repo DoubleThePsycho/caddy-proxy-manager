@@ -26,7 +26,7 @@ Users with the built-in user or viewer role have no role item; their account ite
 Being named as a reviewer is all a reviewer needs; no permission is required. Reviewers see a reminder on every dashboard page and decide in **My reviews** (`/my-reviews`):
 
 1. Choose **Keep** or **Revoke** for each item, with an optional comment. These are drafts and can be changed.
-2. **Confirm**. Revocations are applied now, through the same functions as manual changes on the Users and Groups pages and their guards: the last active administrator cannot be demoted or disabled, and enforced SSO keeps a break-glass administrator. Each item records its outcome:
+2. **Confirm**. Revocations are applied now, through the same functions as manual changes on the Users and Groups pages and their guards: the last active administrator cannot be demoted or disabled, and the last break-glass administrator of enforced SSO stays until it is taken off the break-glass list. Each item records its outcome:
    - `kept`, `revoked`;
    - `unchanged`: the access was already gone or had changed since the campaign started (for example the role was changed by hand), so nothing was done;
    - `failed`: a guard refused it; the reason is shown.

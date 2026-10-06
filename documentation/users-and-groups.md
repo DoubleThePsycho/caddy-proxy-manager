@@ -27,7 +27,7 @@ Click a name, or **Open details** in the row menu:
 - **Sessions:** every browser signed in, with device, place and times. **Sign out** ends one; **Sign out everywhere** ends all (for your own account, all but this one). API tokens are not affected.
 - **Account:** **Disable user** ends their dashboard and forward-auth sessions and stops their API tokens until you enable them again; **Delete user** removes the account.
 
-Every change is recorded in the audit log, and the same guards apply as through the REST API: you cannot change your own role or status, the last active administrator stays, and enforced SSO keeps a break-glass administrator.
+Every change is recorded in the audit log, and the same guards apply as through the REST API: you cannot change your own role or status, the last active administrator stays, and the last break-glass administrator of enforced SSO stays until it is taken off the break-glass list.
 
 **Add user** creates a local account with a password. Directory, SAML and SCIM accounts arrive on their own.
 

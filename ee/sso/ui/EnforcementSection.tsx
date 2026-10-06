@@ -13,6 +13,7 @@ import { useFormat } from "@/src/components/preferences/PreferencesProvider";
 import { Fact, initials, plural } from "@/src/components/sign-in/source-card";
 import type { SignInOverview } from "@/src/lib/sign-in-overview";
 import { cn } from "@/lib/utils";
+import { NoBreakGlassNote } from "./NoBreakGlassNote";
 
 type Props = {
   enforcement: SignInOverview["enforcement"];
@@ -57,6 +58,7 @@ export function EnforcementSection({ enforcement, canWriteSso, canReadAuditLog, 
     ? `Turned ${enforcement.enabled ? "on" : "off"}${enforcement.changedBy ? ` by ${enforcement.changedBy}` : ""} on ${format.date(enforcement.changedAt)}. `
     : "";
   const breakGlassCount = enforcement.breakGlass.length;
+  const breakGlassAdmin = enforcement.breakGlass.some((account) => account.validAdmin);
 
   return (
     <>
@@ -88,9 +90,11 @@ export function EnforcementSection({ enforcement, canWriteSso, canReadAuditLog, 
             </span>
             <span className="text-[13px] text-muted-foreground">
               {changed}
-              {enforcement.enabled
-                ? `Password sign-in is refused for everyone except ${plural(breakGlassCount, "break-glass account")}, and nobody can register with a password.`
-                : "Anyone with a password can sign in on the login page."}
+              {!enforcement.enabled
+                ? "Anyone with a password can sign in on the login page."
+                : breakGlassCount > 0
+                  ? `Password sign-in is refused for everyone except ${plural(breakGlassCount, "break-glass account")}, and nobody can register with a password.`
+                  : "Password sign-in is refused for everyone, and nobody can register with a password."}
             </span>
           </span>
           <span className="flex flex-wrap gap-2">
@@ -114,15 +118,18 @@ export function EnforcementSection({ enforcement, canWriteSso, canReadAuditLog, 
             </Banner>
           </div>
         )}
+        {enforcement.enabled && !breakGlassAdmin && (
+          <div className="px-5 pt-4">
+            <NoBreakGlassNote />
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-5 px-5 pb-[18px] pt-4">
           <div className="flex min-w-0 flex-[2_1_420px] flex-col gap-3.5">
             <div className="flex flex-col gap-2">
               <span className="text-xs text-soft">{breakGlassCount === 1 ? "Break-glass account" : "Break-glass accounts"}</span>
               {breakGlassCount === 0 ? (
-                <p className="m-0 rounded-xl border border-line bg-panel2 px-3.5 py-3 text-[13px] text-muted-foreground">
-                  None chosen. Choose at least one administrator who can sign in with a password when the identity provider is down.
-                </p>
+                <p className="m-0 rounded-xl border border-line bg-panel2 px-3.5 py-3 text-[13px] text-muted-foreground">None</p>
               ) : (
                 <ul className="m-0 flex list-none flex-col gap-2 p-0">
                   {enforcement.breakGlass.map((account) => {

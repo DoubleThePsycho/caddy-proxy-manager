@@ -5,7 +5,7 @@ import { getProviderDisplayList } from "@/src/lib/models/oauth-providers";
 import { oauthProviderHosts, samlProviderHosts } from "@/src/lib/login-providers";
 import { anyPasskeyExists } from "@/src/lib/passkeys";
 import { appDb } from "@/src/lib/db";
-import { isSsoEnforced } from "@/ee/sso/sign-in";
+import { loginPageEnforcement } from "@/ee/sso/sign-in";
 import { listLoginDirectories } from "@/ee/ldap/sso";
 import { listLoginSamlProviders } from "@/ee/saml/store";
 import LoginClient from "./LoginClient";
@@ -36,11 +36,13 @@ export default async function LoginPage({ searchParams }: LoginPageProps = {}) {
   // Where single sign-on sends the browser, shown on its button.
   const oauthHosts = await safely(oauthProviderHosts, new Map<string, string>());
   const samlHosts = await safely(samlProviderHosts, new Map<number, string>());
+  const enforcement = await loginPageEnforcement(appDb);
 
   return (
     <LoginClient
       enabledProviders={enabledProviders.map((provider) => ({ ...provider, host: oauthHosts.get(provider.id) ?? null }))}
-      ssoEnforced={await isSsoEnforced(appDb)}
+      ssoEnforced={enforcement.enforced}
+      breakGlassSignIn={enforcement.breakGlass}
       directories={await listLoginDirectories(appDb)}
       samlProviders={(await listLoginSamlProviders(appDb)).map((provider) => ({ ...provider, host: samlHosts.get(provider.id) ?? null }))}
       // Passkey sign-in is offered once any account has a passkey.

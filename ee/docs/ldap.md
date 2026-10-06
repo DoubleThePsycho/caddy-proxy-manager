@@ -105,7 +105,7 @@ Directory sign-in checks a password, so **enforced SSO refuses it by default**, 
 
 - **Allow while SSO is enforced** (per directory, off by default) keeps a directory open under enforcement. Turn it on only when the directory is held to the same standard as your identity provider. Its users then also pass the second-factor step under enforcement.
 - **Local passwords stay refused:** a user linked to such a directory still cannot use a local password unless they are a break-glass account.
-- **The login page** offers directories open under enforcement in the **Sign in with** list behind **Sign in with a password**, next to the break-glass account.
+- **The login page** offers directories open under enforcement in the **Sign in with** list behind **Sign in with a password**, next to the break-glass account. Without a break-glass account, the form sits behind **Sign in with** the directory's name (or **Sign in with a directory** when several are open).
 - **Enforced SSO still needs an OAuth/OIDC provider** to be turned on. Directories do not count as one.
 
 ## Login page

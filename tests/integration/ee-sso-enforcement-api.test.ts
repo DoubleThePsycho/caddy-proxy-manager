@@ -2,8 +2,8 @@
  * Enforced SSO configuration (ee/sso): GET/PUT /api/v1/sso/enforcement and the
  * dashboard server action. Changing the setting needs a license that includes
  * sso_enforce; reading it does not. Turning enforcement on, or changing it
- * while on, needs an enabled OAuth/OIDC provider and at least one break-glass
- * account that is an active administrator with a password.
+ * while on, needs an enabled OAuth/OIDC provider. Break-glass accounts are
+ * optional; the listed ones must exist and be able to sign in with a password.
  */
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import bcrypt from 'bcryptjs';
@@ -39,7 +39,7 @@ import { createUser } from '@/src/lib/models/user';
 import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
 import { LICENSE_SETTING_KEY } from '@/ee/licensing/store';
 import { readSsoEnforcement, writeSsoEnforcement } from '@/ee/sso/enforcement-store';
-import { NO_BREAK_GLASS_ADMIN_MESSAGE, NO_SSO_PROVIDER_MESSAGE } from '@/ee/sso/enforcement';
+import { NO_SSO_PROVIDER_MESSAGE } from '@/ee/sso/enforcement';
 
 const signer = createTestSigner();
 const PASSWORD_HASH = bcrypt.hashSync('Correct-Horse-9!', 4);
@@ -197,22 +197,57 @@ describe('PUT /api/v1/sso/enforcement with a license', () => {
     expect((await readSsoEnforcement(ctx.db)).enabled).toBe(false);
   });
 
-  it.each([
-    ['no break-glass account', []],
-    ['only a non-admin', ['viewer']],
-  ])('refuses turning it on with %s', async (_name, names) => {
+  it('turns it on without any break-glass account', async () => {
     await addProvider();
-    const { status, data } = await put({ enabled: true, breakGlassUsernames: names });
-    expect(status).toBe(400);
-    expect(data.error).toBe(NO_BREAK_GLASS_ADMIN_MESSAGE);
+    const { status, data } = await put({ enabled: true, breakGlassUsernames: [] });
+    expect(status).toBe(200);
+    expect(data).toMatchObject({ enabled: true, breakGlassUsernames: [], breakGlassAccounts: [], warnings: [] });
+    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [] });
+    expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'sso_enforcement_updated',
+      summary: 'Turned on enforced SSO for dashboard sign-in (break-glass accounts: none)',
+    }));
   });
 
-  it('refuses a disabled administrator as the only break-glass account', async () => {
+  it('turns it on with the list omitted and none stored', async () => {
+    await addProvider();
+    expect((await put({ enabled: true })).data).toMatchObject({ enabled: true, breakGlassUsernames: [] });
+    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [] });
+  });
+
+  it('turns it on with only a non-admin break-glass account', async () => {
+    await addProvider();
+    const { status, data } = await put({ enabled: true, breakGlassUsernames: ['viewer'] });
+    expect(status).toBe(200);
+    expect(data.breakGlassAccounts).toEqual([expect.objectContaining({ id: users.viewer, passwordSignIn: true, validAdmin: false })]);
+    expect(data.warnings).toEqual([]);
+  });
+
+  it('accepts a disabled administrator as a break-glass account, which does not count as a valid administrator', async () => {
     await addProvider();
     await ctx.db.update(schema.users).set({ status: 'disabled' }).where(eq(schema.users.id, users.ops));
     const { status, data } = await put({ enabled: true, breakGlassUsernames: ['ops'] });
-    expect(status).toBe(400);
-    expect(data.error).toBe(NO_BREAK_GLASS_ADMIN_MESSAGE);
+    expect(status).toBe(200);
+    expect(data.breakGlassAccounts).toEqual([expect.objectContaining({ id: users.ops, status: 'disabled', validAdmin: false })]);
+  });
+
+  it('turns it on through the server action without a break-glass account', async () => {
+    await addProvider();
+    expect(await saveSsoEnforcementAction({ enabled: true, breakGlassUsernames: [] })).toMatchObject({
+      ok: true, view: { enabled: true, breakGlassUsernames: [] },
+    });
+    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [] });
+  });
+
+  it('warns when no provider is enabled while on, saying whether a break-glass account can still sign in', async () => {
+    await writeSsoEnforcement(ctx.db, { enabled: true, breakGlassUserIds: [users.ops] });
+    expect((await (await GET(request('GET'))).json()).warnings).toEqual([
+      'No OAuth/OIDC or SAML provider is enabled, so only break-glass accounts can sign in.',
+    ]);
+    await writeSsoEnforcement(ctx.db, { enabled: true, breakGlassUserIds: [] });
+    expect((await (await GET(request('GET'))).json()).warnings).toEqual([
+      'No OAuth/OIDC or SAML provider is enabled and no break-glass account can sign in. Enable a provider or turn enforced SSO off.',
+    ]);
   });
 
   it('refuses unknown usernames and accounts without a password', async () => {
@@ -226,13 +261,13 @@ describe('PUT /api/v1/sso/enforcement with a license', () => {
     expect((await readSsoEnforcement(ctx.db)).enabled).toBe(false);
   });
 
-  it('refuses changes that would leave no valid break-glass administrator while on', async () => {
+  it('lets the break-glass administrators be removed while on', async () => {
     await addProvider();
     expect((await put({ enabled: true, breakGlassUsernames: ['ops'] })).status).toBe(200);
-    const { status, data } = await put({ enabled: true, breakGlassUsernames: ['viewer'] });
-    expect(status).toBe(400);
-    expect(data.error).toBe(NO_BREAK_GLASS_ADMIN_MESSAGE);
-    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [users.ops] });
+    expect((await put({ enabled: true, breakGlassUsernames: ['viewer'] })).status).toBe(200);
+    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [users.viewer] });
+    expect((await put({ enabled: true, breakGlassUsernames: [] })).status).toBe(200);
+    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [] });
   });
 
   it('keeps the break-glass accounts when the list is omitted', async () => {

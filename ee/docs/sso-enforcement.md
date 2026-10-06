@@ -2,7 +2,7 @@
 
 Feature id `sso_enforce`, Business edition and higher. Source: `ee/sso/`.
 
-Enforced SSO turns off password sign-in to the dashboard for everyone except a short list of **break-glass accounts**. People sign in through an OAuth/OIDC or SAML provider instead. Break-glass accounts keep their username and password so that an administrator can still get in when the identity provider is down.
+Enforced SSO turns off password sign-in to the dashboard. People sign in through an OAuth/OIDC or SAML provider instead. Optionally, a short list of **break-glass accounts** keeps its username and password, so that an administrator can still get in when the identity provider is down. Without one, the way back in during an outage is [turning enforcement off from the host](#turning-enforcement-off-from-the-host).
 
 ## What it covers
 
@@ -22,21 +22,20 @@ Enforced SSO turns off password sign-in to the dashboard for everyone except a s
 ## Setup
 
 1. Configure and enable at least one OAuth/OIDC provider (the **OAuth providers** page) or SAML provider (**Sign-in and directories → SAML**). Check that administrators can sign in with it, and link existing accounts from **Profile** if needed.
-2. Choose one or more break-glass accounts. At least one must be an **active administrator that can sign in on the login page with a username and password**. Store its password offline, for example in a safe or a password manager outside the identity provider.
-3. Open **Sign-in and directories → Single sign-on**, select the break-glass accounts, turn on **Require single sign-on for dashboard sign-in** and save.
+2. Optionally, choose break-glass accounts: accounts that can sign in on the login page with a username and password. For a way in during an outage of the identity provider, include an **active administrator** and store its password offline, for example in a safe or a password manager outside the identity provider.
+3. Open **Sign-in and directories → Single sign-on**, select the break-glass accounts (or none), turn on **Require single sign-on for dashboard sign-in** and save.
 
-Turning enforcement on is refused with `400` when no OAuth/OIDC or SAML provider is enabled or when no break-glass account is a valid administrator.
+Turning enforcement on is refused with `400` when no OAuth/OIDC or SAML provider is enabled. While it is on without a break-glass administrator, the Single sign-on and Sign-in and directories pages show the command that turns it off from the host.
 
 ### Login page
 
 With enforcement on and at least one provider enabled, the login page shows single sign-on first, one button per provider naming the host it sends the browser to. The password form is collapsed behind **Sign in with a password** ("Break-glass accounts only"), with a note that every sign-in is recorded. If every provider is disabled later, the password form is shown directly, because break-glass accounts are then the only way in.
 
+Without a break-glass account that can sign in (one that exists, is active and has a password), the login page offers no password sign-in and no passkey sign-in: only the providers, and LDAP directories that stay open under enforcement (behind **Sign in with** the directory's name).
+
 ## Lockout guards
 
-While enforcement is on, at least one break-glass account must remain an active administrator that can sign in with a password. These changes are refused with `400` when they would leave none:
-
-- changing the setting: removing break-glass accounts or choosing ones that do not qualify;
-- demoting, disabling or deleting that account from the Users page or through `/api/v1/users/{id}`. The check and the change run in one database transaction.
+Break-glass accounts are optional, so the setting can be saved with none. While enforcement is on with at least one break-glass administrator (an active administrator that can sign in with a password), demoting, disabling or deleting the last one is refused with `400`, from the Users page, through `/api/v1/users/{id}`, SCIM or an access review. To go without one, remove it from the break-glass accounts on the Single sign-on page first. The check and the change run in one database transaction.
 
 Break-glass accounts are stored by user id, so renaming an account (including an `ADMIN_USERNAME` change of the primary admin) keeps it break-glass. A deleted account is removed from the list, so a later account cannot inherit it. The API and the page show and accept usernames.
 
@@ -64,7 +63,7 @@ Readable without a license.
 }
 ```
 
-`configurable` is false when the license does not allow changes.
+`configurable` is false when the license does not allow changes. `warnings` lists problems with the setting, such as a break-glass account that lost its password or enforcement with no enabled provider. `validAdmin` marks an active administrator that can sign in with a password; with none while `enabled`, the way back in during an outage is turning enforcement off from the host.
 
 ### `PUT /api/v1/sso/enforcement`
 
@@ -77,10 +76,10 @@ curl -X PUT https://proxy.example.com/api/v1/sso/enforcement \
 - **Body:**
   - `enabled` (boolean) is required.
   - `breakGlassUsernames` takes up to 20 sign-in usernames, matched case-insensitively. Omit it to keep the current list.
-- **Validation:** every name must belong to an account that can sign in with a password.
+- **Validation:** every name must belong to an account that can sign in with a password. An empty list is accepted, also with `"enabled": true`.
 - **Responses:**
   - `200` returns the same body as `GET`.
-  - `400` for validation and lockout-guard failures.
+  - `400` for validation failures, and when turning enforcement on (or changing it while on) with no enabled OAuth/OIDC or SAML provider.
   - `403` when the caller is not an administrator or the license does not include the feature.
 - **Audit:** every change is recorded as `sso_enforcement_updated`.
 
@@ -94,7 +93,7 @@ curl -X PUT https://proxy.example.com/api/v1/sso/enforcement \
 
 ### The identity provider is down
 
-On the login page, choose **Sign in with a password** and sign in with a break-glass account, or use its passkey.
+With a break-glass account: on the login page, choose **Sign in with a password** and sign in with it, or use its passkey. Without one, [turn enforcement off from the host](#turning-enforcement-off-from-the-host).
 
 ### No break-glass password is available
 

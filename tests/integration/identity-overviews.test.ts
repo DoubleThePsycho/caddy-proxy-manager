@@ -9,6 +9,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
 
@@ -253,6 +254,15 @@ describe('sign-in overview', () => {
       { kind: 'passkey', label: 'Sign in with a passkey', state: 'break_glass' },
     ]);
     expect(JSON.stringify(overview)).not.toMatch(/super-secret|client-id-value|bind-password|hash-1|api-hash/);
+  });
+
+  it('offers no password or passkey sign-in while enforced without a break-glass account', async () => {
+    await ctx.db.update(schema.settings)
+      .set({ value: JSON.stringify({ enabled: true, breakGlassUserIds: [] }) })
+      .where(eq(schema.settings.key, 'sso_enforcement'));
+    const overview = await getSignInOverview(adminAccess(ids.admin), NOW);
+    expect(overview.enforcement).toMatchObject({ enabled: true, breakGlass: [], warnings: [] });
+    expect(overview.loginPage.map((option) => option.kind)).toEqual(['oidc', 'saml', 'ldap']);
   });
 
   it('leaves out directories and SCIM for a role that cannot read them', async () => {

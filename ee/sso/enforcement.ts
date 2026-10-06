@@ -16,7 +16,7 @@ import { isFeatureConfigurable, requireFeature } from "@/ee/licensing/store";
 import { samlProviderId } from "@/ee/saml/constants";
 import {
   MAX_BREAK_GLASS_ACCOUNTS,
-  countValidBreakGlassAdmins,
+  canAnyBreakGlassSignIn,
   describeBreakGlassAccounts,
   passwordSignInUsername,
   readSsoEnforcement,
@@ -79,10 +79,9 @@ function buildWarnings(config: SsoEnforcementConfig, accounts: BreakGlassAccount
   }
   if (!config.enabled) return warnings;
   if (providers.length === 0) {
-    warnings.push("No OAuth/OIDC or SAML provider is enabled, so only break-glass accounts can sign in.");
-  }
-  if (!accounts.some((account) => account.validAdmin)) {
-    warnings.push("No break-glass account is an active administrator with a password. Add one so an outage of the identity provider cannot lock everyone out.");
+    warnings.push(canAnyBreakGlassSignIn(accounts)
+      ? "No OAuth/OIDC or SAML provider is enabled, so only break-glass accounts can sign in."
+      : "No OAuth/OIDC or SAML provider is enabled and no break-glass account can sign in. Enable a provider or turn enforced SSO off.");
   }
   return warnings;
 }
@@ -181,10 +180,6 @@ async function resolveBreakGlassUsernames(reader: SsoReader, names: readonly str
 export const NO_SSO_PROVIDER_MESSAGE =
   "Enforced SSO needs at least one enabled OAuth/OIDC or SAML provider. Add or enable one on the OAuth providers or SAML page first.";
 
-export const NO_BREAK_GLASS_ADMIN_MESSAGE =
-  "Enforced SSO needs at least one break-glass account that is an active administrator and can sign in with a password, " +
-  "so an outage of the identity provider cannot lock everyone out.";
-
 async function auditSummary(previous: SsoEnforcementConfig, next: SsoEnforcementConfig, reader: SsoReader): Promise<string> {
   const names = (await describeBreakGlassAccounts(reader, next.breakGlassUserIds)).map((a) => a.username ?? `#${a.id}`);
   const breakGlass = `break-glass accounts: ${names.length > 0 ? names.join(", ") : "none"}`;
@@ -194,9 +189,11 @@ async function auditSummary(previous: SsoEnforcementConfig, next: SsoEnforcement
 }
 
 /**
- * Changes the setting after the lockout guards: turning enforcement on, or
- * changing it while on, needs an enabled SSO provider and at least one
- * break-glass account that is an active administrator with a password.
+ * Changes the setting: turning enforcement on, or changing it while on, needs
+ * an enabled SSO provider. Break-glass accounts are optional; the ones listed
+ * must exist and be able to sign in with a password. Without a break-glass
+ * administrator, the way back in during an outage of the identity provider is
+ * turning enforcement off from the host (scripts/db/break-glass.ts).
  * Turning it off is always allowed, with or without a license, so an install
  * whose license lapsed can always wind the feature down; it then keeps the
  * current break-glass list. The checks and the write share one transaction.
@@ -213,13 +210,8 @@ export async function updateSsoEnforcement(input: SsoEnforcementInput, actorUser
       ? (await describeBreakGlassAccounts(tx, current.breakGlassUserIds)).map((a) => a.id)
       : await resolveBreakGlassUsernames(tx, input.breakGlassUsernames);
     const updated: SsoEnforcementConfig = { enabled: input.enabled, breakGlassUserIds };
-    if (updated.enabled) {
-      if ((await listEnabledSsoProviders(tx)).length === 0) {
-        throw new ApiValidationError(NO_SSO_PROVIDER_MESSAGE);
-      }
-      if (await countValidBreakGlassAdmins(tx, updated) === 0) {
-        throw new ApiValidationError(NO_BREAK_GLASS_ADMIN_MESSAGE);
-      }
+    if (updated.enabled && (await listEnabledSsoProviders(tx)).length === 0) {
+      throw new ApiValidationError(NO_SSO_PROVIDER_MESSAGE);
     }
     await writeSsoEnforcement(tx, updated);
     return { previous: current, next: updated };

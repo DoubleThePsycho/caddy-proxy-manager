@@ -1946,9 +1946,9 @@ const spec = {
         tags: ["SSO"],
         summary: "Change the enforced SSO setting",
         description:
-          "Needs a license that includes enforced SSO (Business or higher), also to turn it off; without one the API answers 403 and enforcement stays as it is. " +
-          "Turning enforcement on, or changing it while on, is refused with 400 unless an OAuth/OIDC or SAML provider is enabled and at least one break-glass account is an active administrator that can sign in with a password. " +
-          "Every listed username must belong to an account that can sign in with a password. The change is recorded in the audit log.",
+          "Turning enforcement on, or changing it while on, needs a license that includes enforced SSO (Business or higher); without one the API answers 403. Turning it off never needs one. " +
+          "Turning enforcement on, or changing it while on, is refused with 400 unless an OAuth/OIDC or SAML provider is enabled. " +
+          "Break-glass accounts are optional (an empty list is accepted); every listed username must belong to an account that can sign in with a password. The change is recorded in the audit log.",
         operationId: "updateSsoEnforcement",
         requestBody: {
           required: true,
@@ -4663,7 +4663,7 @@ const spec = {
             type: "array",
             maxItems: 20,
             items: { type: "string" },
-            description: "Sign-in usernames of the break-glass accounts (case-insensitive). Omit to keep the current ones.",
+            description: "Sign-in usernames of the break-glass accounts (case-insensitive), optional: may be empty. Omit to keep the current ones.",
             example: ["admin"],
           },
         },
@@ -4685,7 +4685,11 @@ const spec = {
                 role: { type: "string", enum: ["admin", "user", "viewer"] },
                 status: { type: "string" },
                 passwordSignIn: { type: "boolean", description: "Can sign in on the login page with a username and password" },
-                validAdmin: { type: "boolean", description: "An active administrator with a password: what the lockout guards count" },
+                validAdmin: {
+                  type: "boolean",
+                  description:
+                    "An active administrator with a password: what the lockout guards count. With none while enforced, the way back in during an outage of the identity provider is turning enforcement off from the host.",
+                },
               },
             },
           },
@@ -4701,7 +4705,7 @@ const spec = {
               },
             },
           },
-          warnings: { type: "array", items: { type: "string" } },
+          warnings: { type: "array", items: { type: "string" }, description: "Problems with the setting worth showing an administrator" },
           configurable: { type: "boolean", description: "The installed license lets administrators change the setting" },
         },
         required: ["enabled", "breakGlassUsernames", "breakGlassAccounts", "ssoProviders", "warnings", "configurable"],
