@@ -15,7 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AiProvider, AiSettingsView } from "@/ee/ai/settings";
-import type { DigestSettingsView } from "@/ee/ai/types";
+import { MAX_AI_TIMEOUT_SECONDS, MIN_AI_TIMEOUT_SECONDS, type DigestSettingsView } from "@/ee/ai/types";
 import type { AlertChannelView } from "@/ee/alerting/types";
 import type { QuestionSettingsView } from "@/ee/ai/questions/types";
 import { removeAiSettingsAction, saveAiSettingsAction, testAiProviderAction } from "@/ee/alerting/ui/actions";
@@ -43,6 +43,7 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
   const [model, setModel] = useState(settings.model ?? "");
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl ?? "");
   const [apiKey, setApiKey] = useState("");
+  const [timeoutSeconds, setTimeoutSeconds] = useState(String(settings.timeoutSeconds));
   const [removeKey, setRemoveKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -55,6 +56,9 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
     if (provider === "openai_compatible") input.baseUrl = baseUrl.trim();
     if (removeKey) input.apiKey = null;
     else if (apiKey.trim()) input.apiKey = apiKey.trim();
+    // A number when it is one; anything else goes as typed, so the server's range check names the field.
+    const seconds = timeoutSeconds.trim();
+    input.timeoutSeconds = seconds !== "" && Number.isFinite(Number(seconds)) ? Number(seconds) : seconds;
     startTransition(async () => {
       const result = await saveAiSettingsAction(input);
       if (!result.ok) {
@@ -166,6 +170,23 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
                 </label>
               )}
               <p className="text-xs text-muted-foreground">Changing the provider or base URL asks for it again.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ai-timeout">Timeout (seconds)</Label>
+              <Input
+                id="ai-timeout"
+                type="number"
+                inputMode="numeric"
+                min={MIN_AI_TIMEOUT_SECONDS}
+                max={MAX_AI_TIMEOUT_SECONDS}
+                step={1}
+                value={timeoutSeconds}
+                onChange={(event) => setTimeoutSeconds(event.target.value)}
+                className="w-32"
+              />
+              <p className="text-xs text-muted-foreground">
+                {MIN_AI_TIMEOUT_SECONDS} to {MAX_AI_TIMEOUT_SECONDS}. Slow models, such as large self-hosted ones, need more.
+              </p>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <Switch checked={enabled} onCheckedChange={setEnabled} disabled={!canConfigure} />

@@ -5411,10 +5411,16 @@ const spec = {
           model: { type: ["string", "null"] },
           baseUrl: { type: ["string", "null"], description: "openai_compatible only" },
           hasApiKey: { type: "boolean" },
+          timeoutSeconds: {
+            type: "integer",
+            minimum: 5,
+            maximum: 300,
+            description: "How long one model call (alert explanation, digest summary, analytics question, test) may take; 60 when never set",
+          },
           configured: { type: "boolean", description: "Enabled and complete: rules with explain=true get explanations" },
           defaultModel: { type: "string", description: "Default model for the anthropic provider" },
         },
-        required: ["enabled", "provider", "model", "baseUrl", "hasApiKey", "configured", "defaultModel"],
+        required: ["enabled", "provider", "model", "baseUrl", "hasApiKey", "timeoutSeconds", "configured", "defaultModel"],
       },
       AiSettingsInput: {
         type: "object",
@@ -5425,6 +5431,13 @@ const spec = {
           model: { type: "string", description: "Defaults to claude-opus-5 for anthropic; required for openai_compatible" },
           apiKey: { type: ["string", "null"], writeOnly: true, description: "Required for anthropic, optional for openai_compatible" },
           baseUrl: { type: "string", description: "openai_compatible only, e.g. http://ollama:11434/v1; requests go to {baseUrl}/chat/completions" },
+          timeoutSeconds: {
+            type: "integer",
+            minimum: 5,
+            maximum: 300,
+            default: 60,
+            description: "How long one model call may take before it is given up. Omit to keep the current value.",
+          },
         },
       },
       AiTestResult: {

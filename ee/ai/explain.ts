@@ -18,7 +18,6 @@ import { requireFeature } from "@/ee/licensing/store";
 import { RULE_TYPE_DESCRIPTIONS, RULE_TYPE_LABELS, isRuleType, type Severity } from "@/ee/alerting/types";
 import { getAiProviderConfig, ANTHROPIC_API_URL, type ResolvedAiProvider } from "./settings";
 
-export const AI_TIMEOUT_MS = 15_000;
 export const AI_MAX_TOKENS = 1024;
 const MAX_EXPLANATION_CHARS = 1200;
 const MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -96,29 +95,34 @@ class RefusalError extends ProviderError {
   }
 }
 
-function describeError(error: unknown, refusalMessage: string): string {
+/** What a model call that ran out of time reports, with where to give it longer. */
+export function timeoutMessage(seconds: number): string {
+  return `The model did not answer within ${seconds} seconds. A slower model needs a longer timeout (Alerts → AI).`;
+}
+
+function describeError(error: unknown, refusalMessage: string, timeoutSeconds: number): string {
   if (error instanceof RefusalError) return refusalMessage;
-  if (error instanceof Anthropic.APIConnectionTimeoutError) return "The request to the model timed out";
+  if (error instanceof Anthropic.APIConnectionTimeoutError) return timeoutMessage(timeoutSeconds);
   if (error instanceof Anthropic.APIError && typeof error.status === "number") {
     return `The provider answered with HTTP ${error.status}`;
   }
   if (error instanceof Anthropic.APIConnectionError) return "Could not reach the provider";
   const name = error instanceof Error ? error.name : "";
-  if (name === "TimeoutError" || name === "AbortError") return "The request to the model timed out";
+  if (name === "TimeoutError" || name === "AbortError") return timeoutMessage(timeoutSeconds);
   if (error instanceof ProviderError) return error.message;
   const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
   const code = safeSystemErrorCode(cause) ?? safeSystemErrorCode(error);
   return code ? `Could not reach the provider (${code})` : "The model call failed";
 }
 
-async function callAnthropic(provider: ResolvedAiProvider, prompt: ModelPrompt, signal: AbortSignal): Promise<string> {
+async function callAnthropic(provider: ResolvedAiProvider, prompt: ModelPrompt, signal: AbortSignal, timeoutMs: number): Promise<string> {
   const client = new Anthropic({
     apiKey: provider.apiKey,
     // Never pick up ANTHROPIC_AUTH_TOKEN or ANTHROPIC_BASE_URL from the environment.
     authToken: null,
     baseURL: ANTHROPIC_API_URL,
     maxRetries: 0,
-    timeout: AI_TIMEOUT_MS,
+    timeout: timeoutMs,
   });
   const response = await client.messages.create(
     {
@@ -128,7 +132,7 @@ async function callAnthropic(provider: ResolvedAiProvider, prompt: ModelPrompt, 
       messages: [{ role: "user", content: prompt.user }],
       output_config: { effort: "low" },
     },
-    { signal, timeout: AI_TIMEOUT_MS, maxRetries: 0 }
+    { signal, timeout: timeoutMs, maxRetries: 0 }
   );
   if (response.stop_reason === "refusal") throw new RefusalError();
   return response.content
@@ -180,32 +184,35 @@ export type ModelTextOptions = {
 
 /**
  * Sends a prompt to the configured model once (no tools, no retries), with a
- * hard 15 s limit, and returns its answer as bounded plain text. Never throws.
+ * hard limit of the provider's timeoutSeconds, and returns its answer as
+ * bounded plain text. Never throws.
  */
 export async function requestModelText(provider: ResolvedAiProvider, prompt: ModelPrompt, options: ModelTextOptions): Promise<ExplanationResult> {
+  const timeoutSeconds = provider.timeoutSeconds;
+  const timeoutMs = timeoutSeconds * 1000;
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       controller.abort();
-      reject(new ProviderError("The request to the model timed out"));
-    }, AI_TIMEOUT_MS);
+      reject(new ProviderError(timeoutMessage(timeoutSeconds)));
+    }, timeoutMs);
   });
   try {
     const call = provider.provider === "anthropic"
-      ? callAnthropic(provider, prompt, controller.signal)
+      ? callAnthropic(provider, prompt, controller.signal, timeoutMs)
       : callOpenAiCompatible(provider, prompt, controller.signal);
     call.catch(() => undefined);
     const text = sanitizeExplanation(await Promise.race([call, deadline]), options.maxChars);
     return text ? { ok: true, text } : { ok: false, error: "The model returned no text" };
   } catch (error) {
-    return { ok: false, error: describeError(error, options.refusalMessage) };
+    return { ok: false, error: describeError(error, options.refusalMessage, timeoutSeconds) };
   } finally {
     if (timer) clearTimeout(timer);
   }
 }
 
-/** Calls the configured model once, with a hard 15 s limit. Never throws. */
+/** Calls the configured model once, within the provider's timeout. Never throws. */
 export async function requestExplanation(provider: ResolvedAiProvider, input: ExplainInput): Promise<ExplanationResult> {
   return requestModelText(provider, buildExplanationPrompt(input), {
     maxChars: MAX_EXPLANATION_CHARS,

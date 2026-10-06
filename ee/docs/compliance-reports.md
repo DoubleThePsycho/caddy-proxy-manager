@@ -230,7 +230,7 @@ A new draft fills every stage from a structured template (English or Italian): t
 
 - the model receives the stage's legal requirements and the aggregated facts only, without who made each change;
 - the facts are untrusted (titles, host names, paths, rule messages, alert titles and change summaries can come from users, logs or requests): they travel as JSON inside a data block delimited by a tag with a random id, with `<` and `>` escaped, and the system prompt tells the model never to follow instructions inside it;
-- the model gets no tools, one call and 15 seconds, and must answer with a JSON object of the stage's text fields; anything else is discarded;
+- the model gets no tools, one call and the AI provider's timeout, and must answer with a JSON object of the stage's text fields; anything else is discarded;
 - it never fills the yes/no judgements (malicious, cross-border), and it is told not to invent facts and to leave placeholders;
 - the stage is labelled **AI-generated first draft** (with provider, model and time) in the dashboard, the API and the print view, and **edited** once a person changes it.
 

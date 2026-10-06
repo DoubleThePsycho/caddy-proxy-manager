@@ -76,7 +76,7 @@ function fakeAnalytics(calls: { query: string; params: Record<string, unknown> }
 
 const deps = (overrides: Record<string, unknown> = {}) => ({ now: () => NOW, analytics: fakeAnalytics(), ...overrides });
 
-const PROVIDER: ResolvedAiProvider = { provider: 'openai_compatible', model: 'local-model', apiKey: null, baseUrl: 'http://llm.example.test/v1' };
+const PROVIDER: ResolvedAiProvider = { provider: 'openai_compatible', model: 'local-model', apiKey: null, baseUrl: 'http://llm.example.test/v1', timeoutSeconds: 60 };
 
 function stage(incident: IncidentView, key: string) {
   return incident.stages.find((item) => item.key === key)!;

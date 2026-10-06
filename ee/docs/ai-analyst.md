@@ -19,6 +19,7 @@ On **Alerts → AI**, or with `PUT /api/v1/ai/settings`:
 | `model` | Default `claude-opus-5` for Anthropic; required for `openai_compatible` (for example `llama3.1`) |
 | `apiKey` | Required for Anthropic, optional for `openai_compatible`. Stored encrypted, never returned (`hasApiKey`). |
 | `baseUrl` | `openai_compatible` only, for example `http://ollama:11434/v1`; requests go to `{baseUrl}/chat/completions` |
+| `timeoutSeconds` | How long one model call may take, 5 to 300 seconds. Default 60, also for settings saved before the field existed. It applies to alert explanations, the digest summary, analytics questions, WAF risk assessments, incident drafts and **Explain a sample alert**. A call that runs out of time reports "The model did not answer within 60 seconds. A slower model needs a longer timeout (Alerts → AI)." Raise it for slow models, such as large self-hosted ones. |
 | `enabled` | Default true |
 
 Then turn on **Add an AI-generated explanation** (`"explain": true`) for the rules that should get one. **Explain a sample alert** (`POST /api/v1/ai/test`) sends a made-up certificate alert to the model and shows the answer.
@@ -43,7 +44,7 @@ Anthropic requests use `messages.create` with `max_tokens: 1024` and `output_con
 
 ## Never in the way of an alert
 
-The model is asked right before the alert is sent, with a hard 15-second limit and no retries. If the call fails, times out, is refused or returns nothing, the alert goes out without an explanation; a slow model delays an alert by at most 15 seconds and never holds up another one (alerts are sent concurrently). When it succeeds, the explanation is appended to the notification on every channel, labeled **AI-generated explanation**, and stored with the history entry. Resolve notices carry no explanation.
+The model is asked right before the alert is sent, with the provider's timeout as a hard limit and no retries. If the call fails, times out, is refused or returns nothing, the alert goes out without an explanation; a slow model delays an alert by at most the timeout and never holds up another one (alerts are sent concurrently). When it succeeds, the explanation is appended to the notification on every channel, labeled **AI-generated explanation**, and stored with the history entry. Resolve notices carry no explanation.
 
 ## Daily security digest
 
@@ -78,7 +79,7 @@ Without ClickHouse analytics the traffic part is replaced by a sentence saying i
 
 ### The AI summary
 
-With `ai` on and a provider configured, the model writes 3 to 6 sentences on what happened and what to look at, from the digest's facts only (without who made each configuration change). The facts go in a JSON data block with a random tag, as for alert explanations, the system prompt says the block is untrusted and must never be followed, the model gets no tools and 15 seconds, and the answer becomes plain text of at most 1500 characters, shown first and labeled **AI-generated summary** in every format. If the call fails, times out, is refused or no provider is configured, the plain digest is sent; the preview and the last-run record say why.
+With `ai` on and a provider configured, the model writes 3 to 6 sentences on what happened and what to look at, from the digest's facts only (without who made each configuration change). The facts go in a JSON data block with a random tag, as for alert explanations, the system prompt says the block is untrusted and must never be followed, the model gets no tools and the provider's timeout, and the answer becomes plain text of at most 1500 characters, shown first and labeled **AI-generated summary** in every format. If the call fails, times out, is refused or no provider is configured, the plain digest is sent; the preview and the last-run record say why.
 
 ### Schedule
 
@@ -97,7 +98,7 @@ Suggestions come from the WAF events of the last 14 days (or the ClickHouse rete
 
 Suggestions are ranked by confidence, then volume. Rules of attack-critical families (local and remote file inclusion, remote code execution, PHP and generic injection, SQL injection, Java attacks, web shells) are never **high** confidence, and only **low** when most matches are critical, blocked or have a high anomaly score. Candidates that look like real attacks are not proposed at all, nor are rules already suppressed for the host or globally, hosts that no proxy host serves, or suggestions dismissed before.
 
-Each suggestion proposes the narrowest exclusion the WAF settings support: suppressing the rule for that proxy host (rule exclusions apply to the whole host; they cannot be limited to a path). The evidence lists the counts, the busiest path prefixes with example paths (query strings removed) and the client counts; client addresses are never shown. With `?explain=true`, up to 5 suggestions without one get an **AI-generated risk assessment** (what the rule protects against, what turning it off risks, whether the evidence looks like a false positive), built with the same untrusted data block, no tools and 15-second limit; failures leave the assessment out and are reported in `explanationError`.
+Each suggestion proposes the narrowest exclusion the WAF settings support: suppressing the rule for that proxy host (rule exclusions apply to the whole host; they cannot be limited to a path). The evidence lists the counts, the busiest path prefixes with example paths (query strings removed) and the client counts; client addresses are never shown. With `?explain=true`, up to 5 suggestions without one get an **AI-generated risk assessment** (what the rule protects against, what turning it off risks, whether the evidence looks like a false positive), built with the same untrusted data block, no tools and the provider's timeout; failures leave the assessment out and are reported in `explanationError`.
 
 Each run replaces the open suggestions. Nothing is applied automatically:
 

@@ -5,7 +5,7 @@
  * Built from aggregated facts only (digest-data.ts). When asked for and a
  * provider is configured, the model adds a short narrative written from those
  * facts, which travel as JSON inside a delimited data block it is told never
- * to take instructions from; it gets no tools and 15 seconds. Without AI, or
+ * to take instructions from; it gets no tools and the provider's timeout. Without AI, or
  * when the call fails, times out or is refused, the plain digest goes out.
  *
  * The scheduled digest never checks the license; previewing, sending on

@@ -13,7 +13,7 @@
  * traffic data cannot answer say so.
  *
  * Bounded: questions of at most 500 characters, at most two model calls per
- * question (each one call, no tools, no retries, 15 s and 1024 output
+ * question (each one call, no tools, no retries, the provider's timeout and 1024 output
  * tokens), one question at a time per user, 10 per 10 minutes and 100 per
  * day per user, and ClickHouse's own 30 s limit per query.
  *

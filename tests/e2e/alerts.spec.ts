@@ -1,7 +1,8 @@
 /**
  * Alerts page on the E2E stack, which runs without a license: the Community
- * notice, the tabs, and the rule editor with its scope control (certificate
- * expiry rules are free; error rate rules need the license).
+ * notice, the tabs, the rule editor with its scope control (certificate
+ * expiry rules are free; error rate rules need the license), and the AI
+ * provider's model timeout.
  */
 import { test, expect } from '@playwright/test';
 
@@ -51,5 +52,19 @@ test.describe('Alerts', () => {
     await dialog.getByRole('combobox', { name: 'Rule type' }).click();
     await expect(page.getByRole('option', { name: /Error rate \(license\)/ })).toHaveAttribute('aria-disabled', 'true');
     await page.keyboard.press('Escape');
+  });
+
+  test('the AI tab shows the model timeout, 60 seconds unless set', async ({ page }) => {
+    await page.goto('/alerts?tab=ai');
+    const timeout = page.getByLabel('Timeout (seconds)');
+    await expect(timeout).toHaveValue('60');
+    await expect(timeout).toHaveAttribute('min', '5');
+    await expect(timeout).toHaveAttribute('max', '300');
+    // Read-only without a license, like the rest of the provider form.
+    await expect(timeout).toBeDisabled();
+
+    const settings = await page.request.get('/api/v1/ai/settings');
+    expect(settings.status()).toBe(200);
+    expect(await settings.json()).toMatchObject({ timeoutSeconds: 60 });
   });
 });

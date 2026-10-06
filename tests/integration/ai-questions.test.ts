@@ -278,11 +278,12 @@ describe('asking', () => {
   });
 
   it('reports a provider failure as 502 and audits it', async () => {
-    ctx.replies = [{ error: 'The request to the model timed out' }];
+    const timedOut = 'The model did not answer within 60 seconds. A slower model needs a longer timeout (Alerts \u2192 AI).';
+    ctx.replies = [{ error: timedOut }];
     const { status, body } = await askQ('Which countries were blocked most?');
     expect(status).toBe(502);
-    expect(body.error).toBe('The question could not be interpreted: The request to the model timed out');
-    expect(auditCalls('analytics_question_asked')[0].data).toMatchObject({ error: 'The request to the model timed out' });
+    expect(body.error).toBe(`The question could not be interpreted: ${timedOut}`);
+    expect(auditCalls('analytics_question_asked')[0].data).toMatchObject({ error: timedOut });
   });
 });
 

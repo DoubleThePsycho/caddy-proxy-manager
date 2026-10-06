@@ -416,7 +416,7 @@ describe('AI settings', () => {
   it('is readable without a license and redacted', async () => {
     const response = await getAiSettings(request('GET'));
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ enabled: false, provider: null, hasApiKey: false, configured: false, defaultModel: 'claude-opus-5' });
+    expect(await response.json()).toMatchObject({ enabled: false, provider: null, hasApiKey: false, timeoutSeconds: 60, configured: false, defaultModel: 'claude-opus-5' });
   });
 
   it('refuses changes and tests without a license', async () => {
@@ -459,7 +459,7 @@ describe('AI settings', () => {
     const response = await putAiSettings(request('PUT', { provider: 'anthropic', apiKey: API_KEY }));
     expect(response.status).toBe(200);
     const data = await response.json();
-    expect(data).toEqual({ enabled: true, provider: 'anthropic', model: 'claude-opus-5', baseUrl: null, hasApiKey: true, configured: true, defaultModel: 'claude-opus-5' });
+    expect(data).toEqual({ enabled: true, provider: 'anthropic', model: 'claude-opus-5', baseUrl: null, hasApiKey: true, timeoutSeconds: 60, configured: true, defaultModel: 'claude-opus-5' });
     expect(JSON.stringify(data)).not.toContain(API_KEY);
     const stored = await getSetting<{ apiKey: string }>(AI_SETTINGS_KEY);
     expect(isEncryptedSecret(stored!.apiKey)).toBe(true);
@@ -491,9 +491,42 @@ describe('AI settings', () => {
     ['a base URL for anthropic', { provider: 'anthropic', apiKey: 'x', baseUrl: 'https://proxy.example.com' }],
     ['a model with spaces', { provider: 'anthropic', apiKey: 'x', model: 'claude opus' }],
     ['an unknown field', { provider: 'anthropic', apiKey: 'x', temperature: 1 }],
+    ['a timeout under 5 seconds', { provider: 'anthropic', apiKey: 'x', timeoutSeconds: 4 }],
+    ['a timeout over 300 seconds', { provider: 'anthropic', apiKey: 'x', timeoutSeconds: 301 }],
+    ['a fractional timeout', { provider: 'anthropic', apiKey: 'x', timeoutSeconds: 30.5 }],
+    ['a timeout as text', { provider: 'anthropic', apiKey: 'x', timeoutSeconds: '60' }],
   ])('rejects %s', async (_label, body) => {
     await installLicense();
     expect((await putAiSettings(request('PUT', body))).status).toBe(400);
+  });
+
+  it('stores the timeout, keeps it when omitted and reads 60 for settings saved without one', async () => {
+    await installLicense();
+    const saved = await putAiSettings(request('PUT', { provider: 'openai_compatible', model: 'qwen3', baseUrl: 'http://llm.example.com/v1', timeoutSeconds: 240 }));
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ timeoutSeconds: 240 });
+    expect(await getSetting(AI_SETTINGS_KEY)).toMatchObject({ timeoutSeconds: 240 });
+    expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'ai_settings_updated', data: expect.objectContaining({ timeoutSeconds: 240 }) }));
+
+    expect(await (await putAiSettings(request('PUT', { model: 'qwen3:32b' }))).json()).toMatchObject({ model: 'qwen3:32b', timeoutSeconds: 240 });
+    const tooShort = await putAiSettings(request('PUT', { timeoutSeconds: 4 }));
+    expect(tooShort.status).toBe(400);
+    expect((await tooShort.json()).error).toBe('timeoutSeconds must be a whole number from 5 to 300');
+
+    await setSetting(AI_SETTINGS_KEY, { enabled: true, provider: 'openai_compatible', model: 'qwen3', baseUrl: 'http://llm.example.com/v1' });
+    expect(await (await getAiSettings(request('GET'))).json()).toMatchObject({ timeoutSeconds: 60, configured: true });
+    expect(await (await putAiSettings(request('PUT', { model: 'qwen3:14b' }))).json()).toMatchObject({ timeoutSeconds: 60 });
+  });
+
+  it('reports a test that runs out of time with the timeout and where to raise it', async () => {
+    await installLicense();
+    await putAiSettings(request('PUT', { provider: 'openai_compatible', model: 'qwen3', baseUrl: 'http://llm.example.com/v1', timeoutSeconds: 90 }));
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new DOMException('The operation timed out.', 'TimeoutError'));
+    expect(await (await testAi(request('POST'))).json()).toEqual({
+      ok: false,
+      explanation: null,
+      error: 'The model did not answer within 90 seconds. A slower model needs a longer timeout (Alerts \u2192 AI).',
+    });
   });
 
   it('tests the configured provider with a sample alert', async () => {

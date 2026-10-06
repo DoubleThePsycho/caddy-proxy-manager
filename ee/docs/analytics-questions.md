@@ -66,7 +66,7 @@ Client addresses, user agents and paths are request details. In the summary call
 
 Turn **AI-written summaries** off and the result never reaches the model: the dashboard writes the summary. The question itself is always sent as typed, so do not type what you would not send. No log lines, raw requests or other configuration are ever sent.
 
-Both calls follow the AI analyst's rules: the provider and key from Alerts → AI (keys go only to the provider they were entered for), no tools, one call each, no retries, a 15-second limit and at most 1024 output tokens. The system prompt says the question and the data are untrusted and never instructions. The summary is reduced to plain text.
+Both calls follow the AI analyst's rules: the provider and key from Alerts → AI (keys go only to the provider they were entered for), no tools, one call each, no retries, the provider's timeout (60 seconds unless set otherwise) and at most 1024 output tokens. A question that runs out of time says so: "The model did not answer within 60 seconds. A slower model needs a longer timeout (Alerts → AI)." Raise **Timeout (seconds)** there for a slow model, such as a large self-hosted one. The system prompt says the question and the data are untrusted and never instructions. The summary is reduced to plain text.
 
 ## Limits and cost
 

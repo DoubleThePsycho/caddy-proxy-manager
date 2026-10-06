@@ -35,7 +35,7 @@ import { requestModelText } from '@/ee/ai/explain';
 import type { ResolvedAiProvider } from '@/ee/ai/settings';
 import type { DigestFacts } from '@/ee/ai/digest-data';
 
-const provider: ResolvedAiProvider = { provider: 'anthropic', model: 'claude-opus-5', apiKey: 'sk-test', baseUrl: 'https://api.anthropic.com' };
+const provider: ResolvedAiProvider = { provider: 'anthropic', model: 'claude-opus-5', apiKey: 'sk-test', baseUrl: 'https://api.anthropic.com', timeoutSeconds: 60 };
 
 const facts: DigestFacts = {
   period: { from: '2026-10-01T06:00:00.000Z', to: '2026-10-02T06:00:00.000Z', hours: 24 },

@@ -140,7 +140,7 @@ describe('AI first draft', () => {
     const subject = { title: 'x', detectedAt: DETECTED.toISOString(), language: 'en' as const, facts: null };
     expect(await requestStageDraft('early_warning', subject, { provider: async () => null, model: async () => ({ ok: true, text: '{}' }) })).toMatchObject({ ok: false, unavailable: true });
     expect(await requestStageDraft('early_warning', subject, { provider: async () => { throw new Error('boom'); }, model: async () => ({ ok: true, text: '{}' }) })).toMatchObject({ ok: false, unavailable: true });
-    const provider = { provider: 'anthropic' as const, model: 'claude-opus-5', apiKey: 'k', baseUrl: 'https://api.anthropic.com' };
+    const provider = { provider: 'anthropic' as const, model: 'claude-opus-5', apiKey: 'k', baseUrl: 'https://api.anthropic.com', timeoutSeconds: 60 };
     expect(await requestStageDraft('early_warning', subject, { provider: async () => provider, model: async () => { throw new Error('network'); } })).toEqual({ ok: false, error: 'The model call failed' });
     expect(await requestStageDraft('early_warning', subject, { provider: async () => provider, model: async () => ({ ok: false, error: 'The model declined to draft this stage' }) })).toEqual({ ok: false, error: 'The model declined to draft this stage' });
     expect(await requestStageDraft('early_warning', subject, { provider: async () => provider, model: async () => ({ ok: true, text: '{"summary":"Draft"}' }) })).toEqual({ ok: true, fields: { summary: 'Draft' }, provider: 'anthropic', model: 'claude-opus-5' });
