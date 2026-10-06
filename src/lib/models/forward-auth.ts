@@ -5,19 +5,11 @@ import {
   forwardAuthAccess,
   groupMembers,
   groups,
-  organizations,
   proxyHosts,
   users,
 } from "../db/schema";
 import { and, eq, inArray, or } from "drizzle-orm";
 import { forwardAuthStateStore, type ForwardAuthSessionRecord } from "../forward-auth-state";
-import {
-  actorOrganizationId,
-  assertActorReaches,
-  organizationCondition,
-  type OrganizationFilter,
-} from "@/ee/multi-tenancy/scope";
-import { assertGrantsInTenant } from "@/ee/multi-tenancy/guard";
 import { hostMatchesPattern } from "../host-pattern-priority";
 import { config } from "../config";
 import { ApiValidationError } from "../api-errors";
@@ -215,17 +207,16 @@ export async function validateForwardAuthSession(
   return { sessionId: session.id, userId: session.userId };
 }
 
-/** `organizationId` limits the list to sessions of one organisation's users (see listProxyHosts). */
-export async function listForwardAuthSessions(organizationId?: OrganizationFilter): Promise<ForwardAuthSession[]> {
+export async function listForwardAuthSessions(): Promise<ForwardAuthSession[]> {
   const sessions = await (await forwardAuthStateStore()).listSessions();
   if (sessions.length === 0) return [];
-  // Only sessions of existing users of the organisation asked for.
+  // Only sessions of existing users.
   const userIds = [...new Set(sessions.map((session) => session.userId))];
   const visible = new Set(
     (await appDb
       .select({ id: users.id })
       .from(users)
-      .where(and(inArray(users.id, userIds), organizationCondition(users.organizationId, organizationId))))
+      .where(inArray(users.id, userIds)))
       .map((row) => row.id)
   );
   return sessions.filter((session) => visible.has(session.userId));
@@ -260,8 +251,8 @@ export async function revokeForwardAuthSessionsOfUsers(userIds: number[]): Promi
 
 /**
  * After a change that can take access away (a user removed from a group, a
- * group deleted, a host's grants replaced, users or hosts moved between
- * organisations, a configuration restored): with a shared store (high
+ * group deleted, a host's grants replaced, a configuration restored): with
+ * a shared store (high
  * availability), ends the sessions of these users or hosts that this
  * database no longer allows, so that nodes whose copy of the database trails
  * this one refuse them at once as well. Without one, the verify endpoint
@@ -386,19 +377,12 @@ export type ForwardAuthAccessEntry = {
   createdAt: string;
 };
 
-/**
- * A forward-auth user as the access checks read it: one query, with the
- * state of their organisation (ee/multi-tenancy).
- */
+/** A forward-auth user as the access checks read it, in one query. */
 export type ForwardAuthUser = {
   id: number;
   email: string;
   username: string | null;
   status: string;
-  /** The user's organisation, or null for the provider level. */
-  organizationId: number | null;
-  /** False when the user's organisation is disabled or gone; true at the provider level. */
-  organizationEnabled: boolean;
 };
 
 async function readForwardAuthUser(userId: number): Promise<ForwardAuthUser | null> {
@@ -409,47 +393,32 @@ async function readForwardAuthUser(userId: number): Promise<ForwardAuthUser | nu
       email: users.email,
       username: users.username,
       status: users.status,
-      organizationId: users.organizationId,
-      organizationEnabled: organizations.enabled,
     })
     .from(users)
-    .leftJoin(organizations, eq(organizations.id, users.organizationId))
     .where(eq(users.id, userId))
     .limit(1));
-  if (!row) return null;
-  const organizationId = row.organizationId ?? null;
-  return {
-    id: row.id,
-    email: row.email,
-    username: row.username,
-    status: row.status,
-    organizationId,
-    organizationEnabled: organizationId === null || row.organizationEnabled === true,
-  };
+  return row ?? null;
 }
 
 /**
- * The groups `user` is a member of that belong to their own organisation (the
- * provider level's for a provider-level user), in membership order: the
- * groups that count for access and that the groups header names.
+ * The groups `user` is a member of, in membership order: the groups that
+ * count for access and that the groups header names.
  */
-async function sameTenantGroupsOf(user: ForwardAuthUser): Promise<{ id: number; name: string }[]> {
+async function groupsOf(user: ForwardAuthUser): Promise<{ id: number; name: string }[]> {
   return await appDb
     .select({ id: groups.id, name: groups.name })
     .from(groupMembers)
     .innerJoin(groups, eq(groupMembers.groupId, groups.id))
-    .where(and(eq(groupMembers.userId, user.id), organizationCondition(groups.organizationId, user.organizationId)))
+    .where(eq(groupMembers.userId, user.id))
     .orderBy(asc(groupMembers.id));
 }
 
 /**
- * Whether a grant on host `proxyHostId` names `user` or one of `groupIds`,
- * the host belonging to the user's organisation (or both being
- * provider-level). One query: a missing host or one of another organisation
- * matches no row.
+ * Whether a grant on host `proxyHostId` names `user` or one of `groupIds`.
+ * One query: a missing host matches no row.
  */
 async function hasHostGrant(user: ForwardAuthUser, proxyHostId: number, groupIds: readonly number[]): Promise<boolean> {
-  if (!user.organizationEnabled || !Number.isSafeInteger(proxyHostId) || proxyHostId <= 0) return false;
+  if (!Number.isSafeInteger(proxyHostId) || proxyHostId <= 0) return false;
   const grantee = groupIds.length > 0
     ? or(eq(forwardAuthAccess.userId, user.id), inArray(forwardAuthAccess.groupId, [...groupIds]))
     : eq(forwardAuthAccess.userId, user.id);
@@ -457,30 +426,22 @@ async function hasHostGrant(user: ForwardAuthUser, proxyHostId: number, groupIds
     .select({ id: forwardAuthAccess.id })
     .from(forwardAuthAccess)
     .innerJoin(proxyHosts, eq(proxyHosts.id, forwardAuthAccess.proxyHostId))
-    .where(and(
-      eq(forwardAuthAccess.proxyHostId, proxyHostId),
-      organizationCondition(proxyHosts.organizationId, user.organizationId),
-      grantee
-    ))
+    .where(and(eq(forwardAuthAccess.proxyHostId, proxyHostId), grantee))
     .limit(1));
   return !!grant;
 }
 
 /**
  * Whether user `userId` may pass forward auth on proxy host `proxyHostId`:
- * granted directly or through a group. With multi-tenancy (ee), a user only
- * ever passes hosts of their own organisation (provider-level users only
- * provider-level hosts), and nobody of a disabled organisation passes,
- * whatever the grants say: a portal sign-in never reaches another tenant's
- * host. Only groups of the user's own organisation count.
+ * granted directly or through a group.
  */
 export async function checkHostAccess(
   userId: number,
   proxyHostId: number
 ): Promise<boolean> {
   const user = await readForwardAuthUser(userId);
-  if (!user || !user.organizationEnabled) return false;
-  const userGroups = await sameTenantGroupsOf(user);
+  if (!user) return false;
+  const userGroups = await groupsOf(user);
   return hasHostGrant(user, proxyHostId, userGroups.map((group) => group.id));
 }
 
@@ -499,8 +460,7 @@ export async function authorizeForwardAuthRequest(
 > {
   const user = await readForwardAuthUser(userId);
   if (!user || user.status !== "active") return { status: 401 };
-  if (!user.organizationEnabled) return { status: 403 };
-  const userGroups = await sameTenantGroupsOf(user);
+  const userGroups = await groupsOf(user);
   if (!(await hasHostGrant(user, proxyHostId, userGroups.map((group) => group.id)))) return { status: 403 };
   return { status: 200, user, groups: userGroups };
 }
@@ -542,7 +502,7 @@ function grantIds(value: unknown, field: "userIds" | "groupIds"): number[] {
  * Replaces the forward-auth grants of host `proxyHostId`, in one
  * transaction. Users and groups that do not exist are left out (foreign keys
  * are not enforced, so a grant for an id nobody has yet would go to whoever
- * gets it); an organisation user naming one gets 404 (assertGrantsInTenant).
+ * gets it).
  */
 export async function setForwardAuthAccess(
   proxyHostId: number,
@@ -552,16 +512,12 @@ export async function setForwardAuthAccess(
   const requested = { userIds: grantIds(access.userIds, "userIds"), groupIds: grantIds(access.groupIds, "groupIds") };
 
   await appDb.transaction(async (tx) => {
-    // Multi-tenancy (ee): only the actor's own organisation's hosts, and only
-    // users and groups of the host's organisation.
     const host = await first(tx
-      .select({ organizationId: proxyHosts.organizationId })
+      .select({ id: proxyHosts.id })
       .from(proxyHosts)
       .where(eq(proxyHosts.id, proxyHostId))
       .limit(1));
     if (!host) throw new Error("Proxy host not found");
-    await assertActorReaches(actorUserId, host.organizationId, "Proxy host not found");
-    await assertGrantsInTenant(tx, host.organizationId ?? null, requested, await actorOrganizationId(actorUserId));
 
     const userIds = requested.userIds.length === 0 ? [] : (await tx
       .select({ id: users.id })

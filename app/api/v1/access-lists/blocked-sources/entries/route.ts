@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { addBlockedSource, getBlockedSourcesList } from "@/src/lib/models/access-lists";
-import { assertProviderLevel } from "@/ee/multi-tenancy/scope";
 import { readJsonBody } from "@/src/lib/access-list-http";
-
-const PROVIDER_ONLY = "The Blocked sources list applies to every organisation; only provider-level users can use it";
 
 /** The Blocked sources entries (deny rules), in order. */
 export async function GET(request: NextRequest) {
   try {
-    const { access } = await requireApiPermission(request, "access_lists:read");
-    assertProviderLevel(access, PROVIDER_ONLY);
+    await requireApiPermission(request, "access_lists:read");
     return NextResponse.json((await getBlockedSourcesList())?.rules ?? []);
   } catch (error) {
     return apiErrorResponse(error);
@@ -26,8 +22,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    const { access, userId } = await requireApiPermission(request, "access_lists:write");
-    assertProviderLevel(access, PROVIDER_ONLY);
+    const { userId } = await requireApiPermission(request, "access_lists:write");
     const body = await readJsonBody(request);
     const { entry, created } = await addBlockedSource(body as Record<string, unknown>, userId);
     return NextResponse.json(entry, { status: created ? 201 : 200 });

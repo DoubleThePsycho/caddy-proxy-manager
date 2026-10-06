@@ -31,7 +31,7 @@ Administrators, and custom roles with `users:read` / `users:write`, can do the s
 
 Tokens are for scripts and tools, sent as `Authorization: Bearer <token>`. A token acts as you, with your current role.
 
-- **Scopes:** a token can be limited to some of your permissions, for example `proxy_hosts:read`. On every request it holds your current permissions **intersected with** its scopes: it can never do more than your role, and if your role loses a permission, the token loses it too. A write scope includes its read (`proxy_hosts:write` can also read proxy hosts). Your tag scope and organisation, if you have one, still apply.
+- **Scopes:** a token can be limited to some of your permissions, for example `proxy_hosts:read`. On every request it holds your current permissions **intersected with** its scopes: it can never do more than your role, and if your role loses a permission, the token loses it too. A write scope includes its read (`proxy_hosts:write` can also read proxy hosts). Your tag scope, if you have one, still applies.
   - **Same as my role:** no scopes; the token has your role's access, as tokens always had.
   - **Read only:** every read permission your role holds when you create the token.
   - **Choose permissions:** any of the permissions your role holds.

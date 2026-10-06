@@ -2,7 +2,7 @@
 
 **Security events** (`/security`, under Observe) shows what Ingressi stopped: requests the WAF blocked or logged, and requests refused by geo rules, access lists, sign-in (forward authentication) and rate limits. It is a Community feature. It reads ClickHouse analytics; without analytics the page says so and shows only the WAF rule set.
 
-Reading the page needs the `waf:read` permission. Actions need their own: adding a WAF exclusion needs `waf:write`, blocking an address needs `access_lists:write` (and a provider-level user, since the Blocked sources list applies to every organisation). Buttons a user may not use are disabled with the reason.
+Reading the page needs the `waf:read` permission. Actions need their own: adding a WAF exclusion needs `waf:write`, blocking an address needs `access_lists:write`. Buttons a user may not use are disabled with the reason.
 
 The old **WAF events** page (`/waf/events`) now opens Security events with the WAF filter and the same time range.
 

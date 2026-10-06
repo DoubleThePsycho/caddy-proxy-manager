@@ -2,7 +2,7 @@
 
 Ask about your traffic in plain language, such as "Which countries were blocked most last week on the shop hosts?" or "Did 5xx errors on api hosts go up after Tuesday?", and get the numbers, a chart or a ranked table, a short summary and the query the question was read as.
 
-Part of the AI analyst, feature id `ai_analyst` (Homelab edition and up, so also Business, Enterprise and MSP). Code: `ee/ai/questions/`. Adding questions to compliance report schedules is part of [compliance reports](compliance-reports.md) (`compliance_reports`, Enterprise).
+Part of the AI analyst, feature id `ai_analyst` (Homelab edition and up, so also Business and Enterprise). Code: `ee/ai/questions/`. Adding questions to compliance report schedules is part of [compliance reports](compliance-reports.md) (`compliance_reports`, Enterprise).
 
 ## Asking
 
@@ -21,7 +21,7 @@ The answer shows:
 - **The result**: one figure (with the change from the previous period when asked), a chart over time (the analytics chart, with the previous period as a line), or a ranked list or table.
 - **What was sent** to the provider for this answer.
 
-**Save question** keeps the question and the query it was read as (optionally shared with everyone of your organisation who can read analytics). A saved question runs again with fresh data without asking the model to read it again: a relative range such as "the last 7 days" ends now. Saved questions are listed under the box, ten a page.
+**Save question** keeps the question and the query it was read as (optionally shared with everyone who can read analytics). A saved question runs again with fresh data without asking the model to read it again: a relative range such as "the last 7 days" ends now. Saved questions are listed under the box, ten a page.
 
 The question goes to the AI provider, which turns it into a query; the query runs on your analytics, and only aggregated figures are used for the summary (see [What the model sees](#what-the-model-sees) and [Audit](#audit)). Without a license that includes the AI analyst the box is read-only: saved questions stay listed and can be deleted.
 
@@ -49,8 +49,8 @@ Ranked dimensions count requests; `mitigated` adds "outcome is not served" and `
 
 A question reads exactly what the asker can read:
 
-- the organisation's host names for organisation users (and a provider's organisation view), every host otherwise, as on the Analytics page;
-- host tags name only the proxy hosts the asker's role reaches (its tag scope and organisation). A tag on no such host gets a question back listing the tags in use. The stored host names of the tagged hosts are the names Caddy routes to them: their exact domains, and names under a wildcard domain that no other host serves exactly.
+- every host, as on the Analytics page;
+- host tags name only the proxy hosts the asker's role reaches (its tag scope). A tag on no such host gets a question back listing the tags in use. The stored host names of the tagged hosts are the names Caddy routes to them: their exact domains, and names under a wildcard domain that no other host serves exactly.
 
 ## What the model sees
 
@@ -84,7 +84,7 @@ On **Alerts → AI → Analytics questions**, or with `GET`/`PUT /api/v1/ai/ques
 
 | Field | Default | |
 | --- | --- | --- |
-| `enabled` | `true` | Users who can read analytics may ask, within their organisation and host tags |
+| `enabled` | `true` | Users who can read analytics may ask, within their host tags |
 | `aiSummaries` | `true` | The model writes the summary from the aggregated result; off, the dashboard writes it and the result is never sent |
 | `shareRequestDetails` | `false` | Send client addresses, user agents and paths when a question needs them; off, they reach the model as placeholders such as `[address 1]`. The question is always sent as typed |
 
@@ -99,7 +99,7 @@ A report schedule can include up to 10 saved questions (`questionIds`, see [comp
 | Method and path | Permission | License | |
 | --- | --- | --- | --- |
 | `POST /api/v1/analytics/questions` | `analytics:read` | yes | `{question}`; the answer. `400` without a provider, `409` when questions are off, `429` over the limits, `502` when the provider fails |
-| `GET /api/v1/analytics/questions/saved` | `analytics:read` | no | Your saved questions and the shared ones of your organisation |
+| `GET /api/v1/analytics/questions/saved` | `analytics:read` | no | Your saved questions and the shared ones |
 | `POST /api/v1/analytics/questions/saved` | `analytics:read` | yes | `{question, query, shared?}`; the query is validated again; `201` |
 | `GET /api/v1/analytics/questions/saved/{id}` | `analytics:read` | no | |
 | `PATCH /api/v1/analytics/questions/saved/{id}` | `analytics:read` | yes, unless only `{"shared": false}` | Owner only |

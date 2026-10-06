@@ -18,7 +18,6 @@ import {
   fleetEnvironments,
   ldapDirectories,
   monetizationHosts,
-  organizations,
   samlProviders,
 } from "@/src/lib/db/schema";
 import { can, type Access, type Permission } from "@/src/lib/permissions";
@@ -70,10 +69,6 @@ const DETAILS: Partial<Record<Feature, Detail>> = {
   fleet: {
     permission: "fleet:read",
     read: async () => plural(await countOf(appDb.select({ value: count() }).from(fleetEnvironments)), "environment", "environments"),
-  },
-  multi_tenancy: {
-    permission: "organizations:read",
-    read: async () => plural(await countOf(appDb.select({ value: count() }).from(organizations)), "organisation", "organisations"),
   },
   api_monetization: {
     permission: "monetization:read",

@@ -15,7 +15,7 @@ With nothing typed, it shows the results you opened last and the most common act
 
 ## What each user sees
 
-The palette only lists what your role lets you read. Hosts need the proxy host or L4 host read permission and follow your role's tag scope, certificates need the certificates read permission, users need the users read permission, and an action needs the write permission of the page it opens. A user of a client organisation only finds their organisation's hosts, certificates and users. Settings pages and their sections need the settings read permission; certificate storage and shared state also need `high_availability:read`.
+The palette only lists what your role lets you read. Hosts need the proxy host or L4 host read permission and follow your role's tag scope, certificates need the certificates read permission, users need the users read permission, and an action needs the write permission of the page it opens. Settings pages and their sections need the settings read permission; certificate storage and shared state also need `high_availability:read`.
 
 The results you opened last are kept in your browser, per user, and never sent anywhere. A white-labelled dashboard leaves out the links to this documentation; the REST API reference stays.
 

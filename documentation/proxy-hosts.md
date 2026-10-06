@@ -4,7 +4,7 @@ A proxy host sends the traffic for one or more domains to services on your netwo
 
 ## The list
 
-**Traffic → Proxy hosts** lists every host you may see (a custom role limited to tags sees the hosts with one of its tags; an organisation user sees their organisation's). Each row shows:
+**Traffic → Proxy hosts** lists every host you may see (a custom role limited to tags sees the hosts with one of its tags). Each row shows:
 
 - **Host**: the first domain (a link to the host's page), how many more it serves, its name and its first upstream.
 - **Status**: *No issues* (none of the problems below; it does not check the upstreams, see [Upstream health](#upstream-health)), *Disabled*, *Waiting for approval* (a change to it waits in [change approvals](../ee/docs/change-approvals.md)), or the first thing that needs a look:
@@ -38,7 +38,7 @@ Select a host's domain to open its page. It shows:
 - **Configuration**: one line per section of the host editor (routing, security, access, certificate, headers, and advanced settings when any are set), each with a link to edit it.
 - **Changes to this host**: the latest audit log entries about the host (with `audit_log:read`), with the fields each change made when [configuration history](../ee/docs/config-history.md) kept the versions around it, and a link to roll back (with `config_history:restore`).
 
-The page needs `proxy_hosts:read`. A host outside your role's tags or your organisation answers "not found", as a host that does not exist.
+The page needs `proxy_hosts:read`. A host outside your role's tags answers "not found", as a host that does not exist.
 
 ## Upstream health
 

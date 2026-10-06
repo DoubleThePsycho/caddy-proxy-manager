@@ -15,7 +15,7 @@ const MAX_HOST_SUGGESTIONS = 200;
 /**
  * Traffic analytics. The page itself only knows what is configured; the
  * data comes from /api/v1/analytics in the browser, under the same
- * permission and organisation scope. The Ask box (ee/ai/questions) shows
+ * permission. The Ask box (ee/ai/questions) shows
  * why it is read-only when the license, an AI provider or the question
  * settings do not allow asking.
  */

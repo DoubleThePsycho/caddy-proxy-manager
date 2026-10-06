@@ -3,8 +3,8 @@
 /**
  * Bulk actions of the proxy hosts list: turn WAF blocking on, add a tag,
  * enable, disable or delete several hosts at once. Each host goes through the
- * same checks as a change to one host (the role's tag scope and organisation,
- * the references it may use, change approval policies), and a host a policy
+ * same checks as a change to one host (the role's tag scope, the
+ * references it may use, change approval policies), and a host a policy
  * protects gets a change request instead. The hosts changed at once are
  * written in one change batch and Caddy is applied once at the end; each
  * still gets its own audit event, as a change to one host does.
@@ -129,7 +129,7 @@ export async function bulkProxyHostsAction(rawIds: unknown, rawOperation: unknow
   for (const id of ids) {
     let host: ProxyHost | null = null;
     try {
-      // 404 for a host outside the role's tag scope or organisation, as for a missing one.
+      // 404 for a host outside the role's tag scope, as for a missing one.
       host = await getProxyHostInScope(access, id);
       const input = inputFor(access, host, operation);
       if (input === null) {
@@ -175,7 +175,6 @@ export async function bulkProxyHostsAction(rawIds: unknown, rawOperation: unknow
           entityType: "proxy_host",
           entityId: host.id,
           summary: `Deleted proxy host ${host.name}`,
-          organizationId: host.organizationId,
         });
       } else {
         await logAuditEvent({ userId, action: "update", entityType: "proxy_host", entityId: host.id, summary: `Updated proxy host ${host.name}`, data: input });

@@ -13,8 +13,6 @@ import { can, type Access } from "./permissions";
 import type { NavBadge, NavBadges } from "./navigation";
 import { getInstanceMode, type InstanceMode } from "./instance-sync";
 import { certificateIdsInScope } from "./access-scope";
-import { organizationCondition } from "@/ee/multi-tenancy/scope";
-import { dashboardOrganizationFilter } from "@/ee/multi-tenancy/view";
 import { countPendingChangeRequests } from "@/ee/approvals/requests";
 import { getLicenseState, countManagedNodes } from "@/ee/licensing/store";
 import { EDITION_LABELS } from "@/ee/licensing/features";
@@ -85,12 +83,11 @@ function validTo(id: number, pem: string): number | null {
 
 async function certificatesBadge(access: Access, now: number): Promise<NavBadge | null> {
   if (!can(access, "certificates:read")) return null;
-  const organizationId = await dashboardOrganizationFilter(access);
   const inScope = await certificateIdsInScope(access);
   const rows = await appDb
     .select({ id: certificates.id, pem: certificates.certificatePem })
     .from(certificates)
-    .where(and(eq(certificates.type, "imported"), isNotNull(certificates.certificatePem), organizationCondition(certificates.organizationId, organizationId)));
+    .where(and(eq(certificates.type, "imported"), isNotNull(certificates.certificatePem)));
   const limit = now + CERTIFICATE_EXPIRY_BADGE_DAYS * DAY_MS;
   const expiring = rows.filter((row) => {
     if (inScope !== null && !inScope.has(row.id)) return false;

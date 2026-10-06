@@ -49,7 +49,6 @@ function roleAccess(permissions: Permission[], scopeTags: string[] = []): Access
     customRole: { id: 9, name: 'Test role' },
     permissions: new Set(permissions),
     scopeTags,
-    organizationId: null,
   };
 }
 
@@ -147,7 +146,7 @@ beforeEach(async () => {
 
 describe('users overview', () => {
   it('describes where each account comes from, its second factor and who sets its role', async () => {
-    const overview = await getUsersOverview(adminAccess(ids.admin), undefined, NOW);
+    const overview = await getUsersOverview(adminAccess(ids.admin), NOW);
     const user = (id: number) => overview.users.find((entry) => entry.id === id)!;
 
     expect(user(ids.admin)).toMatchObject({
@@ -177,7 +176,7 @@ describe('users overview', () => {
   });
 
   it('leaves out the MFA policy without mfa_policy:read', async () => {
-    const overview = await getUsersOverview(roleAccess(['users:read']), undefined, NOW);
+    const overview = await getUsersOverview(roleAccess(['users:read']), NOW);
     expect(overview.mfaPolicy).toBeNull();
     expect(overview.users.length).toBe(6);
   });
@@ -185,7 +184,7 @@ describe('users overview', () => {
 
 describe('groups overview', () => {
   it('shows members, SCIM management, role mappings and every host for an administrator', async () => {
-    const overview = await getGroupsOverview(adminAccess(ids.admin), undefined, NOW);
+    const overview = await getGroupsOverview(adminAccess(ids.admin), NOW);
     const ops = overview.groups.find((group) => group.id === ids.local)!;
     const synced = overview.groups.find((group) => group.id === ids.scimGroup)!;
     expect(ops).toMatchObject({ scim: null, roleMappings: [], members: [{ userId: ids.admin }] });
@@ -194,12 +193,12 @@ describe('groups overview', () => {
   });
 
   it('limits hosts to the tag scope and hides what the role cannot read', async () => {
-    const scoped = await getGroupsOverview(roleAccess(['groups:read', 'proxy_hosts:read'], ['team-a']), undefined, NOW);
+    const scoped = await getGroupsOverview(roleAccess(['groups:read', 'proxy_hosts:read'], ['team-a']), NOW);
     const ops = scoped.groups.find((group) => group.id === ids.local)!;
     expect(ops.hosts!.map((host) => host.domain)).toEqual(['grafana.example.com']);
     expect(ops.roleMappings).toBeNull();
 
-    const groupsOnly = await getGroupsOverview(roleAccess(['groups:read']), undefined, NOW);
+    const groupsOnly = await getGroupsOverview(roleAccess(['groups:read']), NOW);
     expect(groupsOnly.groups.every((group) => group.hosts === null && group.roleMappings === null)).toBe(true);
   });
 });

@@ -33,10 +33,6 @@ type Props = {
   /** The license allows assigning custom roles. */
   customRolesLicensed?: boolean;
   totalPermissions: number;
-  /** Organisation names by id (ee/multi-tenancy), for provider-level viewers. */
-  organizationNames?: Record<number, string>;
-  /** Where new users go: the organisation of an organisation user, or the one a provider-level user picked. */
-  createOrganization?: { id: number; name: string } | null;
   /** sso:read: link to Sign-in and directories. */
   canReadSignIn?: boolean;
   /** Null without groups:read. */
@@ -74,8 +70,6 @@ export default function UsersAndGroupsClient({
   customRoles = [],
   customRolesLicensed = false,
   totalPermissions,
-  organizationNames = {},
-  createOrganization = null,
   canReadSignIn = false,
   groups,
   canWriteGroups = false,
@@ -146,7 +140,6 @@ export default function UsersAndGroupsClient({
               canWriteMfaPolicy={canWriteMfaPolicy}
               roleOptions={roleOptions}
               totalPermissions={totalPermissions}
-              organizationNames={organizationNames}
               onAddUser={canWrite ? () => setCreating(true) : undefined}
             />
           </TabsContent>
@@ -168,7 +161,6 @@ export default function UsersAndGroupsClient({
           open={creating}
           onClose={() => setCreating(false)}
           roleOptions={roleOptions}
-          createOrganization={createOrganization}
         />
       )}
     </div>

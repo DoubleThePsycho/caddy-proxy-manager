@@ -78,7 +78,7 @@ Caddy keeps the certificates it obtains in its own storage, which the dashboard 
 - Checked names: the domains of enabled proxy hosts without an imported certificate, or with a "managed" certificate entry (DNS-01). A wildcard domain is checked as `tls-check.<domain>`; IP addresses are skipped.
 - Caddy renews a certificate when a third of its lifetime is left. A certificate past that point plus one day is reported as **renewal overdue**: the renewal is failing. A name Caddy has no certificate for (Caddy answers with a TLS "internal error" alert) is reported as **missing**, a certificate that does not cover the name as a **mismatch**. Any other TLS error (for example a host that demands a client certificate) is not taken as a missing certificate.
 - The rule fires for managed certificates that expire within `days`, whose renewal is overdue, that are missing or that do not cover the name. A missing certificate of a host saved in the last 15 minutes is left alone while Caddy obtains it. When Caddy's HTTPS port cannot be reached, alerts about managed certificates keep their state.
-- `GET /api/v1/certificates/managed` (permission `certificates:read`, limited to the caller's tag scope and organisation) lists them; `?refresh=true` checks names older than a minute again.
+- `GET /api/v1/certificates/managed` (permission `certificates:read`, limited to the caller's tag scope) lists them; `?refresh=true` checks names older than a minute again.
 
 What is not covered, and why:
 

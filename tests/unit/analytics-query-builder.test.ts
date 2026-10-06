@@ -165,7 +165,7 @@ describe('queries sent to ClickHouse', () => {
   it('send filter values, the range and the host scope only as parameters', async () => {
     const query = parseAnalyticsQuery({ range: '24h', groupBy: 'host', filters: [{ dim: 'path', value: hostile }] }, NOW);
     ch.rows = (sql) => (sql.includes('LIMIT {p_top:UInt32}') ? [{ g: 'top.example.com' }] : []);
-    const result = await queryAnalytics(query, ["scoped.example.com' OR 1=1"], NOW);
+    const result = await queryAnalytics(query, NOW, ["scoped.example.com' OR 1=1"]);
     expect(result.status).toBe('ok');
     expect(ch.calls.length).toBeGreaterThanOrEqual(4);
     for (const call of ch.calls) {
@@ -180,10 +180,10 @@ describe('queries sent to ClickHouse', () => {
   });
 
   it('match nothing for an empty scope and everything for no scope', async () => {
-    await queryAnalytics(parseAnalyticsQuery({}, NOW), [], NOW);
+    await queryAnalytics(parseAnalyticsQuery({}, NOW), NOW, []);
     expect(ch.calls.every((call) => call.query.includes('AND 0 AND'))).toBe(true);
     ch.calls = [];
-    await queryAnalytics(parseAnalyticsQuery({}, NOW), null, NOW);
+    await queryAnalytics(parseAnalyticsQuery({}, NOW), NOW);
     expect(ch.calls.some((call) => call.query.includes('p_scope'))).toBe(false);
   });
 
@@ -191,7 +191,7 @@ describe('queries sent to ClickHouse', () => {
     const range = resolveRange({ range: '7d' }, NOW);
     const filters = parseFilters([{ dim: 'user_agent', value: hostile }, { dim: 'host', op: 'is_not', value: hostile }]);
     await queryTopDimensions({ range, filters, dimensions: [...DIMENSIONS], limit: 5 }, null);
-    await queryRequestLog({ range, filters, limit: 10, offset: 0 }, null);
+    await queryRequestLog({ range, filters, limit: 10, offset: 0 });
     expect(ch.calls.length).toBeGreaterThan(DIMENSIONS.length);
     for (const call of ch.calls) {
       expect(call.query).not.toContain(hostile);
@@ -201,14 +201,14 @@ describe('queries sent to ClickHouse', () => {
 
   it('degrade to empty data with an explicit status', async () => {
     ch.enabled = false;
-    const disabled = await queryAnalytics(parseAnalyticsQuery({}, NOW), null, NOW);
+    const disabled = await queryAnalytics(parseAnalyticsQuery({}, NOW), NOW);
     expect(disabled.status).toBe('disabled');
     expect(disabled.series).toEqual([]);
     expect(ch.calls).toHaveLength(0);
 
     ch.enabled = true;
     ch.fail = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
-    const unavailable = await queryAnalytics(parseAnalyticsQuery({}, NOW), null, NOW);
+    const unavailable = await queryAnalytics(parseAnalyticsQuery({}, NOW), NOW);
     expect(unavailable.status).toBe('unavailable');
     expect(unavailable.totals).toHaveLength(48);
     const top = await queryTopDimensions({ range: resolveRange({}, NOW), filters: [], dimensions: ['host'], limit: 5 }, null);

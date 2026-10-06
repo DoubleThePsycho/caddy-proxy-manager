@@ -85,7 +85,6 @@ export const samlProviders = tables.samlProviders;
 export const samlGroupRoles = tables.samlGroupRoles;
 export const samlRequests = tables.samlRequests;
 export const samlUsedAssertions = tables.samlUsedAssertions;
-export const organizations = tables.organizations;
 export const analyticsSavedViews = tables.analyticsSavedViews;
 export const wafRuleExclusions = tables.wafRuleExclusions;
 export const accessListRules = tables.accessListRules;

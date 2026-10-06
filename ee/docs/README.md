@@ -18,8 +18,7 @@ How licensing works: [../README.md](../README.md). Buying, trials, installing ke
 | High availability: shared certificate storage for Caddy nodes (phase 1), a dashboard cluster with automatic failover (Litestream, phase 2) and shared forward-auth sessions and API balances for web nodes (phase 3), on Redis/Valkey | Enterprise | [high-availability.md](high-availability.md) |
 | Air-gapped installs: offline bundle | Enterprise | [air-gapped.md](air-gapped.md) |
 | Long-term-support release lines (24 months), planned: none announced yet | Enterprise | [lts.md](lts.md) |
-| White-label: product name, logos, favicon, colours, sign-in texts, e-mail sender name | MSP | [white-label.md](white-label.md) |
-| Multi-tenancy: isolated client organisations with their own administrators, hosts and usage reports | MSP | [multi-tenancy.md](multi-tenancy.md) |
+| White-label: product name, logos, favicon, colours, sign-in texts, e-mail sender name | Enterprise | [white-label.md](white-label.md) |
 | Change approvals (four-eyes) and change windows | Enterprise | [change-approvals.md](change-approvals.md) |
 | Compliance reports (access review, change log, certificate inventory, protection coverage) and NIS2 incident notification drafts | Enterprise | [compliance-reports.md](compliance-reports.md) |
 | SCIM 2.0 provisioning (Microsoft Entra ID, Okta) | Enterprise | [scim.md](scim.md) |

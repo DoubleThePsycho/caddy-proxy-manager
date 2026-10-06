@@ -47,7 +47,7 @@ export type {
 } from './security';
 export { getTrafficSignals } from './signals';
 export type { BlockedConcentration, ErrorBurst, MitigationSpike, TrafficSignals } from './signals';
-export { hostDetailFor, hostSummariesFor, scopeFor, trafficSignalsFor, visibleProxyHostDomains } from './service';
+export { hostDetailFor, hostSummariesFor, trafficSignalsFor, visibleProxyHostDomains } from './service';
 export { parseFilters } from './filters';
 export type { AnalyticsFilter, FilterOp } from './filters';
 export { resolveRange, previousPeriod, RANGE_PRESETS } from './range';
@@ -57,4 +57,3 @@ export type { Dimension, Grouping, Metric } from './dimensions';
 export { OUTCOMES, MITIGATED_OUTCOMES } from './outcome';
 export type { Outcome } from './outcome';
 export type { AnalyticsStatus } from './run';
-export type { HostScope } from './scope';

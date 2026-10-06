@@ -99,7 +99,7 @@ What a version changed is computed against the newest version kept before it, wh
 
 ### Audit events and versions
 
-An audit event about a configuration entity (proxy and L4 hosts, access lists and their users, certificates, CA and client certificates, mTLS roles and rules, groups, forward-auth grants, settings groups, certificate storage, imports and restores), recorded while history is on, stores the version before it and the version its apply recorded (`audit_events.configBeforeId`, `configAfterId`, `ee/config-history/links.ts`), and the change request that applied it (`changeRequestId`). These columns are not covered by the hash chain, like `organizationId`.
+An audit event about a configuration entity (proxy and L4 hosts, access lists and their users, certificates, CA and client certificates, mTLS roles and rules, groups, forward-auth grants, settings groups, certificate storage, imports and restores), recorded while history is on, stores the version before it and the version its apply recorded (`audit_events.configBeforeId`, `configAfterId`, `ee/config-history/links.ts`), and the change request that applied it (`changeRequestId`). These columns are not covered by the hash chain.
 
 - Most changes are recorded before Caddy is applied: the event stays pending until the apply records the next version. An apply that finds the configuration unchanged closes it with the same version on both sides ("no change").
 - Settings saves, restores and imports are recorded after the apply that stored their version: when the newest version is automatic, at most five minutes old, changed that entity and has no event for it yet, the event is linked to it.

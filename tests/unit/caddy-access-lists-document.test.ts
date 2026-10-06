@@ -209,7 +209,7 @@ describe('access lists in buildCaddyDocument', () => {
 describe('buildAccessListCaddyConfig', () => {
   const now = new Date().toISOString();
   const row = (overrides: Partial<typeof schema.accessLists.$inferSelect>) => ({
-    id: 1, name: 'List', description: null, createdBy: null, createdAt: now, updatedAt: now, organizationId: null,
+    id: 1, name: 'List', description: null, createdBy: null, createdAt: now, updatedAt: now,
     defaultAction: 'allow', denyStatus: 403, denyBody: null, denyRedirectUrl: null, failClosed: false, systemKey: null,
     ...overrides,
   });

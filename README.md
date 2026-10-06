@@ -44,7 +44,7 @@ The Community edition (MIT) includes:
 - **REST API** under `/api/v1/` with API tokens and an OpenAPI reference at `/api-docs`, and a command palette (Ctrl+K / ⌘K)
 - **Dark mode** and a responsive interface for phones
 
-The paid editions (Homelab, Business, Enterprise and MSP) add features such as alerting, configuration history, SAML and LDAP sign-in, enforced SSO, SCIM, scheduled backups, fleet management, high availability, white-label branding and multi-tenancy. Their code lives in `ee/`; [ee/docs/](ee/docs/README.md) describes each feature and the edition that includes it, and [ingres.si/pricing](https://ingres.si/pricing/) has the prices.
+The paid editions (Homelab, Business and Enterprise) add features such as alerting, configuration history, SAML and LDAP sign-in, enforced SSO, SCIM, scheduled backups, fleet management, high availability and white-label branding. Their code lives in `ee/`; [ee/docs/](ee/docs/README.md) describes each feature and the edition that includes it, and [ingres.si/pricing](https://ingres.si/pricing/) has the prices.
 
 ## Documentation
 

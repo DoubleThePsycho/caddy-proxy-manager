@@ -118,11 +118,12 @@ describe('payload', () => {
   });
 
   it('always sends withdrawn features as false, since schema 1 requires their fields', () => {
-    expect(WITHDRAWN_FEATURES).toEqual(['virtual_patching']);
+    expect(WITHDRAWN_FEATURES).toEqual(['multi_tenancy', 'virtual_patching']);
     for (const feature of WITHDRAWN_FEATURES) expect(FEATURES as readonly string[]).not.toContain(feature);
     const all = Object.fromEntries(FEATURE_FIELDS.map((field) => [field, true])) as UsagePingFacts['features'];
     const payload = buildUsagePingPayload(INSTALL_ID, facts({ features: all }));
     expect(Object.keys(payload.features)).toEqual([...FEATURE_FIELDS]);
+    expect(payload.features.multi_tenancy).toBe(false);
     expect(payload.features.virtual_patching).toBe(false);
   });
 

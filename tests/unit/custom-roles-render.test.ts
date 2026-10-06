@@ -111,7 +111,7 @@ describe('Roles tab', () => {
 
 function overviewUser(overrides: Partial<UserOverviewEntry> = {}): UserOverviewEntry {
   return {
-    id: 5, email: 'ann@example.com', username: 'ann@example.com', name: 'Ann', role: 'viewer', customRoleId: 1, organizationId: null,
+    id: 5, email: 'ann@example.com', username: 'ann@example.com', name: 'Ann', role: 'viewer', customRoleId: 1,
     status: 'active', lastSignInAt: null, lastSignInMethod: null, disabledAt: null, invited: false, createdAt: stamp,
     sources: [{ kind: 'local', label: 'Password' }], passwordSignIn: true,
     secondFactor: { state: 'authenticator_app', authenticatorApp: true, passkeys: 0, required: false, gate: 'none', deadline: null },

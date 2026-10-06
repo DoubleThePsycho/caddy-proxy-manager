@@ -66,7 +66,6 @@ const host: ProxyHost = {
   errorPages: [],
   rateLimit: null,
   tags: ['prod'],
-  organizationId: null,
 };
 
 function data(overrides: Partial<HostEditorData> = {}): HostEditorData {
@@ -104,7 +103,6 @@ function data(overrides: Partial<HostEditorData> = {}): HostEditorData {
     rateLimitDefaults: null,
     geoblockGlobal: null,
     dnsProviderConfigured: false,
-    organization: null,
     lastSaved: { at: '2026-01-02T00:00:00.000Z', by: 'admin' },
     historyHref: '/audit-log?search=App',
     ...overrides,

@@ -10,7 +10,7 @@ const TAG = "White-label";
 export const WHITE_LABEL_OPENAPI_TAG = {
   name: TAG,
   description:
-    "Your own product name, logos, favicon, accent colour, sign-in texts, support contact and e-mail sender name (MSP edition). " +
+    "Your own product name, logos, favicon, accent colour, sign-in texts, support contact and e-mail sender name (Enterprise edition). " +
     "Setting a value of your own and uploading an image need the white_label feature; restoring a default, removing an image, " +
     "resetting and reading never do, and configured branding keeps showing when the license lapses. The license page, license " +
     "texts, legal notices, HTTP header names and other identifiers keep the real product name.",

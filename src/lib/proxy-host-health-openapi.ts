@@ -19,7 +19,7 @@ export const PROXY_HOST_HEALTH_OPENAPI_PATHS = {
       tags: ["Proxy Hosts"],
       summary: "Upstream health of a proxy host",
       description:
-        "Permission proxy_hosts:read. A host outside the caller's tag scope or organisation answers 404. Reads Caddy's " +
+        "Permission proxy_hosts:read. A host outside the caller's tag scope answers 404. Reads Caddy's " +
         "upstream pool from its admin API (GET /reverse_proxy/upstreams) when called: the requests in flight and the " +
         "failures Caddy's passive health checks counted within their fail duration, per dial address. Caddy keeps one " +
         "entry per address, so hosts with the same upstream share the counts. When Caddy does not answer within a few " +

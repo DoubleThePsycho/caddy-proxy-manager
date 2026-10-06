@@ -45,7 +45,7 @@ const FAMILIES: { title: string; areas: readonly string[] }[] = [
   { title: "Govern", areas: ["approvals", "config_history", "compliance"] },
   {
     title: "Platform",
-    areas: ["settings", "instances", "fleet", "high_availability", "backups", "config", "organizations", "monetization", "branding", "usage_reports", "license"],
+    areas: ["settings", "instances", "fleet", "high_availability", "backups", "config", "monetization", "branding", "license"],
   },
 ];
 

@@ -1,8 +1,8 @@
 # White-label
 
-Feature id `white_label`, MSP edition. Source: `ee/white-label/`.
+Feature id `white_label`, Enterprise edition. Source: `ee/white-label/`.
 
-White-label lets a managed service provider resell the product to its clients under its own brand. The clients see your product name, logo, colours and support contact instead of the product's own.
+White-label puts your own brand on the dashboard and on every sign-in page. Your users see your product name, logo, colours and support contact instead of the product's own.
 
 ## What it changes
 
@@ -17,7 +17,7 @@ White-label lets a managed service provider resell the product to its clients un
 | E-mail sender name | The display name in the From header of alert and digest e-mails, in front of each channel's own address. Empty: the bare address, as before. |
 | "Powered by" note | A small note naming the real product under the sign-in forms and in the sidebar. Shown by default once a name or logo of your own is set; it can be turned off. |
 
-The forward-auth portal (`/portal`) is the page your clients' users see most: it shows the logo (or the sign-in heading when there is no logo), the footer, the support contact and the note.
+The forward-auth portal (`/portal`) is the page your users see most: it shows the logo (or the sign-in heading when there is no logo), the footer, the support contact and the note.
 
 ### What keeps the real name
 
@@ -28,7 +28,7 @@ The forward-auth portal (`/portal`) is the page your clients' users see most: it
 
 ## Setup
 
-1. Install an MSP license (**License**).
+1. Install an Enterprise license (**License**).
 2. Open **Branding** in the sidebar.
 3. Fill in the fields you want; leave a field empty to keep the default. The preview shows the sign-in page in both themes as you type.
 4. Upload the logos and the favicon. Each upload is stored at once.
@@ -101,6 +101,6 @@ The branding, images included, is part of instance sync (`white_label` in the sy
 
 ## Limits
 
-- One branding per install: there is no per-host or per-tenant branding yet (see multi-tenancy).
+- One branding per install: there is no per-host branding.
 - The custom domain of the dashboard is set up as usual (a proxy host or `BASE_URL`), not here.
 - The product name in e-mails applies to messages sent after the change.

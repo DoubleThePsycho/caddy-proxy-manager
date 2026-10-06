@@ -1,7 +1,7 @@
 /**
  * GET /api/v1/search (src/lib/search.ts), called through the real guard with
  * real API tokens and a real in-memory database: every group of results is
- * limited to what the caller may read (permission, tag scope, organisation),
+ * limited to what the caller may read (permission, tag scope),
  * the query is matched literally, and user results carry no secrets.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,18 +9,16 @@ import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
 import { apiRequest, insertRole, insertToken, insertUser, json, nowIso } from '../helpers/custom-roles';
-import { insertTenantUser } from '../helpers/multi-tenancy';
 
 const ctx = vi.hoisted(() => ({
   db: null as unknown as TestDb,
-  viewCookie: undefined as string | undefined,
 }));
 
 vi.mock('../../src/lib/db', async () => (await import('../helpers/db-module')).mockDbModule(() => ctx.db));
 vi.mock('next/headers', () => ({
   headers: async () => new Headers(),
   cookies: async () => ({
-    get: (name: string) => (name === 'organization_view' && ctx.viewCookie !== undefined ? { name, value: ctx.viewCookie } : undefined),
+    get: () => undefined,
     set: () => {},
   }),
 }));
@@ -40,17 +38,9 @@ const VIEWER = 5;
 const BRAVO_USER = 6;
 const SETTINGS_READER = 7;
 
-const ORG_ALPHA = 1;
-const ORG_BRAVO = 2;
-
 const PASSWORD_HASH = '$2b$12$secretsecretsecretsecretsecretsecretsecretsecretsecret';
 
 const tokens = new Map<number, string>();
-
-async function organization(id: number, name: string) {
-  const now = nowIso();
-  await ctx.db.insert(schema.organizations).values({ id, name, slug: name.toLowerCase(), allowedUpstreams: '[]', createdAt: now, updatedAt: now });
-}
 
 async function host(name: string, domains: string[], extra: Partial<typeof schema.proxyHosts.$inferInsert> = {}) {
   const now = nowIso();
@@ -59,10 +49,10 @@ async function host(name: string, domains: string[], extra: Partial<typeof schem
   }).returning()))!.id;
 }
 
-async function certificate(name: string, domains: string[], organizationId: number | null = null) {
+async function certificate(name: string, domains: string[]) {
   const now = nowIso();
   return (await first(ctx.db.insert(schema.certificates).values({
-    name, type: 'managed', domainNames: JSON.stringify(domains), organizationId, createdAt: now, updatedAt: now,
+    name, type: 'managed', domainNames: JSON.stringify(domains), createdAt: now, updatedAt: now,
   }).returning()))!.id;
 }
 
@@ -86,25 +76,22 @@ let underscoreHost = 0;
 
 beforeEach(async () => {
   ctx.db = createTestDb();
-  ctx.viewCookie = undefined;
   tokens.clear();
-  await organization(ORG_ALPHA, 'Alpha');
-  await organization(ORG_BRAVO, 'Bravo');
 
   await insertUser(ctx.db, ADMIN, 'admin');
   await ctx.db.update(schema.users).set({ passwordHash: PASSWORD_HASH, name: 'Ada Admin' }).where(eqId(ADMIN));
   await insertUser(ctx.db, HOSTS_READER, 'viewer', await insertRole(ctx.db, 1, ['proxy_hosts:read']));
   await insertUser(ctx.db, SCOPED, 'viewer', await insertRole(ctx.db, 2, ['proxy_hosts:read', 'certificates:read'], ['team-a']));
-  await insertTenantUser(ctx.db, ALPHA_ADMIN, 'org_admin', ORG_ALPHA, null, 'user4');
+  await insertUser(ctx.db, ALPHA_ADMIN, 'user');
   await insertUser(ctx.db, VIEWER, 'viewer');
-  await insertTenantUser(ctx.db, BRAVO_USER, 'user', ORG_BRAVO, null, 'user6');
+  await insertUser(ctx.db, BRAVO_USER, 'user');
   await insertUser(ctx.db, SETTINGS_READER, 'viewer', await insertRole(ctx.db, 3, ['settings:read']));
   for (const id of [ADMIN, HOSTS_READER, SCOPED, ALPHA_ADMIN, VIEWER, BRAVO_USER, SETTINGS_READER]) tokens.set(id, await insertToken(ctx.db, id));
 
   appHost = await host('App', ['app.example.com'], { tags: '["team-a"]' });
   apiHost = await host('API', ['api.example.com', 'api2.example.com']);
-  alphaHost = await host('Alpha site', ['alpha.example.com'], { organizationId: ORG_ALPHA });
-  bravoHost = await host('Bravo site', ['bravo.example.com'], { organizationId: ORG_BRAVO });
+  alphaHost = await host('Alpha site', ['alpha.example.com']);
+  bravoHost = await host('Bravo site', ['bravo.example.com']);
   percentHost = await host('100% uptime', ['status.example.org']);
   underscoreHost = await host('legacy_box', ['legacy.example.org'], { enabled: false });
   const now = nowIso();
@@ -112,7 +99,7 @@ beforeEach(async () => {
     name: 'game-server', protocol: 'tcp', listenAddress: ':25565', upstreams: '["10.1.0.9:25565"]', createdAt: now, updatedAt: now,
   });
   const wildcard = await certificate('Wildcard example.com', ['*.example.com']);
-  await certificate('Alpha certificate', ['alpha.example.com'], ORG_ALPHA);
+  await certificate('Alpha certificate', ['alpha.example.com']);
   // The scoped role reaches the wildcard certificate through the team-a host using it.
   await ctx.db.update(schema.proxyHosts).set({ certificateId: wildcard }).where(eq(schema.proxyHosts.id, appHost));
 });
@@ -189,24 +176,6 @@ describe('GET /api/v1/search', () => {
     const body = await search(SCOPED, 'example');
     expect(ids(body.results, 'hosts')).toEqual([`proxy_host:${appHost}`]);
     expect(titles(body.results, 'certificates')).toEqual(['Wildcard example.com']);
-  });
-
-  it('gives an organisation user only their organisation\'s hosts, certificates and users', async () => {
-    const body = await search(ALPHA_ADMIN, 'example');
-    expect(ids(body.results, 'hosts')).toEqual([`proxy_host:${alphaHost}`]);
-    expect(titles(body.results, 'certificates')).toEqual(['Alpha certificate']);
-    expect(ids(body.results, 'users')).toEqual([`user:${ALPHA_ADMIN}`]);
-    expect((await search(ALPHA_ADMIN, 'game')).results.filter((r) => r.group === 'hosts')).toEqual([]);
-    // The organisation view cookie cannot widen what an organisation user sees.
-    ctx.viewCookie = 'all';
-    expect(ids((await search(ALPHA_ADMIN, 'bravo')).results, 'hosts')).toEqual([]);
-  });
-
-  it('follows the organisation view a provider-level user picked', async () => {
-    ctx.viewCookie = String(ORG_BRAVO);
-    const body = await search(ADMIN, 'example.com');
-    expect(ids(body.results, 'hosts')).toEqual([`proxy_host:${bravoHost}`]);
-    expect(ids(body.results, 'users')).toEqual([`user:${BRAVO_USER}`]);
   });
 
   it('matches LIKE wildcards literally', async () => {

@@ -1,11 +1,11 @@
 /**
  * REST routes of access list rules, the Blocked sources list and the stats
  * (app/api/v1/access-lists/...): each names its permission, passes what the
- * models need, maps errors (a malformed body is 400, an organisation user on
- * the Blocked sources list is 403), and answers 201 only for a new block.
+ * models need, maps errors (a malformed body is 400), and answers 201 only
+ * for a new block.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { adminAccess, organizationAccess, type Access } from '@/src/lib/permissions';
+import { adminAccess, type Access } from '@/src/lib/permissions';
 
 const ctx = vi.hoisted(() => ({ access: null as unknown as Access, denied: null as null | { message: string; status: number } }));
 
@@ -29,17 +29,16 @@ vi.mock('@/src/lib/models/access-lists', () => ({
   addBlockedSource: vi.fn(),
   removeBlockedSource: vi.fn(),
   getBlockedSourcesList: vi.fn(),
+  getAccessList: vi.fn(),
   ensureBlockedSourcesList: vi.fn(),
   updateAccessList: vi.fn(),
   blockedSourcesPlaceholder: vi.fn(() => ({ id: null, name: 'Blocked sources', system: 'blocked_sources', rules: [] })),
 }));
 
-vi.mock('@/src/lib/access-scope', () => ({ findAccessListInScope: vi.fn() }));
 vi.mock('@/src/lib/access-list-overview', () => ({ loadAccessListOverview: vi.fn() }));
 
 import { requireApiPermission } from '@/src/lib/api-auth';
 import * as models from '@/src/lib/models/access-lists';
-import { findAccessListInScope } from '@/src/lib/access-scope';
 import { loadAccessListOverview } from '@/src/lib/access-list-overview';
 import { ApiValidationError } from '@/src/lib/api-errors';
 import * as rulesRoute from '@/app/api/v1/access-lists/[id]/rules/route';
@@ -72,10 +71,10 @@ beforeEach(() => {
 
 describe('permissions', () => {
   it('names access_lists:read for reads and access_lists:write for changes', async () => {
-    vi.mocked(findAccessListInScope).mockResolvedValue({ rules: [rule] } as never);
+    vi.mocked(models.getAccessList).mockResolvedValue({ rules: [rule] } as never);
     vi.mocked(models.getBlockedSourcesList).mockResolvedValue(null);
     vi.mocked(loadAccessListOverview).mockResolvedValue({
-      lists: [], usage: {}, blockedSources: null, blockedSourcesVisible: true,
+      lists: [], usage: {}, blockedSources: null,
       stats: { available: false, windowSeconds: 86400, stopped: 0, previous: 0, requests: null, failedSignIns: 0, byOutcome: null, lists: {}, blockedSources: null, countries: [], hosts: [] },
     });
     const calls: Array<[string, () => Promise<Response>]> = [
@@ -112,7 +111,7 @@ describe('permissions', () => {
 
 describe('rules routes', () => {
   it('answers 404 for a list outside the caller scope', async () => {
-    vi.mocked(findAccessListInScope).mockResolvedValue(null);
+    vi.mocked(models.getAccessList).mockResolvedValue(null);
     expect((await rulesRoute.GET(request(), params({ id: '1' }))).status).toBe(404);
     expect((await ruleRoute.GET(request(), params({ id: '1', ruleId: '4' }))).status).toBe(404);
   });
@@ -161,21 +160,6 @@ describe('Blocked sources routes', () => {
     expect((await entriesRoute.POST(request({ address: '198.51.100.19' }))).status).toBe(200);
   });
 
-  it('refuses organisation users (403) on every Blocked sources route', async () => {
-    ctx.access = organizationAccess(5, 2, 'org_admin');
-    const responses = await Promise.all([
-      blockedRoute.GET(request()),
-      blockedRoute.PUT(request({ failClosed: true })),
-      entriesRoute.GET(request()),
-      entriesRoute.POST(request({ address: '198.51.100.19' })),
-      entryRoute.DELETE(request(), params({ entryId: '4' })),
-    ]);
-    expect(responses.map((response) => response.status)).toEqual([403, 403, 403, 403, 403]);
-    expect(models.addBlockedSource).not.toHaveBeenCalled();
-    expect(models.ensureBlockedSourcesList).not.toHaveBeenCalled();
-    expect(models.removeBlockedSource).not.toHaveBeenCalled();
-  });
-
   it('updates the list it creates on first use', async () => {
     vi.mocked(models.ensureBlockedSourcesList).mockResolvedValue({ id: 9 } as never);
     vi.mocked(models.updateAccessList).mockResolvedValue({ id: 9 } as never);
@@ -185,24 +169,23 @@ describe('Blocked sources routes', () => {
 });
 
 describe('stats route', () => {
-  it('reports each list with its hosts and stopped requests, and nothing about Blocked sources for organisation users', async () => {
+  it('reports each list with its hosts and stopped requests, and the Blocked sources list', async () => {
     vi.mocked(loadAccessListOverview).mockResolvedValue({
       lists: [{ id: 1, name: 'Office', rules: [{ action: 'allow', kind: 'ip' }], entries: [], defaultAction: 'deny', system: null } as never],
       usage: { 1: [{ id: 10, name: 'app', domains: ['app.example.com'], enabled: true }] },
       blockedSources: null,
-      blockedSourcesVisible: false,
       stats: {
         available: true, windowSeconds: 86400, stopped: 5, previous: 2, requests: null, failedSignIns: 0, byOutcome: null,
         lists: { 1: { stopped: 5, failedSignIns: 0, hosts: { 10: { stopped: 5, failedSignIns: 0 } } } },
         blockedSources: null, countries: [{ code: 'US', count: 5 }], hosts: [{ host: 'app.example.com', count: 5 }],
       },
     });
-    const body = await (await statsRoute.GET(request(undefined, { search: 'organizationId=2' }))).json();
+    const body = await (await statsRoute.GET(request())).json();
     expect(body).toMatchObject({
       available: true,
       stopped: 5,
       lists: [{ id: 1, type: 'address_allowlist', rules: 1, stopped: 5, hosts: [{ id: 10, stopped: 5, failedSignIns: 0 }] }],
-      blockedSources: null,
+      blockedSources: { id: null, entries: 0, stopped: null },
     });
   });
 });

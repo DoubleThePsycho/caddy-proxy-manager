@@ -137,11 +137,8 @@ describe('feature catalogue', () => {
     }
   });
 
-  it('keeps editions nested: business has all of homelab, enterprise and msp all of business', () => {
+  it('keeps editions nested: business has all of homelab, enterprise all of business', () => {
     for (const feature of EDITION_FEATURES.homelab) expect(EDITION_FEATURES.business).toContain(feature);
-    for (const feature of EDITION_FEATURES.business) {
-      expect(EDITION_FEATURES.enterprise).toContain(feature);
-      expect(EDITION_FEATURES.msp).toContain(feature);
-    }
+    for (const feature of EDITION_FEATURES.business) expect(EDITION_FEATURES.enterprise).toContain(feature);
   });
 });

@@ -43,10 +43,10 @@ One JSON document, once a day:
 | `schema` | Version of this format (1). |
 | `install_id` | A random UUID v4, created when the ping is turned on. It is not derived from anything (not the hostname, the license or the database). **Reset** in Settings replaces it; turning the ping off deletes it. |
 | `version` | The release this install runs, or `unknown`. |
-| `edition` | `community`, or the name of the licensed edition (`homelab`, `business`, `enterprise`, `msp`) while a license is active or in its grace period. Never the license id or the customer. |
+| `edition` | `community`, or the name of the licensed edition (`homelab`, `business`, `enterprise`) while a license is active or in its grace period. Never the license id or the customer. |
 | `role` | `standalone`, or `master` for an instance sync master. Slaves never send. |
 | `counts` | Proxy hosts, L4 hosts, active dashboard users and the slaves a master syncs to, each only as a range: `0`, `1-5`, `6-20`, `21-100` or `101+`. |
-| `features` | Whether each feature is in use, as `true` or `false`: the WAF on at least one enabled proxy host, forward auth on at least one enabled proxy host, ClickHouse analytics configured, rate limiting rules applying to at least one enabled proxy host, and each paid feature set up (by its feature id). Never how it is configured. `virtual_patching` is always `false`: that feature was withdrawn before it shipped, and the field stays until the next `schema` version. |
+| `features` | Whether each feature is in use, as `true` or `false`: the WAF on at least one enabled proxy host, forward auth on at least one enabled proxy host, ClickHouse analytics configured, rate limiting rules applying to at least one enabled proxy host, and each paid feature set up (by its feature id). Never how it is configured. `multi_tenancy` and `virtual_patching` are always `false`: those features were withdrawn, and their fields stay until the next `schema` version. |
 | `arch` | The CPU architecture (`x64`, `arm64`, ...). |
 
 **Never sent:** hostnames, domains, IP addresses, e-mail addresses, user or display names, license ids or customer names, configuration contents (upstreams, rules, certificates, secrets), and nothing from access, WAF or audit logs.

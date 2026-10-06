@@ -3,13 +3,7 @@ import { applyCaddyConfig } from "../caddy";
 import { logAuditEvent } from "../audit";
 import { mtlsAccessRules, proxyHosts } from "../db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { actorOrganizationId, TenantError } from "@/ee/multi-tenancy/scope";
 import { asc, desc, first } from "@/src/lib/db/ops";
-
-/** mTLS rests on the provider's trust anchors: organisation users (ee/multi-tenancy) never change rules. */
-async function assertProviderActor(actorUserId: number): Promise<void> {
-  if (await actorOrganizationId(actorUserId) !== null) throw new TenantError("mTLS access rules are managed by your provider");
-}
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -85,7 +79,6 @@ export async function createMtlsAccessRule(
   input: MtlsAccessRuleInput,
   actorUserId: number
 ): Promise<MtlsAccessRule> {
-  await assertProviderActor(actorUserId);
   const now = nowIso();
   // The host is read in the transaction that inserts the rule: foreign keys
   // are not enforced, and a rule of a host id nobody has yet would belong to
@@ -129,7 +122,6 @@ export async function updateMtlsAccessRule(
   input: Partial<Omit<MtlsAccessRuleInput, "proxyHostId">>,
   actorUserId: number
 ): Promise<MtlsAccessRule> {
-  await assertProviderActor(actorUserId);
   const existing = await appDb.query.mtlsAccessRules.findFirst({
     where: (table, { eq: cmpEq }) => cmpEq(table.id, id),
   });
@@ -163,7 +155,6 @@ export async function deleteMtlsAccessRule(
   id: number,
   actorUserId: number
 ): Promise<void> {
-  await assertProviderActor(actorUserId);
   const existing = await appDb.query.mtlsAccessRules.findFirst({
     where: (table, { eq: cmpEq }) => cmpEq(table.id, id),
   });

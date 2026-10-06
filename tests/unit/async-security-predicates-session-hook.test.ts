@@ -1,28 +1,23 @@
 /**
  * Better Auth's session.create.before hook (src/lib/auth-server.ts) decides,
  * after the password was checked, whether a sign-in gets a session at all.
- * Three of its checks became asynchronous:
+ * Two of its checks became asynchronous:
  *
- *  - isUserOrganizationBlocked (ee/multi-tenancy): a user of a disabled
- *    organisation gets no session;
  *  - isSessionAllowedUnderSsoEnforcement (ee/sso): while SSO is enforced only
  *    identity-provider sign-ins and break-glass accounts get one;
  *  - isDirectorySessionAllowedUnderSsoEnforcement (ee/ldap): directory
  *    sign-in through a directory that stays open under enforcement.
  *
  * An un-awaited Promise is truthy, so a forgotten `await` either refuses
- * every sign-in (`if (isBlocked(…))`) or admits every one
- * (`!isAllowed(…) && …`). Each check is driven in both directions through the
+ * admits every sign-in (`!isAllowed(…) && …`). Each check is driven in both directions through the
  * real hook, against a real database, with the predicates unmocked.
  *
  * Like auth-oauth-role-injection.test.ts, better-auth is stubbed so that
  * getAuth().options is the configuration auth-server built, hooks included.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { insertOrganization } from '../helpers/multi-tenancy';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
@@ -40,13 +35,9 @@ import { logAuditEvent } from '../../src/lib/audit';
 import { writeSsoEnforcement } from '../../ee/sso/enforcement-store';
 import { isSessionAllowedUnderSsoEnforcement, isSsoEnforced } from '../../ee/sso/sign-in';
 import { isDirectorySessionAllowedUnderSsoEnforcement, runDirectorySignIn } from '../../ee/ldap/sso';
-import { isOrganizationEnabled, isUserOrganizationBlocked } from '../../ee/multi-tenancy/store';
 
-const ORG_ENABLED = 1;
-const ORG_DISABLED = 2;
 const PROVIDER_USER = 10;
-const ENABLED_ORG_USER = 11;
-const DISABLED_ORG_USER = 12;
+const DISABLED_USER = 12;
 const BREAK_GLASS = 13;
 
 const PASSWORD_SIGN_IN = '/sign-in/username';
@@ -58,10 +49,10 @@ let closedDirectory = 0;
 
 const now = () => new Date().toISOString();
 
-async function insertUser(id: number, organizationId: number | null) {
+async function insertUser(id: number, status = 'active') {
   await ctx.db.insert(schema.users).values({
-    id, email: `user${id}@example.com`, name: `User ${id}`, role: 'user', organizationId, provider: 'credentials',
-    subject: `user${id}@example.com`, status: 'active', createdAt: now(), updatedAt: now(),
+    id, email: `user${id}@example.com`, name: `User ${id}`, role: 'user', provider: 'credentials',
+    subject: `user${id}@example.com`, status, createdAt: now(), updatedAt: now(),
   });
 }
 
@@ -72,10 +63,6 @@ async function insertDirectory(name: string, allowWhenSsoEnforced: boolean): Pro
     createdAt: now(), updatedAt: now(),
   }).returning();
   return row.id;
-}
-
-async function setOrganizationEnabled(id: number, enabled: boolean) {
-  await ctx.db.update(schema.organizations).set({ enabled }).where(eq(schema.organizations.id, id));
 }
 
 type Outcome = { ok: true } | { ok: false; statusCode?: number; code?: string };
@@ -97,12 +84,9 @@ const REFUSED_BY_USERNAME = { ok: false, statusCode: 401, code: 'INVALID_USERNAM
 beforeEach(async () => {
   ctx.db = createTestDb();
   vi.mocked(logAuditEvent).mockClear();
-  await insertOrganization(ctx.db, ORG_ENABLED, 'Alpha');
-  await insertOrganization(ctx.db, ORG_DISABLED, 'Bravo', { enabled: false });
-  await insertUser(PROVIDER_USER, null);
-  await insertUser(ENABLED_ORG_USER, ORG_ENABLED);
-  await insertUser(DISABLED_ORG_USER, ORG_DISABLED);
-  await insertUser(BREAK_GLASS, null);
+  await insertUser(PROVIDER_USER);
+  await insertUser(DISABLED_USER, 'disabled');
+  await insertUser(BREAK_GLASS);
   openDirectory = await insertDirectory('Open directory', true);
   closedDirectory = await insertDirectory('Closed directory', false);
 });
@@ -110,43 +94,6 @@ beforeEach(async () => {
 describe('the hook is wired', () => {
   it('is a function on the configuration auth-server builds', () => {
     expect(typeof (getAuth() as any).options?.databaseHooks?.session?.create?.before).toBe('function');
-  });
-});
-
-describe('isUserOrganizationBlocked in the session hook', () => {
-  it('returns real booleans', async () => {
-    expect(await isUserOrganizationBlocked(ctx.db, DISABLED_ORG_USER)).toBe(true);
-    expect(await isUserOrganizationBlocked(ctx.db, ENABLED_ORG_USER)).toBe(false);
-    expect(await isUserOrganizationBlocked(ctx.db, PROVIDER_USER)).toBe(false);
-    expect(await isOrganizationEnabled(ctx.db, ORG_ENABLED)).toBe(true);
-    expect(await isOrganizationEnabled(ctx.db, ORG_DISABLED)).toBe(false);
-    expect(await isOrganizationEnabled(ctx.db, 99)).toBe(false);
-  });
-
-  // Regression shape: `if (isUserOrganizationBlocked(…))` without await would
-  // refuse these too; a predicate that never blocks would let the next test pass.
-  it('gives a session to provider-level users and to users of an enabled organisation', async () => {
-    expect(await createSession(PROVIDER_USER, PASSWORD_SIGN_IN)).toEqual({ ok: true });
-    expect(await createSession(ENABLED_ORG_USER, PASSWORD_SIGN_IN)).toEqual({ ok: true });
-    expect(await createSession(ENABLED_ORG_USER, OAUTH_CALLBACK)).toEqual({ ok: true });
-  });
-
-  it('refuses a user of a disabled organisation as a wrong password, whatever the sign-in method', async () => {
-    expect(await createSession(DISABLED_ORG_USER, PASSWORD_SIGN_IN)).toEqual(REFUSED_BY_USERNAME);
-    expect(await createSession(DISABLED_ORG_USER, OAUTH_CALLBACK)).toMatchObject({ ok: false, statusCode: 401 });
-  });
-
-  it('follows the organisation as stored: disabling refuses, enabling admits again', async () => {
-    await setOrganizationEnabled(ORG_ENABLED, false);
-    expect(await createSession(ENABLED_ORG_USER, PASSWORD_SIGN_IN)).toEqual(REFUSED_BY_USERNAME);
-    await setOrganizationEnabled(ORG_ENABLED, true);
-    expect(await createSession(ENABLED_ORG_USER, PASSWORD_SIGN_IN)).toEqual({ ok: true });
-  });
-
-  it('refuses a user whose organisation no longer exists', async () => {
-    await ctx.db.delete(schema.organizations).where(eq(schema.organizations.id, ORG_ENABLED));
-    expect(await isUserOrganizationBlocked(ctx.db, ENABLED_ORG_USER)).toBe(true);
-    expect(await createSession(ENABLED_ORG_USER, PASSWORD_SIGN_IN)).toEqual(REFUSED_BY_USERNAME);
   });
 });
 
@@ -206,9 +153,9 @@ describe('enforced SSO in the session hook', () => {
     expect(await createSession(PROVIDER_USER, LDAP_SIGN_IN)).toEqual(REFUSED_BY_USERNAME);
   });
 
-  it('still refuses a user of a disabled organisation on an open directory', async () => {
+  it('still refuses a disabled account on an open directory', async () => {
     await enforce(true);
-    expect(await runDirectorySignIn({ userId: DISABLED_ORG_USER, directoryId: openDirectory }, () =>
-      createSession(DISABLED_ORG_USER, LDAP_SIGN_IN))).toEqual(REFUSED_BY_USERNAME);
+    expect(await runDirectorySignIn({ userId: DISABLED_USER, directoryId: openDirectory }, () =>
+      createSession(DISABLED_USER, LDAP_SIGN_IN))).toEqual(REFUSED_BY_USERNAME);
   });
 });

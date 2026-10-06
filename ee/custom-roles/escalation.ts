@@ -21,8 +21,6 @@ import {
   can,
   isAdminLevel,
   isScopableArea,
-  ORGANIZATION_ADMIN_ROLE,
-  ORGANIZATION_PERMISSIONS,
   permissionArea,
   PERMISSIONS,
   type Access,
@@ -51,8 +49,6 @@ export function grantOfRole(role: Pick<CustomRole, "permissions" | "scopeTags">)
 }
 
 export function grantOfBuiltInRole(role: string): Grant {
-  // The organisation administrator (ee/multi-tenancy) holds every organisation permission.
-  if (role === ORGANIZATION_ADMIN_ROLE) return { isAdmin: false, permissions: new Set(ORGANIZATION_PERMISSIONS), scopeTags: [] };
   return { isAdmin: role === "admin", permissions: role === "admin" ? new Set(PERMISSIONS) : new Set(), scopeTags: [] };
 }
 

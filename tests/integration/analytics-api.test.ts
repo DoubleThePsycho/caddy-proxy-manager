@@ -1,7 +1,7 @@
 /**
  * /api/v1/analytics over a real database with a mocked ClickHouse client:
  * the permission every route names, input validation (400 before any query
- * runs), bound parameters, the organisation and tag scopes, the "disabled" /
+ * runs), bound parameters, the tag scope, the "disabled" /
  * "unavailable" fallbacks, saved views with their sharing rules and audit
  * events, and the OpenAPI entries.
  */
@@ -70,11 +70,10 @@ import { GET as listViews, POST as createView } from '../../app/api/v1/analytics
 import { DELETE as deleteView, GET as getView, PATCH as patchView } from '../../app/api/v1/analytics/views/[id]/route';
 import { GET as getOpenApi } from '../../app/api/v1/openapi.json/route';
 import * as schema from '../../src/lib/db/schema';
-import { adminAccess, organizationAccess, type Permission } from '../../src/lib/permissions';
+import { adminAccess, type Permission } from '../../src/lib/permissions';
 import { logAuditEvent } from '../../src/lib/audit';
 import { deleteUser } from '../../src/lib/models/user';
 
-const ORG = 7;
 
 function req(path: string, init?: { method?: string; body?: unknown }): NextRequest {
   return new NextRequest(`http://localhost${path}`, {
@@ -92,11 +91,10 @@ function customAccess(userId: number, permissions: Permission[], scopeTags: stri
     customRole: { id: 1, name: 'Team' },
     permissions: new Set(permissions),
     scopeTags,
-    organizationId: null,
   };
 }
 
-async function seedHost(values: { id: number; domains: string[]; tags?: string[]; organizationId?: number | null }) {
+async function seedHost(values: { id: number; domains: string[]; tags?: string[] }) {
   const now = new Date().toISOString();
   await ctx.db.insert(schema.proxyHosts).values({
     id: values.id,
@@ -104,7 +102,6 @@ async function seedHost(values: { id: number; domains: string[]; tags?: string[]
     domains: JSON.stringify(values.domains),
     upstreams: '["backend:8080"]',
     tags: JSON.stringify(values.tags ?? []),
-    organizationId: values.organizationId ?? null,
     createdAt: now,
     updatedAt: now,
   });
@@ -118,20 +115,19 @@ beforeEach(async () => {
   ctx.calls = [];
   ctx.rows = () => [];
   vi.mocked(logAuditEvent).mockClear();
-  for (const table of [schema.analyticsSavedViews, schema.proxyHosts, schema.organizations, schema.users]) {
+  for (const table of [schema.analyticsSavedViews, schema.proxyHosts, schema.users]) {
     await ctx.db.delete(table).catch(() => {});
   }
   const now = new Date().toISOString();
-  await ctx.db.insert(schema.organizations).values({ id: ORG, name: 'Client', slug: 'client', createdAt: now, updatedAt: now });
-  for (const [userId, role, organizationId] of [[1, 'admin', null], [2, 'viewer', null], [3, 'org_admin', ORG], [4, 'viewer', null]] as const) {
+  for (const [userId, role] of [[1, 'admin'], [2, 'viewer'], [3, 'viewer'], [4, 'viewer']] as const) {
     await ctx.db.insert(schema.users).values({
       id: userId, email: `user${userId}@example.com`, name: `User ${userId}`, role, provider: 'credentials', subject: `user${userId}`,
-      status: 'active', organizationId, createdAt: now, updatedAt: now,
+      status: 'active', createdAt: now, updatedAt: now,
     });
   }
   await seedHost({ id: 1, domains: ['app.example.com'], tags: ['team-a'] });
   await seedHost({ id: 2, domains: ['*.example.org'], tags: ['team-b'] });
-  await seedHost({ id: 3, domains: ['client.example.net'], organizationId: ORG });
+  await seedHost({ id: 3, domains: ['client.example.net'] });
 });
 
 describe('permissions', () => {
@@ -199,17 +195,6 @@ describe('GET /api/v1/analytics/query', () => {
     const response = await getQuery(req('/api/v1/analytics/query?range=30d'));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ status: 'unavailable', previous: { available: false, reason: 'retention' } });
-  });
-
-  it("limits an organisation user to the organisation's hosts, filters or not", async () => {
-    ctx.access = organizationAccess(3, ORG, 'org_admin');
-    ctx.seen = ['client.example.net:443', 'app.example.com', 'b.example.org'];
-    const filters = encodeURIComponent(JSON.stringify([{ dim: 'host', value: 'app.example.com' }]));
-    expect((await getQuery(req(`/api/v1/analytics/query?filters=${filters}`))).status).toBe(200);
-    for (const call of ctx.calls) {
-      expect([...(call.query_params.p_scope as string[])].sort()).toEqual(['client.example.net', 'client.example.net:443']);
-      expect(call.query).toContain('host IN {p_scope:Array(String)}');
-    }
   });
 });
 
@@ -373,11 +358,9 @@ describe('per-host summaries', () => {
     expect((await getHost(req('/api/v1/analytics/hosts/1'), id(1))).status).toBe(404);
     expect((await getHost(req('/api/v1/analytics/hosts/99'), id(99))).status).toBe(404);
     expect((await getHost(req('/api/v1/analytics/hosts/abc'), id('abc'))).status).toBe(400);
-    ctx.access = organizationAccess(3, ORG, 'org_admin');
-    expect((await getHost(req('/api/v1/analytics/hosts/2'), id(2))).status).toBe(404);
-    const own = await getHost(req('/api/v1/analytics/hosts/3?range=1h'), id(3));
+    const own = await getHost(req('/api/v1/analytics/hosts/2?range=1h'), id(2));
     expect(own.status).toBe(200);
-    expect(await own.json()).toMatchObject({ status: 'ok', proxyHostId: 3, range: { preset: '1h', buckets: 60 } });
+    expect(await own.json()).toMatchObject({ status: 'ok', proxyHostId: 2, range: { preset: '1h', buckets: 60 } });
   });
 
   it("leave another host's exact domain out of a wildcard host's detail", async () => {
@@ -424,11 +407,11 @@ describe('saved views', () => {
     expect(response.status).toBe(400);
   });
 
-  it('share inside the organisation only, and only the owner changes them', async () => {
+  it('are shared with every analytics reader, and only the owner changes them', async () => {
     const shared = await (await createView(req('/api/v1/analytics/views', { method: 'POST', body: { ...view, name: 'Shared', shared: true } }))).json();
     const priv = await (await createView(req('/api/v1/analytics/views', { method: 'POST', body: { ...view, name: 'Private' } }))).json();
 
-    // Another provider-level analytics reader sees the shared view only.
+    // Another analytics reader sees the shared view only.
     ctx.access = customAccess(2, ['analytics:read']);
     const listed = await (await listViews(req('/api/v1/analytics/views'))).json();
     expect(listed.map((v: { name: string; owned: boolean }) => [v.name, v.owned])).toEqual([['Shared', false]]);
@@ -437,16 +420,13 @@ describe('saved views', () => {
     expect((await patchView(req(`/api/v1/analytics/views/${shared.id}`, { method: 'PATCH', body: { name: 'Mine now' } }), id(shared.id))).status).toBe(403);
     expect((await deleteView(req(`/api/v1/analytics/views/${shared.id}`, { method: 'DELETE' }), id(shared.id))).status).toBe(403);
 
-    // An organisation user sees neither.
-    ctx.access = organizationAccess(3, ORG, 'org_admin');
-    expect(await (await listViews(req('/api/v1/analytics/views'))).json()).toEqual([]);
-    expect((await getView(req(`/api/v1/analytics/views/${shared.id}`), id(shared.id))).status).toBe(404);
-    const orgView = await (await createView(req('/api/v1/analytics/views', { method: 'POST', body: { name: 'Client view', shared: true } }))).json();
-    expect(orgView).toMatchObject({ range: { preset: '24h' }, metric: 'requests', groupBy: null, filters: [] });
+    // A view saved with only a name takes the defaults.
+    ctx.access = customAccess(3, ['analytics:read']);
+    const defaults = await (await createView(req('/api/v1/analytics/views', { method: 'POST', body: { name: 'Client view', shared: true } }))).json();
+    expect(defaults).toMatchObject({ range: { preset: '24h' }, metric: 'requests', groupBy: null, filters: [] });
 
     // ...and an administrator may delete someone else's shared view, never see their private ones.
     ctx.access = adminAccess(4);
-    expect((await getView(req(`/api/v1/analytics/views/${orgView.id}`), id(orgView.id))).status).toBe(404);
     expect((await deleteView(req(`/api/v1/analytics/views/${shared.id}`, { method: 'DELETE' }), id(shared.id))).status).toBe(200);
     expect((await deleteView(req(`/api/v1/analytics/views/${priv.id}`, { method: 'DELETE' }), id(priv.id))).status).toBe(404);
   });

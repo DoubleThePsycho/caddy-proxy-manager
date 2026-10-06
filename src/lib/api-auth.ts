@@ -29,8 +29,6 @@ export type ApiAuthResult = {
   role: string;
   /** The user's custom role (ee/custom-roles), or null for a built-in role. API tokens act with it. */
   customRoleId?: number | null;
-  /** The user's organisation (ee/multi-tenancy), or null for the provider level. API tokens act within it. */
-  organizationId?: number | null;
   authMethod: "bearer" | "session";
   /**
    * The scopes of the API token the request carried (src/lib/api-token-scopes.ts);
@@ -77,7 +75,6 @@ export async function authenticateApiRequest(
       userId: result.user.id,
       role: result.user.role,
       customRoleId: result.user.customRoleId ?? null,
-      organizationId: result.user.organizationId ?? null,
       authMethod: "bearer",
       tokenScopes: result.token.scopes ?? null,
     };
@@ -106,7 +103,6 @@ export async function authenticateApiRequest(
     userId: Number(session.user.id),
     role,
     customRoleId: session.user.customRoleId ?? null,
-    organizationId: session.user.organizationId ?? null,
     authMethod: "session",
   };
 }
@@ -144,7 +140,6 @@ export async function getApiAccess(result: ApiAuthResult): Promise<Access> {
     id: result.userId,
     role: result.role,
     customRoleId: result.customRoleId ?? null,
-    organizationId: result.organizationId ?? null,
   });
   return applyTokenScopes(access, result.tokenScopes ?? null);
 }

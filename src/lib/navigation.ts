@@ -42,9 +42,7 @@ export type NavEntryKey =
   | "compliance"
   | "fleet"
   | "high-availability"
-  | "organizations"
   | "monetization"
-  | "usage"
   | "settings"
   | "branding"
   | "license"
@@ -191,9 +189,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         label: "High availability",
         pages: [{ href: "/high-availability", label: "High availability", permission: "settings:read" }],
       },
-      { key: "organizations", label: "Organisations", pages: [{ href: "/organizations", label: "Organisations", permission: "organizations:read" }] },
       { key: "monetization", label: "API monetization", pages: [{ href: "/api-monetization", label: "API monetization", permission: "monetization:read" }] },
-      { key: "usage", label: "Usage", pages: [{ href: "/usage", label: "Usage", permission: "usage_reports:read" }] },
     ],
   },
 ];

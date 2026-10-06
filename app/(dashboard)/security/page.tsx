@@ -26,10 +26,9 @@ import {
 } from "@/src/lib/analytics/security";
 import type { AnalyticsFilter } from "@/src/lib/analytics/filters";
 import type { AnalyticsStatus } from "@/src/lib/analytics/run";
-import { allProxyHostDomains, scopeFor } from "@/src/lib/analytics/service";
+import { allProxyHostDomains } from "@/src/lib/analytics/service";
 import { proxyHostForName } from "@/src/lib/analytics/scope";
 import { formatBucketTime } from "@/components/ui/chart-format";
-import { isProviderLevel } from "@/ee/multi-tenancy/scope";
 import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { getAiSettingsView } from "@/ee/ai/settings";
 import { listOpenSuggestions } from "@/ee/ai/waf-tuning";
@@ -126,17 +125,16 @@ export default async function SecurityEventsPage({ searchParams }: { searchParam
   }
   const page = Math.min(MAX_PAGE, Math.max(1, Number.parseInt(first(params.page) ?? "1", 10) || 1));
 
-  const scope = await scopeFor(access);
   const allDomains = await allProxyHostDomains();
-  const canReadAccessLists = can(access, "access_lists:read") && isProviderLevel(access);
+  const canReadAccessLists = can(access, "access_lists:read");
 
   const [series, rules, sources, hosts, events, wafSettings, proxyHosts, exclusionCounts, rateLimit, blockedList, suggestions, canConfigureAi, ai] =
     await Promise.all([
-      querySecuritySeries({ range }, scope, now),
-      querySecurityRules({ range, limit: TOP_LIMIT }, scope),
-      querySecuritySources({ range, limit: TOP_LIMIT }, scope),
-      querySecurityHosts({ range, limit: 3 }, scope, allDomains),
-      querySecurityEvents({ range, kinds, filters, limit: PER_PAGE + 1, offset: (page - 1) * PER_PAGE }, scope),
+      querySecuritySeries({ range }, now),
+      querySecurityRules({ range, limit: TOP_LIMIT }),
+      querySecuritySources({ range, limit: TOP_LIMIT }),
+      querySecurityHosts({ range, limit: 3 }, allDomains),
+      querySecurityEvents({ range, kinds, filters, limit: PER_PAGE + 1, offset: (page - 1) * PER_PAGE }),
       getWafSettings(),
       listProxyHosts(),
       countWafExclusionsByScope(),
@@ -174,11 +172,7 @@ export default async function SecurityEventsPage({ searchParams }: { searchParam
     page,
   };
 
-  const blockDisabledReason = !can(access, "access_lists:write")
-    ? "Blocking an address needs the access_lists:write permission."
-    : !isProviderLevel(access)
-      ? "The Blocked sources list applies to every organisation; only provider-level users can add to it."
-      : null;
+  const blockDisabledReason = !can(access, "access_lists:write") ? "Blocking an address needs the access_lists:write permission." : null;
 
   const data: SecurityPageData = {
     now,

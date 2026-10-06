@@ -54,8 +54,6 @@ export function roleSummary(
   switch (user.role) {
     case "admin":
       return { label: "Admin", detail: user.roleManagedBy ?? `Built-in · all ${totalPermissions} permissions` };
-    case "org_admin":
-      return { label: "Organisation admin", detail: user.roleManagedBy ?? "Built-in · manages the organisation" };
     case "user":
       return { label: "User", detail: user.roleManagedBy ?? "Built-in · own profile and tokens" };
     default:
@@ -122,7 +120,7 @@ export function statusOf(user: Pick<UserOverviewEntry, "status" | "invited">): S
 }
 
 /** The text a search looks in. */
-export function searchText(user: UserOverviewEntry, role: { label: string }, organization: string | null): string {
+export function searchText(user: UserOverviewEntry, role: { label: string }): string {
   return [
     user.name,
     user.email,
@@ -130,7 +128,6 @@ export function searchText(user: UserOverviewEntry, role: { label: string }, org
     role.label,
     ...user.sources.map((source) => `${SOURCE_LABELS[source.kind]} ${source.label}`),
     statusOf(user).label,
-    organization,
   ]
     .filter(Boolean)
     .join(" ")

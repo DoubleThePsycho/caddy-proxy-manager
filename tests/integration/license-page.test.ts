@@ -70,7 +70,6 @@ function customAccess(permissions: Permission[]): Access {
     customRole: { id: 1, name: 'License readers' },
     permissions: new Set(permissions),
     scopeTags: [],
-    organizationId: null,
   };
 }
 
@@ -290,7 +289,6 @@ describe('license page helpers', () => {
     expect(editionGroupLabel('homelab', ['alerting', 'config_history', 'ai_analyst'])).toBe('Homelab and up');
     expect(editionGroupLabel('business', ['sso_saml'])).toBe('Business and up');
     expect(editionGroupLabel('enterprise', ['fleet', 'ldap'])).toBe('Enterprise only');
-    expect(editionGroupLabel('msp', ['multi_tenancy', 'white_label'])).toBe('MSP only');
   });
 
   it('sorts each feature into in use, not set up, nothing to set up or out', async () => {
@@ -298,14 +296,14 @@ describe('license page helpers', () => {
     const rows = featureRows(license, {
       alerting: { inUse: true, detail: '1 firing' },
       config_history: { inUse: false, detail: null },
-      multi_tenancy: { inUse: true, detail: null },
+      white_label: { inUse: true, detail: null },
       air_gap: { inUse: null, detail: null },
     });
     const byId = Object.fromEntries(rows.map((row) => [row.id, row]));
     expect(byId.alerting).toMatchObject({ install: 'use', detail: '1 firing' });
     expect(byId.config_history.install).toBe('idle');
     // Set up while licensed for it, not in this edition: running, read-only.
-    expect(byId.multi_tenancy).toMatchObject({ install: 'use', detail: 'read-only' });
+    expect(byId.white_label).toMatchObject({ install: 'use', detail: 'read-only' });
     expect(byId.fleet.install).toBe('out');
     expect(byId.air_gap.install).toBe('out');
     const enterpriseRows = featureRows(toLicenseView(evaluateEnterprise(), 1), { air_gap: { inUse: null, detail: null } });
@@ -319,13 +317,13 @@ describe('license page helpers', () => {
     expect(keyFromFileText('  not a key  ')).toBe('not a key');
     const result = await verifyLicenseAction(key({ edition: 'business', nodes: 2, features: ['fleet'], customer: 'Example S.r.l.' }));
     if (!('check' in result)) throw new Error('expected a check');
-    const text = describeCheck(result.check, { hasLicense: true, nodesUsed: 3, inUse: ['multi_tenancy'] });
+    const text = describeCheck(result.check, { hasLicense: true, nodesUsed: 3, inUse: ['white_label'] });
     expect(text.tone).toBe('ok');
     expect(text.title).toBe('Signature verified with public key 2026-test');
     expect(text.body).toContain('Business · 2 nodes · Example S.r.l. · valid until 31 Dec 2099');
     expect(text.body).toContain('replaces the current key');
     expect(text.notes.join(' ')).toContain('Also grants Fleet management.');
-    expect(text.notes.join(' ')).toContain('Not in this key but set up here: Multi-tenancy');
+    expect(text.notes.join(' ')).toContain('Not in this key but set up here: White-label');
     expect(text.notes.join(' ')).toContain('the key covers 2');
   });
 });

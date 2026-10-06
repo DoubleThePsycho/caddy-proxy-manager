@@ -133,7 +133,7 @@ function SavedList({
               <span className="text-xs text-soft [overflow-wrap:anywhere]">{question.interpretation}</span>
             </span>
             {question.shared && (
-              <Badge variant="muted" title={question.owned ? "Shared with your organisation" : `Shared by ${question.ownerName ?? "another user"}`}>
+              <Badge variant="muted" title={question.owned ? "Shared with everyone who can read analytics" : `Shared by ${question.ownerName ?? "another user"}`}>
                 <Users className="size-3" aria-hidden="true" />
                 {question.owned ? "Shared" : (question.ownerName ?? "Shared")}
               </Badge>
@@ -146,7 +146,7 @@ function SavedList({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  title={question.shared ? "Stop sharing" : "Share with your organisation"}
+                  title={question.shared ? "Stop sharing" : "Share with everyone who can read analytics"}
                   aria-label={question.shared ? `Stop sharing "${question.question}"` : `Share "${question.question}"`}
                   aria-pressed={question.shared}
                   disabled={busy || (!question.shared && !canRun)}
@@ -264,7 +264,7 @@ export function AskPanel({ availability, isAdmin, canOpenAiSettings, variant = "
       ) : (
         <span className="flex items-center gap-2">
           <label className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-            <Checkbox checked={share} onCheckedChange={(checked) => setShare(checked === true)} aria-label="Share with your organisation" />
+            <Checkbox checked={share} onCheckedChange={(checked) => setShare(checked === true)} aria-label="Share with everyone who can read analytics" />
             Share
           </label>
           <Button variant="secondary" size="sm" onClick={() => void save()} disabled={busy}>

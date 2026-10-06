@@ -4,7 +4,7 @@
  *
  *   question ──model──> JSON ──schema.ts──> QuestionQuery ──run.ts──> result
  *                                                   (analytics layer, bound parameters,
- *                                                    the asker's organisation and tag scope)
+ *                                                    the asker's tag scope)
  *   result ──(aggregates, placeholders)──model──> summary   (optional)
  *
  * Nothing the model returns runs unvalidated: an answer that is not one of
@@ -26,17 +26,15 @@ import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
 import { getRetentionDays } from "@/src/lib/clickhouse/client";
 import { createRateLimiter, type RateLimiter } from "@/src/lib/rate-limit";
-import { scopeTagsFor, tenantOf, type Access } from "@/src/lib/permissions";
+import { scopeTagsFor, type Access } from "@/src/lib/permissions";
 import { listProxyHosts } from "@/src/lib/models/proxy-hosts";
-import { allProxyHostDomains, scopeFor } from "@/src/lib/analytics/service";
-import { dashboardOrganizationFilter } from "@/ee/multi-tenancy/view";
-import { seenHosts } from "@/ee/multi-tenancy/analytics";
+import { allProxyHostDomains } from "@/src/lib/analytics/service";
 import { requireFeature } from "@/ee/licensing/store";
 import { requestModelText, sanitizeExplanation } from "@/ee/ai/explain";
 import { getAiProviderConfig, type ResolvedAiProvider } from "@/ee/ai/settings";
 import { analyticsHrefFor, computedSummary, describeQuery, formatPeriod } from "./describe";
 import { buildInterpretationPrompt, buildSummaryPrompt, restorePlaceholders } from "./prompts";
-import { runQuestionQuery, type QuestionScope } from "./run";
+import { runQuestionQuery, seenHosts, type QuestionScope } from "./run";
 import { getSavedQuestionRow } from "./saved";
 import { parseModelAnswer, parseQuestionQuery, parseQuestionText } from "./schema";
 import { getQuestionSettings } from "./settings";
@@ -108,22 +106,18 @@ export type AskDependencies = {
   provider: () => Promise<ResolvedAiProvider | null>;
   model: typeof requestModelText;
   now: () => Date;
-  /** The asker's scope; the default reads their organisation and tag scope. */
+  /** The asker's scope; the default reads their tag scope. */
   scope: (access: Access) => Promise<QuestionScope>;
 };
 
 /**
- * What a question may read for `access`: the stored host names of their
- * organisation (analytics:read covers every host otherwise), and as host
- * tags only the proxy hosts their role's tag scope and organisation reach.
+ * What a question may read for `access`: every host (analytics:read covers
+ * them all), and as host tags only the proxy hosts their role's tag scope
+ * reaches.
  */
 export async function questionScopeFor(access: Access): Promise<QuestionScope> {
-  const [hostScope, visible] = await Promise.all([
-    scopeFor(access),
-    listProxyHosts(scopeTagsFor(access, "proxy_hosts"), await dashboardOrganizationFilter(access)),
-  ]);
+  const visible = await listProxyHosts(scopeTagsFor(access, "proxy_hosts"));
   return {
-    hostScope,
     taggableHosts: visible.map((host) => ({ id: host.id, domains: host.domains, tags: host.tags })),
     allHosts: await allProxyHostDomains(),
     seenHosts,
@@ -198,7 +192,6 @@ async function audit(access: Access, answer: QuestionAnswer, extra: Record<strin
       requestDetailsSent: answer.privacy?.requestDetails ?? false,
       ...extra,
     },
-    organizationId: tenantOf(access),
   });
 }
 

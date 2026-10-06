@@ -50,7 +50,6 @@ type Props = {
   canWriteMfaPolicy: boolean;
   roleOptions: RoleOptionsProps;
   totalPermissions: number;
-  organizationNames: Record<number, string>;
   onAddUser?: () => void;
 };
 
@@ -71,7 +70,6 @@ export default function UsersTab({
   canWriteMfaPolicy,
   roleOptions,
   totalPermissions,
-  organizationNames,
   onAddUser,
 }: Props) {
   const router = useRouter();
@@ -92,10 +90,9 @@ export default function UsersTab({
     () =>
       [...users].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id).map((user) => {
         const role = roleSummary(user, customRoles, totalPermissions);
-        const organization = user.organizationId != null ? organizationNames[user.organizationId] ?? null : null;
-        return { user, role, organization, text: searchText(user, role, organization) };
+        return { user, role, text: searchText(user, role) };
       }),
-    [users, customRoles, totalPermissions, organizationNames]
+    [users, customRoles, totalPermissions]
   );
   const needle = query.trim().toLowerCase();
   const shown = rows.filter((row) => FILTERS[filter](row.user) && (!needle || row.text.includes(needle)));
@@ -254,7 +251,7 @@ export default function UsersTab({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {slice.items.map(({ user, role, organization }) => {
+                {slice.items.map(({ user, role }) => {
                   const name = displayName(user);
                   const self = user.id === currentUserId;
                   const factor = secondFactorSummary(user, format.date);
@@ -277,7 +274,6 @@ export default function UsersTab({
                               {self && <Tag>You</Tag>}
                               {user.primaryAdmin && <Tag>Primary admin</Tag>}
                               {user.breakGlass && <Tag>Break-glass</Tag>}
-                              {organization && <Tag className="border border-line2">{organization}</Tag>}
                             </span>
                             <span className="truncate text-xs text-soft">
                               {user.email}
@@ -377,7 +373,6 @@ export default function UsersTab({
         canWrite={canWrite}
         roleOptions={roleOptions}
         totalPermissions={totalPermissions}
-        organization={open?.organizationId != null ? organizationNames[open.organizationId] ?? null : null}
         onCommand={setCommand}
         onEnable={(user) => void enable(user)}
       />

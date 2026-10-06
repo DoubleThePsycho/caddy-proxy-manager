@@ -47,7 +47,7 @@ function InstallCell({ row, license }: { row: FeatureRow; license: LicenseView }
   }
 }
 
-/** Every paid feature against the four editions, with how each stands on this install. */
+/** Every paid feature against the editions, with how each stands on this install. */
 export function EditionMatrix({ license, rows }: { license: LicenseView; rows: readonly FeatureRow[] }) {
   const headingId = useId();
   const [view, setView] = useState<View>("all");
@@ -171,9 +171,6 @@ export function EditionMatrix({ license, rows }: { license: LicenseView; rows: r
         </table>
       </div>
       {shown.length === 0 && <p className="m-0 px-5 py-4 text-[13px] text-muted-foreground">No feature in this view.</p>}
-      <p className="m-0 px-5 pt-3 pb-4 text-xs leading-[18px] text-soft">
-        MSP adds multi-tenancy and white-label to Business; it does not include the Enterprise features.
-      </p>
     </section>
   );
 }

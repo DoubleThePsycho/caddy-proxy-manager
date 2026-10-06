@@ -17,15 +17,9 @@ import {
   type AccessListSave,
   type BlockedSourceInput,
 } from "@/src/lib/models/access-lists";
-import { assertProviderLevel } from "@/ee/multi-tenancy/scope";
-import { dashboardCreateOrganization } from "@/ee/multi-tenancy/view";
-
-// The models answer "not found" for a list of another organisation (ee/multi-tenancy).
 
 /** `saved` is true when the change was stored but Caddy did not take the new configuration. */
 export type AccessListActionResult<T> = { ok: true; value: T } | { ok: false; error: string; saved?: boolean };
-
-const PROVIDER_ONLY = "The Blocked sources list applies to every organisation; only provider-level users can change it";
 
 /** Client-safe failures come back as { ok: false }; anything else is thrown. */
 async function run<T>(operation: () => Promise<T>): Promise<AccessListActionResult<T>> {
@@ -49,16 +43,7 @@ async function run<T>(operation: () => Promise<T>): Promise<AccessListActionResu
 export async function createAccessListAction(input: AccessListInput): Promise<AccessListActionResult<AccessList>> {
   const session = await requirePermission("access_lists:write");
   const userId = Number(session.user.id);
-  return run(async () =>
-    createAccessList(
-      {
-        ...input,
-        // A provider-level user looking at one organisation creates it there.
-        organizationId: await dashboardCreateOrganization(session.access),
-      },
-      userId
-    )
-  );
+  return run(() => createAccessList(input, userId));
 }
 
 /** The editor's save: settings, every rule in order and member changes, applied once. */
@@ -82,8 +67,7 @@ export async function saveBlockedSourcesAction(input: AccessListSave): Promise<A
   const session = await requirePermission("access_lists:write");
   const userId = Number(session.user.id);
   return run(async () => {
-    assertProviderLevel(session.access, PROVIDER_ONLY);
-    const list = await ensureBlockedSourcesList(userId);
+    const list = await ensureBlockedSourcesList();
     return saveAccessList(list.id, input, userId);
   });
 }
@@ -95,17 +79,13 @@ export async function saveBlockedSourcesAction(input: AccessListSave): Promise<A
 export async function blockSourceAction(input: BlockedSourceInput): Promise<AccessListActionResult<AccessListRule>> {
   const session = await requirePermission("access_lists:write");
   const userId = Number(session.user.id);
-  return run(async () => {
-    assertProviderLevel(session.access, PROVIDER_ONLY);
-    return (await addBlockedSource(input, userId)).entry;
-  });
+  return run(async () => (await addBlockedSource(input, userId)).entry);
 }
 
 export async function unblockSourceAction(entryId: number): Promise<AccessListActionResult<null>> {
   const session = await requirePermission("access_lists:write");
   const userId = Number(session.user.id);
   return run(async () => {
-    assertProviderLevel(session.access, PROVIDER_ONLY);
     await removeBlockedSource(entryId, userId);
     return null;
   });

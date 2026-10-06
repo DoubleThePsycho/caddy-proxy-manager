@@ -50,6 +50,13 @@
       "when": 1791300000000,
       "tag": "0058_alert_silences",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1791310000000,
+      "tag": "0059_drop_multi_tenancy",
+      "breakpoints": true
     }
   ]
 }

@@ -18,8 +18,6 @@ In the dashboard, open **Audit log**:
 - The **Streaming** cards under the events show each sink's status, the newest event it received, how many events wait for it and its lag (how long ago the oldest waiting event was recorded).
 - **Streaming and retention** (`/audit-log/streaming`) lists the sinks with their status, last delivery, waiting events, lag and last error. Add, edit, delete or send a test event to a sink there, and set the retention.
 
-Organisation users ([multi-tenancy.md](multi-tenancy.md)) see their organisation's events only, without the chain banner or the streaming cards: the chain and the sinks span every organisation.
-
 A new sink receives events recorded from the moment it is created. Turn on **Send events already in the log** (`"backfill": true` in the API) to deliver everything that is still in the log first.
 
 ### Sink types

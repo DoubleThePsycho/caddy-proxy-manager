@@ -44,12 +44,6 @@ import {
 } from "@/ee/high-availability/openapi";
 import { SHARED_STATE_OPENAPI_PATHS, SHARED_STATE_OPENAPI_SCHEMAS } from "@/ee/high-availability/shared-state/openapi";
 import {
-  MULTI_TENANCY_OPENAPI_PATHS,
-  MULTI_TENANCY_OPENAPI_SCHEMAS,
-  MULTI_TENANCY_OPENAPI_TAG,
-  ORGANIZATION_FILTER_PARAMETER,
-} from "@/ee/multi-tenancy/openapi";
-import {
   IDENTITY_OPENAPI_PATHS,
   IDENTITY_OPENAPI_SCHEMAS,
   PASSKEYS_OPENAPI_TAG,
@@ -128,7 +122,6 @@ const spec = {
     SAML_OPENAPI_TAG,
     ...SCIM_OPENAPI_TAGS,
     ACCESS_REVIEWS_OPENAPI_TAG,
-    MULTI_TENANCY_OPENAPI_TAG,
     ...GOVERNANCE_OPENAPI_TAGS,
     { name: "Caddy", description: "Caddy server operations" },
     { name: "Sessions", description: "Your active management-UI sessions" },
@@ -169,8 +162,7 @@ const spec = {
     // ── High availability: certificate storage (ee) ─────────────────
     ...HIGH_AVAILABILITY_OPENAPI_PATHS,
     ...SHARED_STATE_OPENAPI_PATHS,
-    // ── Multi-tenancy (ee) ──────────────────────────────────────────
-    ...MULTI_TENANCY_OPENAPI_PATHS,
+    // ── Identity ────────────────────────────────────────────────────
     ...IDENTITY_OPENAPI_PATHS,
     ...IDENTITY_OVERVIEW_OPENAPI_PATHS,
     // ── Governance and operations: audit details, versions, setup, overview ──
@@ -317,7 +309,6 @@ const spec = {
         summary: "List proxy hosts",
         description: `Permission proxy_hosts:read. ${SCOPED_HOSTS_NOTE}`,
         operationId: "listProxyHosts",
-        parameters: [ORGANIZATION_FILTER_PARAMETER],
         responses: {
           "200": {
             description: "List of proxy hosts",
@@ -558,7 +549,6 @@ const spec = {
         tags: ["Certificates"],
         summary: "List certificates",
         operationId: "listCertificates",
-        parameters: [ORGANIZATION_FILTER_PARAMETER],
         responses: {
           "200": {
             description: "List of certificates",
@@ -1249,7 +1239,6 @@ const spec = {
         summary: "List users",
         description: "Permission users:read.",
         operationId: "listUsers",
-        parameters: [ORGANIZATION_FILTER_PARAMETER],
         responses: {
           "200": {
             description: "List of users",
@@ -1291,17 +1280,9 @@ const spec = {
                   name: { type: ["string", "null"] },
                   role: {
                     type: "string",
-                    enum: ["admin", "user", "viewer", "org_admin"],
+                    enum: ["admin", "user", "viewer"],
                     default: "user",
-                    description:
-                      "A built-in role; any other value is taken as user. Omit it (or send viewer) with customRoleId. " +
-                      "A user of an organisation gets org_admin, user or viewer (400 for admin).",
-                  },
-                  organizationId: {
-                    type: ["integer", "null"],
-                    description:
-                      "Multi-tenancy: the organisation the user belongs to. An organisation user's new users always go to their " +
-                      "organisation; a provider-level caller needs organizations:write and the license.",
+                    description: "A built-in role; any other value is taken as user. Omit it (or send viewer) with customRoleId.",
                   },
                   customRoleId: {
                     type: ["integer", "null"],
@@ -1604,11 +1585,10 @@ const spec = {
           { name: "entityId", in: "query", schema: { type: "integer" }, description: "Entity id (with entityType)" },
           { name: "from", in: "query", schema: { type: "string" }, description: "Earliest createdAt (ISO 8601 date or date-time, inclusive)" },
           { name: "to", in: "query", schema: { type: "string" }, description: "Latest createdAt (inclusive; a bare date includes that whole day)" },
-          ORGANIZATION_FILTER_PARAMETER,
         ],
         description:
-          "Newest first. Every filter is optional and they combine. Each event names who acted (only users of the caller's organisation " +
-          "for an organisation user), its hash chain fields and, for a configuration change recorded while configuration history was on, " +
+          "Newest first. Every filter is optional and they combine. Each event names who acted, " +
+          "its hash chain fields and, for a configuration change recorded while configuration history was on, " +
           "the history versions around it (configChange); GET /api/v1/audit-log/{id} returns the before/after diff.",
         responses: {
           "400": { $ref: "#/components/responses/BadRequest" },
@@ -1636,7 +1616,6 @@ const spec = {
           "Needs the audit_streaming feature; every export is recorded in the audit log.",
         operationId: "exportAuditLog",
         parameters: [
-          ORGANIZATION_FILTER_PARAMETER,
           { name: "format", in: "query", schema: { type: "string", enum: ["csv", "json"], default: "csv" } },
           {
             name: "from",
@@ -2954,7 +2933,6 @@ const spec = {
         tags: ["Groups"],
         summary: "List groups",
         operationId: "listGroups",
-        parameters: [ORGANIZATION_FILTER_PARAMETER],
         responses: {
           "200": { description: "List of groups", content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/Group" } } } } },
           "401": { $ref: "#/components/responses/Unauthorized" },
@@ -2964,7 +2942,7 @@ const spec = {
         tags: ["Groups"],
         summary: "Create a group",
         operationId: "createGroup",
-        requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["name"], properties: { name: { type: "string", minLength: 1, maxLength: 100, description: "Trimmed; unique in its organisation" }, description: { type: ["string", "null"], maxLength: 500 }, organizationId: { type: ["integer", "null"], description: "Multi-tenancy: see ProxyHostInput.organizationId" } } } } } },
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["name"], properties: { name: { type: "string", minLength: 1, maxLength: 100, description: "Trimmed; unique" }, description: { type: ["string", "null"], maxLength: 500 } } } } } },
         responses: {
           "201": { description: "Group created", content: { "application/json": { schema: { $ref: "#/components/schemas/Group" } } } },
           "400": { $ref: "#/components/responses/BadRequest" },
@@ -2989,7 +2967,7 @@ const spec = {
         summary: "Update a group",
         operationId: "updateGroup",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
-        requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { name: { type: "string", minLength: 1, maxLength: 100, description: "Trimmed; unique in its organisation" }, description: { type: ["string", "null"], maxLength: 500 } } } } } },
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object", properties: { name: { type: "string", minLength: 1, maxLength: 100, description: "Trimmed; unique" }, description: { type: ["string", "null"], maxLength: 500 } } } } } },
         responses: {
           "200": { description: "Group updated", content: { "application/json": { schema: { $ref: "#/components/schemas/Group" } } } },
           "400": { $ref: "#/components/responses/BadRequest" },
@@ -3434,7 +3412,6 @@ const spec = {
       ...PROXY_HOST_PREVIEW_OPENAPI_SCHEMAS,
       ...HIGH_AVAILABILITY_OPENAPI_SCHEMAS,
       ...SHARED_STATE_OPENAPI_SCHEMAS,
-      ...MULTI_TENANCY_OPENAPI_SCHEMAS,
       ...IDENTITY_OPENAPI_SCHEMAS,
       ...IDENTITY_OVERVIEW_OPENAPI_SCHEMAS,
       ...GOVERNANCE_OPENAPI_SCHEMAS,
@@ -3833,19 +3810,12 @@ const spec = {
           pathRewrites: { type: "array", items: { $ref: "#/components/schemas/PathRewriteRule" }, description: "Internal URI rewrites applied before proxying" },
           rateLimit: { oneOf: [{ $ref: "#/components/schemas/ProxyHostRateLimit" }, { type: "null" }], description: "Per-host rate limiting; null inherits the global defaults" },
           tags: { $ref: "#/components/schemas/HostTags" },
-          organizationId: { type: ["integer", "null"], description: "The owning organisation (multi-tenancy); null for the provider level" },
         },
         required: ["id", "name", "domains", "upstreams", "enabled", "createdAt", "updatedAt"],
       },
       ProxyHostInput: {
         type: "object",
         properties: {
-          organizationId: {
-            type: ["integer", "null"],
-            description:
-              "Create only (multi-tenancy): the owning organisation. An organisation user's rows always go to their organisation; " +
-              "a provider-level caller needs organizations:write and the license. Moving an existing row: POST /api/v1/organizations/move.",
-          },
           name: { type: "string", example: "My App" },
           domains: { type: "array", items: { type: "string" }, example: ["app.example.com"] },
           upstreams: { type: "array", items: { type: "string" }, example: ["localhost:3000"] },
@@ -3975,7 +3945,6 @@ const spec = {
           hasPrivateKey: { type: "boolean", description: "Whether write-only private key material is stored" },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
-          organizationId: { type: "integer", description: "The owning organisation (multi-tenancy); left out for the provider level" },
         },
         required: ["id", "name", "type", "domainNames", "hasPrivateKey", "createdAt", "updatedAt"],
       },
@@ -3994,12 +3963,6 @@ const spec = {
           },
           certificatePem: { type: ["string", "null"] },
           privateKeyPem: { type: ["string", "null"], writeOnly: true },
-          organizationId: {
-            type: ["integer", "null"],
-            description:
-              "Create only (multi-tenancy): the owning organisation. An organisation user's rows always go to their organisation; " +
-              "a provider-level caller needs organizations:write and the license. Moving an existing row: POST /api/v1/organizations/move.",
-          },
         },
         required: ["name", "type", "domainNames"],
       },
@@ -4236,7 +4199,6 @@ const spec = {
           members: { type: "array", items: { $ref: "#/components/schemas/GroupMember" } },
           createdAt: { type: "string", format: "date-time" },
           updatedAt: { type: "string", format: "date-time" },
-          organizationId: { type: ["integer", "null"], description: "The owning organisation (multi-tenancy); null for the provider level" },
         },
         required: ["id", "name", "members", "createdAt", "updatedAt"],
       },
@@ -4515,16 +4477,14 @@ const spec = {
           name: { type: ["string", "null"] },
           role: {
             type: "string",
-            enum: ["admin", "user", "viewer", "org_admin"],
+            enum: ["admin", "user", "viewer"],
             description:
-              "The built-in role. A user with a custom role is stored as viewer, which is also what they fall back to when the custom role is deleted. " +
-              "org_admin is the administrator of an organisation (multi-tenancy) and only exists there; an organisation user is never admin.",
+              "The built-in role. A user with a custom role is stored as viewer, which is also what they fall back to when the custom role is deleted.",
           },
           customRoleId: {
             type: ["integer", "null"],
             description: "The user's custom role (GET /api/v1/roles/{id}), or null for a built-in role",
           },
-          organizationId: { type: ["integer", "null"], description: "The user's organisation (multi-tenancy); null for the provider level" },
 
           provider: { type: "string", example: "credentials" },
           subject: { type: "string" },
@@ -4568,7 +4528,7 @@ const spec = {
           createdAt: { type: "string", format: "date-time" },
           user: {
             type: ["object", "null"],
-            description: "Who acted, as the user is now; null for system events (and, in an organisation's log, for the provider)",
+            description: "Who acted, as the user is now; null for system events and deleted users",
             properties: { id: { type: "integer" }, name: { type: ["string", "null"] }, email: { type: ["string", "null"] } },
           },
           hash: { type: ["string", "null"] },
@@ -4592,7 +4552,7 @@ const spec = {
         type: "object",
         properties: {
           status: { type: "string", enum: ["unlicensed", "active", "grace", "expired", "invalid"] },
-          edition: { type: ["string", "null"], enum: ["homelab", "business", "enterprise", "msp", null] },
+          edition: { type: ["string", "null"], enum: ["homelab", "business", "enterprise", null] },
           editionLabel: { type: ["string", "null"] },
           customer: { type: ["string", "null"] },
           email: { type: ["string", "null"] },
@@ -4641,7 +4601,7 @@ const spec = {
           error: { type: ["string", "null"], description: "Why the key cannot be installed" },
           keyId: { type: ["string", "null"], description: "Id of the built-in public key that verified the signature" },
           licenseId: { type: ["string", "null"] },
-          edition: { type: ["string", "null"], enum: ["homelab", "business", "enterprise", "msp", null] },
+          edition: { type: ["string", "null"], enum: ["homelab", "business", "enterprise", null] },
           editionLabel: { type: ["string", "null"] },
           customer: { type: ["string", "null"] },
           email: { type: ["string", "null"] },

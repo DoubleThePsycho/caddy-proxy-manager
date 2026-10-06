@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * White-label (feature "white_label", MSP edition): reading and changing the
- * branding.
+ * White-label (feature "white_label", Enterprise edition): reading and
+ * changing the branding.
  *
  * Setting a field to a value of your own and uploading a logo or favicon
  * need a license that includes the feature (requireFeature). Restoring a

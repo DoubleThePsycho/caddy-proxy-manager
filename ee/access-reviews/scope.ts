@@ -113,15 +113,11 @@ export async function readReviewerIds(value: unknown, reader: ReviewReader): Pro
   if (value.length > MAX_REVIEWERS) throw new ApiValidationError(`At most ${MAX_REVIEWERS} reviewers`);
   const ids = readIds(value, "reviewerIds");
   const found = await reader
-    .select({ id: users.id, status: users.status, organizationId: users.organizationId })
+    .select({ id: users.id, status: users.status })
     .from(users)
     .where(inArray(users.id, ids));
   if (found.length !== ids.length) throw new ApiValidationError("reviewerIds names an unknown user");
   if (found.some((user) => user.status !== "active")) throw new ApiValidationError("Every reviewer must be an active user");
-  // A campaign lists users and roles of every organisation (ee/multi-tenancy).
-  if (found.some((user) => user.organizationId !== null)) {
-    throw new ApiValidationError("Reviewers must be provider-level users, not users of an organisation");
-  }
   return ids;
 }
 

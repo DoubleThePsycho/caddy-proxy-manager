@@ -55,7 +55,6 @@ export const PAID_FEATURES = [
   "ldap",
   "fleet",
   "high_availability",
-  "multi_tenancy",
   "white_label",
   "api_monetization",
 ] as const satisfies readonly Feature[];
@@ -65,7 +64,7 @@ export type PaidFeatureField = (typeof PAID_FEATURES)[number];
  * Features that were withdrawn: schema 1 of the receiving service requires
  * their fields, so they are always sent as false until the next schema.
  */
-export const WITHDRAWN_FEATURES = ["virtual_patching"] as const;
+export const WITHDRAWN_FEATURES = ["multi_tenancy", "virtual_patching"] as const;
 export type WithdrawnFeatureField = (typeof WITHDRAWN_FEATURES)[number];
 
 export const FEATURE_FIELDS = [...COMMUNITY_FEATURES, ...PAID_FEATURES, ...WITHDRAWN_FEATURES] as const;

@@ -181,7 +181,7 @@ describe('POST /api/v1/license/verify', () => {
       expiresAt: '2099-01-01T00:00:00.000Z',
     });
     expect(data.features).toEqual(expect.arrayContaining(['fleet', 'approvals', 'alerting']));
-    expect(data.features).not.toContain('multi_tenancy');
+    expect(data.features).toContain('white_label');
     expect(JSON.stringify(data)).not.toContain(key);
     expect(settingsStore.get(LICENSE_SETTING_KEY)).toBe(installed);
     expect(setSetting).not.toHaveBeenCalled();

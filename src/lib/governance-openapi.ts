@@ -46,7 +46,7 @@ export const GOVERNANCE_OPENAPI_PATHS = {
         "One event with its data and, for a configuration change recorded while configuration history was on, the before/after diff from " +
         "the history versions recorded with it: only the event's own entity (a proxy host with its mTLS rules and forward-auth grants), every " +
         "change for imports and restores. Secrets are never returned. Older events, and events whose versions retention deleted, have none. " +
-        "Permission audit_log:read; an organisation user reads their organisation's events only.",
+        "Permission audit_log:read.",
       operationId: "getAuditEvent",
       parameters: [idParam],
       responses: { "200": { description: "Event", content: json(ref("AuditEventDetail")) }, ...errors("401", "403", "404") },
@@ -99,7 +99,7 @@ export const GOVERNANCE_OPENAPI_PATHS = {
         "For every domain of an enabled proxy host whose certificate Caddy obtains itself (ACME, or its internal CA), the certificate Caddy " +
         "presents, read with a TLS handshake to Caddy's HTTPS port (CADDY_TLS_ADDRESS, or the host of CADDY_API_URL on port 443): issuer, " +
         "validity, when Caddy renews it (a third of its lifetime before expiry) and a state. Results are cached (30 minutes, 5 for problems); " +
-        "?refresh=true checks names older than a minute again. Limited to the hosts within the caller's tag scope and organisation. " +
+        "?refresh=true checks names older than a minute again. Limited to the hosts within the caller's tag scope. " +
         "Permission certificates:read.",
       operationId: "listManagedCertificates",
       parameters: [{ name: "refresh", in: "query", schema: { type: "boolean" } }],

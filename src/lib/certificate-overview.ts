@@ -7,14 +7,13 @@
  *
  * Shared by the certificates page and GET /api/v1/certificates/overview, so
  * both apply the same visibility rules: a tag scope limits the rows to the
- * certificates of in-scope proxy hosts (as the certificate list does), an
- * organisation filter to the organisation's, and L4 hosts are named only to
- * callers that may read them.
+ * certificates of in-scope proxy hosts (as the certificate list does), and
+ * L4 hosts are named only to callers that may read them.
  */
 import { X509Certificate } from "node:crypto";
 import { appDb } from "./db";
 import { certificates, proxyHosts } from "./db/schema";
-import { can, scopeTagsFor, tagsInScope, tenantOf, type Access } from "./permissions";
+import { can, scopeTagsFor, tagsInScope, type Access } from "./permissions";
 import { parseStoredTags } from "./host-tags";
 import { isDomainCoveredByCert } from "./cert-domain-match";
 import { parseStoredCertificateProviderOptions } from "./certificate-provider-options";
@@ -22,7 +21,6 @@ import { getProviderDefinition } from "./dns-providers";
 import { getAcmeSettings, getDnsProviderSettings } from "./settings";
 import { listL4ProxyHosts } from "./models/l4-proxy-hosts";
 import { certificateKeyType, getManagedCertificateExpiry, type ManagedCertificateExpiry } from "./managed-certificates";
-import { organizationCondition, type OrganizationFilter } from "@/ee/multi-tenancy/scope";
 import {
   certificateRenewal,
   daysUntil,
@@ -110,16 +108,8 @@ type HostRow = {
   tags: string[];
 };
 
-/**
- * The certificate overview `access` may see. `organizationId` is the
- * organisation filter of the caller (dashboardOrganizationFilter on pages,
- * readOrganizationFilterParam in REST routes).
- */
-export async function buildCertificateOverview(
-  access: Access,
-  organizationId: OrganizationFilter,
-  options: CertificateOverviewOptions = {}
-): Promise<CertificateOverview> {
+/** The certificate overview `access` may see. */
+export async function buildCertificateOverview(access: Access, options: CertificateOverviewOptions = {}): Promise<CertificateOverview> {
   const now = options.now ?? Date.now();
   // A tag scope limits this view to the certificates and ACME hosts of
   // in-scope proxy hosts (see src/lib/access-scope.ts).
@@ -137,9 +127,8 @@ export async function buildCertificateOverview(
         tags: proxyHosts.tags,
       })
       .from(proxyHosts)
-      .where(organizationCondition(proxyHosts.organizationId, organizationId))
       .orderBy(proxyHosts.name, proxyHosts.id),
-    appDb.select().from(certificates).where(organizationCondition(certificates.organizationId, organizationId)).orderBy(certificates.id),
+    appDb.select().from(certificates).orderBy(certificates.id),
     getAcmeSettings(),
     getDnsProviderSettings(),
   ]);
@@ -156,9 +145,9 @@ export async function buildCertificateOverview(
     .filter((host) => !scope || inScope(host.tags));
 
   // L4 hosts that terminate TLS take the certificate Caddy holds for their
-  // SNI names. Organisation users never read L4 hosts (their ports are shared).
+  // SNI names.
   const l4Hosts =
-    can(access, "l4_proxy_hosts:read") && tenantOf(access) === null
+    can(access, "l4_proxy_hosts:read")
       ? (await listL4ProxyHosts(scopeTagsFor(access, "l4_proxy_hosts"))).filter(
           (host) => host.tlsTermination && host.matcherType === "tls_sni" && host.matcherValue.length > 0
         )

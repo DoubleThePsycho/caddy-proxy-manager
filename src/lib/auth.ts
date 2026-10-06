@@ -5,9 +5,7 @@ import { MFA_SETUP_PATH, mfaEnrolmentRequired } from "./mfa";
 import { can, permissionDeniedMessage, type Access, type Permission } from "./permissions";
 import { ApiClientError } from "./api-errors";
 import { accessForUser } from "@/ee/custom-roles/access";
-import { isOrganizationEnabled } from "@/ee/multi-tenancy/store";
 import { touchSessionLastSeen } from "./models/sessions";
-import { appDb } from "./db";
 
 export type Session = {
   user: {
@@ -17,8 +15,6 @@ export type Session = {
     role: string;
     /** The user's custom role (ee/custom-roles), or null for a built-in role. */
     customRoleId?: number | null;
-    /** The user's organisation (ee/multi-tenancy), or null for the provider level. */
-    organizationId?: number | null;
     provider?: string;
     image?: string | null;
   };
@@ -84,11 +80,6 @@ export async function auth(req?: NextRequest): Promise<Session | null> {
   if (!currentUser || currentUser.status !== "active") {
     return null;
   }
-  // A disabled organisation's users (ee/multi-tenancy) have no session.
-  const organizationId = currentUser.organizationId ?? null;
-  if (organizationId !== null && !await isOrganizationEnabled(appDb, organizationId)) {
-    return null;
-  }
 
   // "Last seen" on Profile and in the users API, written at most once a minute.
   const baSession = betterAuthSession.session as { id?: string | number; updatedAt?: string | Date } | undefined;
@@ -101,7 +92,6 @@ export async function auth(req?: NextRequest): Promise<Session | null> {
       name: currentUser.name,
       role: currentUser.role,
       customRoleId: currentUser.customRoleId,
-      organizationId,
       provider: currentUser.provider || baUser.provider,
       image: currentUser.avatarUrl ?? (baUser.avatarUrl as string | null | undefined) ?? null,
     },
@@ -172,8 +162,6 @@ export async function getSessionAccess(session: Session): Promise<Access> {
     id: Number(session.user.id),
     role: session.user.role,
     customRoleId: session.user.customRoleId ?? null,
-    // auth() reads it with the role; a session made elsewhere without it is looked up.
-    organizationId: session.user.organizationId,
   });
 }
 

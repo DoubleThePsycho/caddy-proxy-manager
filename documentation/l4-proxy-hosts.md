@@ -31,6 +31,6 @@ Each L4 host listens on a port of the Caddy container, and Docker publishes a co
 
 ## Permissions and API
 
-The page needs `l4_proxy_hosts:read`; creating, changing, deleting and publishing ports need `l4_proxy_hosts:write` ([custom roles](../ee/docs/custom-roles.md)). Users of a client organisation never see L4 hosts, since listening ports are shared by every tenant.
+The page needs `l4_proxy_hosts:read`; creating, changing, deleting and publishing ports need `l4_proxy_hosts:write` ([custom roles](../ee/docs/custom-roles.md)).
 
 The REST API has the same hosts at `/api/v1/l4-proxy-hosts` (see `/api/v1/openapi.json`).

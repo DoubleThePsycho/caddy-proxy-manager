@@ -6,7 +6,7 @@ This folder builds the PostgreSQL database. `drizzle/` builds the SQLite one. Bo
 
 - `0000_baseline.sql`: the whole schema as the SQLite migrations leave it at `0052_ha_shared_state`. The tables and indexes are drizzle-kit's output for `src/lib/db/schema.pg.ts`, unchanged. The end of the file adds what the Drizzle schema does not express, as the SQLite migrations do:
   - the `forward_auth_access` CHECK of `drizzle/0017` (a user or a group, never both or neither);
-  - the `users` organisation-role triggers of `drizzle/0041`, which raise `organization role mismatch` (SQLSTATE 23514, `check_violation`);
+  - the `users` organisation-role triggers of `drizzle/0041`, which raise `organization role mismatch` (SQLSTATE 23514, `check_violation`; dropped again by `0059_drop_multi_tenancy`);
   - the `users.disabledAt` triggers of `drizzle/0047`, as BEFORE triggers.
 - `meta/_journal.json`: the migrations in order. Drizzle's migrator applies a migration when its `when` is later than that of the newest migration already applied.
 - `meta/NNNN_snapshot.json`: drizzle-kit's record of the schema after each migration. `drizzle-kit generate` compares the schema with the newest one.
@@ -19,7 +19,7 @@ The baseline's journal entry has the `idx` and `when` of `0052_ha_shared_state`.
 - From 0053 on, every migration is a pair: `drizzle/NNNN_name.sql` and `drizzle-pg/NNNN_name.sql`, with the same tag, `idx` and `when` in both journals. `tests/unit/db-migration-pairs.test.ts` checks this.
 - Never edit a migration that has shipped, the baseline included. Add a new pair.
 - No foreign keys. SQLite does not enforce the ones it declares, so PostgreSQL has none either; code deletes dependent rows itself.
-- Identifiers are quoted, with Drizzle's camelCase column names (`"organizationId"`).
+- Identifiers are quoted, with Drizzle's camelCase column names (`"customRoleId"`).
 - Timestamps are ISO 8601 text, as the application writes them. Booleans are `boolean`. Integer widths follow `src/lib/db/pg-column-types.ts`.
 - Nothing newer than PostgreSQL 16, the oldest version supported. `tests/unit/db-pg-migrations.test.ts` refuses known newer syntax and functions.
 - The database must use UTF8 with `LC_COLLATE` and `LC_CTYPE` `C` (`CREATE DATABASE … TEMPLATE template0 ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C'`), so text compares and sorts byte by byte, as on SQLite.

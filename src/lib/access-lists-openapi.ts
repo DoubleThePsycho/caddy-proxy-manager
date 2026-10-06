@@ -13,7 +13,6 @@ import {
   MAX_RULES_PER_LIST,
   MAX_VALUES_PER_RULE,
 } from "./access-list-rules";
-import { ORGANIZATION_FILTER_PARAMETER } from "@/ee/multi-tenancy/openapi";
 
 const TAG = "Access Lists";
 
@@ -50,8 +49,6 @@ const body = (schema: unknown) => ({ required: true, content: json(schema) });
 
 const READ = "Needs access_lists:read.";
 const WRITE = "Needs access_lists:write. Applies the Caddy configuration.";
-const PROVIDER =
-  " Provider-level users only: an organisation user gets 403, since the list applies to every organisation's hosts.";
 
 export const ACCESS_LISTS_OPENAPI_PATHS = {
   "/api/v1/access-lists": {
@@ -60,7 +57,6 @@ export const ACCESS_LISTS_OPENAPI_PATHS = {
       summary: "List access lists",
       description: `Every access list the caller can see, with its rules and members (never the Blocked sources list). ${READ}`,
       operationId: "listAccessLists",
-      parameters: [ORGANIZATION_FILTER_PARAMETER],
       responses: { "200": ok("Access lists", { type: "array", items: ref("AccessList") }), ...errors("401", "403") },
     },
     post: {
@@ -202,7 +198,7 @@ export const ACCESS_LISTS_OPENAPI_PATHS = {
       summary: "Get the Blocked sources list",
       description:
         "The global list denied on every host, before rate limiting, the WAF and the hosts' own lists. `id` is null before its first use." +
-        ` ${READ}${PROVIDER}`,
+        ` ${READ}`,
       operationId: "getBlockedSources",
       responses: { "200": ok("The Blocked sources list", ref("AccessList")), ...errors("401", "403") },
     },
@@ -211,7 +207,7 @@ export const ACCESS_LISTS_OPENAPI_PATHS = {
       summary: "Update the Blocked sources list",
       description:
         "Changes its description, deny response and failClosed; with `rules`, replaces every entry. It only holds deny rules, " +
-        `lets everything else through and keeps its name. ${WRITE}${PROVIDER}`,
+        `lets everything else through and keeps its name. ${WRITE}`,
       operationId: "updateBlockedSources",
       requestBody: body(ref("AccessListUpdate")),
       responses: { "200": ok("The Blocked sources list", ref("AccessList")), ...errors("400", "401", "403") },
@@ -221,7 +217,7 @@ export const ACCESS_LISTS_OPENAPI_PATHS = {
     get: {
       tags: [TAG],
       summary: "List blocked sources",
-      description: `${READ}${PROVIDER}`,
+      description: `${READ}`,
       operationId: "listBlockedSources",
       responses: { "200": ok("Entries (deny rules)", { type: "array", items: ref("AccessListRule") }), ...errors("401", "403") },
     },
@@ -231,7 +227,7 @@ export const ACCESS_LISTS_OPENAPI_PATHS = {
       description:
         "Adds an address or network (`address`), or a country, continent or AS number (`kind` and `value`), with an optional " +
         "reason and expiry. 201 with the new entry; 200 with the existing entry when it is already blocked by an entry of its own " +
-        `(its reason and expiry are updated when sent). Expired entries are removed within a minute. ${WRITE}${PROVIDER}`,
+        `(its reason and expiry are updated when sent). Expired entries are removed within a minute. ${WRITE}`,
       operationId: "addBlockedSource",
       requestBody: body(ref("BlockedSourceInput")),
       responses: {
@@ -245,7 +241,7 @@ export const ACCESS_LISTS_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Unblock a source",
-      description: `${WRITE}${PROVIDER}`,
+      description: `${WRITE}`,
       operationId: "removeBlockedSource",
       parameters: [intPath("entryId", "Entry (rule) ID")],
       responses: { "200": { $ref: "#/components/responses/Ok" }, ...errors("401", "403", "404") },
@@ -259,10 +255,9 @@ export const ACCESS_LISTS_OPENAPI_PATHS = {
         "Per list, the hosts using it (those the caller can see) and the requests stopped on them in the last 24 hours, from analytics. " +
         "A stopped request is a blocked one on those hosts (outcome geo or access when recorded, otherwise is_blocked), so global geo " +
         "blocking on the same hosts is counted too. failedSignIns counts 401 answers on hosts of lists with basic-auth members. " +
-        "Instance-wide numbers (requests, blockedSources.stopped) need analytics:read at the provider level. Without analytics, " +
+        "Instance-wide numbers (requests, blockedSources.stopped) need analytics:read. Without analytics, " +
         `available is false and the numbers are 0. ${READ}`,
       operationId: "getAccessListStats",
-      parameters: [ORGANIZATION_FILTER_PARAMETER],
       responses: { "200": ok("Usage and stopped requests", ref("AccessListStats")), ...errors("401", "403") },
     },
   },
@@ -321,14 +316,12 @@ export const ACCESS_LISTS_OPENAPI_SCHEMAS = {
       },
       createdAt: { type: ["string", "null"], format: "date-time" },
       updatedAt: { type: ["string", "null"], format: "date-time" },
-      organizationId: { type: ["integer", "null"], description: "The owning organisation (multi-tenancy); null for the provider level" },
     },
     required: ["id", "name", "entries", "rules", "defaultAction", "denyStatus", "failClosed", "system", "createdAt", "updatedAt"],
   },
   AccessListInput: {
     type: "object",
     properties: {
-      organizationId: { type: ["integer", "null"], description: "Create only (multi-tenancy): see ProxyHostInput.organizationId" },
       name: { type: "string", maxLength: 200, example: "Office and VPN" },
       description: { type: ["string", "null"], maxLength: 1000 },
       rules: { type: "array", maxItems: MAX_RULES_PER_LIST, items: ref("AccessListRuleInput") },
@@ -420,7 +413,7 @@ export const ACCESS_LISTS_OPENAPI_SCHEMAS = {
       windowSeconds: { type: "integer", example: 86400 },
       stopped: { type: "integer", description: "Stopped in the last 24 hours" },
       previous: { type: "integer", description: "Stopped in the 24 hours before" },
-      requests: { type: ["integer", "null"], description: "All requests in the last 24 hours; null without provider-level analytics:read" },
+      requests: { type: ["integer", "null"], description: "All requests in the last 24 hours; null without analytics:read" },
       failedSignIns: { type: "integer" },
       byOutcome: {
         type: ["object", "null"],
@@ -460,13 +453,12 @@ export const ACCESS_LISTS_OPENAPI_SCHEMAS = {
         },
       },
       blockedSources: {
-        type: ["object", "null"],
+        type: "object",
         properties: {
           id: { type: ["integer", "null"] },
           entries: { type: "integer" },
           stopped: { type: ["integer", "null"] },
         },
-        description: "Null for organisation users",
       },
       countries: { type: "array", items: { type: "object", properties: { code: { type: "string" }, count: { type: "integer" } } } },
       hosts: { type: "array", items: { type: "object", properties: { host: { type: "string" }, count: { type: "integer" } } } },

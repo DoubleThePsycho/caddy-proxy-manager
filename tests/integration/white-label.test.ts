@@ -79,7 +79,7 @@ const signer = createTestSigner();
 
 async function installLicense(overrides: Record<string, unknown> = {}) {
   const key = signLicense(signer, licensePayload(signer, {
-    edition: 'msp', iat: '2026-01-01T00:00:00.000Z', exp: '2099-01-01T00:00:00.000Z', ...overrides,
+    edition: 'enterprise', iat: '2026-01-01T00:00:00.000Z', exp: '2099-01-01T00:00:00.000Z', ...overrides,
   }));
   await setRow(LICENSE_SETTING_KEY, key);
 }
@@ -234,8 +234,8 @@ describe('permissions', () => {
     expect(await row(WHITE_LABEL_SETTING_KEY)).toBeUndefined();
   });
 
-  it('is available in the MSP edition', () => {
-    expect(FEATURE_INFO.white_label).toMatchObject({ edition: 'msp' });
+  it('is available in the Enterprise edition', () => {
+    expect(FEATURE_INFO.white_label).toMatchObject({ edition: 'enterprise' });
   });
 });
 
@@ -249,14 +249,14 @@ describe('license gate', () => {
     const response = await put({ productName: 'Example Edge' });
     expect(response.status).toBe(403);
     expect(response.data.error).toBe(new LicenseRequiredError('white_label').message);
-    expect(response.data.error).toMatch(/needs an active Ingressi MSP license/);
+    expect(response.data.error).toMatch(/needs an active Ingressi Enterprise license/);
     expect((await upload('logo-light', multipart('logo-light', makePng()))).status).toBe(403);
     expect((await put({ showPoweredBy: false })).status).toBe(403);
     expect(await row(WHITE_LABEL_SETTING_KEY)).toBeUndefined();
     expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
-  it('sets branding up with an MSP license and audits it', async () => {
+  it('sets branding up with an Enterprise license and audits it', async () => {
     await installLicense();
     const { status, data } = await put(BRANDED);
     expect(status).toBe(200);
@@ -450,7 +450,7 @@ describe('dashboard actions', () => {
 
     expect(await deleteBrandingAssetAction('logo-light')).toMatchObject({ ok: true, view: { assets: { logoLight: null } } });
     await removeLicense();
-    expect(await saveBrandingAction({ productName: 'Other' })).toMatchObject({ ok: false, error: expect.stringMatching(/MSP license/) });
+    expect(await saveBrandingAction({ productName: 'Other' })).toMatchObject({ ok: false, error: expect.stringMatching(/Enterprise license/) });
     expect(await resetBrandingAction()).toMatchObject({ ok: true, view: { source: 'default' } });
   });
 });
@@ -690,6 +690,6 @@ describe('where the branding shows', () => {
     );
     expect(html).toContain('This install runs Ingressi');
     expect(html).not.toContain('Example Edge');
-    expect(new LicenseRequiredError('white_label').message).toBe('White-label needs an active Ingressi MSP license or higher');
+    expect(new LicenseRequiredError('white_label').message).toBe('White-label needs an active Ingressi Enterprise license or higher');
   });
 });

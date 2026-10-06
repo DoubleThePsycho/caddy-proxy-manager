@@ -11,7 +11,7 @@ export default function DashboardNotFound() {
         icon={SearchX}
         headingLevel={1}
         title="Not found"
-        description="This item does not exist, or it belongs to an organisation or hosts you cannot see. It may have been deleted."
+        description="This item does not exist, or it belongs to hosts you cannot see. It may have been deleted."
         action={
           <Button asChild variant="outline">
             <Link href="/">Go to the overview</Link>

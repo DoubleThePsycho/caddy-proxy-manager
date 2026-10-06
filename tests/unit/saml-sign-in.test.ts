@@ -410,25 +410,17 @@ describe('accounts', () => {
     expect(auditEvents().map((e) => e.action)).toContain('saml_account_linked');
   });
 
-  it('never links an administrator, a custom-role user, an organisation user, the primary admin or a break-glass account by e-mail', async () => {
+  it('never links an administrator, a custom-role user, the primary admin or a break-glass account by e-mail', async () => {
     const id = await addProvider({ linkExistingAccounts: true });
     const boss = await localAccount('boss', 'admin');
     const custom = await localAccount('custom');
-    const member = await localAccount('member');
     const keeper = await localAccount('keeper');
     const { eq } = await import('drizzle-orm');
     await app.db.update(app.schema.users).set({ role: 'viewer', customRoleId: 7 }).where(eq(app.schema.users.id, custom.id));
-    const now = new Date().toISOString();
-    const [org] = await app.db
-      .insert(app.schema.organizations)
-      .values({ name: 'Client A', slug: 'client-a', createdAt: now, updatedAt: now })
-      .returning();
-    await app.db.update(app.schema.users).set({ organizationId: org.id }).where(eq(app.schema.users.id, member.id));
     await app.ssoStore.writeSsoEnforcement(app.db, { enabled: false, breakGlassUserIds: [keeper.id] });
     const cases: Array<[string, string, string]> = [
       ['boss@example.com', 'boss-subject', 'privileged_account'],
       ['custom@example.com', 'custom-subject', 'privileged_account'],
-      ['member@example.com', 'member-subject', 'privileged_account'],
       ['root@example.com', 'root-subject', 'protected_account'],
       ['keeper@example.com', 'keeper-subject', 'protected_account'],
     ];
@@ -437,7 +429,7 @@ describe('accounts', () => {
       refused(result, b);
       expect(lastRefusal()?.data, email).toMatchObject({ failure });
     }
-    for (const user of [boss, custom, member, keeper]) expect((await accountRows(user.id)).map((a) => a.providerId)).toEqual(['credential']);
+    for (const user of [boss, custom, keeper]) expect((await accountRows(user.id)).map((a) => a.providerId)).toEqual(['credential']);
     expect((await accountRows(primaryAdminId)).map((a) => a.providerId)).toEqual(['credential']);
   });
 

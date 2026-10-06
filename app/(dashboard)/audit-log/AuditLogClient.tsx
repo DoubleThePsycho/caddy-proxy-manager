@@ -43,8 +43,6 @@ type Props = {
   facets: AuditFacetsView;
   /** Whether the license allows export, verification and streaming settings. */
   licensed: boolean;
-  /** Provider-level users see the hash chain (it spans every organisation). */
-  providerLevel: boolean;
   chain: AuditChainStatus | null;
   /** The streaming destinations, for users who may see them; null otherwise. */
   sinks: AuditSinkSummary[] | null;
@@ -102,7 +100,6 @@ export default function AuditLogClient({
   invalidFilters = [],
   facets,
   licensed,
-  providerLevel,
   chain,
   sinks,
   retentionDays,
@@ -192,7 +189,7 @@ export default function AuditLogClient({
         </Banner>
       )}
 
-      {providerLevel && chain && <ChainBanner chain={chain} licensed={licensed} />}
+      {chain && <ChainBanner chain={chain} licensed={licensed} />}
 
       {invalidFilters.length > 0 && (
         <Banner tone="warn" title="Some filters were ignored.">
@@ -328,7 +325,7 @@ export default function AuditLogClient({
         )}
       </SectionCard>
 
-      {providerLevel && sinks !== null && <StreamingStrip sinks={sinks} retentionDays={retentionDays} generatedAt={generatedAt} />}
+      {sinks !== null && <StreamingStrip sinks={sinks} retentionDays={retentionDays} generatedAt={generatedAt} />}
 
       <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
     </div>

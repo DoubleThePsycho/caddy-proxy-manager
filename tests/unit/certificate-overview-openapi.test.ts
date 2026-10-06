@@ -15,7 +15,7 @@ describe('OpenAPI: certificate overview', () => {
     expect(Object.keys(path)).toEqual(['get']);
     expect(path.get.tags).toEqual(['Certificates']);
     expect(path.get.description).toMatch(/certificates:read/);
-    expect(path.get.parameters.length).toBeGreaterThan(0);
+    expect(path.get.parameters).toBeUndefined();
 
     const row = doc.components.schemas.CertificateOverviewRow;
     expect(row.properties.renewal.properties.state.enum).toEqual(

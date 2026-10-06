@@ -160,17 +160,14 @@ describe('checking and caching', () => {
     expect(await getManagedCertificates()).toEqual({ available: true, reason: null, certificates: [], unchecked: 0 });
   });
 
-  it('shows a reader only the hosts within their tag scope and organisation', async () => {
-    const org = (await dbFirst(ctx.db.insert(schema.organizations).values({ name: 'Client', slug: 'client', createdAt: stamp(), updatedAt: stamp() }).returning()))!;
+  it('shows a reader only the hosts within their tag scope', async () => {
     const prod = await addHost('Prod', ['prod.example.com'], { tags: '["prod"]' });
-    const dev = await addHost('Dev', ['dev.example.com'], { tags: '["dev"]', organizationId: org.id });
+    await addHost('Dev', ['dev.example.com'], { tags: '["dev"]' });
     setManagedCertificateProbeForTests(async () => ({ kind: 'certificate', pem: valid.certificatePem }));
     const { certificates } = await getManagedCertificates();
     expect(await filterManagedCertificatesForAccess(certificates, builtInAccess(1, 'admin'))).toHaveLength(2);
     const scoped: Access = { ...builtInAccess(2, 'viewer'), customRole: { id: 1, name: 'Prod' }, scopeTags: ['prod'], permissions: new Set(['certificates:read']) };
     expect((await filterManagedCertificatesForAccess(certificates, scoped)).map((status) => status.proxyHosts[0].id)).toEqual([prod]);
-    const tenant: Access = { ...builtInAccess(3, 'viewer'), organizationId: org.id, permissions: new Set(['certificates:read']) };
-    expect((await filterManagedCertificatesForAccess(certificates, tenant)).map((status) => status.proxyHosts[0].id)).toEqual([dev]);
   });
 });
 

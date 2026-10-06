@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/src/lib/auth";
 import { assertCanCreateCertificate, assertCertificateWritable } from "@/src/lib/access-scope";
 import { createCertificate, deleteCertificate, updateCertificate } from "@/src/lib/models/certificates";
-import { dashboardCreateOrganization } from "@/ee/multi-tenancy/view";
 import { ApiClientError } from "@/src/lib/api-errors";
 
 function parseDomains(value: FormDataEntryValue | null): string[] {
@@ -30,9 +29,7 @@ export async function createCertificateAction(formData: FormData) {
       domainNames: parseDomains(formData.get("domain_names")),
       autoRenew: type === "managed" ? formData.get("auto_renew") === "on" : false,
       certificatePem: type === "imported" ? String(formData.get("certificate_pem") ?? "") : null,
-      privateKeyPem: type === "imported" ? String(formData.get("private_key_pem") ?? "") : null,
-      // A provider-level user looking at one organisation creates it there (ee/multi-tenancy).
-      organizationId: await dashboardCreateOrganization(session.access)
+      privateKeyPem: type === "imported" ? String(formData.get("private_key_pem") ?? "") : null
     },
     userId
   );

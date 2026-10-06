@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { listProxyHosts, createProxyHost, toApiProxyHost } from "@/src/lib/models/proxy-hosts";
 import { scopeTagsFor } from "@/src/lib/permissions";
-import { readOrganizationFilterParam } from "@/ee/multi-tenancy/scope";
 import {
   assertDomainsFreeOutsideScope,
   assertProxyHostWriteAllowed,
@@ -13,9 +12,7 @@ import { gateHostChange } from "@/ee/approvals/requests";
 export async function GET(request: NextRequest) {
   try {
     const { access } = await requireApiPermission(request, "proxy_hosts:read");
-    // Organisation users get their organisation's hosts; provider-level users can filter (?organizationId=).
-    const organizationId = readOrganizationFilterParam(access, request.nextUrl.searchParams.get("organizationId"));
-    const hosts = await listProxyHosts(scopeTagsFor(access, "proxy_hosts"), organizationId);
+    const hosts = await listProxyHosts(scopeTagsFor(access, "proxy_hosts"));
     return NextResponse.json(hosts.map(toApiProxyHost));
   } catch (error) {
     return apiErrorResponse(error);

@@ -58,7 +58,7 @@ export const PROXY_HOST_PREVIEW_OPENAPI_SCHEMAS = {
           required: { type: "boolean", description: "A change approval policy covers the change, so saving it creates a change request" },
           policies: {
             type: "array",
-            description: "The covering policies; empty for organisation users (the policies are the provider's)",
+            description: "The covering policies",
             items: { type: "object", properties: { id: { type: "integer" }, name: { type: "string" } } },
           },
           requiredApprovals: { type: "integer", description: "Distinct approvals needed, from someone other than the requester; 0 when none" },

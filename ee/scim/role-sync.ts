@@ -75,12 +75,11 @@ export async function syncUserRole(tx: ScimWriter, userId: number, settings: Sci
     .limit(1));
   if (!managed) return null;
   const current = await first(tx
-    .select({ role: users.role, customRoleId: users.customRoleId, email: users.email, organizationId: users.organizationId })
+    .select({ role: users.role, customRoleId: users.customRoleId, email: users.email })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1));
-  // Organisation users (ee/multi-tenancy) keep the role their organisation gives them.
-  if (!current || current.organizationId !== null) return null;
+  if (!current) return null;
   const desired = await mappedRole(tx, userId, settings);
   const before: RoleAssignment = { role: current.role, customRoleId: current.customRoleId ?? null };
   if (before.role === desired.role && before.customRoleId === desired.customRoleId) return null;

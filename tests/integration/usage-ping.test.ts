@@ -359,7 +359,7 @@ describe('the payload', () => {
     }
   });
 
-  it('reports SAML, high availability, multi-tenancy and rate limiting once they are set up', async () => {
+  it('reports SAML, high availability and rate limiting once they are set up, and never multi-tenancy', async () => {
     const before = (await getUsagePingView()).payload!.features;
     expect(before).toMatchObject({ sso_saml: false, high_availability: false, multi_tenancy: false, rate_limiting: false });
 
@@ -368,7 +368,6 @@ describe('the payload', () => {
       name: 'Corp IdP', idpEntityId: 'https://idp.example.com', idpSsoUrl: 'https://idp.example.com/sso',
       idpCertificates: '[]', createdAt: at, updatedAt: at,
     });
-    await ctx.db.insert(schema.organizations).values({ name: 'Tenant', slug: 'tenant', createdAt: at, updatedAt: at });
     await setSettingRow(ctx.db, 'certificate_storage', parseCertificateStorageInput({
       backend: 'redis', redis: { mode: 'standalone', addresses: ['valkey.example.com:6379'], keyPrefix: 'caddy/a' },
     }, null));
@@ -377,9 +376,9 @@ describe('the payload', () => {
     });
 
     const after = (await getUsagePingView()).payload!.features;
-    expect(after).toMatchObject({ sso_saml: true, high_availability: true, multi_tenancy: true, rate_limiting: true });
+    expect(after).toMatchObject({ sso_saml: true, high_availability: true, multi_tenancy: false, rate_limiting: true });
     const text = JSON.stringify((await getUsagePingView()).payload);
-    for (const forbidden of ['Corp IdP', 'idp.example.com', 'Tenant', 'valkey', 'caddy/a']) expect(text, forbidden).not.toContain(forbidden);
+    for (const forbidden of ['Corp IdP', 'idp.example.com', 'valkey', 'caddy/a']) expect(text, forbidden).not.toContain(forbidden);
   });
 
   it('is exactly what the preview shows', async () => {

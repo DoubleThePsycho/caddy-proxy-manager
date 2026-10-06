@@ -43,14 +43,14 @@ function buttonAttributes(html: string, label: string): string {
 function render(v: BrandingView, canWrite = true) {
   const action = vi.fn();
   return renderToStaticMarkup(
-    createElement(BrandingClient, { view: v, canWrite, isSlave: false, editionLabel: 'MSP', save: action, upload: action, removeAsset: action, reset: action })
+    createElement(BrandingClient, { view: v, canWrite, isSlave: false, editionLabel: 'Enterprise', save: action, upload: action, removeAsset: action, reset: action })
   );
 }
 
 describe('Branding page', () => {
   it('is read-only without a license and says why', () => {
     const html = render(view());
-    expect(html).toContain('Changing the branding needs an active MSP license');
+    expect(html).toContain('Changing the branding needs an active Enterprise license');
     expect(html).toMatch(/<fieldset disabled=""/);
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Save<\/button>/);
   });

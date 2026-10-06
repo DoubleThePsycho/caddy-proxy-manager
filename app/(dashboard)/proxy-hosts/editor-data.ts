@@ -28,11 +28,8 @@ import { resolveWafTuning } from "@/src/lib/waf-tuning";
 import { parsePemInfo } from "@/src/lib/certificate-overview";
 import { getManagedCertificateExpiry } from "@/src/lib/managed-certificates";
 import { certificateIdsInScope } from "@/src/lib/access-scope";
-import { can, scopeTagsFor, tenantOf, type Access } from "@/src/lib/permissions";
+import { can, scopeTagsFor, type Access } from "@/src/lib/permissions";
 import { getHostApprovalContext } from "@/ee/approvals/requests";
-import { dashboardCreateOrganization, dashboardOrganizationFilter } from "@/ee/multi-tenancy/view";
-import { countOrganizations, readOrganization } from "@/ee/multi-tenancy/store";
-import { appDb } from "@/src/lib/db";
 import type {
   EditorAccessList,
   EditorCertificate,
@@ -79,17 +76,8 @@ async function pickerVisibility(access: Access, visibleHosts: ProxyHost[]) {
   return {
     certificate: (id: number) => usedCertificates.has(id) || readable === null || readable.has(id),
     accessList: (id: number) => allAccessLists || usedAccessLists.has(id),
-    // CA and client certificates and mTLS roles are the provider's (ee/multi-tenancy).
-    trustAnchors: can(access, "certificates:read") && scopeTagsFor(access, "certificates") === null && tenantOf(access) === null,
+    trustAnchors: can(access, "certificates:read") && scopeTagsFor(access, "certificates") === null,
   };
-}
-
-async function organizationLabel(access: Access, organizationId: number | null | undefined): Promise<string | null> {
-  const tenant = tenantOf(access);
-  if (tenant !== null) return (await readOrganization(appDb, tenant))?.name ?? null;
-  if (!can(access, "organizations:read") || await countOrganizations(appDb) === 0) return null;
-  if (organizationId === null || organizationId === undefined) return "Provider level";
-  return (await readOrganization(appDb, organizationId))?.name ?? "Provider level";
 }
 
 async function lastSaved(access: Access, host: ProxyHost | null): Promise<HostEditorData["lastSaved"]> {
@@ -97,7 +85,7 @@ async function lastSaved(access: Access, host: ProxyHost | null): Promise<HostEd
   if (!can(access, "audit_log:read")) return { at: host.updatedAt, by: null };
   try {
     const [event] = await queryAuditEvents(
-      { entityType: "proxy_host", entityId: host.id, organizationId: await dashboardOrganizationFilter(access) },
+      { entityType: "proxy_host", entityId: host.id },
       { limit: 1, offset: 0 }
     );
     const by = event?.user ? event.user.name ?? null : null;
@@ -113,14 +101,13 @@ export async function loadHostEditorData(
 ): Promise<HostEditorData> {
   const { host, template } = options;
   const scope = scopeTagsFor(access, "proxy_hosts");
-  const organizationId = await dashboardOrganizationFilter(access);
   const canReadWaf = can(access, "waf:read");
 
   const [visibleHosts, certificates, accessLists, blockedSources, authentikDefaults, forwardAuthDefaults, wafSettings, rateLimit, geoblock, dns] =
     await Promise.all([
-      listProxyHosts(scope, organizationId),
-      listCertificates(organizationId),
-      listAccessLists(organizationId),
+      listProxyHosts(scope),
+      listCertificates(),
+      listAccessLists(),
       getBlockedSourcesList().catch(() => null),
       getAuthentikSettings(),
       getForwardAuthSettings(),
@@ -138,8 +125,8 @@ export async function loadHostEditorData(
     picker.trustAnchors ? listCaCertificates().catch(() => []) : Promise.resolve([]),
     picker.trustAnchors ? listMtlsRoles().catch(() => []) : Promise.resolve([]),
     picker.trustAnchors ? listIssuedClientCertificates().catch(() => []) : Promise.resolve([]),
-    canChooseUsers ? listUsers(organizationId).catch(() => []) : Promise.resolve([]),
-    canChooseGroups ? listGroups(organizationId).catch(() => []) : Promise.resolve([]),
+    canChooseUsers ? listUsers().catch(() => []) : Promise.resolve([]),
+    canChooseGroups ? listGroups().catch(() => []) : Promise.resolve([]),
   ]);
 
   const grants = host ? await getForwardAuthAccessForHost(host.id).catch(() => []) : [];
@@ -165,7 +152,6 @@ export async function loadHostEditorData(
     }));
 
   const tuning = wafSettings ? resolveWafTuning(wafSettings) : null;
-  const ownOrganization = host ? host.organizationId : await dashboardCreateOrganization(access);
 
   return {
     mode: host ? "edit" : "create",
@@ -227,7 +213,6 @@ export async function loadHostEditorData(
     rateLimitDefaults: rateLimit ? { enabled: Boolean(rateLimit.enabled), rules: rateLimit.rules.length } : null,
     geoblockGlobal: geoblock ? { enabled: Boolean(geoblock.enabled) } : null,
     dnsProviderConfigured: Boolean(dns?.default && dns.providers[dns.default]),
-    organization: await organizationLabel(access, ownOrganization),
     lastSaved: await lastSaved(access, host),
     historyHref: host && can(access, "audit_log:read") ? `/audit-log?search=${encodeURIComponent(host.name)}` : null,
   };

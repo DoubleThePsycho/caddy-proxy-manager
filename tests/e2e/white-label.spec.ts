@@ -16,7 +16,7 @@ test.describe('Branding page', () => {
   test('shows the default branding read-only without a license', async ({ page }) => {
     await page.goto('/branding');
     await expect(page.getByRole('heading', { name: 'Branding' })).toBeVisible();
-    await expect(page.getByText('Changing the branding needs an active MSP license')).toBeVisible();
+    await expect(page.getByText('Changing the branding needs an active Enterprise license')).toBeVisible();
     await expect(page.getByLabel('Product name')).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
     await expect(page.getByTestId('branding-preview-light')).toContainText('Ingressi');
@@ -44,7 +44,7 @@ test.describe('Branding API without a license', () => {
   test('refuses changes with 403 and allows resetting and removing', async ({ page }) => {
     const put = await page.request.put(API, { headers: JSON_HEADERS, data: { productName: 'Example Edge' } });
     expect(put.status()).toBe(403);
-    expect((await put.json()).error).toMatch(/White-label needs an active Ingressi MSP license/);
+    expect((await put.json()).error).toMatch(/White-label needs an active Ingressi Enterprise license/);
 
     const upload = await page.request.put(`${API}/assets/logo-light`, {
       headers: { Origin: ORIGIN },

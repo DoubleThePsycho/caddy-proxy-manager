@@ -28,8 +28,8 @@ vi.mock('../../src/lib/analytics/hosts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/lib/analytics/hosts')>();
   return {
     ...actual,
-    queryHostSummaries: vi.fn(async (input: Parameters<typeof actual.queryHostSummaries>[0], scope: Parameters<typeof actual.queryHostSummaries>[1]) => {
-      if (!ctx.summaries) return actual.queryHostSummaries(input, scope);
+    queryHostSummaries: vi.fn(async (input: Parameters<typeof actual.queryHostSummaries>[0]) => {
+      if (!ctx.summaries) return actual.queryHostSummaries(input);
       const wanted = new Set(input.hosts.map((host) => host.id));
       return {
         status: 'ok' as const,
@@ -48,7 +48,7 @@ vi.mock('../../src/lib/analytics/signals', async (importOriginal) => {
   };
 });
 
-import { builtInAccess, organizationAccess, type Access, type Permission } from '../../src/lib/permissions';
+import { builtInAccess, type Access, type Permission } from '../../src/lib/permissions';
 import { hostTone, loadOverview, parseOverviewRange, replicaNode, BUSIEST_HOSTS } from '../../src/lib/overview';
 import { updateSetupChecklist } from '../../src/lib/setup-checklist';
 import { clearTrafficSignalsCache } from '../../src/lib/attention/traffic-provider';
@@ -154,11 +154,9 @@ describe('first run', () => {
     expect((await load(admin())).firstRun).toBeNull();
   });
 
-  it('is only for readers of the settings at the provider level', async () => {
+  it('is only for readers of the settings', async () => {
     expect((await load(custom(['settings:read']))).firstRun).not.toBeNull();
     expect((await load(custom(['proxy_hosts:read']))).firstRun).toBeNull();
-    const org = (await dbFirst(ctx.db.insert(schema.organizations).values({ name: 'Client', slug: 'client', createdAt: stamp(), updatedAt: stamp() }).returning()))!;
-    expect((await load(organizationAccess(memberId, org.id, 'org_admin'))).firstRun).toBeNull();
   });
 });
 

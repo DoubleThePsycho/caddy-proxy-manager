@@ -3,7 +3,6 @@ import { auditEvents, users } from "../db/schema";
 import { and, eq, gte, isNull, lte, or, count, type SQL } from "drizzle-orm";
 import { insertAuditEvent } from "../audit-chain";
 import { ApiValidationError } from "../api-errors";
-import { organizationCondition, type OrganizationFilter } from "@/ee/multi-tenancy/scope";
 import { asc, containsText, desc } from "@/src/lib/db/ops";
 
 export type AuditEvent = {
@@ -16,34 +15,24 @@ export type AuditEvent = {
   createdAt: string;
 };
 
-function auditWhere(search: string | undefined, organizationId: OrganizationFilter): SQL | undefined {
+function auditWhere(search: string | undefined): SQL | undefined {
   // The search text is matched literally (containsText escapes LIKE's wildcards).
-  const searchCondition = search
+  return search
     ? or(
         containsText(auditEvents.summary, search),
         containsText(auditEvents.action, search),
         containsText(auditEvents.entityType, search)
       )
     : undefined;
-  return and(searchCondition, organizationCondition(auditEvents.organizationId, organizationId));
 }
 
-/**
- * `organizationId` limits the events to one organisation's audit log (or the
- * provider level's, with null); see ee/multi-tenancy/scope.ts.
- */
-export async function countAuditEvents(search?: string, organizationId?: OrganizationFilter): Promise<number> {
-  const [row] = await appDb.select({ value: count() }).from(auditEvents).where(auditWhere(search, organizationId));
+export async function countAuditEvents(search?: string): Promise<number> {
+  const [row] = await appDb.select({ value: count() }).from(auditEvents).where(auditWhere(search));
   return row?.value ?? 0;
 }
 
-export async function listAuditEvents(
-  limit = 100,
-  offset = 0,
-  search?: string,
-  organizationId?: OrganizationFilter
-): Promise<AuditEvent[]> {
-  const where = auditWhere(search, organizationId);
+export async function listAuditEvents(limit = 100, offset = 0, search?: string): Promise<AuditEvent[]> {
+  const where = auditWhere(search);
   const events = await appDb
     .select()
     .from(auditEvents)
@@ -98,7 +87,6 @@ export type AuditFilter = {
   /** createdAt bounds, inclusive, ISO 8601. */
   from?: string;
   to?: string;
-  organizationId?: OrganizationFilter;
 };
 
 /** An event as listed by the REST API: who acted, the hash chain fields, and its configuration change, if any. */
@@ -133,9 +121,9 @@ function readInstant(value: string | null, field: string, endOfDay: boolean): st
   return new Date(isDate && endOfDay ? ms + DAY_MS - 1 : ms).toISOString();
 }
 
-/** Reads the filters of GET /api/v1/audit-log (organisation scoping is the caller's). */
-export function parseAuditFilter(params: URLSearchParams): Omit<AuditFilter, "organizationId"> {
-  const filter: Omit<AuditFilter, "organizationId"> = {};
+/** Reads the filters of GET /api/v1/audit-log. */
+export function parseAuditFilter(params: URLSearchParams): AuditFilter {
+  const filter: AuditFilter = {};
   filter.search = readText(params.get("search") ?? params.get("q"), "search");
   const actor = params.get("actor")?.trim();
   if (actor) {
@@ -165,7 +153,7 @@ export function parseAuditFilter(params: URLSearchParams): Omit<AuditFilter, "or
 }
 
 function filterWhere(filter: AuditFilter): SQL | undefined {
-  const conditions: (SQL | undefined)[] = [auditWhere(filter.search, filter.organizationId)];
+  const conditions: (SQL | undefined)[] = [auditWhere(filter.search)];
   if (filter.actor === "system") conditions.push(isNull(auditEvents.userId));
   else if (filter.actor !== undefined) conditions.push(eq(auditEvents.userId, filter.actor));
   if (filter.action) conditions.push(eq(auditEvents.action, filter.action));
@@ -189,10 +177,8 @@ const RECORD_COLUMNS = {
   configBeforeId: auditEvents.configBeforeId,
   configAfterId: auditEvents.configAfterId,
   changeRequestId: auditEvents.changeRequestId,
-  organizationId: auditEvents.organizationId,
   userName: users.name,
   userEmail: users.email,
-  userOrganizationId: users.organizationId,
 };
 
 type RecordRow = {
@@ -208,18 +194,11 @@ type RecordRow = {
   configBeforeId: number | null;
   configAfterId: number | null;
   changeRequestId: number | null;
-  organizationId: number | null;
   userName: string | null;
   userEmail: string | null;
-  userOrganizationId: number | null;
 };
 
-/**
- * `tenant`: an organisation's audit log names only its own users; who
- * else acted (the provider) is left out, as on the dashboard.
- */
-function toRecord(row: RecordRow, tenant: number | null): AuditEventRecord {
-  const named = row.userId !== null && (tenant === null || row.userOrganizationId === tenant);
+function toRecord(row: RecordRow): AuditEventRecord {
   return {
     id: row.id,
     userId: row.userId,
@@ -228,7 +207,8 @@ function toRecord(row: RecordRow, tenant: number | null): AuditEventRecord {
     entityId: row.entityId,
     summary: row.summary,
     createdAt: toIso(row.createdAt)!,
-    user: named ? { id: row.userId!, name: row.userName, email: row.userEmail } : null,
+    // Null when the user no longer exists (the join found no row).
+    user: row.userId !== null && row.userEmail !== null ? { id: row.userId, name: row.userName, email: row.userEmail } : null,
     hash: row.hash,
     prevHash: row.prevHash,
     configChange:
@@ -236,10 +216,6 @@ function toRecord(row: RecordRow, tenant: number | null): AuditEventRecord {
         ? { beforeId: row.configBeforeId, afterId: row.configAfterId, changeRequestId: row.changeRequestId, pending: row.configBeforeId !== null && row.configAfterId === null }
         : null,
   };
-}
-
-function tenantOfFilter(filter: OrganizationFilter): number | null {
-  return typeof filter === "number" ? filter : null;
 }
 
 export async function queryAuditEvents(filter: AuditFilter, page: { limit: number; offset: number }): Promise<AuditEventRecord[]> {
@@ -251,8 +227,7 @@ export async function queryAuditEvents(filter: AuditFilter, page: { limit: numbe
     .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id))
     .limit(page.limit)
     .offset(page.offset);
-  const tenant = tenantOfFilter(filter.organizationId);
-  return rows.map((row) => toRecord(row, tenant));
+  return rows.map(toRecord);
 }
 
 export async function countAuditEventsMatching(filter: AuditFilter): Promise<number> {
@@ -260,13 +235,13 @@ export async function countAuditEventsMatching(filter: AuditFilter): Promise<num
   return row?.value ?? 0;
 }
 
-/** One event (null when it does not exist or is outside `organizationId`). */
-export async function getAuditEventRecord(id: number, organizationId?: OrganizationFilter): Promise<(AuditEventRecord & { data: unknown; configBeforeId: number | null; configAfterId: number | null }) | null> {
+/** One event (null when it does not exist). */
+export async function getAuditEventRecord(id: number): Promise<(AuditEventRecord & { data: unknown; configBeforeId: number | null; configAfterId: number | null }) | null> {
   const [row] = await appDb
     .select({ ...RECORD_COLUMNS, data: auditEvents.data })
     .from(auditEvents)
     .leftJoin(users, eq(users.id, auditEvents.userId))
-    .where(and(eq(auditEvents.id, id), organizationCondition(auditEvents.organizationId, organizationId)))
+    .where(eq(auditEvents.id, id))
     .limit(1);
   if (!row) return null;
   let data: unknown = null;
@@ -277,34 +252,30 @@ export async function getAuditEventRecord(id: number, organizationId?: Organizat
       data = row.data;
     }
   }
-  return { ...toRecord(row, tenantOfFilter(organizationId)), data, configBeforeId: row.configBeforeId, configAfterId: row.configAfterId };
+  return { ...toRecord(row), data, configBeforeId: row.configBeforeId, configAfterId: row.configAfterId };
 }
 
 /** Values the filters can take: actors, actions and entity types that occur (at most 200 each). */
-export async function listAuditFacets(organizationId?: OrganizationFilter): Promise<{
+export async function listAuditFacets(): Promise<{
   actors: { id: number | null; name: string | null; email: string | null; events: number }[];
   actions: string[];
   entityTypes: string[];
 }> {
-  const where = organizationCondition(auditEvents.organizationId, organizationId);
-  const tenant = tenantOfFilter(organizationId);
   const [actorRows, actionRows, entityRows] = await Promise.all([
     appDb
-      .select({ id: auditEvents.userId, name: users.name, email: users.email, userOrganizationId: users.organizationId, events: count() })
+      .select({ id: auditEvents.userId, name: users.name, email: users.email, events: count() })
       .from(auditEvents)
       .leftJoin(users, eq(users.id, auditEvents.userId))
-      .where(where)
       // Every selected column that is not aggregated (PostgreSQL requires it);
       // the user columns follow from userId, so the groups are the same.
-      .groupBy(auditEvents.userId, users.name, users.email, users.organizationId)
+      .groupBy(auditEvents.userId, users.name, users.email)
       .orderBy(desc(count()), asc(auditEvents.userId))
       .limit(200),
-    appDb.selectDistinct({ action: auditEvents.action }).from(auditEvents).where(where).orderBy(asc(auditEvents.action)).limit(200),
-    appDb.selectDistinct({ entityType: auditEvents.entityType }).from(auditEvents).where(where).orderBy(asc(auditEvents.entityType)).limit(200),
+    appDb.selectDistinct({ action: auditEvents.action }).from(auditEvents).orderBy(asc(auditEvents.action)).limit(200),
+    appDb.selectDistinct({ entityType: auditEvents.entityType }).from(auditEvents).orderBy(asc(auditEvents.entityType)).limit(200),
   ]);
   return {
     actors: actorRows
-      .filter((row) => row.id === null || tenant === null || row.userOrganizationId === tenant)
       .map((row) => ({ id: row.id, name: row.id === null ? null : row.name, email: row.id === null ? null : row.email, events: row.events })),
     actions: actionRows.map((row) => row.action),
     entityTypes: entityRows.map((row) => row.entityType),

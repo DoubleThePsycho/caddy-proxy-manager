@@ -1,19 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
-import { readOrganizationFilterParam } from "@/ee/multi-tenancy/scope";
 import { loadAccessListOverview } from "@/src/lib/access-list-overview";
 import { classifyAccessList } from "@/src/lib/access-list-rules";
 
 /**
  * Where each access list is used and what it stopped in the last 24 hours
  * (src/lib/access-list-stats.ts). Hosts are the ones the caller can see;
- * instance-wide numbers need analytics:read at the provider level.
+ * instance-wide numbers need analytics:read.
  */
 export async function GET(request: NextRequest) {
   try {
     const { access } = await requireApiPermission(request, "access_lists:read");
-    const organizationId = readOrganizationFilterParam(access, request.nextUrl.searchParams.get("organizationId"));
-    const overview = await loadAccessListOverview(access, organizationId);
+    const overview = await loadAccessListOverview(access);
     const { stats } = overview;
     return NextResponse.json(
       {
@@ -41,13 +39,11 @@ export async function GET(request: NextRequest) {
             })),
           };
         }),
-        blockedSources: overview.blockedSourcesVisible
-          ? {
-              id: overview.blockedSources?.id ?? null,
-              entries: overview.blockedSources?.rules.length ?? 0,
-              stopped: stats.blockedSources?.stopped ?? null,
-            }
-          : null,
+        blockedSources: {
+          id: overview.blockedSources?.id ?? null,
+          entries: overview.blockedSources?.rules.length ?? 0,
+          stopped: stats.blockedSources?.stopped ?? null,
+        },
         countries: stats.countries,
         hosts: stats.hosts,
       },

@@ -10,9 +10,7 @@
  *    a scoped token is never an administrator;
  *  - creating a token checks the scopes against the owner's role, stores them
  *    and validateToken hands them to the guard; unreadable stored scopes
- *    allow nothing;
- *  - organizationForNewRow (ee/multi-tenancy), which reads the actor's access
- *    again from its id, applies the request's token scopes too.
+ *    allow nothing.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -255,23 +253,5 @@ describe('the token model', () => {
     await ctx.db.update(schema.apiTokens).set({ scopes: '{"all":true}' }).where(eq(schema.apiTokens.id, token.id));
     const result = await callHandler('app/api/v1/proxy-hosts/route.ts', 'GET', rawToken);
     expect(result.status).toBe(403);
-  });
-});
-
-describe('organizationForNewRow', () => {
-  it('applies the scopes of the request\'s token when it reads the actor\'s access again', async () => {
-    const { createApiToken } = await import('@/src/lib/models/api-tokens');
-    const { organizationForNewRow } = await import('@/ee/multi-tenancy/scope');
-    const { rawToken } = await createApiToken('hosts only', ADMIN, undefined, { scopes: ['proxy_hosts:write'] });
-
-    ctx.requestHeaders = new Headers({ authorization: `Bearer ${rawToken}` });
-    await expect(organizationForNewRow(ADMIN, 999)).rejects.toThrow(/organizations:write/);
-
-    // A session (no token) or a token without scopes reaches the next check: the organisation does not exist.
-    ctx.requestHeaders = new Headers();
-    await expect(organizationForNewRow(ADMIN, 999)).rejects.toThrow(/Unknown organisation/);
-    const { rawToken: unscoped } = await createApiToken('everything', ADMIN);
-    ctx.requestHeaders = new Headers({ authorization: `Bearer ${unscoped}` });
-    await expect(organizationForNewRow(ADMIN, 999)).rejects.toThrow(/Unknown organisation/);
   });
 });

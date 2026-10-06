@@ -78,8 +78,7 @@ function plural(count: number, one: string, many = `${one}s`): string {
 
 /**
  * The hash chain's state from the last recorded verification, with "Verify
- * now". Shown to provider-level users only (the chain spans every
- * organisation).
+ * now".
  */
 export function ChainBanner({ chain, licensed }: { chain: AuditChainStatus; licensed: boolean }) {
   const router = useRouter();

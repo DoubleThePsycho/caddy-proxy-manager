@@ -12,8 +12,7 @@ export type RoleHolderUser = { name: string | null; email: string; status: strin
 /**
  * The Roles tab of the Users and groups page (server side): every role with
  * the accounts that hold it, the permission catalogue and what the signed-in
- * user may grant. `users` is every account, whatever organisation is picked
- * (the tab is provider-level only).
+ * user may grant. `users` is every account.
  */
 export function RolesTabSection({
   access,

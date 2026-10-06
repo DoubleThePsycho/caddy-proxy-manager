@@ -1,27 +1,20 @@
 /**
- * Which traffic a query may read. ClickHouse stores each request's Host
+ * Which traffic a query reads. ClickHouse stores each request's Host
  * header, not the proxy host that served it, so:
  *
- * - HostScope limits a caller to stored host names: null for every host,
- *   otherwise the names of their organisation (ee/multi-tenancy/analytics.ts).
+ * - HostScope limits a query to stored host names: null for every host
+ *   (analytics questions narrow it to the hosts of some tags).
  * - A proxy host's traffic is the stored names its domains serve: equal to a
  *   domain, or one label under a "*." domain (as Caddy matches), port, case
  *   and a trailing dot ignored. A name that is a domain of one host and
  *   matches another host's wildcard belongs to the first, as in Caddy.
  */
-import type { Access } from '../permissions';
 import { isDomainCoveredByWildcard } from '../cert-domain-match';
-import { analyticsHostScope } from '@/ee/multi-tenancy/analytics';
 import { HOST_NAME_SQL } from './dimensions';
 import type { SqlFragment } from './filters';
 
-/** Stored host names a caller may see; null for every host. */
+/** Stored host names a query covers; null for every host. */
 export type HostScope = readonly string[] | null;
-
-/** The analytics scope of `access` (its organisation's hosts, or every host). */
-export async function analyticsScopeFor(access: Access): Promise<HostScope> {
-  return analyticsHostScope(access);
-}
 
 /** WHERE fragment limiting rows to `scope`. */
 export function scopeSql(scope: HostScope, param = 'p_scope'): SqlFragment {

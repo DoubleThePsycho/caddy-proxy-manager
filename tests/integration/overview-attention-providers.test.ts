@@ -1,8 +1,8 @@
 /**
  * The traffic and sign-in sources of the overview's "Needs attention"
  * (src/lib/attention/traffic-provider.ts and identity-provider.ts): what
- * each signal becomes, the links each reader gets, the permissions and
- * organisations each source answers for, and the signal cache.
+ * each signal becomes, the links each reader gets, the permissions each
+ * source answers for, and the signal cache.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb, type TestDb } from '../helpers/db';
@@ -25,7 +25,7 @@ vi.mock('../../src/lib/identity-health', () => ({
   getIdentityHealth: vi.fn(() => ctx.identity),
 }));
 
-import { builtInAccess, organizationAccess, type Access, type Permission } from '../../src/lib/permissions';
+import { builtInAccess, type Access, type Permission } from '../../src/lib/permissions';
 import { collectAttention } from '../../src/lib/attention';
 import type { AttentionItem } from '../../src/lib/attention/types';
 import { getTrafficSignals } from '../../src/lib/analytics/signals';
@@ -178,21 +178,19 @@ describe('traffic signals', () => {
     expect(scoped.flatMap((item) => item.actions).some((action) => action.route.startsWith('/security?'))).toBe(true);
   });
 
-  it('answers only readers of the analytics, organisation users included, and nothing while analytics are off', async () => {
+  it('answers only readers of the analytics, and nothing while analytics are off', async () => {
     expect((await collectAttention(builtInAccess(memberId, 'viewer'))).sources.map((source) => source.id)).not.toContain('traffic');
-    const org = (await first(ctx.db.insert(schema.organizations).values({ name: 'Client', slug: 'client', createdAt: stamp(), updatedAt: stamp() }).returning()))!;
-    expect((await collectAttention(organizationAccess(memberId, org.id, 'org_admin'))).sources.map((source) => source.id)).toContain('traffic');
+    expect((await collectAttention(custom(['analytics:read']))).sources.map((source) => source.id)).toContain('traffic');
     ctx.signals = signals({ status: 'disabled' });
     clearTrafficSignalsCache();
     expect(await items(builtInAccess(adminId, 'admin'), 'traffic')).toEqual([]);
   });
 
-  it('reuses the signals of a scope for 30 seconds', async () => {
-    const admin = builtInAccess(adminId, 'admin');
-    await cachedTrafficSignals(admin, 1_000_000);
-    await cachedTrafficSignals(admin, 1_010_000);
+  it('reuses the signals for 30 seconds', async () => {
+    await cachedTrafficSignals(1_000_000);
+    await cachedTrafficSignals(1_010_000);
     expect(getTrafficSignals).toHaveBeenCalledTimes(1);
-    await cachedTrafficSignals(admin, 1_031_000);
+    await cachedTrafficSignals(1_031_000);
     expect(getTrafficSignals).toHaveBeenCalledTimes(2);
   });
 
@@ -238,11 +236,9 @@ describe('sign-in health', () => {
     ]);
   });
 
-  it('shows each issue only to readers of what it is about, and never to organisation users', async () => {
+  it('shows each issue only to readers of what it is about', async () => {
     expect((await items(custom(['users:read']), 'identity')).map((item) => item.id)).toEqual(['mfa_overdue']);
     expect((await items(custom(['ldap:read']), 'identity')).map((item) => item.id)).toEqual(['directory:4']);
     expect((await collectAttention(builtInAccess(memberId, 'viewer'))).sources.map((source) => source.id)).not.toContain('identity');
-    const org = (await first(ctx.db.insert(schema.organizations).values({ name: 'Client', slug: 'client', createdAt: stamp(), updatedAt: stamp() }).returning()))!;
-    expect((await collectAttention(organizationAccess(memberId, org.id, 'org_admin'))).sources.map((source) => source.id)).not.toContain('identity');
   });
 });

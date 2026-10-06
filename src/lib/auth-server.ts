@@ -28,7 +28,6 @@ import { SAML_ACS_PATH_PREFIX, parseSamlProviderId, samlAccountIssuer } from "@/
 import { samlSignInPlugin } from "@/ee/saml/plugin";
 import { isDirectorySessionAllowedUnderSsoEnforcement } from "@/ee/ldap/sso";
 import { canLinkScimSignIn } from "@/ee/scim/binding";
-import { isUserOrganizationBlocked } from "@/ee/multi-tenancy/store";
 import {
   MFA_DISABLED_PATHS,
   auditTwoFactorChange,
@@ -174,21 +173,7 @@ const providerCache = defineCachedValue<LoadedProviders>("sign-in providers", {
  * are intentionally left untouched.
  */
 export function enforceSafeUserDefaults<T extends object>(user: T): T & { role: string; status: string } {
-  return { ...withoutOrganization(withoutCustomRole(user)), role: "user", status: "active" };
-}
-
-/**
- * Drops an `organizationId` from a user Better Auth is about to create: only
- * a provider administrator puts users into an organisation (ee/multi-tenancy),
- * never an identity provider's claims, whatever
- * AUTH_ALLOW_OAUTH_ROLE_FROM_CLAIMS says. Accounts that sign up are
- * provider-level.
- */
-export function withoutOrganization<T extends object>(user: T): T {
-  if (!("organizationId" in user)) return user;
-  const { organizationId: _dropped, ...rest } = user as T & { organizationId?: unknown };
-  void _dropped;
-  return rest as T;
+  return { ...withoutCustomRole(user), role: "user", status: "active" };
 }
 
 /**
@@ -448,7 +433,7 @@ function createAuth(providers: LoadedProviders): any {
             // above. Operators who trust their IdP to manage roles can opt out
             // with AUTH_ALLOW_OAUTH_ROLE_FROM_CLAIMS=true.
             if (config.auth.allowOauthRoleFromClaims) {
-              return { data: withoutOrganization(withoutCustomRole(named)) };
+              return { data: withoutCustomRole(named) };
             }
             return { data: enforceSafeUserDefaults(named) };
           },
@@ -596,8 +581,6 @@ function createAuth(providers: LoadedProviders): any {
               .where(eq(schema.users.id, userId))
               .limit(1));
             if (user?.status !== "active") throw invalidCredentials(context?.path);
-            // A disabled organisation's users (ee/multi-tenancy) cannot sign in.
-            if (await isUserOrganizationBlocked(appDb, userId)) throw invalidCredentials(context?.path);
             // Enforced SSO (ee/sso): only identity-provider sign-ins and
             // break-glass accounts get a session. The password has already
             // been checked here, so the refusal is the one a wrong password

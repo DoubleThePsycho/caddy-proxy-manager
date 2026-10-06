@@ -1,9 +1,8 @@
 /**
  * Server-side render of the Audit log page: filters from the facets held in
  * the URL, the hash-chain banner in its states, the streaming cards with
- * their lag, the expanded detail with the before/after diff, and what an
- * organisation user does not get (the chain and the sinks span every
- * organisation).
+ * their lag, the expanded detail with the before/after diff, and what a
+ * reader without the chain or the sinks gets.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -89,7 +88,6 @@ function render(overrides: Overrides = {}) {
       filters: { ...EMPTY_FILTERS, range: '24h' },
       facets,
       licensed: true,
-      providerLevel: true,
       chain: chainOk,
       sinks,
       retentionDays: 365,
@@ -161,7 +159,7 @@ describe('Audit log page', () => {
     expect(html).toContain('<option value="npm_imported">npm_imported</option>');
   });
 
-  it('shows the hash chain state with Verify now to provider-level users', () => {
+  it('shows the hash chain state with Verify now', () => {
     const html = render();
     expect(html).toContain('Chain verified, 18 events, last check');
     expect(html).toContain('3 events recorded since.');
@@ -186,8 +184,8 @@ describe('Audit log page', () => {
     expect(html).toContain('Streaming and retention');
   });
 
-  it('gives organisation users their events without the chain or the sinks', () => {
-    const html = render({ providerLevel: false, chain: null, sinks: null, retentionDays: null });
+  it('shows the events without the chain or the sinks when there are none to show', () => {
+    const html = render({ chain: null, sinks: null, retentionDays: null });
     expect(html).toContain('Changed the upstream of app.example.com');
     expect(html).not.toContain('Verify now');
     expect(html).not.toContain('Manage destinations');

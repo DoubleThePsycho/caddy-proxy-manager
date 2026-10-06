@@ -10,8 +10,8 @@
  *    permission) refuse it, and so do the self-service endpoints for the
  *    owner's account (sessions, tokens, passkeys, preferences); see
  *    requireApiUser in src/lib/api-auth.ts;
- *  - the owner's tag scope (custom roles) and organisation stay as they are,
- *    so host scoping keeps applying;
+ *  - the owner's tag scope (custom roles) stays as it is, so host scoping
+ *    keeps applying;
  *  - a write scope also grants the area's read action, as in custom roles.
  *
  * A token without scopes acts with its owner's role, as before scopes
@@ -105,26 +105,4 @@ export function parseTokenScopesInput(input: unknown, owner: Access): Permission
 /** Every read permission `owner` holds: the "read only" choice on Profile. */
 export function readOnlyScopesFor(owner: Access): Permission[] {
   return PERMISSIONS.filter((permission) => permission.endsWith(":read") && can(owner, permission));
-}
-
-/**
- * The scopes of the API token the current request authenticated with, or
- * null for a session, a token without scopes, or code that runs outside a
- * request. For the few places that re-read an account's access from its id
- * instead of being handed the request's (organizationForNewRow in
- * ee/multi-tenancy/scope.ts), so a scoped token cannot get past them.
- */
-export async function currentRequestTokenScopes(): Promise<Permission[] | null> {
-  let authorization: string | null;
-  try {
-    const { headers } = await import("next/headers");
-    authorization = (await headers()).get("authorization");
-  } catch {
-    // Not in a request (a scheduler, a test): no token.
-    return null;
-  }
-  if (!authorization?.startsWith("Bearer ")) return null;
-  const { readTokenScopes } = await import("./models/api-tokens");
-  // An unknown token never got this far: authentication refused it.
-  return readTokenScopes(authorization.slice(7));
 }

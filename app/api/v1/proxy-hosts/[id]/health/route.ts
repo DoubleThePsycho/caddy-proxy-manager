@@ -12,7 +12,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { access } = await requireApiPermission(request, "proxy_hosts:read");
     const { id } = await params;
-    // 404 for a host outside the caller's tag scope or organisation, as for a missing one.
+    // 404 for a host outside the caller's tag scope, as for a missing one.
     const hostId = parseRowId(id);
     const host = hostId === null ? null : await findProxyHostInScope(access, hostId);
     if (!host) {

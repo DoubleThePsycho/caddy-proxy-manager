@@ -36,7 +36,7 @@ import { logUnexpectedApiError } from "@/src/lib/api-auth";
 import { logAuditEvent } from "@/src/lib/audit";
 import { CaddyApplyError } from "@/src/lib/caddy-apply-error";
 import { normalizeTags, parseStoredTags } from "@/src/lib/host-tags";
-import { can, scopeTagsFor, tagsInScope, tenantOf, type Access, type Permission } from "@/src/lib/permissions";
+import { can, scopeTagsFor, tagsInScope, type Access, type Permission } from "@/src/lib/permissions";
 import {
   assertDomainsFreeOutsideScope,
   assertForwardAuthAccessAllowed,
@@ -562,14 +562,8 @@ export function parseRequestId(raw: string): number {
   return id;
 }
 
-/**
- * For the host dialogs: the enabled policies and whether the user may make
- * emergency changes. Policies are the provider's (ee/multi-tenancy):
- * organisation users get none, and a protected change of theirs comes back
- * as a change request.
- */
+/** For the host dialogs: the enabled policies and whether the user may make emergency changes. */
 export async function getHostApprovalContext(access: Access): Promise<HostApprovalContext> {
-  if (tenantOf(access) !== null) return { policies: [], canEmergency: false };
   return { policies: await readEnabledPolicyRules(), canEmergency: can(access, "approvals:emergency") };
 }
 
@@ -578,7 +572,7 @@ export type HostChangePreview = {
   approval: {
     /** A covering policy turns the change into a change request. */
     required: boolean;
-    /** The covering policies; empty for organisation users, whose policies are the provider's. */
+    /** The covering policies. */
     policies: { id: number; name: string }[];
     /** Distinct approvals the change request needs (from someone other than the requester). */
     requiredApprovals: number;
@@ -615,7 +609,7 @@ export async function previewHostChange(params: { access: Access; change: HostCh
   return {
     approval: {
       required: covering.length > 0,
-      policies: tenantOf(access) === null ? covering.map((policy) => ({ id: policy.id, name: policy.name })) : [],
+      policies: covering.map((policy) => ({ id: policy.id, name: policy.name })),
       requiredApprovals: covering.length > 0 ? requiredApprovalsFor(covering) : 0,
       operations,
       window,
@@ -771,12 +765,12 @@ class ApplyRefused extends Error {}
 /** The requester's access now: active account, the write permission, and (below) the scope. */
 async function requesterAccess(row: RequestRow): Promise<Access> {
   const user = await first(appDb
-    .select({ id: users.id, role: users.role, customRoleId: users.customRoleId, status: users.status, organizationId: users.organizationId })
+    .select({ id: users.id, role: users.role, customRoleId: users.customRoleId, status: users.status })
     .from(users)
     .where(eq(users.id, row.requestedBy))
     .limit(1));
   if (!user || user.status !== "active") throw new ApplyRefused("The requester's account is no longer active");
-  const access = await accessForUser({ id: user.id, role: user.role, customRoleId: user.customRoleId, organizationId: user.organizationId ?? null });
+  const access = await accessForUser({ id: user.id, role: user.role, customRoleId: user.customRoleId });
   const permission = writePermission(rowTargetType(row));
   if (!can(access, permission)) throw new ApplyRefused(`The requester no longer holds the ${permission} permission`);
   return access;

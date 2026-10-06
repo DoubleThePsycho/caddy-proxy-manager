@@ -152,13 +152,11 @@ export async function planLocalAccount(reader: SamlReader, config: SamlProviderC
 
   if (user.email) {
     const owner = await first(reader
-      .select({ id: users.id, status: users.status, role: users.role, customRoleId: users.customRoleId, organizationId: users.organizationId })
+      .select({ id: users.id, status: users.status, role: users.role, customRoleId: users.customRoleId })
       .from(users)
       .where(eq(users.email, user.email.toLowerCase()))
       .limit(1));
     if (owner) {
-      // Never an organisation's account (ee/multi-tenancy): SAML providers are the provider's.
-      if (owner.organizationId !== null) return { action: "refuse", reason: "privileged_account", userId: owner.id };
       // SCIM provisioned this account for exactly this provider (all checks in ee/scim/binding.ts).
       if (await canLinkScimSignIn(providerId, { ...user.claims, email: user.email })) {
         return { action: "link", userId: owner.id, via: "scim" };
@@ -334,10 +332,7 @@ export async function completeSamlSignIn(
   if (row.status !== "active") return refusal("account_disabled", userId);
 
   let role: SamlRole | null = null;
-  // Organisation users (ee/multi-tenancy) keep the role their organisation gives them.
-  const isProtected =
-    (await protectedUserIds(appDb)).has(userId) ||
-    ((await first(appDb.select({ organizationId: users.organizationId }).from(users).where(eq(users.id, userId)).limit(1)))?.organizationId ?? null) !== null;
+  const isProtected = (await protectedUserIds(appDb)).has(userId);
   if (!isProtected && (decision.managesRoles || created)) {
     role = decision.role;
     if (!(await applyRole(config, userId, role, decision))) return refusal("role_update_failed", userId);

@@ -256,14 +256,6 @@ export function AdvancedSection() {
   return (
     <>
       {data.mode === "edit" && <NameAndTagsCard />}
-      {data.organization && (
-        <EditorCard id="organisation" title="Organisation">
-          <p className="-mt-2 m-0 text-[13px] text-muted-foreground">
-            {data.mode === "create" ? "The new host belongs to " : "This host belongs to "}
-            <span className="text-foreground">{data.organization}</span>.
-          </p>
-        </EditorCard>
-      )}
       <EditorCard
         id="f-redirects"
         title="Redirects and rewrites"

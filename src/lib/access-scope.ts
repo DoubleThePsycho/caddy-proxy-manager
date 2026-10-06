@@ -20,21 +20,14 @@
  *   hosts and upstreams on Caddy's admin API port, and may only reference a
  *   certificate, access list, CA/client certificate, mTLS role, user or group
  *   on a host if they can read it (or the host already references it).
- * - Organisation users (ee/multi-tenancy) are confined to their organisation
- *   on top of all this: rows of another organisation or of the provider level
- *   answer 404, they cannot set raw WAF directives, mTLS or DNS resolvers,
- *   their upstreams must be among the organisation's allowed upstreams, L4
- *   hosts and the trust anchors (CA certificates, client certificates, mTLS
- *   roles and rules) are the provider's, and domains already used by another
- *   organisation are refused (ee/multi-tenancy/scope.ts).
  *
  * Administrators are never limited here.
  */
 import { and, eq, isNotNull } from "drizzle-orm";
 import { appDb } from "./db";
-import { accessLists, certificates, l4ProxyHosts, proxyHosts } from "./db/schema";
+import { l4ProxyHosts, proxyHosts } from "./db/schema";
 import { ApiClientError, ApiValidationError } from "./api-errors";
-import { can, scopeTagsFor, tagsInScope, tenantOf, type Access, type ScopableArea } from "./permissions";
+import { can, scopeTagsFor, tagsInScope, type Access, type ScopableArea } from "./permissions";
 import { normalizeTags, parseStoredTags } from "./host-tags";
 import { tagsMatchAny } from "./host-tag-filter";
 import { normalizeProxyHostDomains } from "./proxy-host-domains";
@@ -42,14 +35,6 @@ import { isDomainCoveredByWildcard } from "./cert-domain-match";
 import { extractL4ListenPort } from "./l4-reserved-ports";
 import { getProxyHost, type MtlsConfig, type ProxyHost, type ProxyHostInput } from "./models/proxy-hosts";
 import { getL4ProxyHost, type L4ProxyHost, type L4ProxyHostInput } from "./models/l4-proxy-hosts";
-import { getAccessList, type AccessList } from "./models/access-lists";
-import { getGroup, type Group } from "./models/groups";
-import { getUserById, type User } from "./models/user";
-import { inTenant, TenantError } from "@/ee/multi-tenancy/scope";
-import { assertOrganizationHostInput } from "@/ee/multi-tenancy/hosts";
-import { assertGrantsInTenant } from "@/ee/multi-tenancy/guard";
-import { assertNamesFreeAcrossOrganizations } from "@/ee/multi-tenancy/domains";
-import { first } from "@/src/lib/db/ops";
 
 /** A refusal because of the caller's role (403); the message is safe to show. */
 export class ScopeError extends ApiClientError {
@@ -67,7 +52,7 @@ const CADDY_ADMIN_PORT = 2019;
 /** The proxy host, or null when it is missing or outside the caller's scope. */
 export async function findProxyHostInScope(access: Access, id: number): Promise<ProxyHost | null> {
   const host = Number.isSafeInteger(id) && id > 0 ? await getProxyHost(id) : null;
-  return host && inTenant(access, host.organizationId) && tagsInScope(host.tags, scopeTagsFor(access, "proxy_hosts")) ? host : null;
+  return host && tagsInScope(host.tags, scopeTagsFor(access, "proxy_hosts")) ? host : null;
 }
 
 /**
@@ -82,8 +67,6 @@ export async function getProxyHostInScope(access: Access, id: number): Promise<P
 
 /** The L4 proxy host, or null when it is missing or outside the caller's scope. */
 export async function findL4ProxyHostInScope(access: Access, id: number): Promise<L4ProxyHost | null> {
-  // L4 hosts are provider-level only: their listening ports are shared by every tenant.
-  if (tenantOf(access) !== null) return null;
   const host = Number.isSafeInteger(id) && id > 0 ? await getL4ProxyHost(id) : null;
   return host && tagsInScope(host.tags, scopeTagsFor(access, "l4_proxy_hosts")) ? host : null;
 }
@@ -138,12 +121,6 @@ export async function assertDomainsFreeOutsideScope(
   exceptHostId: number | null
 ): Promise<void> {
   if (domains === undefined) return;
-  // Organisation users: nothing another organisation (or the provider) serves
-  // or holds a certificate for. The model checks this for every writer too.
-  const tenant = tenantOf(access);
-  if (tenant !== null) {
-    await assertNamesFreeAcrossOrganizations(appDb, tenant, normalizeProxyHostDomains([...domains]), { proxyHostId: exceptHostId });
-  }
   const scope = scopeTagsFor(access, "proxy_hosts");
   if (scope === null) return;
   const wanted = normalizeProxyHostDomains([...domains]);
@@ -232,8 +209,6 @@ export async function assertProxyHostWriteAllowed(
   existing: ProxyHost | null
 ): Promise<void> {
   if (access.isAdmin) return;
-  const tenant = tenantOf(access);
-  if (tenant !== null) await assertOrganizationHostInput(tenant, input, existing);
   if (
     (input.customReverseProxyJson !== undefined && !sameText(input.customReverseProxyJson, existing?.customReverseProxyJson)) ||
     (input.customPreHandlersJson !== undefined && !sameText(input.customPreHandlersJson, existing?.customPreHandlersJson))
@@ -251,7 +226,6 @@ export async function assertProxyHostWriteAllowed(
   const accessListId = input.accessListId;
   if (accessListId !== undefined && accessListId !== null && accessListId !== existing?.accessListId) {
     if (!can(access, "access_lists:read")) throw new ScopeError("Using an access list needs the access_lists:read permission");
-    if (!(await accessListVisible(access, accessListId))) throw new ScopeError("You cannot use this access list");
   }
   if (mtlsReferencesChanged(input.mtls, existing?.mtls)) {
     if (!can(access, "certificates:read") || scopeTagsFor(access, "certificates") !== null) {
@@ -271,8 +245,6 @@ export function assertMtlsRuleReferencesAllowed(
   current: { allowedRoleIds: readonly number[]; allowedCertIds: readonly number[] } | null
 ): void {
   if (access.isAdmin) return;
-  // mTLS rules rest on the provider's trust anchors (ee/multi-tenancy).
-  if (tenantOf(access) !== null) throw new TenantError("mTLS access rules are managed by your provider");
   const changed =
     (next.allowedRoleIds !== undefined && !sameIds(next.allowedRoleIds, current?.allowedRoleIds ?? [])) ||
     (next.allowedCertIds !== undefined && !sameIds(next.allowedCertIds, current?.allowedCertIds ?? []));
@@ -294,46 +266,25 @@ export async function assertForwardAuthAccessAllowed(
   if (next.groupIds !== undefined && !sameIds(next.groupIds, current.groupIds) && !can(access, "groups:read")) {
     throw new ScopeError("Choosing groups for forward auth needs the groups:read permission");
   }
-  // Organisation users only name users and groups of their organisation (404 otherwise).
-  const tenant = tenantOf(access);
-  if (tenant !== null) await assertGrantsInTenant(appDb, tenant, next, tenant);
 }
 
 /** Checks an L4 host write by a non-administrator: no upstream on the admin API port. */
 export function assertL4WriteAllowed(access: Access, input: Partial<L4ProxyHostInput>): void {
   if (access.isAdmin) return;
-  if (tenantOf(access) !== null) throw new TenantError("L4 proxy hosts are managed by your provider");
   assertNoAdminApiUpstream(input.upstreams);
 }
 
 // ── Certificates ──────────────────────────────────────────────────────
 
-/**
- * Ids of the certificates the caller's scope covers, or null for all of them:
- * an organisation user's organisation's certificates, narrowed further by a
- * tag scope.
- */
+/** Ids of the certificates the caller's tag scope covers, or null for all of them. */
 export async function certificateIdsInScope(access: Access): Promise<Set<number> | null> {
-  const tenant = tenantOf(access);
-  const owned = tenant === null
-    ? null
-    : new Set((await appDb.select({ id: certificates.id }).from(certificates).where(eq(certificates.organizationId, tenant))).map((row) => row.id));
   const scope = scopeTagsFor(access, "certificates");
-  if (scope === null) return owned;
+  if (scope === null) return null;
   const rows = await appDb
     .select({ certificateId: proxyHosts.certificateId })
     .from(proxyHosts)
     .where(and(isNotNull(proxyHosts.certificateId), tagsMatchAny(proxyHosts.tags, scope)));
-  const tagged = new Set(rows.map((row) => row.certificateId!));
-  return owned === null ? tagged : new Set([...tagged].filter((id) => owned.has(id)));
-}
-
-/** Whether the caller may see (and so reference) access list `id`: an organisation user only their organisation's. */
-async function accessListVisible(access: Access, id: number): Promise<boolean> {
-  const tenant = tenantOf(access);
-  if (tenant === null) return true;
-  const row = await first(appDb.select({ organizationId: accessLists.organizationId }).from(accessLists).where(eq(accessLists.id, id)).limit(1));
-  return !!row && row.organizationId === tenant;
+  return new Set(rows.map((row) => row.certificateId!));
 }
 
 async function certificateVisible(access: Access, certificateId: number): Promise<boolean> {
@@ -353,11 +304,6 @@ export async function assertCertificateReadable(access: Access, certificateId: n
  * is in the caller's scope (404 when none is, like a missing certificate).
  */
 export async function assertCertificateWritable(access: Access, certificateId: number): Promise<void> {
-  const tenant = tenantOf(access);
-  if (tenant !== null) {
-    const row = await first(appDb.select({ organizationId: certificates.organizationId }).from(certificates).where(eq(certificates.id, certificateId)).limit(1));
-    if (!row || row.organizationId !== tenant) throw new Error("Certificate not found");
-  }
   const scope = scopeTagsFor(access, "certificates");
   if (scope === null) return;
   const rows = await appDb
@@ -383,46 +329,9 @@ export function assertCanCreateCertificate(access: Access): void {
  * certificates permission limited by a tag scope does not reach them.
  */
 export function assertUnscopedCertificates(access: Access): void {
-  if (tenantOf(access) !== null) {
-    throw new TenantError("CA certificates, client certificates and mTLS roles are managed by your provider");
-  }
   if (scopeTagsFor(access, "certificates") !== null) {
     throw new ScopeError(
       "CA certificates, client certificates and mTLS roles need certificate permissions without a tag scope"
     );
   }
-}
-
-// ── Access lists, groups and users (organisations, ee/multi-tenancy) ──
-
-/** The access list, or null when it is missing or of another organisation than the caller's. */
-export async function findAccessListInScope(access: Access, id: number): Promise<AccessList | null> {
-  const list = Number.isSafeInteger(id) && id > 0 ? await getAccessList(id) : null;
-  return list && inTenant(access, list.organizationId) ? list : null;
-}
-
-/** The access list; throws "Access list not found" (404) when missing or of another organisation. */
-export async function getAccessListInScope(access: Access, id: number): Promise<AccessList> {
-  const list = await findAccessListInScope(access, id);
-  if (!list) throw new Error("Access list not found");
-  return list;
-}
-
-/** The group, or null when it is missing or of another organisation than the caller's. */
-export async function findGroupInScope(access: Access, id: number): Promise<Group | null> {
-  const group = Number.isSafeInteger(id) && id > 0 ? await getGroup(id) : null;
-  return group && inTenant(access, group.organizationId) ? group : null;
-}
-
-/** The group; throws "Group not found" (404) when missing or of another organisation. */
-export async function getGroupInScope(access: Access, id: number): Promise<Group> {
-  const group = await findGroupInScope(access, id);
-  if (!group) throw new Error("Group not found");
-  return group;
-}
-
-/** The user, or null when missing or of another organisation than the caller's. */
-export async function findUserInScope(access: Access, id: number): Promise<User | null> {
-  const user = Number.isSafeInteger(id) && id > 0 ? await getUserById(id) : null;
-  return user && inTenant(access, user.organizationId) ? user : null;
 }

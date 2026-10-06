@@ -357,15 +357,6 @@ describe('audit log filters and details', () => {
     expect(facets.actors.map((actor) => actor.id).sort()).toEqual([fx.adminId, fx.memberId, null].sort());
   });
 
-  it('keeps organisation logs apart and does not name the provider to an organisation', async () => {
-    const org = (await dbFirst(ctx.db.insert(schema.organizations).values({ name: 'Client', slug: 'client', createdAt: now(), updatedAt: now() }).returning()))!;
-    await logAuditEvent({ userId: fx.adminId, action: 'update', entityType: 'proxy_host', entityId: fx.hostId, summary: 'In the organisation', organizationId: org.id });
-    await logAuditEvent({ userId: fx.adminId, action: 'update', entityType: 'proxy_host', entityId: fx.hostId, summary: 'Provider level', organizationId: null });
-    const events = await queryAuditEvents({ organizationId: org.id }, { limit: 50, offset: 0 });
-    expect(events.map((event) => event.summary)).toEqual(['In the organisation']);
-    expect(events[0].user).toBeNull();
-  });
-
   it('serves an event with its configuration diff over the REST API', async () => {
     await enableHistory();
     const { eventId, versionId } = await changeHost(['backend-v2:8080'], 'Changed the upstream of App');

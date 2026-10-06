@@ -1,5 +1,5 @@
 import { requirePermission } from "@/src/lib/auth";
-import { can, tenantOf, type Access } from "@/src/lib/permissions";
+import { can, type Access } from "@/src/lib/permissions";
 import { getLoggingSettings, getMetricsSettings } from "@/src/lib/settings";
 import { getRetentionDays, isAnalyticsEnabled, querySummary, queryWafCount } from "@/src/lib/clickhouse/client";
 import { loadReplicaOverrides } from "../../settings/load";
@@ -24,8 +24,7 @@ async function analyticsStatus(access: Access): Promise<AnalyticsStatusView> {
     totals: null,
     totalsError: null,
   };
-  // Instance-wide totals: never for organisation users, whose analytics are limited to their own hosts.
-  if (!enabled || !can(access, "analytics:read") || tenantOf(access) !== null) return view;
+  if (!enabled || !can(access, "analytics:read")) return view;
   const to = Math.floor(Date.now() / 1000);
   const from = to - retentionDays * 86_400;
   let timer: ReturnType<typeof setTimeout> | undefined;

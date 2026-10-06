@@ -12,8 +12,6 @@ import {
   domainSql,
   exactDomainsTakenByOthers,
   proxyHostForName,
-  scopeSql,
-  type HostScope,
   type ProxyHostDomains,
 } from './scope';
 
@@ -42,10 +40,11 @@ export type HostSummariesResult = {
  * proxy host, so a name that is another host's exact domain is not counted
  * for a wildcard host.
  */
-export async function queryHostSummaries(
-  input: { range: ResolvedRange; hosts: readonly ProxyHostDomains[]; allHosts: readonly ProxyHostDomains[] },
-  scope: HostScope
-): Promise<HostSummariesResult> {
+export async function queryHostSummaries(input: {
+  range: ResolvedRange;
+  hosts: readonly ProxyHostDomains[];
+  allHosts: readonly ProxyHostDomains[];
+}): Promise<HostSummariesResult> {
   const { range } = input;
   const step = sparklineStep(range);
   const points = Math.ceil((range.end - range.start) / step);
@@ -67,14 +66,13 @@ export async function queryHostSummaries(
     if (input.hosts.length === 0) return empty;
     const matcher = domainMatcher(input.hosts.flatMap((host) => host.domains));
     const domains = domainSql(matcher);
-    const scoped = scopeSql(scope);
     const rows = await selectRows<Record<string, unknown>>(
       `SELECT ${HOST_NAME_SQL} AS name, intDiv(toUInt32(ts) - {p_from:UInt32}, {p_step:UInt32}) AS b,
               count() AS requests, countIf(status >= 500) AS e5, countIf(${MITIGATED_SQL}) AS m, sum(bytes_sent) AS bytes
        FROM traffic_events
-       WHERE ts >= toDateTime({p_from:UInt32}) AND ts < toDateTime({p_to:UInt32}) AND ${scoped.sql} AND ${domains.sql}
+       WHERE ts >= toDateTime({p_from:UInt32}) AND ts < toDateTime({p_to:UInt32}) AND ${domains.sql}
        GROUP BY name, b`,
-      { ...scoped.params, ...domains.params, p_from: range.start, p_to: range.end, p_step: step }
+      { ...domains.params, p_from: range.start, p_to: range.end, p_step: step }
     );
     const wanted = new Map(input.hosts.map((host) => [host.id, blank(host.id)]));
     const owner = new Map<string, number | null>();
@@ -119,10 +117,11 @@ const TOP_PATHS = 10;
 const STATUSES_PER_PATH = 3;
 
 /** Summary of one proxy host (the caller must already be allowed to see it). */
-export async function queryHostDetail(
-  input: { range: ResolvedRange; host: ProxyHostDomains; allHosts: readonly ProxyHostDomains[] },
-  scope: HostScope
-): Promise<HostDetailResult> {
+export async function queryHostDetail(input: {
+  range: ResolvedRange;
+  host: ProxyHostDomains;
+  allHosts: readonly ProxyHostDomains[];
+}): Promise<HostDetailResult> {
   const { range, host } = input;
   const zeros = () => new Array<number>(range.buckets).fill(0);
   const empty = {
@@ -135,9 +134,8 @@ export async function queryHostDetail(
   };
   return withAnalytics('host detail', empty, async () => {
     const domains = domainSql(domainMatcher(host.domains), exactDomainsTakenByOthers(host, input.allHosts));
-    const scoped = scopeSql(scope);
-    const params = { ...scoped.params, ...domains.params, p_from: range.start, p_to: range.end, p_step: range.step, p_top: TOP_PATHS };
-    const where = `ts >= toDateTime({p_from:UInt32}) AND ts < toDateTime({p_to:UInt32}) AND ${scoped.sql} AND ${domains.sql}`;
+    const params = { ...domains.params, p_from: range.start, p_to: range.end, p_step: range.step, p_top: TOP_PATHS };
+    const where = `ts >= toDateTime({p_from:UInt32}) AND ts < toDateTime({p_to:UInt32}) AND ${domains.sql}`;
     const [buckets, totals, paths, statuses] = await Promise.all([
       selectRows<Record<string, unknown>>(
         `SELECT intDiv(toUInt32(ts) - {p_from:UInt32}, {p_step:UInt32}) AS b, count() AS requests, countIf(status >= 500) AS e5,

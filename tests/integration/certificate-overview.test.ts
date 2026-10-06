@@ -2,8 +2,8 @@
  * The certificate overview (src/lib/certificate-overview.ts) against an
  * in-memory database: how each certificate is obtained, its expiry and
  * renewal, who uses it, and the visibility rules it shares with the
- * certificates page and GET /api/v1/certificates/overview (tag scope,
- * organisations, L4 hosts only with l4_proxy_hosts:read).
+ * certificates page and GET /api/v1/certificates/overview (tag scope, L4
+ * hosts only with l4_proxy_hosts:read).
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TestDb } from '../helpers/db';
@@ -60,7 +60,7 @@ const NOW = Date.UTC(2026, 9, 3, 12);
 const stamp = () => new Date(NOW).toISOString();
 const iso = (offsetDays: number) => new Date(NOW + offsetDays * DAY).toISOString();
 
-function role(permissions: Permission[], scopeTags: string[] = [], organizationId: number | null = null): Access {
+function role(permissions: Permission[], scopeTags: string[] = []): Access {
   return {
     userId: 7,
     role: 'viewer',
@@ -68,14 +68,13 @@ function role(permissions: Permission[], scopeTags: string[] = [], organizationI
     customRole: { id: 1, name: 'Custom' },
     permissions: new Set(permissions),
     scopeTags,
-    organizationId,
   };
 }
 
 async function addHost(
   name: string,
   domains: string[],
-  options: { enabled?: boolean; certificateId?: number | null; tags?: string[]; organizationId?: number | null } = {}
+  options: { enabled?: boolean; certificateId?: number | null; tags?: string[] } = {}
 ) {
   const [row] = await ctx.db
     .insert(schema.proxyHosts)
@@ -86,7 +85,6 @@ async function addHost(
       certificateId: options.certificateId ?? null,
       enabled: options.enabled ?? true,
       tags: JSON.stringify(options.tags ?? []),
-      organizationId: options.organizationId ?? null,
       createdAt: stamp(),
       updatedAt: stamp(),
     })
@@ -176,7 +174,7 @@ describe('buildCertificateOverview', () => {
     ctx.served.set('auth.example.com', { validFrom: iso(-59), validTo: iso(31), issuer: "Let's Encrypt", keyType: 'ECDSA P-256' });
     ctx.served.set('www.auth.example.com', { validFrom: iso(-60), validTo: iso(30), issuer: "Let's Encrypt", keyType: 'ECDSA P-256' });
 
-    const { certificates } = await buildCertificateOverview(adminAccess(1), undefined, { now: NOW });
+    const { certificates } = await buildCertificateOverview(adminAccess(1), { now: NOW });
     expect(certificates).toHaveLength(1);
     const [row] = certificates;
     expect(row).toMatchObject({
@@ -200,7 +198,7 @@ describe('buildCertificateOverview', () => {
     ctx.dnsProvider = { providers: { cloudflare: { api_token: 'secret' } }, default: 'cloudflare' };
     ctx.acme = { caUrl: 'https://user:pass@ca.example.com/acme/directory' };
     await addHost('Grafana', ['grafana.example.com']);
-    const { certificates } = await buildCertificateOverview(adminAccess(1), undefined, { now: NOW });
+    const { certificates } = await buildCertificateOverview(adminAccess(1), { now: NOW });
     expect(certificates[0].obtainedBy).toEqual({ method: 'acme', challenge: 'dns-01', dnsProvider: 'Cloudflare', directory: 'ca.example.com' });
     // Without a served certificate the issuer is the configured CA, and nothing secret leaks.
     expect(certificates[0]).toMatchObject({ issuer: 'ca.example.com', issuerFromCertificate: false, validTo: null, daysLeft: null });
@@ -212,7 +210,7 @@ describe('buildCertificateOverview', () => {
     const cert = await addImported('Files', importedPem, ['files.example.com']);
     await addHost('Files host', ['files.example.com'], { certificateId: cert });
     await addHost('Share', ['share.files.example.com']);
-    const { certificates } = await buildCertificateOverview(adminAccess(1), undefined, { now: Date.now() });
+    const { certificates } = await buildCertificateOverview(adminAccess(1), { now: Date.now() });
     expect(certificates).toHaveLength(1);
     expect(certificates[0]).toMatchObject({
       kind: 'imported',
@@ -231,14 +229,14 @@ describe('buildCertificateOverview', () => {
   it('lists a wildcard ACME host once, with the hosts it covers', async () => {
     await addHost('Wildcard', ['*.apps.example.com']);
     await addHost('Sub', ['sub.apps.example.com']);
-    const { certificates } = await buildCertificateOverview(adminAccess(1), undefined, { now: NOW });
+    const { certificates } = await buildCertificateOverview(adminAccess(1), { now: NOW });
     expect(certificates.map((row) => row.domains)).toEqual([['*.apps.example.com']]);
     expect(certificates[0].usedBy.map((u) => u.name)).toEqual(['Wildcard', 'Sub']);
   });
 
   it('does not ask Caddy about disabled hosts', async () => {
     await addHost('Off', ['off.example.com'], { enabled: false });
-    const { certificates } = await buildCertificateOverview(adminAccess(1), undefined, { now: NOW });
+    const { certificates } = await buildCertificateOverview(adminAccess(1), { now: NOW });
     expect(certificates[0]).toMatchObject({ active: false, validTo: null });
     expect(certificates[0].renewal.state).toBe('inactive');
     expect(ctx.asked).toEqual([]);
@@ -250,7 +248,7 @@ describe('buildCertificateOverview', () => {
     await addHost('Soon', ['soon.example.com']);
     ctx.served.set('later.example.com', { validFrom: iso(-1), validTo: iso(89), issuer: null, keyType: null });
     ctx.served.set('soon.example.com', { validFrom: iso(-80), validTo: iso(10), issuer: null, keyType: null });
-    const { certificates } = await buildCertificateOverview(adminAccess(1), undefined, { now: NOW });
+    const { certificates } = await buildCertificateOverview(adminAccess(1), { now: NOW });
     expect(certificates.map((row) => row.name)).toEqual(['Soon', 'Later', 'Unknown']);
   });
 
@@ -262,25 +260,14 @@ describe('buildCertificateOverview', () => {
     await addHost('A files', ['files.example.com'], { certificateId: ours, tags: ['team-a'] });
     await addL4('L4 A', ['a.example.com'], true, ['team-a']);
     const access = role(['certificates:read'], ['team-a']);
-    const { certificates } = await buildCertificateOverview(access, undefined, { now: NOW });
+    const { certificates } = await buildCertificateOverview(access, { now: NOW });
     expect(certificates.map((row) => row.name).sort()).toEqual(['A', 'Ours']);
     // Without l4_proxy_hosts:read, L4 hosts are not named.
     expect(certificates.flatMap((row) => row.usedBy).some((u) => u.kind === 'l4_host')).toBe(false);
     expect(ctx.asked.flat()).toEqual(['a.example.com']);
 
-    const withL4 = await buildCertificateOverview(role(['certificates:read', 'l4_proxy_hosts:read'], ['team-a']), undefined, { now: NOW });
+    const withL4 = await buildCertificateOverview(role(['certificates:read', 'l4_proxy_hosts:read'], ['team-a']), { now: NOW });
     expect(withL4.certificates.find((row) => row.name === 'A')!.usedBy.map((u) => u.name)).toEqual(['A', 'L4 A']);
-  });
-
-  it('shows an organisation only its own rows and never L4 hosts', async () => {
-    const [org] = await ctx.db.insert(schema.organizations).values({ name: 'Alpha', slug: 'alpha', createdAt: stamp(), updatedAt: stamp() }).returning();
-    await addHost('Alpha app', ['alpha.example.com'], { organizationId: org.id });
-    await addHost('Provider app', ['provider.example.com']);
-    await addL4('Shared L4', ['alpha.example.com']);
-    const tenant = role(['certificates:read', 'l4_proxy_hosts:read'], [], org.id);
-    const { certificates } = await buildCertificateOverview(tenant, org.id, { now: NOW });
-    expect(certificates.map((row) => row.name)).toEqual(['Alpha app']);
-    expect(certificates[0].usedBy.map((u) => u.kind)).toEqual(['proxy_host']);
   });
 });
 
@@ -298,15 +285,5 @@ describe('GET /api/v1/certificates/overview', () => {
     expect(body.certificates).toHaveLength(1);
     expect(body.certificates[0]).toMatchObject({ kind: 'imported', name: 'Files' });
     expect(JSON.stringify(body)).not.toMatch(/BEGIN|privateKey/);
-  });
-
-  it('confines an organisation user to their organisation, whatever they ask for', async () => {
-    const [org] = await ctx.db.insert(schema.organizations).values({ name: 'Bravo', slug: 'bravo', createdAt: stamp(), updatedAt: stamp() }).returning();
-    await addHost('Bravo app', ['bravo.example.com'], { organizationId: org.id });
-    await addHost('Provider app', ['provider.example.com']);
-    ctx.access = role(['certificates:read'], [], org.id);
-    const response = await getOverview(new NextRequest('http://localhost/api/v1/certificates/overview?organizationId=provider'));
-    const body = await response.json();
-    expect(body.certificates.map((row: { name: string }) => row.name)).toEqual(['Bravo app']);
   });
 });

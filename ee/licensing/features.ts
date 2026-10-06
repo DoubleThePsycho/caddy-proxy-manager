@@ -7,7 +7,7 @@
  * free before the paid editions existed may be moved behind a license.
  */
 
-export const EDITIONS = ["homelab", "business", "enterprise", "msp"] as const;
+export const EDITIONS = ["homelab", "business", "enterprise"] as const;
 export type Edition = (typeof EDITIONS)[number];
 
 export const FEATURES = [
@@ -27,7 +27,6 @@ export const FEATURES = [
   "fleet",
   "high_availability",
   "air_gap",
-  "multi_tenancy",
   "white_label",
   "api_monetization",
 ] as const;
@@ -125,15 +124,10 @@ export const FEATURE_INFO: Record<Feature, FeatureInfo> = {
     description: "Offline install bundle for hosts without Internet access. Long-term-support releases are planned, not announced yet.",
     edition: "enterprise",
   },
-  multi_tenancy: {
-    label: "Multi-tenancy",
-    description: "Isolated organizations with their own admins, hosts and usage reports.",
-    edition: "msp",
-  },
   white_label: {
     label: "White-label",
-    description: "Your own product name, logos, favicon, colours, sign-in texts and e-mail sender name, for your clients to see.",
-    edition: "msp",
+    description: "Your own product name, logos, favicon, colours, sign-in texts and e-mail sender name.",
+    edition: "enterprise",
   },
   api_monetization: {
     label: "API monetization",
@@ -164,23 +158,20 @@ const ENTERPRISE: readonly Feature[] = [
   "fleet",
   "high_availability",
   "air_gap",
+  "white_label",
   "api_monetization",
 ];
-
-const MSP: readonly Feature[] = [...BUSINESS, "multi_tenancy", "white_label"];
 
 export const EDITION_FEATURES: Record<Edition, readonly Feature[]> = {
   homelab: HOMELAB,
   business: BUSINESS,
   enterprise: ENTERPRISE,
-  msp: MSP,
 };
 
 export const EDITION_LABELS: Record<Edition, string> = {
   homelab: "Homelab",
   business: "Business",
   enterprise: "Enterprise",
-  msp: "MSP",
 };
 
 export function isEdition(value: unknown): value is Edition {

@@ -9,13 +9,12 @@ A license key unlocks setting up and changing the paid features of its edition. 
 | Homelab | €49 a year | 1, non-commercial use | Online, once checkout opens |
 | Business | €890 a year, or €89 a month | 3, then €190 a year (€19 a month) per extra node | Online, once checkout opens |
 | Enterprise | from €5,900 a year | 10, then €290 a year per extra node | Annual, usually invoiced |
-| MSP | €15 per active tenant a month, at least €1,800 a year | as agreed | Invoiced |
 
 A node is the dashboard itself plus each instance sync replica it manages. Going over the licensed number shows a notice on the License page and is invoiced at renewal; nothing is ever blocked.
 
 ## Buying
 
-Online checkout is not open yet. Organisations buy by writing to [sales@ingres.si](mailto:sales@ingres.si) with the edition, the number of nodes and the company name the key is issued to. Every edition is invoiced directly for now; Enterprise and MSP always are.
+Online checkout is not open yet. Organisations buy by writing to [sales@ingres.si](mailto:sales@ingres.si) with the edition, the number of nodes and the company name the key is issued to. Every edition is invoiced directly for now; Enterprise always is.
 
 1. Once the order is settled, `licenses@ingres.si` e-mails the license id, the license key (also attached as a `.lic` file) and a refresh token for automatic updates. Keep that e-mail: the refresh token is sent only once.
 2. Install the key (below).

@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { ApiValidationError } from "@/src/lib/api-errors";
 import { deleteRole, getRole, updateRole } from "@/ee/custom-roles/service";
-import { assertMayUseCustomRoles } from "@/ee/multi-tenancy/users";
 import { routeRowId } from "@/src/lib/row-ids";
 
 type Params = { params: Promise<{ id: string }> };
@@ -16,9 +15,7 @@ function parseRoleId(id: string): number {
 
 export async function GET(request: NextRequest, { params }: Params) {
   try {
-    const { access } = await requireApiPermission(request, "users:read");
-    // Custom roles are the provider's (ee/multi-tenancy).
-    assertMayUseCustomRoles(access);
+    await requireApiPermission(request, "users:read");
     return NextResponse.json(await getRole(parseRoleId((await params).id)), { headers: NO_STORE });
   } catch (error) {
     return apiErrorResponse(error);

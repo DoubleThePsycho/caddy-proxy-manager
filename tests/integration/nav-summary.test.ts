@@ -23,7 +23,7 @@ const DAY = 86_400_000;
 const NONE = { pending: 0, dueAt: null, overdue: false };
 const stamp = () => new Date().toISOString();
 
-function role(permissions: Permission[], scopeTags: string[] = [], organizationId: number | null = null): Access {
+function role(permissions: Permission[], scopeTags: string[] = []): Access {
   return {
     userId: 7,
     role: 'viewer',
@@ -31,7 +31,6 @@ function role(permissions: Permission[], scopeTags: string[] = [], organizationI
     customRole: { id: 1, name: 'Custom' },
     permissions: new Set(permissions),
     scopeTags,
-    organizationId,
   };
 }
 
@@ -49,10 +48,10 @@ beforeEach(async () => {
   }
 });
 
-async function addCertificate(name: string, pem: string, organizationId: number | null = null) {
+async function addCertificate(name: string, pem: string) {
   const [row] = await ctx.db
     .insert(schema.certificates)
-    .values({ name, type: 'imported', domainNames: JSON.stringify([`${name}.example.com`]), certificatePem: pem, privateKeyPem: 'x', createdAt: stamp(), updatedAt: stamp(), organizationId })
+    .values({ name, type: 'imported', domainNames: JSON.stringify([`${name}.example.com`]), certificatePem: pem, privateKeyPem: 'x', createdAt: stamp(), updatedAt: stamp() })
     .returning();
   return row.id;
 }
@@ -122,15 +121,6 @@ describe('nav summary', () => {
     const own = { ...role(['approvals:read']), userId: 99 };
     expect((await getNavSummary(own, NONE)).badges.approvalsPending?.text).toBe('2');
     expect((await getNavSummary(role(['approvals:read']), NONE)).badges.approvalsPending ?? null).toBeNull();
-  });
-
-  it('counts an organisation user only their organisation\'s certificates', async () => {
-    await addCertificate('mine', expiringPem, 5);
-    await addCertificate('theirs', expiringPem, 6);
-    await addCertificate('provider', expiringPem, null);
-    const member = role(['certificates:read'], [], 5);
-    expect((await getNavSummary(member, NONE)).badges.certificatesExpiring?.text).toBe('1');
-    expect((await getNavSummary(adminAccess(1), NONE)).badges.certificatesExpiring?.text).toBe('3');
   });
 
   it('describes the reviewer\'s own open reviews', () => {

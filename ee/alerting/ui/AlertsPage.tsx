@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Elastic-2.0
 import { requirePermission } from "@/src/lib/auth";
 import { can, scopeTagsFor } from "@/src/lib/permissions";
-import { organizationFilterFor } from "@/ee/multi-tenancy/scope";
 import { listProxyHosts } from "@/src/lib/models/proxy-hosts";
 import { listAlertChannels } from "@/ee/alerting/channels";
 import { listAlertRules } from "@/ee/alerting/rules";
@@ -49,7 +48,7 @@ export default async function AlertsPage({ searchParams }: PageProps) {
     tab === "history" ? historyPage(page) : Promise.resolve({ events: [], total: 0, page: 1, perPage: HISTORY_PER_PAGE }),
     // Only the hosts the user may read are offered and named.
     can(access, "proxy_hosts:read")
-      ? listProxyHosts(scopeTagsFor(access, "proxy_hosts"), organizationFilterFor(access))
+      ? listProxyHosts(scopeTagsFor(access, "proxy_hosts"))
       : Promise.resolve([]),
     getAiSettingsView(),
     getDigestSettingsView(),

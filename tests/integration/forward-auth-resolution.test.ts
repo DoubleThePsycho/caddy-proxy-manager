@@ -8,9 +8,8 @@
  *   hosts with and without forward auth, disabled hosts, bad JSON).
  * - The verify endpoint's decision (authorizeForwardAuthRequest) reads the
  *   user once and keeps the old answers: 401 for a missing or inactive user,
- *   403 without access (other organisation, disabled organisation, no
- *   grant), and the groups of the user's own organisation in membership
- *   order for the header.
+ *   403 without a grant, and the user's groups in membership order for the
+ *   header.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { asc as drizzleAsc, eq } from 'drizzle-orm';
@@ -36,7 +35,7 @@ beforeEach(async () => {
   await disableForeignKeys(db);
 });
 
-async function insertHost(domains: unknown, options: { forwardAuth?: boolean; enabled?: boolean; meta?: string | null; organizationId?: number | null } = {}) {
+async function insertHost(domains: unknown, options: { forwardAuth?: boolean; enabled?: boolean; meta?: string | null } = {}) {
   const timestamp = now();
   const [host] = await db.insert(schema.proxyHosts).values({
     name: `Host ${JSON.stringify(domains)}`,
@@ -44,7 +43,6 @@ async function insertHost(domains: unknown, options: { forwardAuth?: boolean; en
     upstreams: JSON.stringify(['backend:8080']),
     enabled: options.enabled ?? true,
     meta: options.meta !== undefined ? options.meta : JSON.stringify({ cpm_forward_auth: { enabled: options.forwardAuth ?? true } }),
-    organizationId: options.organizationId ?? null,
     createdAt: timestamp,
     updatedAt: timestamp,
   }).returning();
@@ -170,27 +168,19 @@ describe('forward-auth host resolution', () => {
 });
 
 describe('forward-auth verify decision', () => {
-  async function insertOrganization(name: string, enabled = true) {
-    const timestamp = now();
-    const [organization] = await db.insert(schema.organizations).values({
-      name, slug: name.toLowerCase(), enabled, createdAt: timestamp, updatedAt: timestamp,
-    }).returning();
-    return organization;
-  }
-
-  async function insertUser(email: string, options: { status?: string; organizationId?: number | null; username?: string | null } = {}) {
+  async function insertUser(email: string, options: { status?: string; username?: string | null } = {}) {
     const timestamp = now();
     const [user] = await db.insert(schema.users).values({
       email, name: email, role: 'user', provider: 'credentials', subject: email,
-      status: options.status ?? 'active', organizationId: options.organizationId ?? null,
+      status: options.status ?? 'active',
       username: options.username ?? null, createdAt: timestamp, updatedAt: timestamp,
     }).returning();
     return user;
   }
 
-  async function insertGroup(name: string, organizationId: number | null = null) {
+  async function insertGroup(name: string) {
     const timestamp = now();
-    const [group] = await db.insert(schema.groups).values({ name, organizationId, createdAt: timestamp, updatedAt: timestamp }).returning();
+    const [group] = await db.insert(schema.groups).values({ name, createdAt: timestamp, updatedAt: timestamp }).returning();
     return group;
   }
 
@@ -241,40 +231,5 @@ describe('forward-auth verify decision', () => {
     // Nor does a grant on a host that no longer exists.
     await db.delete(schema.proxyHosts).where(eq(schema.proxyHosts.id, host.id));
     await expect(authorizeForwardAuthRequest(user.id, host.id)).resolves.toEqual({ status: 403 });
-  });
-
-  it('keeps users to their own organisation, its groups and its enabled state', async () => {
-    const alpha = await insertOrganization('Alpha');
-    const beta = await insertOrganization('Beta');
-    const alphaHost = await insertHost(['alpha.example.com'], { organizationId: alpha.id });
-    const providerHost = await insertHost(['provider.example.com']);
-    const alphaUser = await insertUser('a@example.com', { organizationId: alpha.id });
-    const providerUser = await insertUser('p@example.com');
-
-    // Groups of another organisation neither grant nor appear in the header.
-    const betaGroup = await insertGroup('Beta staff', beta.id);
-    const alphaGroup = await insertGroup('Alpha staff', alpha.id);
-    await addMember(betaGroup.id, alphaUser.id);
-    await addMember(alphaGroup.id, alphaUser.id);
-    await grant(alphaHost.id, { groupId: betaGroup.id });
-    await expect(authorizeForwardAuthRequest(alphaUser.id, alphaHost.id)).resolves.toEqual({ status: 403 });
-
-    await grant(alphaHost.id, { groupId: alphaGroup.id });
-    const verdict = await authorizeForwardAuthRequest(alphaUser.id, alphaHost.id);
-    expect(verdict.status === 200 && verdict.groups.map((group) => group.name)).toEqual(['Alpha staff']);
-
-    // A grant across organisations never lets anyone through.
-    await grant(providerHost.id, { userId: alphaUser.id });
-    await grant(alphaHost.id, { userId: providerUser.id });
-    await expect(authorizeForwardAuthRequest(alphaUser.id, providerHost.id)).resolves.toEqual({ status: 403 });
-    await expect(authorizeForwardAuthRequest(providerUser.id, alphaHost.id)).resolves.toEqual({ status: 403 });
-    expect(await checkHostAccess(providerUser.id, alphaHost.id)).toBe(false);
-
-    // A disabled (or deleted) organisation lets nobody through.
-    await db.update(schema.organizations).set({ enabled: false }).where(eq(schema.organizations.id, alpha.id));
-    await expect(authorizeForwardAuthRequest(alphaUser.id, alphaHost.id)).resolves.toEqual({ status: 403 });
-    expect(await checkHostAccess(alphaUser.id, alphaHost.id)).toBe(false);
-    await db.delete(schema.organizations).where(eq(schema.organizations.id, alpha.id));
-    await expect(authorizeForwardAuthRequest(alphaUser.id, alphaHost.id)).resolves.toEqual({ status: 403 });
   });
 });

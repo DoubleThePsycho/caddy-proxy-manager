@@ -1,6 +1,6 @@
 # Settings
 
-Settings are on pages next to what they configure. **Settings** itself, at the bottom of the sidebar, holds the settings of the install: the primary domain, the dashboard address and the usage ping. Branding has a page of its own under it (MSP edition, [white-label.md](../ee/docs/white-label.md)).
+Settings are on pages next to what they configure. **Settings** itself, at the bottom of the sidebar, holds the settings of the install: the primary domain, the dashboard address and the usage ping. Branding has a page of its own under it (Enterprise edition, [white-label.md](../ee/docs/white-label.md)).
 
 ## Where each setting is
 

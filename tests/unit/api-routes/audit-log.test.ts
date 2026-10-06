@@ -37,7 +37,7 @@ const mockListAuditEvents = vi.mocked(queryAuditEvents);
 const mockCountAuditEvents = vi.mocked(countAuditEventsMatching);
 
 /** The filter the route passes on when the request names none. */
-const NO_FILTER = { search: undefined, from: undefined, to: undefined, organizationId: undefined };
+const NO_FILTER = { search: undefined, from: undefined, to: undefined };
 const mockRequireApiAdmin = vi.mocked(requireApiAdmin);
 
 function createMockRequest(options: { searchParams?: string } = {}): any {

@@ -12,11 +12,6 @@
  * roles (ee/custom-roles) hold a chosen subset, optionally limited to hosts
  * that carry one of the role's tags.
  *
- * Organisation users (ee/multi-tenancy) are confined to their organisation:
- * they never are administrators, they hold at most ORGANIZATION_PERMISSIONS
- * (whatever role they have), and every resource they reach is filtered to
- * their organisation (organizationId on Access).
- *
  * Nothing here reads the database or the license, so the client can import it
  * for the permission matrix and the navigation.
  */
@@ -216,23 +211,6 @@ export const PERMISSION_AREAS = {
     instanceWide: true,
     paid: true,
   },
-  organizations: {
-    label: "Organisations",
-    description:
-      "Client organisations (multi-tenancy): read lists them with their members and limits; write creates, changes, " +
-      "disables and deletes them and moves hosts, certificates, access lists, groups and users between them.",
-    actions: ["read", "write"],
-    instanceWide: true,
-    paid: true,
-  },
-  usage_reports: {
-    label: "Usage reports",
-    description:
-      "Usage per organisation and period (hosts, users, requests, bandwidth, WAF blocks) and its CSV export. " +
-      "Organisation users see their own organisation's.",
-    actions: ["read"],
-    paid: true,
-  },
 } as const satisfies Record<string, PermissionAreaInfo>;
 
 export type PermissionArea = keyof typeof PERMISSION_AREAS;
@@ -277,7 +255,6 @@ export function isScopableArea(area: string): area is ScopableArea {
  * scim:write issues tokens that create users and, through group-to-role
  * mappings, give them roles; access_reviews:write starts campaigns whose
  * reviewers can take access away from every user, administrators included.
- * organizations:write moves hosts and users between client organisations.
  * Holding users:write and settings:write together is also administrator-level,
  * and so is users:write with approvals:approve, which could create a second
  * account to approve one's own changes (see ADMIN_LEVEL_COMBINATIONS).
@@ -296,7 +273,6 @@ export const ADMIN_LEVEL_PERMISSIONS: readonly Permission[] = [
   "approvals:manage",
   "scim:write",
   "access_reviews:write",
-  "organizations:write",
 ];
 
 export const ADMIN_LEVEL_COMBINATIONS: readonly (readonly Permission[])[] = [
@@ -363,57 +339,6 @@ export function isBuiltInRole(value: unknown): value is BuiltInRole {
   return typeof value === "string" && (BUILT_IN_ROLES as readonly string[]).includes(value);
 }
 
-// ── Organisations (ee/multi-tenancy) ─────────────────────────────────────
-
-/**
- * Everything an organisation user can ever hold, whatever their role: the
- * organisation's own proxy hosts, certificates, access lists, groups and
- * users, and its analytics, audit log and usage report, each filtered to the
- * organisation. Nothing instance-wide or administrator-level is in it (no
- * settings, WAF settings, L4 hosts, whose ports all tenants share, instances,
- * fleet, license, SSO, LDAP, SCIM, branding, audit streaming, backups,
- * monetization, alerts, compliance, change approvals or organisations), and
- * isAdminLevel is false for the whole set: accessForUser intersects a role
- * with it on every request.
- */
-export const ORGANIZATION_PERMISSIONS: readonly Permission[] = [
-  "proxy_hosts:read",
-  "proxy_hosts:write",
-  "certificates:read",
-  "certificates:write",
-  "access_lists:read",
-  "access_lists:write",
-  "groups:read",
-  "groups:write",
-  "users:read",
-  "users:write",
-  "analytics:read",
-  "audit_log:read",
-  "api_docs:read",
-  "usage_reports:read",
-];
-
-const ORGANIZATION_PERMISSION_SET: ReadonlySet<Permission> = new Set(ORGANIZATION_PERMISSIONS);
-
-export function isOrganizationPermission(permission: Permission): boolean {
-  return ORGANIZATION_PERMISSION_SET.has(permission);
-}
-
-/** The organisation administrator: every organisation permission. */
-export const ORGANIZATION_ADMIN_ROLE = "org_admin" as const;
-
-/**
- * The built-in roles of an organisation user. "org_admin" manages the
- * organisation; "user" and "viewer" hold nothing (their profile, API tokens
- * and forward-auth sign-in). An organisation user is never "admin".
- */
-export const ORGANIZATION_ROLES = [ORGANIZATION_ADMIN_ROLE, "user", "viewer"] as const;
-export type OrganizationRole = (typeof ORGANIZATION_ROLES)[number];
-
-export function isOrganizationRole(value: unknown): value is OrganizationRole {
-  return typeof value === "string" && (ORGANIZATION_ROLES as readonly string[]).includes(value);
-}
-
 /**
  * What a principal (a session or an API token's owner) may do. Built once per
  * request by resolveAccess (ee/custom-roles/access.ts) from the user's row.
@@ -428,23 +353,12 @@ export type Access = {
   /** Tags limiting the scopable areas; empty means every host. Always empty for admins. */
   scopeTags: readonly string[];
   /**
-   * The organisation (ee/multi-tenancy) the principal is confined to, or null
-   * for the provider level. Never set together with isAdmin. Every Access
-   * built here and by accessForUser sets it; absent reads as null.
-   */
-  organizationId?: number | null;
-  /**
    * Set when the principal is an API token with scopes
    * (src/lib/api-token-scopes.ts): what the scopes allow. Such a principal
    * is never an administrator and holds at most these permissions.
    */
   tokenScopes?: readonly Permission[] | null;
 };
-
-/** The organisation `access` is confined to, or null for the provider level. */
-export function tenantOf(access: Pick<Access, "organizationId">): number | null {
-  return access.organizationId ?? null;
-}
 
 export function adminAccess(userId: number): Access {
   return {
@@ -454,37 +368,12 @@ export function adminAccess(userId: number): Access {
     customRole: null,
     permissions: new Set(PERMISSIONS),
     scopeTags: [],
-    organizationId: null,
   };
 }
 
 export function builtInAccess(userId: number, role: string): Access {
   if (role === "admin") return adminAccess(userId);
-  return { userId, role, isAdmin: false, customRole: null, permissions: new Set(), scopeTags: [], organizationId: null };
-}
-
-/**
- * The access of an organisation user: never an administrator, and only
- * permissions from ORGANIZATION_PERMISSIONS, whatever `permissions` asks for.
- * "org_admin" without a custom role holds all of them; other built-in roles
- * hold none.
- */
-export function organizationAccess(
-  userId: number,
-  organizationId: number,
-  role: string,
-  customRole: { id: number; name: string; permissions: readonly Permission[]; scopeTags: readonly string[] } | null = null
-): Access {
-  const requested = customRole ? customRole.permissions : role === ORGANIZATION_ADMIN_ROLE ? ORGANIZATION_PERMISSIONS : [];
-  return {
-    userId,
-    role,
-    isAdmin: false,
-    customRole: customRole ? { id: customRole.id, name: customRole.name } : null,
-    permissions: new Set(requested.filter((permission) => ORGANIZATION_PERMISSION_SET.has(permission))),
-    scopeTags: customRole ? customRole.scopeTags : [],
-    organizationId,
-  };
+  return { userId, role, isAdmin: false, customRole: null, permissions: new Set(), scopeTags: [] };
 }
 
 export function can(access: Access, permission: Permission): boolean {
@@ -513,13 +402,13 @@ export function listHeldPermissions(access: Access): Permission[] {
 
 /** The message a refused permission check carries. Built-in non-admin roles keep the old wording. */
 export function permissionDeniedMessage(
-  access: Pick<Access, "customRole"> & Partial<Pick<Access, "organizationId" | "tokenScopes">>,
+  access: Pick<Access, "customRole"> & Partial<Pick<Access, "tokenScopes">>,
   permission: Permission
 ): string {
   if (access.tokenScopes && !access.tokenScopes.includes(permission)) {
     return `This API token's scopes do not include ${permission}`;
   }
-  return access.customRole || tenantOf(access) !== null || access.tokenScopes
+  return access.customRole || access.tokenScopes
     ? `Permission required: ${permission}`
     : "Administrator privileges required";
 }

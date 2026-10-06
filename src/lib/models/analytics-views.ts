@@ -1,17 +1,16 @@
 /**
  * Saved analytics views: a name for a range, filters, metric and grouping.
  * A view belongs to the user who saved it; shared, it is listed for every
- * user of the same organisation (or of the provider level) who can read
- * analytics. Only the owner changes a view; the owner, or an administrator
+ * user who can read analytics. Only the owner changes a view; the owner, or an administrator
  * for a shared one, deletes it. A view outside what the caller can see
  * answers 404 exactly like a missing one.
  */
-import { and, count, eq, isNull, or } from "drizzle-orm";
+import { and, count, eq, or } from "drizzle-orm";
 import { appDb, nowIso, toIso } from "../db";
 import { analyticsSavedViews, users } from "../db/schema";
 import { logAuditEvent } from "../audit";
 import { ApiClientError, ApiValidationError } from "../api-errors";
-import { tenantOf, type Access } from "../permissions";
+import type { Access } from "../permissions";
 import { parseFilters, type AnalyticsFilter } from "../analytics/filters";
 import { GROUPINGS, parseGrouping, parseMetric, type Grouping, type Metric } from "../analytics/dimensions";
 import { MAX_RANGE_SECONDS, isRangePreset, type RangePreset } from "../analytics/range";
@@ -133,18 +132,9 @@ function toView(row: Row, access: Access, ownerName: string | null): AnalyticsSa
   };
 }
 
-/** Rows of the caller's organisation (or of the provider level). */
-function sameOrganization(access: Access) {
-  const tenant = tenantOf(access);
-  return tenant === null ? isNull(analyticsSavedViews.organizationId) : eq(analyticsSavedViews.organizationId, tenant);
-}
-
-/** Views the caller sees: their own, and the shared ones of their organisation. */
+/** Views the caller sees: their own, and the shared ones. */
 function visibleCondition(access: Access) {
-  return or(
-    eq(analyticsSavedViews.userId, access.userId),
-    and(eq(analyticsSavedViews.shared, true), sameOrganization(access))
-  );
+  return or(eq(analyticsSavedViews.userId, access.userId), eq(analyticsSavedViews.shared, true));
 }
 
 async function ownerNames(rows: Row[]): Promise<Map<number, string | null>> {
@@ -188,7 +178,6 @@ export async function createAnalyticsView(access: Access, input: Record<string, 
   const groupBy = parseGroupBy(input.groupBy, metric);
   const filters = parseFilters(input.filters ?? []);
   const now = nowIso();
-  const organizationId = tenantOf(access);
   // The limit is counted in the transaction that inserts the view.
   const row = await appDb.transaction(async (tx) => {
     const owned = await first(tx.select({ value: count() }).from(analyticsSavedViews).where(eq(analyticsSavedViews.userId, access.userId)).limit(1));
@@ -199,7 +188,6 @@ export async function createAnalyticsView(access: Access, input: Record<string, 
       .insert(analyticsSavedViews)
       .values({
         userId: access.userId,
-        organizationId,
         name,
         shared,
         range: JSON.stringify(range),
@@ -218,7 +206,6 @@ export async function createAnalyticsView(access: Access, input: Record<string, 
     entityId: row.id,
     summary: `Saved analytics view "${name}"${shared ? " (shared)" : ""}`,
     data: { shared, metric, groupBy, range, filters: filters.length },
-    organizationId,
   });
   return getAnalyticsView(access, row.id);
 }
@@ -245,7 +232,6 @@ export async function updateAnalyticsView(access: Access, id: number, input: Rec
     entityId: row.id,
     summary: `Updated analytics view "${set.name ?? row.name}"`,
     data: { changed },
-    organizationId: row.organizationId ?? null,
   });
   return getAnalyticsView(access, row.id);
 }
@@ -261,6 +247,5 @@ export async function deleteAnalyticsView(access: Access, id: number): Promise<v
     entityType: "analytics_view",
     entityId: row.id,
     summary: `Deleted analytics view "${row.name}"`,
-    organizationId: row.organizationId ?? null,
   });
 }

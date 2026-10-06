@@ -3,16 +3,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { ApiValidationError } from "@/src/lib/api-errors";
 import { createRole, listRoles } from "@/ee/custom-roles/service";
-import { assertMayUseCustomRoles } from "@/ee/multi-tenancy/users";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
 /** Custom roles. Readable without a license. */
 export async function GET(request: NextRequest) {
   try {
-    const { access } = await requireApiPermission(request, "users:read");
-    // Custom roles are the provider's (ee/multi-tenancy).
-    assertMayUseCustomRoles(access);
+    await requireApiPermission(request, "users:read");
     return NextResponse.json(await listRoles(), { headers: NO_STORE });
   } catch (error) {
     return apiErrorResponse(error);

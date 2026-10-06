@@ -63,10 +63,10 @@ export function parseDimensions(value: unknown): Dimension[] {
   return [...new Set(list)] as Dimension[];
 }
 
-/** Top `limit` values of each of `dimensions`. */
+/** Top `limit` values of each of `dimensions`, for the hosts in `scope`. */
 export async function queryTopDimensions(
   input: { range: ResolvedRange; filters: AnalyticsFilter[]; dimensions: Dimension[]; limit: number },
-  scope: HostScope
+  scope: HostScope = null
 ): Promise<TopResult> {
   const empty: Omit<TopResult, 'status'> = {
     total: 0,

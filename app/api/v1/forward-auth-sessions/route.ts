@@ -5,14 +5,12 @@ import {
   deleteUserForwardAuthSessions
 } from "@/src/lib/models/forward-auth";
 import { assertCanManageUserId } from "@/ee/custom-roles/service";
-import { readOrganizationFilterParam } from "@/ee/multi-tenancy/scope";
 import { parseRowId } from "@/src/lib/row-ids";
 
 export async function GET(request: NextRequest) {
   try {
-    const { access } = await requireApiPermission(request, "users:read");
-    // Organisation users see their organisation's users' sessions only.
-    const sessions = await listForwardAuthSessions(readOrganizationFilterParam(access, request.nextUrl.searchParams.get("organizationId")));
+    await requireApiPermission(request, "users:read");
+    const sessions = await listForwardAuthSessions();
     return NextResponse.json(sessions);
   } catch (error) {
     return apiErrorResponse(error);

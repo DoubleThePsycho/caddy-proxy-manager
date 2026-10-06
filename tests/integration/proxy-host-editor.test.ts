@@ -70,14 +70,12 @@ describe('host editor save', () => {
         sslForced: false,
         hstsSubdomains: true,
         ingressiForwardAuth: { enabled: true, protected_paths: null, excluded_paths: ['/health'] },
-        // Organisations are not chosen in the editor.
-        organizationId: 99,
       },
       forwardAuthAccess: { userIds: [BOB], groupIds: [] },
     });
     expect(result).toMatchObject({ status: 'saved', message: 'Created Editor host.' });
     const row = (await first(ctx.db.select().from(schema.proxyHosts).where(eq(schema.proxyHosts.name, 'Editor host')).limit(1)))!;
-    expect(row).toMatchObject({ sslForced: false, hstsSubdomains: true, organizationId: null });
+    expect(row).toMatchObject({ sslForced: false, hstsSubdomains: true });
     expect(result.status === 'saved' && result.hostId).toBe(row.id);
     expect(await ctx.db.select().from(schema.forwardAuthAccess)).toMatchObject([{ proxyHostId: row.id, userId: BOB }]);
   });

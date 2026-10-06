@@ -9,7 +9,6 @@ import { ApiValidationError } from "@/src/lib/api-errors";
 import { AUDIT_CHAIN_VERSION } from "@/src/lib/audit-chain";
 import { requireFeature } from "@/ee/licensing/store";
 import { latestAuditEventId, readAuditRecords, type AuditRecord } from "./records";
-import type { OrganizationFilter } from "@/ee/multi-tenancy/scope";
 
 export const EXPORT_FORMATS = ["csv", "json"] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
@@ -83,11 +82,7 @@ function jsonRecord(record: AuditRecord): string {
 }
 
 /** The export body. Events recorded after the export started are not included. */
-export function createAuditExportStream(
-  query: ExportQuery,
-  now: Date = new Date(),
-  organizationId: OrganizationFilter = undefined
-): ReadableStream<Uint8Array> {
+export function createAuditExportStream(query: ExportQuery, now: Date = new Date()): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   let afterId = 0;
   let maxId: number | null = null;
@@ -108,7 +103,7 @@ export function createAuditExportStream(
       }
     },
     async pull(controller) {
-      const records = await readAuditRecords(afterId, PAGE_SIZE, { from: query.from, to: query.to, maxId, organizationId });
+      const records = await readAuditRecords(afterId, PAGE_SIZE, { from: query.from, to: query.to, maxId });
       if (records.length === 0) {
         if (query.format === "json") controller.enqueue(encoder.encode("\n]}\n"));
         controller.close();
@@ -135,17 +130,8 @@ export type AuditExport = {
   contentType: string;
 };
 
-/**
- * Checks the license, records the export in the audit log and returns the
- * stream. `organizationId` limits it to one organisation's audit log
- * (ee/multi-tenancy); an organisation user's export always is.
- */
-export async function exportAuditLog(
-  params: URLSearchParams,
-  actorUserId: number,
-  now: Date = new Date(),
-  organizationId: OrganizationFilter = undefined
-): Promise<AuditExport> {
+/** Checks the license, records the export in the audit log and returns the stream. */
+export async function exportAuditLog(params: URLSearchParams, actorUserId: number, now: Date = new Date()): Promise<AuditExport> {
   await requireFeature("audit_streaming");
   const query = parseExportQuery(params);
   await logAuditEvent({
@@ -157,7 +143,7 @@ export async function exportAuditLog(
   });
   const stamp = now.toISOString().replace(/\.\d+Z$/, "Z").replace(/:/g, "-");
   return {
-    body: createAuditExportStream(query, now, organizationId),
+    body: createAuditExportStream(query, now),
     filename: `audit-log-${stamp}.${query.format}`,
     contentType: query.format === "csv" ? "text/csv; charset=utf-8" : "application/json; charset=utf-8",
   };

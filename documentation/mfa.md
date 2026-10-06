@@ -73,7 +73,7 @@ Open **Profile → Sign-in security → Add a passkey**, give it a name, confirm
 - **User verification:** the passkey must ask for your PIN or biometrics, at registration and at every sign-in. The server refuses a passkey that only proves possession of the device. That is what makes it a second factor.
 - **Discoverable credentials:** passkeys are stored on the authenticator with your sign-in username, so the login page needs no username.
 - **No attestation:** Ingressi does not ask the authenticator who made it. The model name is shown when the authenticator reports a known one.
-- **Account status and enforced SSO:** a passkey sign-in creates its session through the same checks as every other sign-in. A disabled account or organisation gets no session, and while SSO is enforced only break-glass accounts can sign in with a passkey. A refusal answers `401 Authentication failed`, like a passkey that did not verify, and enforcement records `sso_enforced_sign_in_refused`.
+- **Account status and enforced SSO:** a passkey sign-in creates its session through the same checks as every other sign-in. A disabled account gets no session, and while SSO is enforced only break-glass accounts can sign in with a passkey. A refusal answers `401 Authentication failed`, like a passkey that did not verify, and enforcement records `sso_enforced_sign_in_refused`.
 
 ### Managing them
 

@@ -41,7 +41,6 @@ function host(extra: Partial<ProxyHost> = {}): ProxyHost {
     errorPages: [],
     rateLimit: null,
     tags: [],
-    organizationId: null,
     ...extra,
   };
 }

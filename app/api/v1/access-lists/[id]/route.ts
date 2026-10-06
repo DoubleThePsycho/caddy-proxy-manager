@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { readJsonBody } from "@/src/lib/access-list-http";
-import { updateAccessList, deleteAccessList, type AccessListUpdate } from "@/src/lib/models/access-lists";
-import { findAccessListInScope } from "@/src/lib/access-scope";
+import { getAccessList, updateAccessList, deleteAccessList, type AccessListUpdate } from "@/src/lib/models/access-lists";
 import { routeRowId } from "@/src/lib/row-ids";
 
 export async function GET(
@@ -10,10 +9,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { access } = await requireApiPermission(request, "access_lists:read");
+    await requireApiPermission(request, "access_lists:read");
     const { id } = await params;
-    // 404 for a list of another organisation, as for a missing one.
-    const list = await findAccessListInScope(access, routeRowId(id, "Not found"));
+    const list = await getAccessList(routeRowId(id, "Not found"));
     if (!list) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -31,7 +29,6 @@ export async function PUT(
     const { userId } = await requireApiPermission(request, "access_lists:write");
     const { id } = await params;
     const body = await readJsonBody(request);
-    // The model answers 404 for a list of another organisation (ee/multi-tenancy).
     const list = await updateAccessList(routeRowId(id), body as AccessListUpdate, userId);
     return NextResponse.json(list);
   } catch (error) {
@@ -46,7 +43,6 @@ export async function DELETE(
   try {
     const { userId } = await requireApiPermission(request, "access_lists:write");
     const { id } = await params;
-    // The model answers 404 for a list of another organisation (ee/multi-tenancy).
     await deleteAccessList(routeRowId(id), userId);
     return NextResponse.json({ ok: true });
   } catch (error) {

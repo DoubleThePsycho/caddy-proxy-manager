@@ -18,30 +18,14 @@ export function roleChoice(user: { role: string; customRoleId: number | null }):
  * The roles a picker offers. Roles the signed-in user may not grant stay
  * listed but disabled (the server checks again): the admin role and
  * administrator-level custom roles for non-administrators, custom roles
- * without a license. An organisation user (ee/multi-tenancy) gets the
- * organisation's roles.
+ * without a license.
  */
 export function RoleOptions({
   customRoles,
   canAssignAdmin,
   customRolesLicensed,
   current,
-  organization = false,
-}: RoleOptionsProps & { current?: string; organization?: boolean }) {
-  if (organization) {
-    return (
-      <>
-        <SelectItem value="org_admin">Organisation admin</SelectItem>
-        <SelectItem value="user">User</SelectItem>
-        <SelectItem value="viewer">Viewer</SelectItem>
-        {current?.startsWith("custom:") && (
-          <SelectItem value={current} disabled>
-            {customRoles.find((role) => `custom:${role.id}` === current)?.name ?? "Custom role"}
-          </SelectItem>
-        )}
-      </>
-    );
-  }
+}: RoleOptionsProps & { current?: string }) {
   return (
     <>
       <SelectItem value="admin" disabled={!canAssignAdmin && current !== "admin"}>Admin</SelectItem>

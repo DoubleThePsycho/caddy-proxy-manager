@@ -293,7 +293,7 @@ describe('bulk actions', () => {
     expect(result).toMatchObject({ ok: true, changed: 1 });
     expect(await hostRow(hosts.c)).toBeUndefined();
     expect(audited).toContainEqual(
-      expect.objectContaining({ action: 'delete', entityType: 'proxy_host', entityId: hosts.c, organizationId: null })
+      expect.objectContaining({ action: 'delete', entityType: 'proxy_host', entityId: hosts.c })
     );
   });
 

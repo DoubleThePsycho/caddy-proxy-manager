@@ -23,7 +23,6 @@ import {
   l4ProxyHosts,
   ldapDirectories,
   monetizationHosts,
-  organizations,
   proxyHosts,
   samlProviders,
   users,
@@ -103,7 +102,6 @@ const PAID_FEATURE_CHECKS: Record<PaidFeatureField, Check> = {
   fleet: () => hasRow(appDb.select({ id: fleetEnvironments.id }).from(fleetEnvironments).limit(1)),
   high_availability: async () =>
     isHaEnabled() || parseStoredCertificateStorage(await getSetting<unknown>(CERTIFICATE_STORAGE_SETTING_KEY))?.backend === "redis",
-  multi_tenancy: () => hasRow(appDb.select({ id: organizations.id }).from(organizations).limit(1)),
   white_label: () => getBranding().source !== "default",
   api_monetization: () =>
     hasRow(

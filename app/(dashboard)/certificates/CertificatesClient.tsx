@@ -27,7 +27,7 @@ type Props = {
   caCertificates: CaCertificateView[];
   clientCertificates: IssuedClientCertificateView[];
   mtlsRoles: MtlsRoleView[];
-  /** CA certificates, client certificates and roles: hidden under a tag scope and for organisation users. */
+  /** CA certificates, client certificates and roles: hidden under a tag scope. */
   showTrustAnchors: boolean;
   canWrite: boolean;
   /** Creating a certificate needs certificates:write without a tag scope. */

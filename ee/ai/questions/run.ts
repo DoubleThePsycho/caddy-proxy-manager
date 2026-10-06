@@ -11,10 +11,9 @@
  *  - bytes by host: queryAnalytics grouped by host.
  *
  * Every SQL fragment comes from the analytics allow-lists and every value is
- * a bound parameter; nothing here builds SQL. The host scope (an
- * organisation's stored host names) always applies, and host tags only
- * resolve to proxy hosts the scope offers (the asker's visible hosts, or
- * every host for a compliance report).
+ * a bound parameter; nothing here builds SQL. Host tags only resolve to
+ * proxy hosts the scope offers (the asker's visible hosts, or every host for
+ * a compliance report).
  */
 import { ApiValidationError } from "@/src/lib/api-errors";
 import { getRetentionDays } from "@/src/lib/clickhouse/client";
@@ -23,7 +22,8 @@ import { queryTopDimensions, MAX_TOP_LIMIT, type TopRow } from "@/src/lib/analyt
 import { DIMENSION_SPECS, OTHER_HOSTS, type Dimension } from "@/src/lib/analytics/dimensions";
 import type { AnalyticsFilter } from "@/src/lib/analytics/filters";
 import { MAX_RANGE_SECONDS, previousPeriod, resolveRange, retentionStart, type ResolvedRange } from "@/src/lib/analytics/range";
-import { normalizeDomain, proxyHostForName, type HostScope, type ProxyHostDomains } from "@/src/lib/analytics/scope";
+import { normalizeDomain, proxyHostForName, type ProxyHostDomains } from "@/src/lib/analytics/scope";
+import { queryDistinctHostsAll } from "@/src/lib/clickhouse/client";
 import { formatInstant } from "./describe";
 import type { QuestionQuery, QuestionRange, QuestionResult, QuestionResultRow } from "./types";
 
@@ -34,8 +34,6 @@ const MAX_GROUPED_HOSTS = 10;
 export type TaggableHost = { id: number; domains: readonly string[]; tags: readonly string[] };
 
 export type QuestionScope = {
-  /** Stored host names the query may read (an organisation's); null for every host. */
-  hostScope: HostScope;
   /** Proxy hosts whose tags a question may name. */
   taggableHosts: readonly TaggableHost[];
   /** Every proxy host, to attribute a stored host name to the host that serves it (as Caddy routes). */
@@ -45,6 +43,15 @@ export type QuestionScope = {
   /** How a missing tag is explained: "you can see" for an asker, nothing for a report. */
   audience: "asker" | "report";
 };
+
+/** Every stored host name seen in ClickHouse; none when it is unavailable. */
+export async function seenHosts(): Promise<string[]> {
+  try {
+    return await queryDistinctHostsAll();
+  } catch {
+    return [];
+  }
+}
 
 export type QuestionRun =
   | {
@@ -207,14 +214,12 @@ export async function runQuestionQuery(
     throw error;
   }
 
-  let hostScope = scope.hostScope;
+  // Host tags limit the query to the stored host names of the tagged hosts.
   let tagHosts: string[] | null = null;
   if (query.hostTags.length > 0) {
     const resolved = await resolveTagHosts(query.hostTags, scope);
     if (!resolved.ok) return { kind: "clarify", message: resolved.message };
-    const allowed = hostScope;
-    tagHosts = allowed === null ? resolved.names : resolved.names.filter((name) => allowed.includes(name));
-    hostScope = tagHosts;
+    tagHosts = resolved.names;
   }
 
   const filters: AnalyticsFilter[] = query.filters.map((filter) => ({ dim: filter.dim, op: filter.op, value: filter.value }));
@@ -237,7 +242,7 @@ export async function runQuestionQuery(
 
   // One total, or the metric over time.
   if (query.breakdown === "none" || query.breakdown === "time") {
-    const data = await queryAnalytics({ range, filters, metric: query.metric, groupBy: "none", topHosts: 4 }, hostScope, now);
+    const data = await queryAnalytics({ range, filters, metric: query.metric, groupBy: "none", topHosts: 4 }, now, tagHosts);
     const previousValues = data.previous.available ? data.previous.totals : null;
     const total = query.metric === "visitors" ? data.headline.visitors.value : sum(data.totals);
     const previousTotal =
@@ -272,7 +277,7 @@ export async function runQuestionQuery(
   if (query.metric === "bytes") {
     const limit = Math.min(query.limit, MAX_GROUPED_HOSTS);
     if (query.limit > MAX_GROUPED_HOSTS) notes.push(`Bytes by host lists at most ${MAX_GROUPED_HOSTS} hosts.`);
-    const data = await queryAnalytics({ range, filters, metric: "bytes", groupBy: "host", topHosts: limit }, hostScope, now);
+    const data = await queryAnalytics({ range, filters, metric: "bytes", groupBy: "host", topHosts: limit }, now, tagHosts);
     const total = sum(data.totals);
     const previousByKey = new Map(data.previous.available ? data.previous.series.map((series) => [series.key, series.total]) : []);
     const withPrevious = comparing && data.previous.available;
@@ -316,7 +321,7 @@ export async function runQuestionQuery(
       result: { ...base, status: "ok", kind: "breakdown", total: 0, previousTotal: comparing ? 0 : null, change: null, rows: [], distinct: 0, series: null, peak: null },
     };
   }
-  const current = await queryTopDimensions({ range, filters: counted.filters, dimensions: [dim], limit: query.limit }, hostScope);
+  const current = await queryTopDimensions({ range, filters: counted.filters, dimensions: [dim], limit: query.limit }, tagHosts);
   const top = current.dimensions[0];
   let rows: QuestionResultRow[] = (top?.rows ?? []).map((row) => ({
     value: row.value,
@@ -329,7 +334,7 @@ export async function runQuestionQuery(
   let previousTotal: number | null = null;
   if (comparing && prev.available && current.status === "ok") {
     const previousRange: ResolvedRange = { ...range, start: prev.start, end: prev.end };
-    const totals = await queryTopDimensions({ range: previousRange, filters: counted.filters, dimensions: [dim], limit: 1 }, hostScope);
+    const totals = await queryTopDimensions({ range: previousRange, filters: counted.filters, dimensions: [dim], limit: 1 }, tagHosts);
     previousTotal = totals.total;
     if (rows.length > 0) {
       // Count exactly the values listed now. Several "is" filters on one
@@ -344,7 +349,7 @@ export async function runQuestionQuery(
           dimensions: [dim],
           limit: ownValues ? MAX_TOP_LIMIT : Math.max(1, listed.length),
         },
-        hostScope
+        tagHosts
       );
       const byValue = new Map((counts.dimensions[0]?.rows ?? []).map((row) => [row.value, row.count]));
       rows = rows.map((row) => {

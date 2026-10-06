@@ -47,11 +47,10 @@ Every paid feature, the `ee/` module that implements it and the files in `app/` 
 | LDAP / Active Directory (`ldap`) | Enterprise | `ldap/` | `(dashboard)/ldap/`, `api/v1/ldap-directories/` |
 | License keys (no feature: the key itself) | all | `licensing/` | `(dashboard)/license/`, `api/v1/license/` |
 | API monetization (`api_monetization`) | Enterprise | `monetization/` | `(dashboard)/api-monetization/`, `api-portal/`, `api/monetization/`, `api/v1/monetization/` |
-| Multi-tenancy (`multi_tenancy`) | MSP | `multi-tenancy/` | `(dashboard)/organizations/`, `(dashboard)/usage/`, `api/v1/organizations/`, `api/v1/usage-reports/` |
 | SAML single sign-on (`sso_saml`) | Business | `saml/` | `(dashboard)/saml/`, `api/v1/saml-providers/` |
 | SCIM provisioning (`scim`) | Enterprise | `scim/` | `(dashboard)/scim/`, `api/v1/scim/`, `scim/` (SCIM 2.0 at `/scim/v2`) |
 | Enforced SSO (`sso_enforce`) | Business | `sso/` | `(dashboard)/sso/`, `api/v1/sso/` |
-| White-label (`white_label`) | MSP | `white-label/` | `(dashboard)/branding/`, `api/v1/branding/`, `api/branding/` |
+| White-label (`white_label`) | Enterprise | `white-label/` | `(dashboard)/branding/`, `api/v1/branding/`, `api/branding/` |
 | Air-gapped installs and planned LTS (`air_gap`) | Enterprise | `scripts/airgap-bundle.sh` | none (`docs/air-gapped.md`, `docs/lts.md`) |
 
 Layout of a module: route handlers in `<module>/routes/`, named after the URL below `/api/` (`/api/v1/monetization/plans/{id}` is `monetization/routes/v1/monetization/plans/[id].ts`, `/scim/v2/Users` is `scim/routes/scim/v2/Users.ts`); pages, client components and server actions in `<module>/ui/` (`ui/MonetizationPage.tsx`, `ui/actions.ts`); everything else at the top of the module.
@@ -72,7 +71,7 @@ Free pages that show a paid section import its component from `ee/`; the page it
 
 | Free page | Paid section (in `ee/`) |
 | --- | --- |
-| Dashboard layout | Access review reminder (`access-reviews/ui/AccessReviewBanner.tsx`), organization switcher (`multi-tenancy/ui/OrganizationSwitcher.tsx`), branding (`white-label/ui/`) |
+| Dashboard layout | Access review reminder (`access-reviews/ui/AccessReviewBanner.tsx`), branding (`white-label/ui/`) |
 | Audit log | Export dialog and hash chain check (`audit/ui/AuditLogTools.tsx`, `audit/ui/actions.ts`), streaming strip (`audit/ui/StreamingStrip.tsx`) |
 | Analytics | Questions to the AI analyst (`ai/questions/ui/AskPanel.tsx`) |
 | Security events | WAF tuning suggestions (`ai/ui/TuningSuggestions.tsx`) |
@@ -87,7 +86,7 @@ Configuration export and import is free: its dialog on the Change history page i
 
 ### Core hooks
 
-Core code reads paid state or lets a paid feature take part through small hooks: organization scoping in the models, approval guards, the product name, the background jobs, sync. Every core file outside `app/` that imports `ee/` is listed in `CORE_EE_HOOKS` in `boundary.ts` with what it uses `ee/` for, so a reviewer sees when paid logic would land in core. Free pages and routes in `app/` call the same hooks.
+Core code reads paid state or lets a paid feature take part through small hooks: custom roles' permissions, approval guards, the product name, the background jobs, sync. Every core file outside `app/` that imports `ee/` is listed in `CORE_EE_HOOKS` in `boundary.ts` with what it uses `ee/` for, so a reviewer sees when paid logic would land in core. Free pages and routes in `app/` call the same hooks.
 
 ### Headers
 

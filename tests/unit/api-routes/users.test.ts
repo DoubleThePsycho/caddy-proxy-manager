@@ -27,7 +27,7 @@ vi.mock('@/src/lib/api-auth', () => {
     // The built-in role's access, as the real getApiAccess builds it.
     getApiAccess: vi.fn((result: { userId: number; role: string }) => ({
       userId: result.userId, role: result.role, isAdmin: result.role === 'admin', customRole: null,
-      permissions: new Set(), scopeTags: [], organizationId: null,
+      permissions: new Set(), scopeTags: [],
     })),
     apiErrorResponse: vi.fn((error: unknown) => {
       const { NextResponse: NR } = require('next/server');

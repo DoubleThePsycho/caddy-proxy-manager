@@ -85,7 +85,7 @@ curl -X PUT https://proxy.example.com/api/v1/sso/enforcement \
 
 ## Licensing
 
-- **The license gates changes only.** Turning enforcement on, or changing it while it is on, needs an active (or in-grace) Business, Enterprise or MSP license, through both the API and the dashboard. Turning it off never needs one, so an install whose license lapsed can always wind the feature down.
+- **The license gates changes only.** Turning enforcement on, or changing it while it is on, needs an active (or in-grace) Business or Enterprise license, through both the API and the dashboard. Turning it off never needs one, so an install whose license lapsed can always wind the feature down.
 - **Enforcement never checks the license.** It keeps working with an expired, removed or invalid key: password sign-in stays refused for non-break-glass accounts, and the lockout guards stay in force.
 - **Without a license** the SSO page shows the setting read-only, with a **Turn off** button while it is on. To change anything else, renew the license.
 

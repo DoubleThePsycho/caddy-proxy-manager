@@ -37,7 +37,6 @@ type Props = {
   canWrite: boolean;
   roleOptions: RoleOptionsProps;
   totalPermissions: number;
-  organization: string | null;
   onCommand: (command: UserCommand) => void;
   onEnable: (user: UserOverviewEntry) => void;
 };
@@ -103,7 +102,6 @@ function SheetBody({
   canWrite,
   roleOptions,
   totalPermissions,
-  organization,
   onCommand,
   onEnable,
 }: Props & { user: UserOverviewEntry }) {
@@ -172,8 +170,6 @@ function SheetBody({
     await loadSessions();
   };
 
-  const organizationUser = (user.organizationId ?? null) !== null;
-
   return (
     <>
       <SheetHeader className="space-y-0 px-5 pb-4 pt-5 pr-14 text-left">
@@ -220,7 +216,6 @@ function SheetBody({
         <Fact label="Created">
           <span className="num">{format.dateTime(user.createdAt)}</span>
         </Fact>
-        {organization && <Fact label="Organisation">{organization}</Fact>}
         {user.username && (
           <Fact label="Sign-in username">
             <span className="num">{user.username}</span>
@@ -252,7 +247,7 @@ function SheetBody({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <RoleOptions {...roleOptions} current={initialRole} organization={organizationUser} />
+                    <RoleOptions {...roleOptions} current={initialRole} />
                   </SelectContent>
                 </Select>
               </div>

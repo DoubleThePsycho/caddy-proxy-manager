@@ -136,7 +136,7 @@ The overview lists, at most five of each:
 
 ## Saved views
 
-A saved view is a name for a range, filters, metric and grouping. On the Analytics page, **Save view** stores the current settings and **Views** opens a saved view or manages them: rename, share, save the current settings to it, copy its link, or delete it (ten a page, with a search by name or owner once there are more). It belongs to the user who saved it. Shared, it is listed for everyone of the same organisation (or of the provider level) who can read analytics. Only the owner changes a view; the owner, or an administrator for a shared view, deletes it. A user can save up to 100 views. Saving, changing and deleting a view is recorded in the audit log (`analytics_view`). Views are not synced to slave instances and are deleted with their owner.
+A saved view is a name for a range, filters, metric and grouping. On the Analytics page, **Save view** stores the current settings and **Views** opens a saved view or manages them: rename, share, save the current settings to it, copy its link, or delete it (ten a page, with a search by name or owner once there are more). It belongs to the user who saved it. Shared, it is listed for everyone who can read analytics. Only the owner changes a view; the owner, or an administrator for a shared view, deletes it. A user can save up to 100 views. Saving, changing and deleting a view is recorded in the audit log (`analytics_view`). Views are not synced to slave instances and are deleted with their owner.
 
 ## Asking in plain language
 
@@ -144,7 +144,7 @@ With the AI analyst (a paid feature) and an AI provider set up, **Ask about your
 
 ## Who can see what
 
-Everything here needs the `analytics:read` permission. The raw Coraza audit record of a WAF event is WAF event detail: it stays on the Security events page and `GET /api/waf-events`, which need `waf:read`. Organisation users, and a provider looking at one organisation, only see that organisation's hosts. Per-host summaries also follow the role's tag scope: a host outside it answers 404, as a missing one does.
+Everything here needs the `analytics:read` permission. The raw Coraza audit record of a WAF event is WAF event detail: it stays on the Security events page and `GET /api/waf-events`, which need `waf:read`. Per-host summaries follow the role's tag scope: a host outside it answers 404, as a missing one does.
 
 When analytics is off or ClickHouse does not answer, pages and the API show no data instead of an error, with `status` set to `disabled` or `unavailable`.
 

@@ -67,7 +67,7 @@ export function hasNarrowingFilters(filters: AuditFilters): boolean {
 }
 
 export type AuditActor = {
-  kind: "user" | "system" | "provider" | "deleted";
+  kind: "user" | "system" | "deleted";
   /** What the table shows. */
   name: string;
   email: string | null;
@@ -98,7 +98,7 @@ export type AuditEventDetail = {
   id: number;
   data: unknown;
   configDiff: AuditChangeDiff | null;
-  /** The chained event before it (provider-level users only). */
+  /** The chained event before it. */
   previousEventId: number | null;
 };
 

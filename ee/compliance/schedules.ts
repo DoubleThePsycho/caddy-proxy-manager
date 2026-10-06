@@ -276,7 +276,7 @@ function readReportTypes(value: unknown): SelectableReportType[] {
 
 /**
  * Saved analytics questions to copy into the schedule, by id: the ones the
- * actor can see (their own and the shared ones of their organisation) are
+ * actor can see (their own and the shared ones) are
  * copied as they are now; ids already in the schedule whose saved question
  * is gone or no longer visible keep their copy.
  */

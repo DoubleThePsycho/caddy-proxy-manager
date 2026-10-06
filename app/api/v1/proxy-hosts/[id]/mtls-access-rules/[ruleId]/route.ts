@@ -72,8 +72,6 @@ export async function DELETE(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     const { rule, host } = found;
-    // Organisation users cannot touch mTLS rules (ee/multi-tenancy); nothing else changes here.
-    assertMtlsRuleReferencesAllowed(access, {}, rule);
     const gate = await gateHostChange({
       access,
       change: { targetType: "proxy_host", kind: "update", target: host, input: { mtlsRule: { action: "delete", ruleId: rule.id } } },

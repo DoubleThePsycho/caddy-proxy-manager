@@ -41,7 +41,6 @@ import { ApiValidationError } from "@/src/lib/api-errors";
 import { getCertificate } from "@/src/lib/models/certificates";
 import { getForwardAuthAccessForHost, setForwardAuthAccess } from "@/src/lib/models/forward-auth";
 import { getCloudflareSettings, type GeoBlockSettings } from "@/src/lib/settings";
-import { dashboardCreateOrganization } from "@/ee/multi-tenancy/view";
 import {
   parseCsv,
   parseUpstreams,
@@ -732,9 +731,6 @@ export async function createProxyHostAction(
     // non-administrator limits are in src/lib/access-scope.ts.
     const tags = tagsForWrite(access, "proxy_hosts", formData.has("tags") ? String(formData.get("tags") ?? "") : undefined, null);
     if (tags !== undefined) input.tags = tags;
-    // A provider-level user looking at one organisation creates the host there (ee/multi-tenancy).
-    const organizationId = await dashboardCreateOrganization(access);
-    if (organizationId !== undefined) input.organizationId = organizationId;
     await assertProxyHostWriteAllowed(access, input, null);
     await assertDomainsFreeOutsideScope(access, input.domains, null);
     const faUserIds = formData.getAll("ingressiFaUserId").map((v) => Number(v)).filter((n) => n > 0);

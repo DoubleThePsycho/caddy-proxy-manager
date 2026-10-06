@@ -18,7 +18,6 @@ import { createProxyHost, updateProxyHost, type ProxyHost, type ProxyHostInput }
 import { getCertificate } from "./models/certificates";
 import { getForwardAuthAccessForHost, setForwardAuthAccess } from "./models/forward-auth";
 import { gateHostChange, previewHostChange, type HostChange, type HostChangePreview } from "@/ee/approvals/requests";
-import { dashboardCreateOrganization } from "@/ee/multi-tenancy/view";
 
 /** Most users or groups one host's forward auth may name in one request. */
 const MAX_GRANTS = 1000;
@@ -67,9 +66,6 @@ function readOptionalText(value: unknown, field: string): string | undefined {
 export function parseHostChangePayload(raw: unknown, creating: boolean): HostChangePayload {
   if (!isRecord(raw) || !isRecord(raw.host)) throw new ApiValidationError("The change must contain the host's fields");
   const host = { ...raw.host } as Record<string, unknown>;
-  // The organisation is not chosen here: a new host goes to the one the
-  // dashboard shows (or the user's own); hosts move through the organisations API.
-  delete host.organizationId;
   if (creating || host.name !== undefined) {
     if (typeof host.name !== "string" || !host.name.trim()) throw new ApiValidationError("Name is required");
   }
@@ -127,11 +123,6 @@ async function prepare(access: Access, id: number | null, payload: HostChangePay
   const tags = tagsForWrite(access, "proxy_hosts", host.tags, existing?.tags ?? null);
   if (tags !== undefined) host.tags = tags;
   else delete host.tags;
-  if (!existing) {
-    const organizationId = await dashboardCreateOrganization(access);
-    if (organizationId !== undefined) host.organizationId = organizationId;
-  }
-
   await assertProxyHostWriteAllowed(access, host, existing);
   await assertDomainsFreeOutsideScope(access, Array.isArray(host.domains) ? host.domains : undefined, existing?.id ?? null);
   if (payload.forwardAuthAccess) {

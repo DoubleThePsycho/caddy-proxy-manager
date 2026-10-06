@@ -53,8 +53,6 @@ import {
 import { ApiValidationError } from "../api-errors";
 import { isInvited } from "../sign-in-activity";
 import { assertBreakGlassAdminRemains, removeBreakGlassUser } from "@/ee/sso/enforcement-store";
-import { organizationCondition, type OrganizationFilter } from "@/ee/multi-tenancy/scope";
-import { assertUserRoom } from "@/ee/multi-tenancy/guard";
 import { desc, first, jsonTextAt } from "@/src/lib/db/ops";
 import type { AppTx } from "@/src/lib/db/types";
 
@@ -69,15 +67,12 @@ export type User = {
    */
   username: string | null;
   passwordHash: string | null;
-  /** "org_admin" only for organisation users, "admin" only for provider-level ones (ee/multi-tenancy). */
-  role: "admin" | "user" | "viewer" | "org_admin";
+  role: "admin" | "user" | "viewer";
   /**
    * The custom role (ee/custom-roles) the user has, or null for a built-in
    * role. A custom-role user's `role` is "viewer".
    */
   customRoleId: number | null;
-  /** The organisation (ee/multi-tenancy) the user belongs to, or null for the provider level. */
-  organizationId: number | null;
   provider: string | null;
   subject: string | null;
   avatarUrl: string | null;
@@ -108,7 +103,6 @@ function parseDbUser(user: DbUser): User {
     passwordHash: user.passwordHash,
     role: user.role as User["role"],
     customRoleId: user.customRoleId ?? null,
-    organizationId: user.organizationId ?? null,
     provider: user.provider,
     subject: user.subject,
     avatarUrl: user.avatarUrl,
@@ -184,11 +178,6 @@ export async function createUser(data: {
   role?: User["role"];
   /** A custom role; the caller checks the license and escalation rules (ee/custom-roles). */
   customRoleId?: number | null;
-  /**
-   * The organisation (ee/multi-tenancy); the caller decides it (an
-   * organisation user's own, or one a provider-level user may put users in).
-   */
-  organizationId?: number | null;
   provider: string;
   subject: string;
   avatarUrl?: string | null;
@@ -200,7 +189,6 @@ export async function createUser(data: {
   const customRoleId = data.customRoleId ?? null;
   // A custom-role user is stored as "viewer", what they fall back to.
   const role = customRoleId !== null ? "viewer" : data.role ?? "user";
-  const organizationId = data.organizationId ?? null;
   const email = storedEmail(data.email);
   const provider = data.provider === "credential" ? "credentials" : data.provider;
 
@@ -213,8 +201,6 @@ export async function createUser(data: {
       ? await checkChosenUsername(tx, null, data.username)
       : await ownEmailUsername(tx, null, email);
     const displayUsername = data.displayUsername ?? data.name ?? email.split("@")[0];
-    // The organisation's user limit, in the same transaction as the insert.
-    await assertUserRoom(tx, organizationId);
     const row = (await first(tx
       .insert(users)
       .values({
@@ -223,7 +209,6 @@ export async function createUser(data: {
         passwordHash: data.passwordHash ?? null,
         role,
         customRoleId,
-        organizationId,
         provider,
         subject: data.subject,
         avatarUrl: data.avatarUrl ?? null,
@@ -684,10 +669,8 @@ export async function syncUserOAuthIdentity(userId: number): Promise<void> {
     .where(eq(users.id, userId));
 }
 
-/** `organizationId` limits the list to one organisation's users (see listProxyHosts in proxy-hosts.ts). */
-export async function listUsers(organizationId?: OrganizationFilter): Promise<User[]> {
+export async function listUsers(): Promise<User[]> {
   const rows = await appDb.query.users.findMany({
-    where: organizationCondition(users.organizationId, organizationId),
     orderBy: (table, { asc }) => [asc(table.createdAt), asc(table.id)]
   });
   return await withSignInState(rows.map(parseDbUser));

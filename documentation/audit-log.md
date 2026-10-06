@@ -1,6 +1,6 @@
 # Audit log
 
-Every change, sign-in and check is recorded in the audit log, linked into a tamper-evident hash chain (see [audit-streaming.md](../ee/docs/audit-streaming.md) for verifying, exporting and streaming it). Reading it needs the permission `audit_log:read`; an organisation user reads their organisation's events only.
+Every change, sign-in and check is recorded in the audit log, linked into a tamper-evident hash chain (see [audit-streaming.md](../ee/docs/audit-streaming.md) for verifying, exporting and streaming it). Reading it needs the permission `audit_log:read`.
 
 ## In the dashboard
 
@@ -8,7 +8,7 @@ Every change, sign-in and check is recorded in the audit log, linked into a tamp
 
 Expand an event to see what was recorded with it: for a configuration change the before and after of its own entity, field by field (unified or side by side, secrets masked), with links to the change in the change history and to rolling back to the version before it; for other events the data stored with them. Every event shows its hash and the previous event's hash.
 
-Administrators at the provider level also see the state of the hash chain (the last verification, how many events were recorded since, the anchor and the newest hash) with **Verify now**, and the streaming destinations with their lag; see [audit-streaming.md](../ee/docs/audit-streaming.md). Organisation users see their own organisation's events only.
+The page also shows the state of the hash chain (the last verification, how many events were recorded since, the anchor and the newest hash) with **Verify now**, and, with `audit_streaming:read`, the streaming destinations with their lag; see [audit-streaming.md](../ee/docs/audit-streaming.md).
 
 ## Filters
 

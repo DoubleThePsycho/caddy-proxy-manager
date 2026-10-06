@@ -46,8 +46,8 @@ export const QUESTIONS_OPENAPI_PATHS = {
       summary: "Ask a question about traffic",
       description:
         `Permission analytics:read. ${LICENSE} The configured AI provider turns the question into a structured query ` +
-        "(AnalyticsQuestionQuery); the query is validated against fixed lists and run here with bound parameters, within the caller's " +
-        "organisation, with host tags limited to the proxy hosts the caller's role can see. The model never writes SQL. The provider receives " +
+        "(AnalyticsQuestionQuery); the query is validated against fixed lists and run here with bound parameters, " +
+        "with host tags limited to the proxy hosts the caller's role can see. The model never writes SQL. The provider receives " +
         "the question and the query schema; for the summary, the question, the query in words and the aggregated result, with client " +
         "addresses, user agents and paths as placeholders unless the question ranks or filters by them and the question settings allow " +
         "sending them. status is answered, clarify (an ambiguous question, with a question back) or unsupported (traffic data cannot answer " +
@@ -73,7 +73,7 @@ export const QUESTIONS_OPENAPI_PATHS = {
     get: {
       tags: [ANALYTICS],
       summary: "List saved questions",
-      description: "Permission analytics:read. The caller's saved questions and the ones others of the same organisation (or of the provider level) shared.",
+      description: "Permission analytics:read. The caller's saved questions and the ones others shared.",
       operationId: "listSavedAnalyticsQuestions",
       responses: { "200": { description: "Saved questions", content: json({ type: "array", items: ref("AnalyticsSavedQuestion") }) }, ...errors("401", "403") },
     },

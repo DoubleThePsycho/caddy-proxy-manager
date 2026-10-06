@@ -6,7 +6,7 @@ import { X509Certificate } from "node:crypto";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";
 import { certificates, proxyHosts } from "@/src/lib/db/schema";
-import { scopeTagsFor, tagsInScope, tenantOf } from "@/src/lib/permissions";
+import { scopeTagsFor, tagsInScope } from "@/src/lib/permissions";
 import { parseStoredTags } from "@/src/lib/host-tags";
 import { getCaddyApplyStatus } from "@/src/lib/caddy-apply-status";
 import { filterManagedCertificatesForAccess, getManagedCertificates } from "@/src/lib/managed-certificates";
@@ -31,7 +31,6 @@ export const certificatesProvider: AttentionProvider = {
   id: "certificates",
   label: "Certificates",
   permissions: ["certificates:read"],
-  organizationAware: true,
   async collect({ access, now }) {
     const items: Item[] = [];
     const view = [{ label: "View certificates", route: "/certificates" }];
@@ -74,14 +73,12 @@ export const certificatesProvider: AttentionProvider = {
       }
     }
 
-    // Imported certificates, within the reader's tag scope and organisation.
+    // Imported certificates, within the reader's tag scope.
     const scope = scopeTagsFor(access, "certificates");
-    const tenant = tenantOf(access);
-    const rows = (await appDb
-      .select({ id: certificates.id, name: certificates.name, pem: certificates.certificatePem, organizationId: certificates.organizationId })
+    const rows = await appDb
+      .select({ id: certificates.id, name: certificates.name, pem: certificates.certificatePem })
       .from(certificates)
-      .where(and(eq(certificates.type, "imported"), isNotNull(certificates.certificatePem))))
-      .filter((row) => tenant === null || row.organizationId === tenant);
+      .where(and(eq(certificates.type, "imported"), isNotNull(certificates.certificatePem)));
     let visible = rows;
     if (scope !== null) {
       const used = new Set(

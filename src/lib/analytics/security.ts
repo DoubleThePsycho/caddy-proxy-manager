@@ -22,15 +22,14 @@ import { MITIGATED_OUTCOMES, isOutcome, type Outcome } from './outcome';
 import { OUTCOME_LABELS, type Series } from './query';
 import { previousPeriod, sparklineStep, type ResolvedRange } from './range';
 import { delta, num, ratio, selectRows, withAnalytics, type AnalyticsStatus, type QueryParams } from './run';
-import { hostName, proxyHostForName, scopeSql, type HostScope, type ProxyHostDomains } from './scope';
+import { hostName, proxyHostForName, type ProxyHostDomains } from './scope';
 
 function timeWhere(): string {
   return 'ts >= toDateTime({p_from:UInt32}) AND ts < toDateTime({p_to:UInt32})';
 }
 
-function baseParams(range: ResolvedRange, scope: HostScope): { scope: string; params: QueryParams } {
-  const scoped = scopeSql(scope);
-  return { scope: scoped.sql, params: { ...scoped.params, p_from: range.start, p_to: range.end } };
+function baseParams(range: ResolvedRange): QueryParams {
+  return { p_from: range.start, p_to: range.end };
 }
 
 // ── Mitigated requests by source ─────────────────────────────────────────
@@ -70,7 +69,7 @@ export type SecurityPeak = {
   top: SecurityPeakTop | null;
 };
 
-export async function querySecuritySeries(input: { range: ResolvedRange }, scope: HostScope, now = Math.floor(Date.now() / 1000)): Promise<SecuritySeriesResult> {
+export async function querySecuritySeries(input: { range: ResolvedRange }, now = Math.floor(Date.now() / 1000)): Promise<SecuritySeriesResult> {
   const { range } = input;
   const prev = previousPeriod(range, now);
   const empty = {
@@ -80,11 +79,11 @@ export async function querySecuritySeries(input: { range: ResolvedRange }, scope
     peak: null,
   };
   return withAnalytics('security series', empty, async () => {
-    const { scope: scoped, params } = baseParams(range, scope);
+    const params = baseParams(range);
     const [rows, totals] = await Promise.all([
       selectRows<{ b: unknown; o: string; c: unknown }>(
         `SELECT intDiv(toUInt32(ts) - {p_from:UInt32}, {p_step:UInt32}) AS b, ${OUTCOME_SQL} AS o, count() AS c
-         FROM traffic_events WHERE ${timeWhere()} AND ${scoped} AND ${MITIGATED_SQL}
+         FROM traffic_events WHERE ${timeWhere()} AND ${MITIGATED_SQL}
          GROUP BY b, o`,
         { ...params, p_step: range.step }
       ),
@@ -93,7 +92,7 @@ export async function querySecuritySeries(input: { range: ResolvedRange }, scope
                 countIf(ts >= toDateTime({p_from:UInt32}) AND ${MITIGATED_SQL}) AS mitigated,
                 countIf(ts < toDateTime({p_from:UInt32}) AND ${MITIGATED_SQL}) AS previous
          FROM traffic_events
-         WHERE ts >= toDateTime({p_prev:UInt32}) AND ts < toDateTime({p_to:UInt32}) AND ${scoped}`,
+         WHERE ts >= toDateTime({p_prev:UInt32}) AND ts < toDateTime({p_to:UInt32})`,
         { ...params, p_prev: prev.available ? prev.start : range.start }
       ),
     ]);
@@ -129,7 +128,7 @@ export async function querySecuritySeries(input: { range: ResolvedRange }, scope
         ts,
         value: peakValue,
         bySource: Object.fromEntries(series.map((s) => [s.key, s.values[peakIndex]]).filter(([, v]) => (v as number) > 0)),
-        top: await queryPeakTop({ ...params, p_from: ts, p_to: ts + range.step }, scoped),
+        top: await queryPeakTop({ ...params, p_from: ts, p_to: ts + range.step }),
       };
     }
     return {
@@ -142,21 +141,20 @@ export async function querySecuritySeries(input: { range: ResolvedRange }, scope
 }
 
 /** The busiest source, host and WAF rule between p_from and p_to. */
-async function queryPeakTop(params: QueryParams, scoped: string): Promise<SecurityPeakTop | null> {
-  const union = SOURCES_UNION.replaceAll('{scope}', scoped);
+async function queryPeakTop(params: QueryParams): Promise<SecurityPeakTop | null> {
   const [addresses, sources, hosts, rules] = await Promise.all([
-    selectRows<{ n: unknown }>(`SELECT uniq(client_ip) AS n FROM (${union})`, params),
+    selectRows<{ n: unknown }>(`SELECT uniq(client_ip) AS n FROM (${SOURCES_UNION})`, params),
     selectRows<{ client_ip: unknown; country: unknown; n: unknown }>(
-      `SELECT client_ip, any(c) AS country, count() AS n FROM (${union}) GROUP BY client_ip ORDER BY n DESC, client_ip LIMIT 1`,
+      `SELECT client_ip, any(c) AS country, count() AS n FROM (${SOURCES_UNION}) GROUP BY client_ip ORDER BY n DESC, client_ip LIMIT 1`,
       params
     ),
     selectRows<{ name: unknown; n: unknown }>(
-      `SELECT ${HOST_NAME_SQL} AS name, count() AS n FROM (${union}) GROUP BY name ORDER BY n DESC, name LIMIT 1`,
+      `SELECT ${HOST_NAME_SQL} AS name, count() AS n FROM (${SOURCES_UNION}) GROUP BY name ORDER BY n DESC, name LIMIT 1`,
       params
     ),
     selectRows<{ rule_id: unknown; message: unknown; n: unknown }>(
       `SELECT rule_id, any(rule_message) AS message, count() AS n FROM waf_events
-       WHERE ${timeWhere()} AND ${scoped} AND rule_id IS NOT NULL
+       WHERE ${timeWhere()} AND rule_id IS NOT NULL
        GROUP BY rule_id ORDER BY n DESC, rule_id LIMIT 1`,
       params
     ),
@@ -200,14 +198,14 @@ export type SecurityRulesResult = {
 
 const RULE_DETAIL_LIMIT = 4;
 
-export async function querySecurityRules(input: { range: ResolvedRange; limit: number }, scope: HostScope): Promise<SecurityRulesResult> {
+export async function querySecurityRules(input: { range: ResolvedRange; limit: number }): Promise<SecurityRulesResult> {
   const { range } = input;
   const step = sparklineStep(range);
   const points = Math.ceil((range.end - range.start) / step);
   const empty = { sparklineStep: step, totals: { events: 0, rulesMatched: 0 }, rules: [] as SecurityRule[] };
   return withAnalytics('security rules', empty, async () => {
-    const { scope: scoped, params } = baseParams(range, scope);
-    const where = `${timeWhere()} AND ${scoped}`;
+    const params = baseParams(range);
+    const where = timeWhere();
     const [totals, top] = await Promise.all([
       selectRows<{ events: unknown; rules: unknown }>(
         `SELECT count() AS events, uniqExactIf(rule_id, rule_id IS NOT NULL) AS rules FROM waf_events WHERE ${where}`,
@@ -297,23 +295,22 @@ export type SecuritySourcesResult = { status: AnalyticsStatus; totals: { address
 
 const SOURCES_UNION = `
   SELECT client_ip, host, ts, 1 AS w, toUInt8(blocked) AS wb, 0 AS o, ${WAF_COUNTRY_SQL} AS c, toUInt32(ifNull(rule_id, 0)) AS r
-  FROM waf_events WHERE ts >= toDateTime({p_from:UInt32}) AND ts < toDateTime({p_to:UInt32}) AND {scope}
+  FROM waf_events WHERE ts >= toDateTime({p_from:UInt32}) AND ts < toDateTime({p_to:UInt32})
   UNION ALL
   SELECT client_ip, host, ts, 0 AS w, 0 AS wb, 1 AS o, ${COUNTRY_SQL} AS c, toUInt32(0) AS r
-  FROM traffic_events WHERE ts >= toDateTime({p_from:UInt32}) AND ts < toDateTime({p_to:UInt32}) AND {scope}
+  FROM traffic_events WHERE ts >= toDateTime({p_from:UInt32}) AND ts < toDateTime({p_to:UInt32})
     AND ${MITIGATED_SQL} AND (${OUTCOME_SQL}) != 'waf'`;
 
-export async function querySecuritySources(input: { range: ResolvedRange; limit: number }, scope: HostScope): Promise<SecuritySourcesResult> {
+export async function querySecuritySources(input: { range: ResolvedRange; limit: number }): Promise<SecuritySourcesResult> {
   const empty = { totals: { addresses: 0 }, sources: [] as SecuritySource[] };
   return withAnalytics('security sources', empty, async () => {
-    const { scope: scoped, params } = baseParams(input.range, scope);
-    const union = SOURCES_UNION.replaceAll('{scope}', scoped);
-    const [totals, rows] = await Promise.all([
-      selectRows<{ n: unknown }>(`SELECT uniq(client_ip) AS n FROM (${union})`, params),
+    const params = baseParams(input.range);
+      const [totals, rows] = await Promise.all([
+      selectRows<{ n: unknown }>(`SELECT uniq(client_ip) AS n FROM (${SOURCES_UNION})`, params),
       selectRows<Record<string, unknown>>(
         `SELECT client_ip, sum(w) AS waf, sum(wb) AS waf_blocked, sum(o) AS other, any(c) AS country,
                 groupUniqArrayIf(5)(r, r != 0) AS rules, uniq(host) AS hosts, toUInt32(max(ts)) AS last_seen
-         FROM (${union})
+         FROM (${SOURCES_UNION})
          GROUP BY client_ip ORDER BY (waf + other) DESC, client_ip LIMIT {p_limit:UInt32}`,
         { ...params, p_limit: input.limit }
       ),
@@ -359,18 +356,16 @@ export type SecurityHostsResult = { status: AnalyticsStatus; totals: { events: n
 /** Hosts ranked by WAF events plus requests stopped by geo, access, sign-in and rate limit rules. */
 export async function querySecurityHosts(
   input: { range: ResolvedRange; limit: number },
-  scope: HostScope,
   proxyHosts: readonly ProxyHostDomains[] = []
 ): Promise<SecurityHostsResult> {
   const empty = { totals: { events: 0 }, hosts: [] as SecurityHost[] };
   return withAnalytics('security hosts', empty, async () => {
-    const { scope: scoped, params } = baseParams(input.range, scope);
-    const union = SOURCES_UNION.replaceAll('{scope}', scoped);
-    const [totals, rows] = await Promise.all([
-      selectRows<{ n: unknown }>(`SELECT count() AS n FROM (${union})`, params),
+    const params = baseParams(input.range);
+      const [totals, rows] = await Promise.all([
+      selectRows<{ n: unknown }>(`SELECT count() AS n FROM (${SOURCES_UNION})`, params),
       selectRows<{ name: unknown; events: unknown; waf: unknown; other: unknown }>(
         `SELECT ${HOST_NAME_SQL} AS name, count() AS events, sum(w) AS waf, sum(o) AS other
-         FROM (${union}) GROUP BY name ORDER BY events DESC, name LIMIT {p_limit:UInt32}`,
+         FROM (${SOURCES_UNION}) GROUP BY name ORDER BY events DESC, name LIMIT {p_limit:UInt32}`,
         { ...params, p_limit: input.limit }
       ),
     ]);
@@ -478,12 +473,11 @@ function eventFilterSql(filters: readonly AnalyticsFilter[], table: 'waf' | 'tra
 
 /** Newest first; WAF events and requests stopped by the other rules, merged. */
 export async function querySecurityEvents(
-  input: { range: ResolvedRange; limit: number; offset: number; kinds: SecurityEventKind[]; filters?: readonly AnalyticsFilter[] },
-  scope: HostScope
+  input: { range: ResolvedRange; limit: number; offset: number; kinds: SecurityEventKind[]; filters?: readonly AnalyticsFilter[] }
 ): Promise<SecurityEventsResult> {
   const empty = { events: [] as SecurityEvent[], limit: input.limit, offset: input.offset };
   return withAnalytics('security events', empty, async () => {
-    const { scope: scoped, params } = baseParams(input.range, scope);
+    const params = baseParams(input.range);
     const filters = input.filters ?? [];
     const wafFilter = eventFilterSql(filters, 'waf');
     const trafficFilter = eventFilterSql(filters, 'traffic');
@@ -493,12 +487,12 @@ export async function querySecurityEvents(
       parts.push(`SELECT toUInt32(ts) AS t, 'waf' AS kind, toUInt8(blocked) AS blk, host, method, ${WAF_PATH_SQL} AS path, client_ip,
                          ${WAF_COUNTRY_SQL} AS country, toInt64(ifNull(rule_id, -1)) AS rid, ifNull(rule_message, '') AS message,
                          ifNull(severity, '') AS sev, toUInt16(0) AS code, tx_id AS eid
-                  FROM waf_events WHERE ${timeWhere()} AND ${scoped} AND ${wafFilter.sql}`);
+                  FROM waf_events WHERE ${timeWhere()} AND ${wafFilter.sql}`);
     }
     if (others.length > 0) {
       parts.push(`SELECT toUInt32(ts) AS t, ${OUTCOME_SQL} AS kind, toUInt8(1) AS blk, host, method, ${PATH_SQL} AS path, client_ip,
                          ${COUNTRY_SQL} AS country, toInt64(-1) AS rid, '' AS message, '' AS sev, toUInt16(status) AS code, '' AS eid
-                  FROM traffic_events WHERE ${timeWhere()} AND ${scoped} AND (${OUTCOME_SQL}) IN {p_kinds:Array(String)} AND ${trafficFilter.sql}`);
+                  FROM traffic_events WHERE ${timeWhere()} AND (${OUTCOME_SQL}) IN {p_kinds:Array(String)} AND ${trafficFilter.sql}`);
     }
     if (parts.length === 0) return empty;
     const rows = await selectRows<Record<string, unknown>>(

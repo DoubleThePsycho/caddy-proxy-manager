@@ -19,15 +19,12 @@ import {
   BUILT_IN_ROLES,
   isBuiltInRole,
   normalizePermissions,
-  ORGANIZATION_ADMIN_ROLE,
   PermissionCatalogueError,
   UNSCOPED_ONLY_PERMISSIONS,
   type Access,
   type BuiltInRole,
   type Permission,
 } from "@/src/lib/permissions";
-import { inTenant } from "@/ee/multi-tenancy/scope";
-import { assertMayUseCustomRoles, assertRoleFitsTenant } from "@/ee/multi-tenancy/users";
 import { setUserRoleAssignment, type User } from "@/src/lib/models/user";
 import { accessForUser } from "./access";
 import {
@@ -159,7 +156,6 @@ export async function getRole(id: number): Promise<CustomRoleView> {
 
 export async function createRole(actor: Access, input: unknown): Promise<CustomRoleView> {
   assertManagesRoles(actor);
-  assertMayUseCustomRoles(actor);
   await requireFeature(FEATURE);
   const fields = readRoleFields(input, null);
   assertCanGrant(actor, grantOfRole(fields));
@@ -201,7 +197,6 @@ function assertMayChangeRole(actor: Access, role: CustomRole): void {
 
 export async function updateRole(actor: Access, id: number, input: unknown): Promise<CustomRoleView> {
   assertManagesRoles(actor);
-  assertMayUseCustomRoles(actor);
   const existing = await readCustomRole(appDb, id);
   if (!existing) throw new ApiClientError("Role not found", 404);
   assertMayChangeRole(actor, existing);
@@ -240,7 +235,6 @@ export async function updateRole(actor: Access, id: number, input: unknown): Pro
  */
 export async function deleteRole(actor: Access, id: number): Promise<{ affectedUserIds: number[] }> {
   assertManagesRoles(actor);
-  assertMayUseCustomRoles(actor);
   const existing = await readCustomRole(appDb, id);
   if (!existing) throw new ApiClientError("Role not found", 404);
   assertMayChangeRole(actor, existing);
@@ -276,17 +270,10 @@ export async function deleteRole(actor: Access, id: number): Promise<{ affectedU
   return { affectedUserIds };
 }
 
-/**
- * A role to assign: a built-in role, or a custom role by id. "org_admin" is
- * the built-in administrator role of organisation users (ee/multi-tenancy).
- */
+/** A role to assign: a built-in role, or a custom role by id. */
 export type RoleAssignment =
-  | { role: BuiltInRole | typeof ORGANIZATION_ADMIN_ROLE; customRoleId: null }
+  | { role: BuiltInRole; customRoleId: null }
   | { role: "viewer"; customRoleId: number };
-
-function isAssignableBuiltInRole(value: unknown): value is BuiltInRole | typeof ORGANIZATION_ADMIN_ROLE {
-  return isBuiltInRole(value) || value === ORGANIZATION_ADMIN_ROLE;
-}
 
 /**
  * Reads a role assignment from a request: `role` (a built-in role) and/or
@@ -299,8 +286,8 @@ export function readRoleAssignment(body: { role?: unknown; customRoleId?: unknow
   const hasRole = body.role !== undefined && body.role !== null && body.role !== "";
   const hasCustom = body.customRoleId !== undefined;
   if (!hasRole && !hasCustom) return undefined;
-  if (hasRole && !isAssignableBuiltInRole(body.role)) {
-    throw new ApiValidationError(`role must be one of: ${[...BUILT_IN_ROLES, ORGANIZATION_ADMIN_ROLE].join(", ")}`);
+  if (hasRole && !isBuiltInRole(body.role)) {
+    throw new ApiValidationError(`role must be one of: ${BUILT_IN_ROLES.join(", ")}`);
   }
   if (hasCustom && body.customRoleId !== null) {
     const id = body.customRoleId;
@@ -315,9 +302,9 @@ export function readRoleAssignment(body: { role?: unknown; customRoleId?: unknow
   return { role: hasRole ? (body.role as RoleAssignment["role"]) : "viewer", customRoleId: null };
 }
 
-/** Parses the role picker's value: "admin", "user", "viewer", "org_admin" or "custom:<id>". */
+/** Parses the role picker's value: "admin", "user", "viewer" or "custom:<id>". */
 export function parseRoleChoice(value: unknown): RoleAssignment | null {
-  if (isAssignableBuiltInRole(value)) return { role: value, customRoleId: null };
+  if (isBuiltInRole(value)) return { role: value, customRoleId: null };
   if (typeof value === "string" && /^custom:\d{1,9}$/.test(value)) {
     return { role: "viewer", customRoleId: Number(value.slice("custom:".length)) };
   }
@@ -332,18 +319,10 @@ async function describeAssignment(reader: RoleReader, assignment: { role: string
 
 /**
  * Checks that `actor` may give a new user `assignment`, and that a custom role
- * exists and is licensed. Run before the user is created. `organizationId` is
- * the new user's organisation (ee/multi-tenancy; null: the provider level):
- * the role must fit it.
+ * exists and is licensed. Run before the user is created.
  */
-export async function assertCanAssignOnCreate(
-  actor: Access,
-  assignment: RoleAssignment,
-  organizationId: number | null = null
-): Promise<void> {
+export async function assertCanAssignOnCreate(actor: Access, assignment: RoleAssignment): Promise<void> {
   assertManagesRoles(actor);
-  if (assignment.customRoleId !== null) assertMayUseCustomRoles(actor);
-  await assertRoleFitsTenant(organizationId, assignment);
   if (assignment.customRoleId !== null) {
     await requireFeature(FEATURE);
     const role = await readCustomRole(appDb, assignment.customRoleId);
@@ -380,15 +359,7 @@ export async function assertCanAssignRole(
   if (actor.userId === targetUserId) {
     throw new ApiValidationError("Cannot change your own role");
   }
-  // Multi-tenancy (ee): a user of another organisation is not found; the role
-  // must fit the user's organisation ("user" and "viewer" fit any); custom
-  // roles are the provider's.
   await assertCanManageUserId(actor, targetUserId);
-  if (assignment.customRoleId !== null) assertMayUseCustomRoles(actor);
-  if (assignment.customRoleId !== null || assignment.role === "admin" || assignment.role === ORGANIZATION_ADMIN_ROLE) {
-    const targetTenant = await first(appDb.select({ organizationId: users.organizationId }).from(users).where(eq(users.id, targetUserId)).limit(1));
-    if (targetTenant) await assertRoleFitsTenant(targetTenant.organizationId ?? null, assignment);
-  }
   let role: CustomRole | null = null;
   if (assignment.customRoleId !== null) {
     role = await readCustomRole(appDb, assignment.customRoleId);
@@ -400,7 +371,7 @@ export async function assertCanAssignRole(
   // last one; assignRole still checks all of it again in its transaction.
   if (actor.isAdmin) return role;
   const target = await first(appDb
-    .select({ id: users.id, role: users.role, customRoleId: users.customRoleId, organizationId: users.organizationId })
+    .select({ id: users.id, role: users.role, customRoleId: users.customRoleId })
     .from(users)
     .where(eq(users.id, targetUserId))
     .limit(1));
@@ -443,8 +414,6 @@ export async function assignRole(actor: Access, targetUserId: number, assignment
     if (assignment.customRoleId !== null && !role) {
       throw new ApiValidationError("Unknown custom role");
     }
-    if (!inTenant(actor, current.organizationId)) throw new ApiClientError("User not found", 404);
-    await assertRoleFitsTenant(current.organizationId ?? null, assignment, tx);
     assertCanManageUser(actor, await accessForUser(current, tx));
     assertCanGrant(actor, role ? grantOfRole(role) : grantOfBuiltInRole(assignment.role));
     await assertActiveAdminRemains(tx, { userId: targetUserId, role: assignment.customRoleId === null ? assignment.role : "viewer" });
@@ -465,18 +434,15 @@ export async function assignRole(actor: Access, targetUserId: number, assignment
 /**
  * Refuses an action on user `targetUserId` (status, profile, MFA reset,
  * deletion) by a non-administrator who does not cover that user's access.
- * A user of another organisation (ee/multi-tenancy) is "not found" (404), as
- * a missing one.
  */
 export async function assertCanManageUserId(actor: Access, targetUserId: number): Promise<void> {
   if (actor.isAdmin) return;
   const target = await first(appDb
-    .select({ id: users.id, role: users.role, customRoleId: users.customRoleId, organizationId: users.organizationId })
+    .select({ id: users.id, role: users.role, customRoleId: users.customRoleId })
     .from(users)
     .where(eq(users.id, targetUserId))
     .limit(1));
   if (!target) return; // The action itself answers "not found".
-  if (!inTenant(actor, target.organizationId)) throw new ApiClientError("User not found", 404);
   assertCanManageUser(actor, await accessForUser(target));
 }
 

@@ -1,8 +1,7 @@
 /**
  * What the audit log page reads besides the events: the lag of a streaming
  * sink, the hash chain's state from the last recorded verification, and one
- * event's detail through the dashboard action, scoped to the caller's
- * organisation.
+ * event's detail through the dashboard action.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { eq } from 'drizzle-orm';
@@ -22,7 +21,7 @@ vi.mock('@/src/lib/auth', () => ({
 }));
 
 import * as schema from '@/src/lib/db/schema';
-import { builtInAccess, organizationAccess } from '@/src/lib/permissions';
+import { builtInAccess } from '@/src/lib/permissions';
 import { insertAuditEvent } from '@/src/lib/audit-chain';
 import { listAuditSinks } from '@/ee/audit/sinks';
 import { getAuditChainStatus, previousChainedEventId } from '@/ee/audit/chain-status';
@@ -36,8 +35,8 @@ beforeEach(async () => {
   ctx.access = builtInAccess(1, 'admin');
 });
 
-async function event(summary: string, extra: { organizationId?: number | null; action?: string; data?: string } = {}): Promise<number> {
-  return await insertAuditEvent({ action: extra.action ?? 'update', entityType: 'proxy_host', entityId: 3, summary, data: extra.data, organizationId: extra.organizationId ?? null });
+async function event(summary: string, extra: { action?: string; data?: string } = {}): Promise<number> {
+  return await insertAuditEvent({ action: extra.action ?? 'update', entityType: 'proxy_host', entityId: 3, summary, data: extra.data });
 }
 
 describe('sink lag', () => {
@@ -108,20 +107,11 @@ describe('hash chain status', () => {
 });
 
 describe('event detail action', () => {
-  it('returns the data and the previous event to a provider-level user', async () => {
+  it('returns the data and the previous event', async () => {
     const first = await event('first');
     const second = await event('second', { data: JSON.stringify({ upstreams: ['app:8080'] }) });
     const outcome = await getAuditEventDetailAction(second);
     expect(outcome).toEqual({ detail: { id: second, data: { upstreams: ['app:8080'] }, configDiff: null, previousEventId: first } });
-  });
-
-  it("keeps an organisation user to their organisation's events, without the chain neighbour", async () => {
-    await event('provider');
-    const own = await event('own', { organizationId: 7 });
-    const other = await event('other', { organizationId: 8 });
-    ctx.access = organizationAccess(5, 7, 'org_admin');
-    expect(await getAuditEventDetailAction(own)).toEqual({ detail: { id: own, data: null, configDiff: null, previousEventId: null } });
-    expect(await getAuditEventDetailAction(other)).toEqual({ error: 'Audit event not found' });
   });
 
   it('refuses ids that are not event ids', async () => {

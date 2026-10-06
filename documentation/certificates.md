@@ -54,7 +54,7 @@ The list shows every client certificate issued here: common name, serial number 
 
 **Issue client certificate** asks for the common name, validity and an export password, and downloads the certificate with its private key and the CA chain as a `.p12` bundle; the private key is not stored. **Compatibility mode (3DES)**, on by default, encrypts the bundle with 3DES so older operating systems and browsers can import it; turned off, it uses AES-256.
 
-Organisation users and roles limited to tags see only the **Certificates** tab: certificate authorities, client certificates and roles serve every host.
+Roles limited to tags see only the **Certificates** tab: certificate authorities, client certificates and roles serve every host.
 
 ## Obtaining and storing certificates
 
@@ -94,4 +94,4 @@ curl https://dash.example.com/api/v1/certificates/overview -H "Authorization: Be
 }
 ```
 
-It follows the same rules as the page: a role limited to tags sees the certificates of its in-scope proxy hosts, organisation users their organisation's (provider-level callers can pass `organizationId`), and L4 hosts appear in `usedBy` only with `l4_proxy_hosts:read`. No PEM or key material is returned; the full certificate list stays at `GET /api/v1/certificates`.
+It follows the same rules as the page: a role limited to tags sees the certificates of its in-scope proxy hosts, and L4 hosts appear in `usedBy` only with `l4_proxy_hosts:read`. No PEM or key material is returned; the full certificate list stays at `GET /api/v1/certificates`.
