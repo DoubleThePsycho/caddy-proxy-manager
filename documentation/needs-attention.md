@@ -9,7 +9,7 @@ The overview lists what needs attention: one line per item, with a severity (cri
 | Setup | `settings:read` | The [setup checklist](setup-checklist.md) is not complete and not hidden |
 | Traffic | `analytics:read` (the organisation's hosts) | From the last 24 hours of [analytics](analytics.md#needs-attention): 5xx bursts (critical while still going on, a warning once over), mitigation spikes (a warning at ten times the usual, information below) and blocked-traffic concentrations (information) |
 | Sign-in | `ldap:read`, `users:read` | LDAP directories that fail their connection check (`ldap:read`; critical after three failed checks in a row), and accounts the MFA policy has locked out until they set up MFA (`users:read`) |
-| Alerts | `alerts:read` | Every alert firing now |
+| Alerts | `alerts:read` | Every alert firing now, except dismissed ones and those of muted rules (they stay on the Alerts page, marked) |
 | Approvals | `approvals:read` (the requests the role may see) | Change requests waiting for the reader's approval, for someone else's, or approved and waiting for their change window |
 | Your access reviews | none | Items of open access reviews the reader has to decide |
 | Access reviews | `access_reviews:read` | Reviews that are overdue or due within 7 days, schedules that could not start |
