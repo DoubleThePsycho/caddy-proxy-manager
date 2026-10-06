@@ -8,6 +8,8 @@ import { ed25519PublicKey, type TrustedKeys } from "./license";
  */
 const PRODUCTION_KEYS: ReadonlyArray<readonly [string, string]> = [
   ["2026-10", "pEKLE0vZErMaAXqW9QJvRY_iu-cLt3ba2Ev83yWsdww"],
+  // The license server's online key: purchases, renewals and trials.
+  ["online-2026-10", "9ztRfuuCIybTYRT_oAq5Fuvyy4JjPFXPn2jI3pyjaNw"],
 ];
 
 let trustedKeys: TrustedKeys = new Map(PRODUCTION_KEYS.map(([kid, raw]) => [kid, ed25519PublicKey(raw)]));
