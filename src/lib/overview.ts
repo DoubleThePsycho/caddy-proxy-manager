@@ -15,7 +15,7 @@ import { inArray } from "drizzle-orm";
 import { appDb } from "./db";
 import { configSnapshots } from "./db/schema";
 import { can, scopeTagsFor, tenantOf, type Access } from "./permissions";
-import { APP_VERSION } from "./app-version";
+import { APP_VERSION, formatVersion } from "./app-version";
 import { collectAttention, type AttentionView } from "./attention";
 import { cachedTrafficSignals } from "./attention/traffic-provider";
 import { parseAnalyticsQuery, queryAnalytics } from "./analytics/query";
@@ -279,10 +279,6 @@ export async function loadBusiestHosts(
 }
 
 // ── Nodes ────────────────────────────────────────────────────────────────
-
-function formatVersion(version: string): string {
-  return /^\d+\.\d+\.\d+/.test(version) ? `v${version}` : version;
-}
 
 /** How a replica is doing, as the master knows it. */
 export function replicaNode(instance: FleetInstanceView, appVersion: string = APP_VERSION): OverviewNode {

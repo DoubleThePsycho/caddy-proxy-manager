@@ -14,6 +14,7 @@ import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusDot, type StatusTone } from "@/components/ui/StatusDot";
 import { Textarea } from "@/components/ui/textarea";
+import { formatVersion } from "@/src/lib/app-version";
 import { formatDateTimeUtc } from "@/src/lib/date-format";
 import { paginate } from "@/src/lib/pagination";
 import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
@@ -294,7 +295,7 @@ export default function PullReplicasPanel({
                     </dd>
                     <dt className="text-soft">Reports</dt>
                     <dd className="m-0">
-                      {replica.reportedVersion ? <span className="num">v{replica.reportedVersion}</span> : <span className="text-soft">Nothing yet</span>}
+                      {replica.reportedVersion ? <span className="num">{formatVersion(replica.reportedVersion)}</span> : <span className="text-soft">Nothing yet</span>}
                       {replica.caddy && (
                         <span className={replica.caddy.ok ? undefined : "text-bad"}>
                           {replica.caddy.ok

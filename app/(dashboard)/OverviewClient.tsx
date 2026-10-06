@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
 import { cn } from "@/lib/utils";
+import { formatAppVersion } from "@/src/lib/app-version";
 import { useFormat } from "@/src/components/preferences/PreferencesProvider";
 import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import { OVERVIEW_RANGE_LABELS, OVERVIEW_RANGES, type OverviewData, type OverviewRange, type OverviewTraffic } from "@/src/lib/overview-shared";
@@ -181,7 +182,7 @@ function FirstRun({ data }: { data: OverviewData & { firstRun: NonNullable<Overv
           {data.version !== "unknown" && (
             <>
               {" "}
-              · {branding.productName} <span className="num">{/^\d/.test(data.version) ? `v${data.version}` : data.version}</span>
+              · {branding.productName} <span className="num">{formatAppVersion(data.version)}</span>
             </>
           )}
         </DateLine>

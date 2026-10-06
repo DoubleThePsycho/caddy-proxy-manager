@@ -85,10 +85,8 @@ export function compareVersions(version: string, reference: string): -1 | 0 | 1 
   return 0;
 }
 
-/** "v2.0.3" for a release, the text as it is otherwise. */
-export function formatVersion(version: string): string {
-  return versionParts(version) && !version.startsWith("v") ? `v${version}` : version;
-}
+/** "v2.0.3" for a release, the short hash for a commit build, the text as it is otherwise (src/lib/app-version.ts). */
+export { formatVersion } from "@/src/lib/app-version";
 
 export const PHASE_LABELS: Record<RolloutPhase, string> = {
   canary: "Syncing the canary",

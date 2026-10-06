@@ -9,6 +9,7 @@ import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { BRAND_NAME, BRAND_WEBSITE, documentationUrl } from "@/src/lib/brand";
+import { formatAppVersion } from "@/src/lib/app-version";
 import type { Feature } from "@/ee/licensing/features";
 import type { FeatureUsage } from "@/ee/licensing/usage";
 import type { LicenseView } from "@/ee/licensing/view";
@@ -317,7 +318,7 @@ function ReleaseLineCard({ version, ltsIncluded }: { version: string; ltsInclude
         </a>
       </div>
       <p className="m-0 text-[13px] text-muted-foreground">
-        This install runs {BRAND_NAME} <span className="num text-foreground">{running}</span>
+        This install runs {BRAND_NAME} <span className="num text-foreground">{formatAppVersion(running)}</span>
         {line ? (
           <>
             {" "}
