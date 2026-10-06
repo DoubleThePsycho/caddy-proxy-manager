@@ -62,6 +62,17 @@ describe('Roles tab', () => {
     expect(html).not.toContain('license or higher');
   });
 
+  it('labels the values for narrow screens, where the column headings are hidden', () => {
+    const html = tab();
+    // The labels are hidden from md up, where the column headings show.
+    expect(html).toContain('<span class="md:hidden"> permissions</span>');
+    expect(html).toContain('<span class="text-xs text-soft md:hidden">Scope:</span>');
+    expect(html).toContain('<span class="text-xs text-soft md:hidden"> users</span>');
+    expect(html).toContain('<span class="text-xs text-soft md:hidden"> user</span>');
+    expect(html).toContain('Like User. Users of a deleted custom role get this role.');
+    expect(html).not.toContain('Same as User');
+  });
+
   it('opens a custom role with its permissions grouped by area, holders and controls', () => {
     const html = tab({ initialOpen: 'custom-1' });
     expect(html).toContain('Traffic');

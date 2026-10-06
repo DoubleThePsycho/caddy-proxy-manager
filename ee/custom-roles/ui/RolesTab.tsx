@@ -137,7 +137,7 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
       name: "Viewer",
       kind: "Built-in",
       adminLevel: false,
-      description: "Same as User. Users of a deleted custom role fall back to it.",
+      description: "Like User. Users of a deleted custom role get this role.",
       permissions: new Set(),
       scopeTags: [],
       scopeText: "None",
@@ -261,24 +261,35 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
                     </span>
                     <span className="text-[13px] text-muted-foreground">{row.description}</span>
                   </span>
-                  <span className="flex w-[110px] flex-none flex-col gap-1">
-                    <span>
-                      <span className="num">{count}</span> <span className="text-xs text-soft">of {total}</span>
+                  {/* Below md the column headings are hidden: the values move under the name, each with its label. */}
+                  <span className="flex w-full flex-wrap items-center gap-x-4 gap-y-1.5 pl-8 md:contents" data-testid="role-facts">
+                    <span className="flex flex-none flex-col gap-1 md:w-[110px]">
+                      <span>
+                        <span className="num">{count}</span>{" "}
+                        <span className="text-xs text-soft">
+                          of {total}
+                          <span className="md:hidden"> permissions</span>
+                        </span>
+                      </span>
+                      <span aria-hidden="true" className="hidden h-1 w-[88px] overflow-hidden rounded-sm bg-raise md:block">
+                        <span className="block h-1 bg-muted-foreground" style={{ width: `${total ? (count / total) * 100 : 0}%` }} />
+                      </span>
                     </span>
-                    <span aria-hidden="true" className="block h-1 w-[88px] overflow-hidden rounded-sm bg-raise">
-                      <span className="block h-1 bg-muted-foreground" style={{ width: `${total ? (count / total) * 100 : 0}%` }} />
+                    <span className="flex flex-none flex-wrap items-center gap-1 md:w-[150px]">
+                      <span className="text-xs text-soft md:hidden">Scope:</span>
+                      {row.scopeTags.length > 0
+                        ? row.scopeTags.map((tag) => (
+                            <span key={tag} className="num rounded bg-raise px-1.5 text-[11px] leading-[18px] text-muted-foreground">
+                              {tag}
+                            </span>
+                          ))
+                        : <span className="text-[13px] text-muted-foreground">{row.scopeText}</span>}
+                    </span>
+                    <span className="flex-none md:w-[70px] md:text-right">
+                      <span className="num">{row.userCount}</span>
+                      <span className="text-xs text-soft md:hidden">{row.userCount === 1 ? " user" : " users"}</span>
                     </span>
                   </span>
-                  <span className="flex w-[150px] flex-none flex-wrap gap-1">
-                    {row.scopeTags.length > 0
-                      ? row.scopeTags.map((tag) => (
-                          <span key={tag} className="num rounded bg-raise px-1.5 text-[11px] leading-[18px] text-muted-foreground">
-                            {tag}
-                          </span>
-                        ))
-                      : <span className="text-[13px] text-muted-foreground">{row.scopeText}</span>}
-                  </span>
-                  <span className="num w-[70px] flex-none text-right">{row.userCount}</span>
                 </button>
                 {expanded && (
                   <div className="flex flex-col gap-3.5 bg-panel px-[18px] pb-[18px] pt-1 md:pl-[50px]">
