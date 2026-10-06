@@ -28,7 +28,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const organizations = await organizationNavigation(access);
   // Sidebar counters, edition and environment, each guarded by its read permission.
   const summary = await getNavSummary(access, reviews);
-  // Theme, time zone and number format (src/lib/preferences.ts); useFormat() applies them.
+  // Interface preferences, including formatting and default list ordering (src/lib/preferences.ts).
   const userId = Number(session.user.id);
   const preferences = await getUserPreferences(userId);
   return (

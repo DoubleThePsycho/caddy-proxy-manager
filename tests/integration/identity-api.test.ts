@@ -243,6 +243,29 @@ describe('interface preferences', () => {
     await preferencesRoute.PUT(request('PUT', 'alice', '/api/v1/preferences', { timeZone: 'Europe/Rome' }));
     expect(audited()).toEqual(['preferences_updated']);
   });
+
+  it('falls back to application defaults for corrupt stored sort preferences', async () => {
+    await ctx.db.insert(schema.userPreferences).values({
+      userId: ALICE,
+      theme: 'dark',
+      timeZone: 'Europe/Rome',
+      numberFormat: 'de-DE',
+      proxyHostsSort: 'host:sideways',
+      l4ProxyHostsSort: 'magic:asc',
+      clientCertificatesSort: 'expires:first',
+      updatedAt: now(),
+    });
+
+    expect(await (await preferencesRoute.GET(request('GET', 'alice', '/api/v1/preferences'))).json())
+      .toEqual({
+        theme: 'dark',
+        timeZone: 'Europe/Rome',
+        numberFormat: 'de-DE',
+        proxyHostsSort: 'default',
+        l4ProxyHostsSort: 'default',
+        clientCertificatesSort: 'default',
+      });
+  });
 });
 
 describe('last sign-in and invited accounts', () => {

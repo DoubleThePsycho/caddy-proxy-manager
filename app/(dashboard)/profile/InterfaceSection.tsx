@@ -83,7 +83,7 @@ function SortPreferenceControl<K extends string>({
 }) {
   const parsed = parseStoredSortPreference(value);
   const selectedKey = parsed?.key ?? "default";
-  const selectedDir = parsed?.dir ?? "asc";
+  const selectedDir = parsed?.dir ?? "default";
 
   const pickKey = (raw: string) => {
     if (raw === "default") {
@@ -124,6 +124,7 @@ function SortPreferenceControl<K extends string>({
           disabled={disabled || !parsed}
           className="h-9 w-36 border-0 border-l border-input bg-transparent px-3 py-1 text-sm outline-none disabled:opacity-50"
         >
+          <option value="default" disabled>Not applicable</option>
           <option value="asc">Ascending</option>
           <option value="desc">Descending</option>
         </select>
