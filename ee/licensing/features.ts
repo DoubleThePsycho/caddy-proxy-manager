@@ -113,12 +113,10 @@ export const FEATURE_INFO: Record<Feature, FeatureInfo> = {
   high_availability: {
     label: "High availability",
     description:
-      "Shared certificate storage for Caddy nodes (Redis or Valkey): each certificate is ordered once and every node serves it. " +
-      "A dashboard cluster: one leader and warm standbys, SQLite streamed to object storage with Litestream, automatic failover. " +
-      "Shared state: forward-auth sessions and API balances in the same Redis or Valkey, so every web node serves them alike. " +
-      "PostgreSQL replicas: several dashboard containers on one PostgreSQL database, each serving every request, one running the background jobs.",
+      "Certificates shared by every Caddy node, several dashboard replicas on PostgreSQL, a warm standby with automatic failover, and sessions shared in Redis or Valkey.",
     edition: "enterprise",
   },
+
   air_gap: {
     label: "Air-gapped installs",
     description: "Offline install bundle for hosts without Internet access. Long-term-support releases are planned, not announced yet.",
