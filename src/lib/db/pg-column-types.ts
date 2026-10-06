@@ -61,6 +61,7 @@ export const PG_INTEGER_COLUMNS: Readonly<Record<string, Readonly<Record<string,
   alert_rules: { id: "int4", cooldownMinutes: "int4", forMinutes: "int4" },
   alert_rule_states: { id: "int4", ruleId: "int4" },
   alert_events: { id: "int4", ruleId: "int4" },
+  alert_silences: { id: "int4", ruleId: "int4", createdBy: "int4" },
   backup_destinations: { id: "int4", retention: "int4", consecutiveFailures: "int4" },
   backup_runs: { id: "int4", destinationId: "int4", sizeBytes: "int8", prunedCount: "int4" },
   // WAF rule ids stay below 2^31 (src/lib/waf-exclusions.ts).

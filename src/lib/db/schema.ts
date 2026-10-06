@@ -50,6 +50,7 @@ export const alertChannels = tables.alertChannels;
 export const alertRules = tables.alertRules;
 export const alertRuleStates = tables.alertRuleStates;
 export const alertEvents = tables.alertEvents;
+export const alertSilences = tables.alertSilences;
 export const backupDestinations = tables.backupDestinations;
 export const backupRuns = tables.backupRuns;
 export const wafTuningSuggestions = tables.wafTuningSuggestions;

@@ -43,6 +43,13 @@
       "when": 1791290000000,
       "tag": "0057_drop_virtual_patching",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1791300000000,
+      "tag": "0058_alert_silences",
+      "breakpoints": true
     }
   ]
 }

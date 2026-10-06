@@ -766,11 +766,40 @@ export const alertEvents = pgTable(
     explanation: text("explanation"),
     notified: boolean("notified").notNull().default(false),
     deliveries: text("deliveries"),
-    createdAt: text("createdAt").notNull()
+    createdAt: text("createdAt").notNull(),
+    /**
+     * "muted" or "dismissed": an alert_silences row covered the subject, so
+     * the firing notification (and so the resolve notice) was not sent.
+     */
+    silenced: text("silenced")
   },
   (table) => ({
     createdAtIdx: index("alert_events_created_at_idx").on(table.createdAt),
     ruleIdx: index("alert_events_rule_idx").on(table.ruleId)
+  })
+);
+
+/**
+ * Mutes and dismissals (ee/alerting/silences.ts). Without a subjectKey the
+ * whole rule is muted until `until`. With one, that alert is dismissed until
+ * `until`, or, when `until` is null, until the episode firing now resolves.
+ * Runtime state: not exported, not synced. createdBy is a users.id without a
+ * reference, kept when the user is deleted.
+ */
+export const alertSilences = pgTable(
+  "alert_silences",
+  {
+    id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
+    ruleId: integer("ruleId")
+      .notNull(),
+    subjectKey: text("subjectKey"),
+    until: text("until"),
+    note: text("note"),
+    createdBy: integer("createdBy"),
+    createdAt: text("createdAt").notNull()
+  },
+  (table) => ({
+    ruleIdx: index("alert_silences_rule_idx").on(table.ruleId, table.subjectKey)
   })
 );
 
