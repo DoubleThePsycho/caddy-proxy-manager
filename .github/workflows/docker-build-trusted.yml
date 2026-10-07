@@ -93,10 +93,19 @@ jobs:
           username: ${{ env.GHCR_PUSH_USER }}
           password: ${{ secrets.GHCR_PUSH_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
+      - name: Extract metadata (tags, labels, annotations)
         id: meta
         uses: docker/metadata-action@v6
+        env:
+          # Multi-arch images: GHCR links a package to the repository through
+          # org.opencontainers.image.source on the image index, so the OCI
+          # metadata goes on the index as well as on each platform manifest.
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
+          labels: |
+            org.opencontainers.image.licenses=MIT AND Elastic-2.0
+          annotations: |
+            org.opencontainers.image.licenses=MIT AND Elastic-2.0
           images: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
             ${{ env.REGISTRY }}/${{ env.LEGACY_IMAGE_NAME }}-${{ matrix.service }}
@@ -138,6 +147,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           build-args: |
             APP_VERSION=${{ steps.app-version.outputs.version }}
           cache-from: type=gha,scope=${{ matrix.service }}
