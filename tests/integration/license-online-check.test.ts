@@ -324,14 +324,14 @@ describe('needs attention', () => {
 
   it('is critical for a revoked license', async () => {
     await runOnlineLicenseCheck({ now: NOW, fetchImpl: server({ statement: statement({ status: 'revoked' }) }) as never });
-    expect(await collect(NOW)).toEqual([expect.objectContaining({ severity: 'critical', title: 'License LIC-ON was revoked' })]);
+    expect(await collect(NOW)).toEqual([expect.objectContaining({ severity: 'critical', title: 'License LIC-ON is revoked' })]);
   });
 
   it('warns when confirmations have failed for two days', async () => {
     await runOnlineLicenseCheck({ now: NOW, fetchImpl: server({ statement: statement() }) as never });
     const later = new Date(NOW.getTime() + 3 * DAY);
     await runOnlineLicenseCheck({ now: later, fetchImpl: server({ status: 503 }) as never });
-    expect(await collect(later)).toEqual([expect.objectContaining({ severity: 'warning', title: 'License LIC-ON could not be confirmed lately' })]);
+    expect(await collect(later)).toEqual([expect.objectContaining({ severity: 'warning', title: `License LIC-ON was last confirmed on ${NOW.toISOString().slice(0, 10)}` })]);
   });
 });
 
@@ -353,7 +353,7 @@ describe('the License page', () => {
     await runOnlineLicenseCheck({ now: new Date(), fetchImpl: server({ statement: signStatement(signer, statementPayload(signer, { id: 'LIC-ON', status: 'revoked', iat: new Date().toISOString() })) }) as never });
     const html = renderToStaticMarkup(await LicensePage());
     expect(html).toContain('Revoked');
-    expect(html).toContain('The license server reports this license as revoked, after a refund or a chargeback.');
+    expect(html).toContain('This license is revoked.');
     expect(html).toContain('Paid features already set up keep running; their settings are read-only.');
   });
 

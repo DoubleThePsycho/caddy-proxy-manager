@@ -4,7 +4,7 @@ With access logging on and ClickHouse enabled (see [Enabling analytics](#enablin
 
 ## Storage and retention
 
-Analytics uses a bundled ClickHouse instance for storing and querying traffic events and WAF events. Data is retained for **30 days** by default via ClickHouse's TTL. Change the window with the `CLICKHOUSE_RETENTION_DAYS` environment variable — on the next startup the existing tables' TTL is migrated to the new value and expired data is purged.
+Analytics uses a bundled ClickHouse instance for storing and querying traffic events and WAF events. Data is retained for **30 days** by default via ClickHouse's TTL. Change the window with the `CLICKHOUSE_RETENTION_DAYS` environment variable: at the next start, the existing tables move to the new TTL and expired data is deleted.
 
 ### Enabling analytics (recommended)
 

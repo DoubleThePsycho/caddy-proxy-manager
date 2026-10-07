@@ -40,8 +40,8 @@ export const licenseAttentionProvider: AttentionProvider = {
         return [
           item(
             "critical",
-            `License ${license.id} was revoked`,
-            "The license server reports it as revoked, after a refund or a chargeback. Paid features already set up keep running; their settings are read-only."
+            `License ${license.id} is revoked`,
+            "Paid features already set up keep running; their settings are read-only. Questions: sales@ingres.si."
           ),
         ];
       case "unconfirmed":
@@ -72,9 +72,9 @@ export const licenseAttentionProvider: AttentionProvider = {
         return [
           item(
             "warning",
-            `License ${license.id} could not be confirmed lately`,
-            `The last confirmation is from ${day(online.confirmedAt)} (${lastError}). Paid settings become read-only on ` +
-              `${online.validUntil ? day(online.validUntil) : "expiry of the confirmation"} unless the license server confirms it again. ` +
+            `License ${license.id} was last confirmed on ${day(online.confirmedAt)}`,
+            `Last error: ${lastError}. Paid settings become read-only on ` +
+              `${online.validUntil ? day(online.validUntil) : "expiry of the confirmation"} unless it is confirmed again. ` +
               "Allow outbound HTTPS to license.ingres.si."
           ),
         ];

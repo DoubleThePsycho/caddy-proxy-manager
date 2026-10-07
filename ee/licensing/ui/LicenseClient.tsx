@@ -112,7 +112,7 @@ function NodesTile({ license }: { license: LicenseView }) {
       )}
       <span className="text-xs leading-4 text-soft">
         {replicas === 0 ? "This dashboard, with no replicas." : `This dashboard and ${plural(replicas, "replica", "replicas")}.`}
-        {licensed !== null && " Going over is never blocked; the difference is invoiced at renewal."}
+        {licensed !== null && " Going over blocks nothing; the extra nodes are due from the next renewal."}
       </span>
     </Tile>
   );
@@ -168,7 +168,7 @@ function OnlineCheckStatus({ license, canWrite, host }: { license: LicenseView; 
       setMessage(
         next.lastError
           ? { tone: "bad", text: `No confirmation: ${next.lastError}.` }
-          : { tone: "ok", text: next.state === "revoked" ? "The license server reports this license as revoked." : "Confirmed." }
+          : { tone: "ok", text: next.state === "revoked" ? "The license is revoked." : "Confirmed." }
       );
       router.refresh();
     });
@@ -189,7 +189,7 @@ function OnlineCheckStatus({ license, canWrite, host }: { license: LicenseView; 
 
   if (check.state === "revoked") {
     return (
-      <Banner tone="bad" title="The license server reports this license as revoked, after a refund or a chargeback.">
+      <Banner tone="bad" title="This license is revoked.">
         <span className="flex flex-col gap-2.5">
           <span>Paid features already set up keep running; their settings are read-only. Questions: sales@ingres.si.</span>
           {action}
@@ -350,7 +350,7 @@ function CurrentLicenseCard({
       )}
       {license.nodes.overLimit && license.nodes.licensed !== null && (
         <Banner tone="warn" title={`This dashboard manages ${license.nodes.used} nodes; the license covers ${license.nodes.licensed}.`}>
-          Nothing is blocked; the difference is invoiced at renewal.
+          Nothing is blocked; the extra nodes are due from the next renewal.
         </Banner>
       )}
 
@@ -474,7 +474,7 @@ export function licenseEndPhases(license: LicenseView): LicensePhase[] {
   return [
     {
       when: dates ? `Until ${formatDay(dates.expires)}` : "While the license is valid",
-      text: "Everything works and can be changed, as today.",
+      text: "Paid features work and can be changed.",
       tone: "ok",
       current: status === "active",
     },

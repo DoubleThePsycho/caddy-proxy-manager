@@ -25,7 +25,7 @@ bun ee/scripts/license-sign.ts --key ~/.config/ingressi/license-signing-2026-10.
 
 Install a key from **License** in the dashboard or with `PUT /api/v1/license`. The dashboard checks the key first and shows what it grants (edition, nodes, expiry, features) before anything changes; `POST /api/v1/license/verify` does the same check without installing the key. Both need `license:write`.
 
-Trials and renewals come from the license server (a separate private repository, `ingres-si/license-server`) (Stripe, Cloudflare Worker), signed with a separate online key (`online-…`) that is also listed in `licensing/public-keys.ts`. Online checkout is not open yet: keys are sold through sales@ingres.si, and the license server will issue the keys from ingres.si once checkout opens. Installs can fetch renewed keys themselves once a day when an administrator turns on automatic updates with the license's refresh token (`licensing/auto-update.ts`); it is off by default. Customer-facing steps: [docs/licenses.md](docs/licenses.md).
+Keys sold online, renewals and trials come from the license server (a separate private repository, `ingres-si/license-server`: Stripe and a Cloudflare Worker), signed with its own online key (`online-…`), also listed in `licensing/public-keys.ts`. Installs fetch renewed keys once a day when an administrator turns on automatic updates with the license's refresh token (`licensing/auto-update.ts`); it is off by default. Customer-facing steps: [docs/licenses.md](docs/licenses.md).
 
 ## Where paid code lives
 

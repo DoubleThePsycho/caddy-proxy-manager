@@ -62,8 +62,8 @@ const spec = {
     title: `${BRAND_NAME} API`,
     version: APP_VERSION,
     description:
-      "REST API for managing Caddy reverse proxy configurations, certificates, access lists, and more. " +
-      "Every endpoint that used to require an administrator now requires one permission from the catalogue " +
+      "The Ingressi REST API: proxy hosts, certificates, access lists, users and every other dashboard setting. " +
+      "Each administrative endpoint needs one permission from the catalogue " +
       "(GET /api/v1/permissions; the endpoint-to-permission table is in ee/docs/custom-roles.md). The built-in admin role " +
       "holds every permission; the built-in user and viewer roles hold none of them; a custom role holds the permissions it " +
       "lists, and for proxy hosts, L4 proxy hosts and certificates can be limited to hosts carrying one of its tags. " +
@@ -1835,7 +1835,7 @@ const spec = {
         summary: "Install or replace the license key",
         description:
           "The key's signature is verified on this install. Invalid keys, and keys past their 30-day grace period, are refused. " +
-          "An online key (from the license server: purchases and trials) is then confirmed with the license server right away; a failed confirmation does not " +
+          "An online key (purchases and trials from ingres.si) is then confirmed with the license server right away; a failed confirmation does not " +
           "undo the install (see onlineCheck).",
         operationId: "installLicense",
         requestBody: {
@@ -1877,7 +1877,7 @@ const spec = {
         tags: ["License"],
         summary: "Confirm the installed online key with the license server now",
         description:
-          "Permission license:write. An online key (from the license server: purchases and trials) is confirmed with the license server once a day; this asks now. " +
+          "Permission license:write. An online key (purchases and trials from ingres.si) is confirmed with the license server once a day; this asks now. " +
           "It sends one request, POST /v1/licenses/{licenseId}/status with the SHA-256 of the installed key, and nothing else. " +
           "Answers with the license status, whatever the license server said (see onlineCheck.lastError). 409 with an offline key, " +
           "without a key, or on an instance sync replica; 429 when the license server was asked less than a minute ago.",
@@ -4609,7 +4609,7 @@ const spec = {
             type: "object",
             description: "The daily confirmation of an online key with the license server; required is false for offline keys",
             properties: {
-              required: { type: "boolean", description: "The installed key is an online key (from the license server: purchases and trials)" },
+              required: { type: "boolean", description: "The installed key is an online key (purchases and trials from ingres.si)" },
               state: {
                 type: ["string", "null"],
                 enum: ["confirmed", "pending", "unconfirmed", "revoked", null],

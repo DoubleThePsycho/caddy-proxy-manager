@@ -6,22 +6,22 @@ A license key unlocks setting up and changing the paid features of its edition. 
 
 | Edition | Price (excluding VAT) | Nodes included | How it is sold |
 | --- | --- | --- | --- |
-| Homelab | €49 a year | 1, non-commercial use | Online, once checkout opens |
-| Business | €890 a year, or €89 a month | 3, then €190 a year (€19 a month) per extra node | Online, once checkout opens |
-| Enterprise | from €5,900 a year | 10, then €290 a year per extra node | Annual, usually invoiced |
+| Homelab | €49 a year | 1, non-commercial use | Online, yearly |
+| Business | €890 a year, or €89 a month | 3, then €190 a year (€19 a month) per extra node | Online, yearly or monthly |
+| Enterprise | from €5,900 a year | 10, then €290 a year per extra node | By written order, usually invoiced |
 
-A node is the dashboard itself plus each instance sync replica it manages. Going over the licensed number shows a notice on the License page and is invoiced at renewal; nothing is ever blocked.
+A node is the dashboard itself plus each instance sync replica it manages. Going over the licensed number shows a notice on the License page and blocks nothing; the extra nodes are due from the next renewal.
 
 ## Buying
 
-Online checkout is not open yet. Organisations buy by writing to [sales@ingres.si](mailto:sales@ingres.si) with the edition, the number of nodes and the company name the key is issued to. Every edition is invoiced directly for now; Enterprise always is.
+Homelab and Business are sold online on [ingres.si/pricing](https://ingres.si/pricing/), through Stripe Managed Payments: the seller is Sold through Link, LLC, which charges VAT and sends the receipt and the invoice. Business extra nodes can be added at checkout. Enterprise, and any order by invoice, goes through [sales@ingres.si](mailto:sales@ingres.si): give the edition, the number of nodes and the company name the key is issued to.
 
-1. Once the order is settled, `licenses@ingres.si` e-mails the license id, the license key (also attached as a `.lic` file) and a refresh token for automatic updates. Keep that e-mail: the refresh token is sent only once.
+1. After payment, `licenses@ingres.si` e-mails the license id, the license key (also attached as a `.lic` file) and a refresh token for automatic updates. Keep that e-mail: the refresh token is sent only once.
 2. Install the key (below).
 
-Each renewal issues a new key for the same license id and e-mails it. A key is valid until the end of the paid period plus a week; after that the 30-day grace period still lets you change paid features. If you do not renew, nothing else happens: the last key runs out on its own.
+Subscriptions renew automatically. Each renewal issues a new key for the same license id and e-mails it. A key is valid until the end of the paid period plus a week; then the 30-day grace period still lets you change paid features. Cancelling stops the next renewal, and the last key runs out on its own.
 
-Invoices, more nodes and cancellation: write to [sales@ingres.si](mailto:sales@ingres.si).
+Receipts, payment method and cancellation: your Link account at [app.link.com](https://app.link.com). More nodes after checkout, or another edition: [sales@ingres.si](mailto:sales@ingres.si).
 
 ## Trial
 
@@ -53,9 +53,9 @@ Keys from ingres.si (purchases and trials) are online keys: the License page sho
 | Confirmed | A current confirmation. Each one counts for 14 days, so paid settings stay editable through 14 days without an answer. |
 | Not confirmed yet | A new online key has no confirmation yet. It works for 7 days after the install first saw the license; removing and reinstalling the key does not restart them. |
 | Not confirmed | No current confirmation: paid settings are read-only until the license server confirms the license again. Allow outbound HTTPS to `license.ingres.si`, or ask for an offline key. |
-| Revoked | The license server reports the license as revoked, after a refund or a chargeback. Paid settings are read-only at once, with no grace period. |
+| Revoked | The license was revoked: after a refund, a chargeback, or a key shared beyond the license. Paid settings are read-only at once, with no grace period. |
 
-Whatever the confirmation says, traffic is never touched: proxying, certificates, the WAF, sign-in and every paid feature already configured keep running, as with an expired license. A revoked license confirmed again later (for example after a chargeback decided in the customer's favour) is editable again from the next check. The overview's **Needs attention** lists a license that is revoked, not confirmed, or not confirmed for more than a day after it was installed. The audit log records `license_revoked` and `license_reinstated` when the license server's answer changes.
+Whatever the confirmation says, traffic is never touched: proxying, certificates, the WAF, sign-in and every paid feature already configured keep running, as with an expired license. A revoked license that is reinstated (for example after a chargeback decided in the customer's favour) is editable again from the next check. The overview's **Needs attention** lists a license that is revoked, not confirmed, or not confirmed for more than a day after it was installed. The audit log records `license_revoked` and `license_reinstated` when the license server's answer changes.
 
 ## Keeping the license up to date automatically
 

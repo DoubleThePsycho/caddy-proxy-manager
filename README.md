@@ -67,22 +67,15 @@ Report vulnerabilities through [GitHub private vulnerability reporting](https://
 
 ## Contributing
 
-Bugs and feature requests go to [GitHub Issues](https://github.com/ingres-si/ingressi/issues), questions and ideas to [GitHub Discussions](https://github.com/ingres-si/ingressi/discussions). Contributions welcome:
+Bugs and feature requests go to [GitHub Issues](https://github.com/ingres-si/ingressi/issues), questions and ideas to [GitHub Discussions](https://github.com/ingres-si/ingressi/discussions). Pull requests are welcome: fork the repository, work on a branch and open a pull request against `develop`.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/name`)
-3. Commit changes (`git commit -m 'Add feature'`)
-4. Push to branch (`git push origin feature/name`)
-5. Open a Pull Request
-
-- Follow the existing code style (TypeScript, Prettier formatting)
-- Add tests for new features when applicable. `bun run test:all` runs the typecheck, lint, the PostgreSQL schema check and the unit and integration tests on SQLite and then on PostgreSQL (`TEST_DATABASE_URL`, a disposable server; see `scripts/test-all.sh`). Every test file that uses the database runs on both; `src/lib/db/README.md` explains how
-- Update documentation for user-facing changes
-- Keep commits focused and write clear commit messages
+- Follow the existing code style (TypeScript, Prettier).
+- Add tests for new behaviour. `bun run test:all` runs the typecheck, lint, the PostgreSQL schema check, and the unit and integration tests on SQLite and then on PostgreSQL (`TEST_DATABASE_URL`, a disposable server; see `scripts/test-all.sh`). Every test file that uses the database runs on both; `src/lib/db/README.md` explains how.
+- Update the documentation for user-facing changes.
 
 ## License
 
-Everything under the `ee/` directory is source-available under the Elastic License 2.0 - see [ee/LICENSE](ee/LICENSE). All paid functionality lives there. Everything else in this repository is licensed under the MIT License - see the [LICENSE](LICENSE) file.
+Everything under `ee/` is source-available under the [Elastic License 2.0](ee/LICENSE); all paid functionality lives there. Everything else is under the [MIT License](LICENSE).
 
 Next.js only finds pages and API routes under `app/`, so each paid page or route keeps a file there that only re-exports its implementation from `ee/`. These routing files are MIT and contain no paid functionality. [ee/README.md](ee/README.md#where-paid-code-lives) lists every paid feature, its `ee/` module and the files that route to it.
 
@@ -90,8 +83,6 @@ Caddy is a trademark of its respective owner. Ingressi is an independent project
 
 ## Acknowledgments
 
-- **[Caddy Server](https://caddyserver.com/)** – The amazing web server that powers this project
-- **[Nginx Proxy Manager](https://github.com/NginxProxyManager/nginx-proxy-manager)** – The original project
-- **[Next.js](https://nextjs.org/)** – React framework for production
-- **[shadcn/ui](https://ui.shadcn.com/)** – Beautifully designed components built on Radix UI and Tailwind CSS
-- **[Drizzle ORM](https://orm.drizzle.team/)** – Lightweight SQL migrations and type-safe queries
+- [Caddy](https://caddyserver.com/), the web server Ingressi configures
+- [Nginx Proxy Manager](https://github.com/NginxProxyManager/nginx-proxy-manager), which inspired the project
+- [Next.js](https://nextjs.org/), [shadcn/ui](https://ui.shadcn.com/) and [Drizzle ORM](https://orm.drizzle.team/)

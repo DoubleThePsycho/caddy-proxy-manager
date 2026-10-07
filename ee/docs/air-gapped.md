@@ -1,8 +1,8 @@
 # Air-gapped installs
 
-Feature id `air_gap`, Enterprise edition: an offline install bundle for hosts that cannot reach GitHub's container registry or the Internet, and, once announced, long-term-support releases (planned).
+Feature id `air_gap`, Enterprise edition: an offline install bundle for hosts that cannot reach GitHub's container registry or the Internet. Long-term-support releases are planned.
 
-Licensing works offline with an offline key: it is verified against the public key built into the release and the install never contacts the license server. Keys from ingres.si (purchases and trials) are confirmed with the license server once a day, so an air-gapped install needs an offline key instead: ask [sales@ingres.si](mailto:sales@ingres.si).
+An air-gapped install needs an offline key, from [sales@ingres.si](mailto:sales@ingres.si). It is verified against the public key built into the release, and the install never contacts the license server. Keys from ingres.si (purchases and trials) need a daily confirmation from the license server instead.
 
 ## Building a bundle
 

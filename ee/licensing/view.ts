@@ -36,7 +36,7 @@ export type LicenseView = {
 };
 
 export type LicenseOnlineCheckView = {
-  /** The installed key is an online key (from the license server: purchases and trials), confirmed daily with the license server. */
+  /** The installed key is an online key (purchases and trials from ingres.si), confirmed daily with the license server. */
   required: boolean;
   /** null when not required. */
   state: OnlineCheckStatus | null;

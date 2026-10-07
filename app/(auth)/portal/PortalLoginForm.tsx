@@ -111,7 +111,7 @@ export default function PortalLoginForm({
 
       window.location.href = data.redirectTo;
     } catch {
-      setError("An unexpected error occurred. Please try again.");
+      setError("Sign-in failed. Try again.");
       setPending(false);
     }
   };

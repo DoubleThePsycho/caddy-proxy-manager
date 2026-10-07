@@ -60,7 +60,7 @@ Ingressi has three roles with increasing privileges:
 
 New users default to the **user** role.
 
-> **Forward Auth access** is separate from role — all roles must be explicitly granted access to each protected host via the forward auth access list ([forward-auth.md](forward-auth.md#per-host-access-control)).
+> **Forward auth access** is separate from the role: every role, administrators included, needs to be granted access to each protected host in the forward auth access list ([forward-auth.md](forward-auth.md#per-host-access-control)).
 
 ### The primary admin
 

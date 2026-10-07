@@ -71,7 +71,7 @@ services:
       # Instance sync (master): time limit in ms for one sync request to a slave
       INSTANCE_SYNC_TIMEOUT_MS: ${INSTANCE_SYNC_TIMEOUT_MS:-60000}
 
-      # ClickHouse analytics database (optional — omit CLICKHOUSE_PASSWORD to disable analytics)
+      # ClickHouse analytics database (optional: leave CLICKHOUSE_PASSWORD empty to turn analytics off)
       CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-ingressi}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
@@ -93,7 +93,7 @@ services:
       LICENSE_AUTO_UPDATE_DISABLED: ${LICENSE_AUTO_UPDATE_DISABLED:-false}
       LICENSE_SERVER_URL: ${LICENSE_SERVER_URL:-}
     group_add:
-      # caddy's GID — grants group access to the log FILES (read access.log,
+      # caddy's GID: group access to the log files (read access.log,
       # truncate the group-writable waf-audit.log). The web user never needs
       # to list /logs itself; see the caddy-logs note on the caddy service.
       - "${CADDY_GID:-10000}"
@@ -150,7 +150,7 @@ services:
       - caddy-data:/data
       - caddy-config:/config
       # If you override this named volume with a bind mount, the host dir
-      # MUST be readable+writable by caddy's UID/GID — Caddy's log roller
+      # MUST be readable and writable by caddy's UID/GID: Caddy's log roller
       # (timberjack) lists the directory to gzip and prune old rolled files.
       # A write-only dir (e.g. mode 0733/0773) keeps rotation working but
       # silently disables cleanup and fills the disk. On the host run:
@@ -168,7 +168,7 @@ services:
       retries: 3
       start_period: 10s
 
-  # Docker socket proxy — restricts API surface exposed to l4-port-manager.
+  # Docker socket proxy: limits the Docker API that l4-port-manager can reach.
   # Allows container management and network inspection (needed by docker compose up
   # to inspect caddy-network when recreating the caddy container for L4 port changes).
   docker-socket-proxy:
@@ -205,7 +205,7 @@ services:
     networks:
       - socket-proxy
 
-  # L4 Port Manager sidecar — automatically recreates the caddy container
+  # L4 port manager sidecar: recreates the caddy container
   # when L4 proxy host ports change.
   # Uses Docker socket proxy instead of direct Docker socket access.
   l4-port-manager:
@@ -229,8 +229,8 @@ services:
       docker-socket-proxy:
         condition: service_started
     # Reaches Docker only via the socket proxy (over the isolated socket-proxy
-    # network) and recreates caddy through the mounted compose dir — it does not
-    # need the shared app network.
+    # network) and recreates caddy through the mounted compose dir, so it does
+    # not need the shared app network.
     networks:
       - socket-proxy
 

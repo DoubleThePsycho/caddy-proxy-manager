@@ -81,7 +81,7 @@ export function describeCheck(
   }
   if (check.nodes !== null && context.nodesUsed > check.nodes) {
     notes.push(
-      `This dashboard manages ${plural(context.nodesUsed, "node", "nodes")}; the key covers ${check.nodes}. Nothing is blocked; the difference is invoiced at renewal.`
+      `This dashboard manages ${plural(context.nodesUsed, "node", "nodes")}; the key covers ${check.nodes}. Nothing is blocked; the extra nodes are due from the next renewal.`
     );
   }
   if (check.online) {
@@ -100,7 +100,7 @@ export function describeCheck(
     return {
       tone: "warn",
       title: `Signature verified${check.keyId ? ` with public key ${check.keyId}` : ""}, but the license is not confirmed`,
-      body: `${summary}. This install has not had a confirmation from the license server for it; paid settings stay read-only until it does. ${replaces}`,
+      body: `${summary}. The license server has not confirmed it to this install; paid settings stay read-only until it does. ${replaces}`,
       notes,
     };
   }

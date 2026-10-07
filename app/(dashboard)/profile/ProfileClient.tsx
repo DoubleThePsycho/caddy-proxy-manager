@@ -260,7 +260,7 @@ export default function ProfileClient({
     const file = event.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      setError("Please upload an image file");
+      setError("Choose an image file.");
       return;
     }
     if (file.size > 2 * 1024 * 1024) {

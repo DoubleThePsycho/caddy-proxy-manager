@@ -117,7 +117,7 @@ export function AutoUpdateCard({ initial, canWrite, installedLicenseId }: AutoUp
     return next.lastResult === "updated"
       ? "A newer key was installed."
       : next.lastResult === "current"
-        ? "The license server was asked; the installed key is the newest."
+        ? "The installed key is the newest."
         : describeLastResult(next);
   }
 
@@ -186,7 +186,7 @@ export function AutoUpdateCard({ initial, canWrite, installedLicenseId }: AutoUp
             </Banner>
           )}
           {view.status === "off" && installedLicenseId === null && !blocked && (
-            <p className="m-0 text-xs text-soft">Install a license key first; automatic updates keep that license up to date.</p>
+            <p className="m-0 text-xs text-soft">Install a license key first.</p>
           )}
 
           <div className="flex min-h-9 items-center gap-2.5">
