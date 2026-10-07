@@ -14,13 +14,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/ingressi
-  # Installs from before the rename to Ingressi and the move to the ingres-si
-  # organization (compose files and watchtower) pull the images under their
-  # old names in the maintainer's personal namespace, so every build is
-  # pushed there too.
-  LEGACY_IMAGE_NAME: fuomag9/caddy-proxy-manager
-  # The repository's GITHUB_TOKEN cannot push to a personal namespace, so the
-  # images are pushed with GHCR_PUSH_TOKEN: a classic personal access token of
+  # Images are pushed with GHCR_PUSH_TOKEN: a classic personal access token of
   # the maintainer with only the write:packages scope.
   GHCR_PUSH_USER: fuomag9
 
@@ -108,7 +102,6 @@ jobs:
             org.opencontainers.image.licenses=MIT AND Elastic-2.0
           images: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
-            ${{ env.REGISTRY }}/${{ env.LEGACY_IMAGE_NAME }}-${{ matrix.service }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
