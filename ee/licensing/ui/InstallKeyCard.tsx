@@ -85,7 +85,7 @@ export function describeCheck(
     );
   }
   if (check.online) {
-    notes.push("Bought online: confirmed with the license server once a day.");
+    notes.push("Online key: confirmed with the license server once a day.");
   }
   const replaces = context.hasLicense ? "Installing it replaces the current key at once." : "Installing it unlocks its paid features at once.";
   if (check.status === "revoked") {

@@ -11,7 +11,7 @@
  * The payload's `v` says how the key is checked:
  * - 1: an offline key. Checked on this server only; air-gapped installs and
  *   trials use these.
- * - 2: an online key (bought online). Same fields; this install must also
+ * - 2: an online key (from the license server: purchases and trials). Same fields; this install must also
  *   hold a current confirmation from the license server, a status statement
  *   (below) asked for once a day. Releases before 2.0.1 refuse v2 keys
  *   ("needs a newer version"), so an older release cannot skip the check.

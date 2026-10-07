@@ -2,7 +2,7 @@
 
 Feature id `air_gap`, Enterprise edition: an offline install bundle for hosts that cannot reach GitHub's container registry or the Internet, and, once announced, long-term-support releases (planned).
 
-Licensing works offline with an offline key: it is verified against the public key built into the release and the install never contacts the license server. Keys bought online are confirmed with the license server once a day, so an air-gapped install needs an offline key instead: ask [sales@ingres.si](mailto:sales@ingres.si).
+Licensing works offline with an offline key: it is verified against the public key built into the release and the install never contacts the license server. Keys from ingres.si (purchases and trials) are confirmed with the license server once a day, so an air-gapped install needs an offline key instead: ask [sales@ingres.si](mailto:sales@ingres.si).
 
 ## Building a bundle
 
@@ -63,7 +63,7 @@ To upgrade, build a bundle of the new release, run its `install.sh` in its own d
 | GeoIP blocking | Copy `GeoLite2-Country.mmdb` and `GeoLite2-ASN.mmdb` into the `geoip-data` volume (for example `docker run --rm -v <project>_geoip-data:/data -v "$PWD":/src alpine cp /src/GeoLite2-Country.mmdb /src/GeoLite2-ASN.mmdb /data/`) and refresh them with each bundle. |
 | AI analyst | Point it at a model server on your network (any OpenAI-compatible endpoint such as vLLM or Ollama). |
 | Alerts and digests | Use your internal SMTP relay and webhook endpoints. |
-| License | Use an offline key ([sales@ingres.si](mailto:sales@ingres.si)); a key bought online needs a daily confirmation from the license server. Install renewed keys on the **License** page as usual. Automatic updates stay off, and the bundle's `.env.example` sets `LICENSE_AUTO_UPDATE_DISABLED=true` so they cannot be turned on. |
+| License | Use an offline key ([sales@ingres.si](mailto:sales@ingres.si)); a key from ingres.si needs a daily confirmation from the license server. Install renewed keys on the **License** page as usual. Automatic updates stay off, and the bundle's `.env.example` sets `LICENSE_AUTO_UPDATE_DISABLED=true` so they cannot be turned on. |
 | Usage ping | Off unless an administrator says yes, and the bundle's `.env.example` sets `USAGE_PING_DISABLED=true`: nothing is sent and the question is hidden. Keep the variable when you carry an older `.env` over ([documentation/usage-ping.md](../../documentation/usage-ping.md)). |
 
 ## Long-term-support releases

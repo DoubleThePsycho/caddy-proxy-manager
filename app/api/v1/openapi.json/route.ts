@@ -1835,7 +1835,7 @@ const spec = {
         summary: "Install or replace the license key",
         description:
           "The key's signature is verified on this install. Invalid keys, and keys past their 30-day grace period, are refused. " +
-          "An online key (bought online) is then confirmed with the license server right away; a failed confirmation does not " +
+          "An online key (from the license server: purchases and trials) is then confirmed with the license server right away; a failed confirmation does not " +
           "undo the install (see onlineCheck).",
         operationId: "installLicense",
         requestBody: {
@@ -1877,7 +1877,7 @@ const spec = {
         tags: ["License"],
         summary: "Confirm the installed online key with the license server now",
         description:
-          "Permission license:write. An online key (bought online) is confirmed with the license server once a day; this asks now. " +
+          "Permission license:write. An online key (from the license server: purchases and trials) is confirmed with the license server once a day; this asks now. " +
           "It sends one request, POST /v1/licenses/{licenseId}/status with the SHA-256 of the installed key, and nothing else. " +
           "Answers with the license status, whatever the license server said (see onlineCheck.lastError). 409 with an offline key, " +
           "without a key, or on an instance sync replica; 429 when the license server was asked less than a minute ago.",
@@ -4609,7 +4609,7 @@ const spec = {
             type: "object",
             description: "The daily confirmation of an online key with the license server; required is false for offline keys",
             properties: {
-              required: { type: "boolean", description: "The installed key is an online key (bought online)" },
+              required: { type: "boolean", description: "The installed key is an online key (from the license server: purchases and trials)" },
               state: {
                 type: ["string", "null"],
                 enum: ["confirmed", "pending", "unconfirmed", "revoked", null],

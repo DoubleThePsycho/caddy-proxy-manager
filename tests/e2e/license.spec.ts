@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
  * The license page on the E2E stack, which runs without a license: the
  * Community state, the edition matrix and its filters, the verify step,
  * which checks a key on the server and installs nothing, the online check,
- * which has nothing to confirm without a key bought online, and automatic
+ * which has nothing to confirm without a key from the license server, and automatic
  * updates, which stay off (the stack never contacts a license server).
  */
 test.describe('License', () => {
@@ -74,7 +74,7 @@ test.describe('License', () => {
     const license = await page.request.get('/api/v1/license');
     expect(await license.json()).toMatchObject({ status: 'unlicensed', onlineCheck: { required: false, state: null } });
 
-    // Nothing to confirm online without a key bought online.
+    // Nothing to confirm online without a key from the license server.
     const check = await page.request.post('/api/v1/license/check', { headers: { Origin: 'http://localhost:3000' } });
     expect(check.status()).toBe(409);
     expect((await check.json()).error).toBe('No license key is installed');

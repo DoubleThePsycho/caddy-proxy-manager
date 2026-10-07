@@ -38,11 +38,11 @@ A trial is one-time only: one per e-mail address and per company domain, ever (f
 
 With the REST API: `POST /api/v1/license/verify` checks a key without installing it, and `PUT /api/v1/license` with `{"key": "<license key>"}` installs it. Both need `license:write`.
 
-Every key's signature is verified on the install, against the public keys built into each release. A key bought online is also confirmed with the license server once a day (below); an install that must never call out, such as an air-gapped one, needs an offline key: ask [sales@ingres.si](mailto:sales@ingres.si). There is no environment variable for the key; install it through the page or the API.
+Every key's signature is verified on the install, against the public keys built into each release. A key from ingres.si (bought or a trial) is also confirmed with the license server once a day (below); an install that must never call out, such as an air-gapped one, needs an offline key: ask [sales@ingres.si](mailto:sales@ingres.si). There is no environment variable for the key; install it through the page or the API.
 
 ## Online confirmation
 
-Keys bought online are online keys: the License page shows **Online key** next to the status. The install confirms such a key with the license server once a day. Offline keys (trials, and keys issued on request for air-gapped installs) are never checked online.
+Keys from ingres.si (purchases and trials) are online keys: the License page shows **Online key** next to the status. The install confirms such a key with the license server once a day. Offline keys (issued on request for air-gapped installs) are never checked online.
 
 - **What is sent.** The leader node (a standalone install, or the instance sync master; replicas never ask) sends one request to `https://license.ingres.si` (or `LICENSE_SERVER_URL`): `POST /v1/licenses/<license id>/status` with `{"keySha256": "<SHA-256 of the installed key>"}`. Nothing else about the install is sent. The license server records when the license was last confirmed, at most once an hour.
 - **What comes back.** A statement signed by the license server, saying the license is active (for the next 14 days) or revoked. It counts only if its signature verifies with the public keys built into the release and it is about the installed license.
@@ -91,7 +91,7 @@ REST API: `GET /api/v1/license/auto-update` (`license:read`), `PUT /api/v1/licen
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `LICENSE_AUTO_UPDATE_DISABLED` | `false` | `true` forbids automatic updates: renewed keys are never fetched. It does not stop the online confirmation of a key bought online. Air-gapped bundles set it. |
+| `LICENSE_AUTO_UPDATE_DISABLED` | `false` | `true` forbids automatic updates: renewed keys are never fetched. It does not stop the online confirmation of a key from ingres.si. Air-gapped bundles set it. |
 | `LICENSE_SERVER_URL` | `https://license.ingres.si` | Another license server for the online confirmation and automatic updates (https only; an invalid value means nothing is sent). |
 
 ## Lost the key

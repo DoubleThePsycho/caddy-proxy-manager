@@ -551,7 +551,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
   },
 
   // Online license check (ee/licensing/online-check.ts): confirms an online
-  // key (bought online) with the license server once a day. Does nothing
+  // key (from the license server: purchases and trials) with the license server once a day. Does nothing
   // with an offline key or without a key, and never on a slave.
   {
     name: "online license check",
