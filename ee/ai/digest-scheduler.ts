@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Checks every minute whether the daily digest is due and sends it. Started
- * from src/instrumentation.ts (never in tests). Never checks the license.
+ * from src/instrumentation.ts (never in tests).
  */
 import { runScheduledDigest } from "./digest";
 import { onShutdown } from "@/src/lib/shutdown";

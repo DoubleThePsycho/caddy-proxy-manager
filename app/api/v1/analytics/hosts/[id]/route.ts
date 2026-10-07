@@ -9,7 +9,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { access } = await requireApiPermission(request, "analytics:read");
     const { id } = await params;
     const range = resolveRange(analyticsParams(request.nextUrl.searchParams));
-    // 404 for a host outside the caller's tag scope or organisation, as for a missing one.
+    // 404 for a host outside the caller's tag scope, as for a missing one.
     return NextResponse.json(await hostDetailFor(access, parseRouteId(id, "Proxy host"), range));
   } catch (error) {
     return apiErrorResponse(error);

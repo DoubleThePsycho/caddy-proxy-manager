@@ -8,16 +8,7 @@ import { brandName } from "@/ee/white-label/store";
 import { normalizeTags, parseStoredTags, serializeTags } from "../host-tags";
 import { tagsMatchAny } from "../host-tag-filter";
 import { assertHostCreateApproved, assertHostDeleteApproved, assertHostUpdateApproved } from "@/ee/approvals/guard";
-import { actorOrganizationId, TenantError } from "@/ee/multi-tenancy/scope";
 import { asc, containsText, desc } from "@/src/lib/db/ops";
-
-/**
- * L4 hosts are provider-level (ee/multi-tenancy): their listening ports are
- * one namespace for every tenant. Organisation users never write them.
- */
-async function assertProviderActor(actorUserId: number): Promise<void> {
-  if (await actorOrganizationId(actorUserId) !== null) throw new TenantError("L4 proxy hosts are managed by your provider");
-}
 
 export type L4Protocol = "tcp" | "udp";
 export type L4MatcherType = "none" | "tls_sni" | "http_host" | "proxy_protocol";
@@ -525,7 +516,6 @@ export async function listL4ProxyHostsPaginated(
 }
 
 export async function createL4ProxyHost(input: L4ProxyHostInput, actorUserId: number) {
-  await assertProviderActor(actorUserId);
   validateL4Input(input, true);
   const tags = normalizeTags(input.tags);
   // Change approvals (ee): a host a policy protects is only created through an approved change request.
@@ -586,7 +576,6 @@ export async function getL4ProxyHost(id: number): Promise<L4ProxyHost | null> {
 }
 
 export async function updateL4ProxyHost(id: number, input: Partial<L4ProxyHostInput>, actorUserId: number) {
-  await assertProviderActor(actorUserId);
   const existing = await getL4ProxyHost(id);
   if (!existing) {
     throw new Error("L4 proxy host not found");
@@ -711,7 +700,6 @@ export async function updateL4ProxyHost(id: number, input: Partial<L4ProxyHostIn
 }
 
 export async function deleteL4ProxyHost(id: number, actorUserId: number) {
-  await assertProviderActor(actorUserId);
   const existing = await getL4ProxyHost(id);
   if (!existing) {
     throw new Error("L4 proxy host not found");

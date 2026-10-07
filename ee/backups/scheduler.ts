@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Runs due backups every minute. Started from src/instrumentation.ts (never in
- * tests). Scheduled backups never check the license: a destination that is
- * enabled keeps backing up after the license lapses.
+ * tests).
  */
 import { markInterruptedRuns, runDueBackups } from "./runner";
 import { onShutdown } from "@/src/lib/shutdown";

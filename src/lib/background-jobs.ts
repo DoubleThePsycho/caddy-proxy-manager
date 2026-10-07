@@ -252,7 +252,8 @@ export async function stopBackgroundJobs(): Promise<void> {
 /**
  * On SIGTERM and SIGINT, and the process waits for it (src/lib/shutdown.ts):
  * a replica that exits before it records that it stopped stays "live" for
- * NODE_GONE_AFTER_MS, so a replacement started meanwhile would need a license.
+ * NODE_GONE_AFTER_MS, and a replacement started meanwhile with its node id
+ * waits for a heartbeat before it runs any job.
  */
 function stopOnShutdown(): void {
   onShutdown("stopping the PostgreSQL replica", async () => {

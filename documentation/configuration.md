@@ -44,7 +44,7 @@ The web container is configured with environment variables. Copy `.env.example` 
 | `INSTANCE_SYNC_RATE_MAX` | Slave only: requests per client address and window to `/api/instances/sync`, counted separately for syncs and key requests | `60` | No |
 | `INSTANCE_SYNC_RATE_WINDOW_MS` | Slave only: window of that limit in milliseconds | `60000` | No |
 | `INSTANCE_SYNC_MAX_BYTES` | Slave only: largest sync payload accepted, in bytes | `10485760` (10 MiB) | No |
-| `INSTANCE_SYNC_MODE` | Slave only: `pull` makes the slave poll its master instead of being pushed to (fleet pull replicas, Enterprise; see `ee/docs/fleet.md`) | `push` | No |
+| `INSTANCE_SYNC_MODE` | Slave only: `pull` makes the slave poll its master instead of being pushed to (fleet pull replicas; see `ee/docs/fleet.md`) | `push` | No |
 | `INSTANCE_MASTER_URL` | Pull replica only: the master's base URL (`https`; `http` only with `INSTANCE_SYNC_ALLOW_HTTP`) | None | With `INSTANCE_SYNC_MODE=pull` |
 | `INSTANCE_PULL_TOKEN` | Pull replica only: the credential the master issued for it (shown once) | None | With `INSTANCE_SYNC_MODE=pull` |
 | `INSTANCE_PULL_INTERVAL` | Pull replica only: seconds between polls (`10`–`3600`, with jitter) | `30` | No |
@@ -55,11 +55,6 @@ The web container is configured with environment variables. Copy `.env.example` 
 | `CLICKHOUSE_PASSWORD` | ClickHouse password (`openssl rand -base64 32`). Required when the `clickhouse` profile is active. | None | No (required if analytics enabled) |
 | `CLICKHOUSE_DB` | ClickHouse database name | `analytics` | No |
 | `CLICKHOUSE_RETENTION_DAYS` | Days analytics events are kept (see [Analytics](analytics.md#storage-and-retention)) | `30` | No |
-| `USAGE_PING_ENABLED` | `true` answers yes to the anonymous [usage ping](usage-ping.md) question at start-up, for installs nobody signs in to; never overrides an answer already given | (unset) | No |
-| `USAGE_PING_DISABLED` | `true` turns the anonymous [usage ping](usage-ping.md) off entirely and hides its question | `false` | No |
-| `USAGE_PING_URL` | Endpoint of the usage ping (https only) | `https://ping.ingres.si/v1/ping` | No |
-| `LICENSE_AUTO_UPDATE_DISABLED` | `true` forbids automatic license updates: the license server is never contacted and the setting cannot be turned on | `false` | No |
-| `LICENSE_SERVER_URL` | License server for automatic license updates (https only) | `https://license.ingres.si` | No |
 
 With the stock `docker-compose.yml`, the web container only receives the variables listed in the `web` service's `environment`; a value in `.env` for any other variable in this table has no effect until you add it there (for example `INSTANCE_MODE: ${INSTANCE_MODE:-}`; an empty value leaves the mode to the Instance sync page). Give numeric variables their documented default rather than an empty one, e.g. `LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}`: an empty value is read as 0.
 

@@ -1,6 +1,6 @@
 # Fleet management
 
-Feature id `fleet`, included in the **Enterprise** edition. Code: `ee/fleet/` (Elastic License 2.0). The sync protocol additions it relies on (fingerprints, the slave's status reply, pushing one payload to one slave) are MIT: `src/lib/instance-sync-fingerprint.ts`, `src/lib/instance-sync-status.ts`, `src/lib/instance-sync.ts`.
+Code: `ee/fleet/` (Elastic License 2.0). The sync protocol additions it relies on (fingerprints, the slave's status reply, pushing one payload to one slave) are MIT: `src/lib/instance-sync-fingerprint.ts`, `src/lib/instance-sync-status.ts`, `src/lib/instance-sync.ts`.
 
 For platform teams that run several nodes. A master instance already pushes its whole configuration to its slaves on every change. Fleet management adds, on top of that push:
 
@@ -32,7 +32,7 @@ Certificate storage per node is what the configuration it last received sets (th
 | In a promotion-only environment | Nothing from plain syncs (every change, **Sync now**, `INSTANCE_SYNC_INTERVAL`). It receives its environment's revision through rollouts and re-syncs only. |
 | A pull replica | The same as a pushed instance in its place, fetched with its next poll instead of pushed (see [Pull replicas](#pull-replicas)). |
 
-`syncInstances()` leaves instances of promotion-only environments out (they are not counted in its result either), and skips an `INSTANCE_SLAVES` entry with the URL of such an instance (logged once), which would otherwise push every change past the promotion. These checks never look at the license: environments keep working as configured when a license lapses.
+`syncInstances()` leaves instances of promotion-only environments out (they are not counted in its result either), and skips an `INSTANCE_SLAVES` entry with the URL of such an instance (logged once), which would otherwise push every change past the promotion.
 
 An instance that joins a promotion-only environment keeps the configuration it has until the next promotion or a re-sync. An instance that leaves one (or whose environment turns promotion-only off, or is deleted) gets the master's configuration with the next change or **Sync now**. Neither change pushes anything by itself.
 
@@ -124,19 +124,6 @@ Promotion changes what production serves, so it has its own permission: a releas
 
 `fleet:write`, `fleet:promote` and `fleet:replicas` act on the configuration of every host at once, so a role with a tag scope cannot hold them. `fleet:write` and `fleet:promote` are not administrator-level: they move configuration that others already wrote, never introduce new content, and cannot point a sync at another URL (that is `instances:write`, which is administrator-level). `fleet:replicas` is administrator-level for the same reason as `instances:write`: a pull credential fetches the whole configuration.
 
-## License
-
-| Action | License |
-| --- | --- |
-| Create an environment, change one, assign an instance to one | `fleet` required (`403` otherwise) |
-| Start a promotion or a rollback | required |
-| Delete an environment, turn promotion-only off (`{"promotionOnly": false}` alone), take an instance out | never |
-| Abort a rollout, re-sync an instance, check drift | never |
-| Add a pull replica, rotate (or issue again) its credential | required |
-| Revoke a pull replica's credential, delete a pull replica | never |
-| Plain syncs skipping promotion-only instances, running rollouts, drift checks in the background, pull replicas polling | never: configured environments and replicas keep working when the license lapses |
-| Reading anything | never |
-
 ## API
 
 All under `/api/v1/fleet`, with Bearer token or session auth, documented in the OpenAPI spec (tag "Fleet") and audited.
@@ -145,10 +132,10 @@ All under `/api/v1/fleet`, with Bearer token or session auth, documented in the 
 | --- | --- | --- |
 | `GET /api/v1/fleet` | `fleet:read` | Overview: mode, the master (release, certificate storage, drift and rollout intervals), environments, instances, newest revisions and rollouts (with who started them), and the certificate storage of the revisions shown |
 | `GET /api/v1/fleet/environments` | `fleet:read` | Environments in promotion order |
-| `POST /api/v1/fleet/environments` | `fleet:write` | `{name, description?, position?, promotionOnly?, canary?: {enabled?, waitSeconds?, checkCaddyStatus?}}`; license; `201` |
+| `POST /api/v1/fleet/environments` | `fleet:write` | `{name, description?, position?, promotionOnly?, canary?: {enabled?, waitSeconds?, checkCaddyStatus?}}`; `201` |
 | `GET /api/v1/fleet/environments/{id}` | `fleet:read` | |
-| `PATCH /api/v1/fleet/environments/{id}` | `fleet:write` | Partial update; license unless only `{"promotionOnly": false}` |
-| `DELETE /api/v1/fleet/environments/{id}` | `fleet:write` | `204`; no license |
+| `PATCH /api/v1/fleet/environments/{id}` | `fleet:write` | Partial update |
+| `DELETE /api/v1/fleet/environments/{id}` | `fleet:write` | `204` |
 | `GET /api/v1/fleet/instances` | `fleet:read` | Instances with environment, revision and drift |
 | `PUT /api/v1/fleet/instances/{id}/environment` | `fleet:write` | `{environmentId}` or `{environmentId: null}` |
 | `POST /api/v1/fleet/instances/{id}/resync` | `fleet:promote` | `{ok, error, revisionId, instance}` |
@@ -159,16 +146,16 @@ All under `/api/v1/fleet`, with Bearer token or session auth, documented in the 
 | `GET /api/v1/fleet/revisions/{id}/diff?against=previous\|current\|<id>` | `fleet:read` | Diff; secrets only as `{"path": ..., "secret": true}` |
 | `GET /api/v1/fleet/promotions/preview?environmentId=` | `fleet:read` | The pending promotion: source, diff, targets, warnings |
 | `GET /api/v1/fleet/rollouts?environmentId&limit&offset` | `fleet:read` | Rollouts with their targets |
-| `POST /api/v1/fleet/rollouts` | `fleet:promote` | Start a promotion: `{environmentId, canary?}` (`canary: false` for none); license; `201` |
+| `POST /api/v1/fleet/rollouts` | `fleet:promote` | Start a promotion: `{environmentId, canary?}` (`canary: false` for none); `201` |
 | `GET /api/v1/fleet/rollouts/{id}` | `fleet:read` | Status |
-| `POST /api/v1/fleet/rollouts/{id}/abort` | `fleet:promote` | No license |
-| `POST /api/v1/fleet/rollouts/{id}/rollback` | `fleet:promote` | Optional `{canary}`; license; `201` |
+| `POST /api/v1/fleet/rollouts/{id}/abort` | `fleet:promote` | |
+| `POST /api/v1/fleet/rollouts/{id}/rollback` | `fleet:promote` | Optional `{canary}`; `201` |
 | `GET /api/v1/fleet/pull-replicas` | `fleet:read` | Pull replicas with last check-in, key pin and credential prefix |
-| `POST /api/v1/fleet/pull-replicas` | `fleet:replicas` | `{name, enabled?, syncPublicKey?}`; license; `201` with `{replica, credential, env}` (shown once) |
+| `POST /api/v1/fleet/pull-replicas` | `fleet:replicas` | `{name, enabled?, syncPublicKey?}`; `201` with `{replica, credential, env}` (shown once) |
 | `GET /api/v1/fleet/pull-replicas/{id}` | `fleet:read` | |
-| `DELETE /api/v1/fleet/pull-replicas/{id}` | `fleet:replicas` | `204`; no license |
-| `POST /api/v1/fleet/pull-replicas/{id}/credential` | `fleet:replicas` | Rotate (or issue after a revocation): `{replica, credential, env}`; license |
-| `DELETE /api/v1/fleet/pull-replicas/{id}/credential` | `fleet:replicas` | Revoke; no license |
+| `DELETE /api/v1/fleet/pull-replicas/{id}` | `fleet:replicas` | `204` |
+| `POST /api/v1/fleet/pull-replicas/{id}/credential` | `fleet:replicas` | Rotate (or issue after a revocation): `{replica, credential, env}` |
+| `DELETE /api/v1/fleet/pull-replicas/{id}/credential` | `fleet:replicas` | Revoke |
 
 ```bash
 # staging receives every change; production only promotions, canary first for 10 minutes
@@ -259,9 +246,9 @@ Fingerprints are keyed as for pushed slaves, with a token derived from the crede
 
 ### Credentials
 
-- **Rotate** (`POST …/credential`): a new credential; the old one stops working at once. The key pin stays. Also issues a credential after a revocation. Needs the license.
-- **Revoke** (`DELETE …/credential`): polls are refused (`401`) until a new credential is issued. The replica, its pin and history stay; reset the pin separately if the replica itself is suspect. No license.
-- **Delete**: removes the instance with its credential, pin and fleet records. No license. The replica keeps the configuration it has.
+- **Rotate** (`POST …/credential`): a new credential; the old one stops working at once. The key pin stays. Also issues a credential after a revocation.
+- **Revoke** (`DELETE …/credential`): polls are refused (`401`) until a new credential is issued. The replica, its pin and history stay; reset the pin separately if the replica itself is suspect.
+- **Delete**: removes the instance with its credential, pin and fleet records. The replica keeps the configuration it has.
 
 All of these, key pins and re-syncs are audited (`fleet_pull_replica_created`, `fleet_pull_credential_rotated`, `fleet_pull_credential_revoked`, `fleet_pull_replica_deleted`, `instance_sync_key_pinned`).
 

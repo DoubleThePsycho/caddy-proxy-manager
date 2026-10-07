@@ -20,12 +20,8 @@ import {
 
 export type HostStatusView = { tone: StatusTone; label: string; detail: string | null };
 
-/**
- * The status of a host in words: the first thing that needs attention, or its
- * state. Null when there is nothing to say (enabled, nothing needs attention,
- * no change waiting): the status shows only what needs a look.
- */
-export function useHostStatus(row: Pick<HostListRow, "state" | "attention" | "pendingChangeRequestId">): HostStatusView | null {
+/** The status of a host in words: the first thing that needs attention, or its state. */
+export function useHostStatus(row: Pick<HostListRow, "state" | "attention" | "pendingChangeRequestId">): HostStatusView {
   const format = useFormat();
   const time = (ms: number) => format.time(ms);
   switch (row.state) {
@@ -42,13 +38,12 @@ export function useHostStatus(row: Pick<HostListRow, "state" | "attention" | "pe
     case "pending":
       return { tone: "info", label: "Waiting for approval", detail: null };
     default:
-      return null;
+      return { tone: "ok", label: "No issues", detail: null };
   }
 }
 
 export function HostStatus({ row, className }: { row: HostListRow; className?: string }) {
   const status = useHostStatus(row);
-  if (!status) return null;
   const dot = <StatusDot tone={status.tone} label={status.label} className={cn("whitespace-nowrap", className)} />;
   return (
     <span className="flex flex-col gap-0.5" title={status.detail ?? undefined}>

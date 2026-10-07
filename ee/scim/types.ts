@@ -4,8 +4,6 @@
  * components (no server-only dependencies).
  */
 
-export const FEATURE = "scim" as const;
-
 /** Path of the SCIM service root under the dashboard's base URL. */
 export const SCIM_BASE_PATH = "/scim/v2";
 
@@ -53,8 +51,6 @@ export type ScimProviderOption = { id: string; name: string; enabled: boolean; a
 export type ScimSettingsView = ScimSettings & {
   /** The SCIM base URL to give the identity provider. */
   endpointUrl: string;
-  /** Whether the license lets this install change SCIM (reading and turning it off never need one). */
-  configurable: boolean;
   providers: ScimProviderOption[];
   counts: { users: number; groups: number; tokens: number; mappings: number };
 };

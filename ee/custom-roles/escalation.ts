@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Escalation guards for roles. Every rule here is about who may hand out
- * access, and none of them looks at the license:
+ * access:
  *
  *  - Only a user with users:write manages roles and assignments (the callers'
  *    permission guard; checked again here).
@@ -21,8 +21,6 @@ import {
   can,
   isAdminLevel,
   isScopableArea,
-  ORGANIZATION_ADMIN_ROLE,
-  ORGANIZATION_PERMISSIONS,
   permissionArea,
   PERMISSIONS,
   type Access,
@@ -51,8 +49,6 @@ export function grantOfRole(role: Pick<CustomRole, "permissions" | "scopeTags">)
 }
 
 export function grantOfBuiltInRole(role: string): Grant {
-  // The organisation administrator (ee/multi-tenancy) holds every organisation permission.
-  if (role === ORGANIZATION_ADMIN_ROLE) return { isAdmin: false, permissions: new Set(ORGANIZATION_PERMISSIONS), scopeTags: [] };
   return { isAdmin: role === "admin", permissions: role === "admin" ? new Set(PERMISSIONS) : new Set(), scopeTags: [] };
 }
 

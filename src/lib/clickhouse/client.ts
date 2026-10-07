@@ -476,7 +476,7 @@ export async function querySummary(from: number, to: number, hosts: string[]): P
   };
 }
 
-/** Every host name seen in traffic or WAF events, as stored (multi-tenancy maps them to organisations). */
+/** Every host name seen in traffic or WAF events, as stored. */
 export async function queryDistinctHostsAll(): Promise<string[]> {
   const rows = await queryRows<{ host: string }>(`
     SELECT DISTINCT host FROM (
@@ -486,38 +486,6 @@ export async function queryDistinctHostsAll(): Promise<string[]> {
     ) WHERE host != ''
   `);
   return rows.map(r => r.host);
-}
-
-export interface UsageTotals {
-  requests: number;
-  bytes: number;
-  wafBlocks: number;
-}
-
-/**
- * Requests, bytes served and WAF blocks for exactly `hosts` (as stored) in a
- * period. No hosts means nothing: unlike the analytics queries, an empty list
- * never means every host.
- */
-export async function queryUsageTotals(from: number, to: number, hosts: string[]): Promise<UsageTotals> {
-  if (hosts.length === 0) return { requests: 0, bytes: 0, wafBlocks: 0 };
-  const hf = hostFilter(hosts);
-  const tp = timeParams(from, to);
-  const traffic = await queryRow<{ requests: string; bytes: string }>(`
-    SELECT count() AS requests, sum(bytes_sent) AS bytes
-    FROM traffic_events
-    WHERE ${timeFilter()}${hf.sql}
-  `, { ...tp, ...hf.params });
-  const waf = await queryRow<{ blocked: string }>(`
-    SELECT count() AS blocked
-    FROM waf_events
-    WHERE ${timeFilter()} AND blocked = true${hf.sql}
-  `, { ...tp, ...hf.params });
-  return {
-    requests: Number(traffic?.requests ?? 0),
-    bytes: Number(traffic?.bytes ?? 0),
-    wafBlocks: Number(waf?.blocked ?? 0),
-  };
 }
 
 // ── WAF analytics queries ───────────────────────────────────────────────────

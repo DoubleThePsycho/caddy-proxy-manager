@@ -28,12 +28,10 @@ const EXPECTED_CHECKS = [
   'forward_auth_access.forward_auth_access_user_or_group_check: CHECK (((("userId" IS NOT NULL) AND ("groupId" IS NULL)) OR (("userId" IS NULL) AND ("groupId" IS NOT NULL))))',
 ];
 
-/** Triggers the baseline adds (drizzle/0041, drizzle/0047), with when they fire. */
+/** Triggers the migrations add (drizzle/0047), with when they fire. */
 const EXPECTED_TRIGGERS: [name: string, firesOn: RegExp][] = [
   ['users.users_disabled_at_insert', /BEFORE INSERT ON (?:public\.)?users FOR EACH ROW WHEN .*EXECUTE FUNCTION (?:public\.)?users_disabled_at_stamp\(\)/],
   ['users.users_disabled_at_update', /BEFORE UPDATE OF status ON (?:public\.)?users FOR EACH ROW WHEN .*EXECUTE FUNCTION (?:public\.)?users_disabled_at_stamp\(\)/],
-  ['users.users_organization_role_insert', /BEFORE INSERT ON (?:public\.)?users FOR EACH ROW EXECUTE FUNCTION (?:public\.)?users_organization_role_guard\(\)/],
-  ['users.users_organization_role_update', /BEFORE UPDATE OF role, "organizationId" ON (?:public\.)?users FOR EACH ROW EXECUTE FUNCTION (?:public\.)?users_organization_role_guard\(\)/],
 ];
 
 type ColumnRow = {
@@ -281,7 +279,6 @@ describe.skipIf(!TEST_DATABASE_URL)('PostgreSQL migrations match schema.pg.ts', 
     );
     expect(functions.rows).toEqual([
       { name: 'users_disabled_at_stamp', language: 'plpgsql' },
-      { name: 'users_organization_role_guard', language: 'plpgsql' },
     ]);
   });
 
@@ -316,7 +313,7 @@ describe.skipIf(!TEST_DATABASE_URL)('PostgreSQL migrations match schema.pg.ts', 
       await altered.client.query(`
         ALTER TABLE "settings" ADD COLUMN "extra" text;
         ALTER TABLE "users" ALTER COLUMN "role" SET DEFAULT 'viewer';
-        DROP INDEX "users_organization_idx";
+        DROP INDEX "users_email_unique";
         CREATE TABLE "stray" ("id" integer PRIMARY KEY);
         CREATE UNIQUE INDEX "sessions_extra_unique" ON "sessions" ("userAgent", "ipAddress");
         ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_fk" FOREIGN KEY ("userId") REFERENCES "users" ("id");
@@ -324,7 +321,7 @@ describe.skipIf(!TEST_DATABASE_URL)('PostgreSQL migrations match schema.pg.ts', 
       expect(await schemaDrift(altered.client)).toEqual([
         'table stray: in the database only',
         'users.role: default "viewer" in the database, "user" in the schema',
-        'index users_organization_idx on users: missing from the database',
+        'index users_email_unique on users: missing from the database',
         'foreign key sessions_user_fk on sessions: in the database only',
         'unique index sessions_extra_unique on sessions ("userAgent", "ipAddress"): in the database only',
         'settings.extra: in the database only',

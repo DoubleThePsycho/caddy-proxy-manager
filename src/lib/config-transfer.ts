@@ -1,5 +1,5 @@
 /**
- * Manual configuration export and import (Community).
+ * Manual configuration export and import.
  *
  * An export file holds the configuration (config-content.ts) as readable
  * JSON, except for its secrets: certificate and CA private keys, access-list

@@ -133,17 +133,16 @@ export type SyncPayload = {
    */
   secrets_sealed_nonce?: string;
   data: {
-    /** `organizationId` (ee/multi-tenancy) is missing in payloads from older masters; null applies. */
-    certificates: Array<WithOptionalOrganization<typeof certificates.$inferSelect>>;
+    certificates: Array<typeof certificates.$inferSelect>;
     caCertificates: Array<typeof caCertificates.$inferSelect>;
     issuedClientCertificates: Array<typeof issuedClientCertificates.$inferSelect>;
     /** The rule settings (defaultAction ... systemKey) are missing in payloads from masters older than access list rules; the column defaults apply. */
-    accessLists: Array<WithOptionalAccessListSettings<WithOptionalOrganization<typeof accessLists.$inferSelect>>>;
+    accessLists: Array<WithOptionalAccessListSettings<typeof accessLists.$inferSelect>>;
     accessListEntries: Array<typeof accessListEntries.$inferSelect>;
     /** Optional: not present in payloads from masters older than access list rules. */
     accessListRules?: Array<typeof accessListRules.$inferSelect>;
     /** `tags` is missing in payloads from masters older than host tags; the column default applies. */
-    proxyHosts: Array<WithOptionalTags<WithOptionalOrganization<typeof proxyHosts.$inferSelect>>>;
+    proxyHosts: Array<WithOptionalTags<typeof proxyHosts.$inferSelect>>;
     /** Optional — not present in payloads from older master instances */
     l4ProxyHosts?: Array<WithOptionalTags<typeof l4ProxyHosts.$inferSelect>>;
     /**
@@ -160,9 +159,6 @@ type WithOptionalTags<T extends { tags: string }> = Omit<T, "tags"> & { tags?: s
 type AccessListSettingColumns = "defaultAction" | "denyStatus" | "denyBody" | "denyRedirectUrl" | "failClosed" | "systemKey";
 type WithOptionalAccessListSettings<T extends Record<AccessListSettingColumns, unknown>> = Omit<T, AccessListSettingColumns> &
   Partial<Pick<T, AccessListSettingColumns>>;
-type WithOptionalOrganization<T extends { organizationId: number | null }> = Omit<T, "organizationId"> & {
-  organizationId?: number | null;
-};
 
 const INSTANCE_MODE_KEY = "instance_mode";
 const MASTER_TOKEN_KEY = "instance_master_token";

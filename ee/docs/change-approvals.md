@@ -1,6 +1,6 @@
 # Change approvals
 
-Feature id `approvals` (Enterprise edition). Code: `ee/approvals/` (Elastic License 2.0); the guards it adds to the host models and to configuration replacement live in `src/lib/models/proxy-hosts.ts`, `src/lib/models/l4-proxy-hosts.ts` and `src/lib/config-replace.ts`.
+Code: `ee/approvals/` (Elastic License 2.0); the guards it adds to the host models and to configuration replacement live in `src/lib/models/proxy-hosts.ts`, `src/lib/models/l4-proxy-hosts.ts` and `src/lib/config-replace.ts`.
 
 Change approvals add segregation of duties to the hosts that matter: a change to a protected proxy host or L4 proxy host is not applied when it is made. It is stored as a **change request** and applied only after other people approve it (four-eyes), and only inside a **change window** if the policy has one. An administrator-level **emergency change** can skip both, with a mandatory reason, and is flagged in the audit log. This covers the change-management and segregation-of-duties controls auditors ask for under DORA (ICT change management) and NIS2.
 
@@ -73,7 +73,7 @@ A policy with `allowEmergency: false` refuses emergency changes (403). Applying 
 Some paths change hosts in bulk or on behalf of another feature; they cannot carry a change request and are refused (409, nothing changed) while a policy covers the host:
 
 - **Other callers of the host models**: the model functions themselves refuse a covered change unless it runs as an approved change. This covers WAF rule suppression for a host (WAF page) and applying an AI tuning suggestion: change the host's WAF exclusions in the proxy host editor instead.
-- **Configuration import, backup restore and configuration history rollback**: refused when the new configuration would create, change or delete a protected host (compared by host, with its forward-auth access and mTLS access rules). Importing a configuration that leaves protected hosts as they are works. To restore after an incident, an administrator disables the policies (no license needed), restores, and enables them again; all of it is audited.
+- **Configuration import, backup restore and configuration history rollback**: refused when the new configuration would create, change or delete a protected host (compared by host, with its forward-auth access and mTLS access rules). Importing a configuration that leaves protected hosts as they are works. To restore after an incident, an administrator disables the policies, restores, and enables them again; all of it is audited.
 
 **Instance sync** is not affected: a slave applies the master's configuration as it is, and the master has already enforced its policies. Policies and requests stay on the master; they are not synced, exported or part of configuration history, so a restore can never switch a policy off.
 
@@ -88,15 +88,6 @@ Some paths change hosts in bulk or on behalf of another feature; they cannot car
 
 Holding `users:write` together with `approvals:approve` is administrator-level too: it could create a second account to approve one's own changes. Built-in administrators hold every permission, so they can approve other people's changes and make emergency changes, but their own changes still need someone else's approval.
 
-## Licensing
-
-| Action | License |
-| --- | --- |
-| Create a policy, change it, turn it back on | `approvals` required (`403` otherwise) |
-| Disable (`{"enabled": false}`) or delete a policy | never |
-| Read policies and requests | never |
-| Requests, approvals, emergency changes, the window scheduler, the guards | never: policies keep protecting their hosts after the license lapses, until an administrator disables or deletes them |
-
 ## Alerts
 
 The alert rule type `approval_pending` (see [alerting.md](alerting.md)) fires once for each request waiting for approval, so a Slack, Teams, e-mail or webhook channel can tell the approvers; it resolves when the request is decided or expires. The notification names the host, the operation and the requester's user id, never the requested values.
@@ -106,10 +97,10 @@ The alert rule type `approval_pending` (see [alerting.md](alerting.md)) fires on
 | Method and path | Permission | Notes |
 | --- | --- | --- |
 | `GET /api/v1/approval-policies` | `approvals:read` | |
-| `POST /api/v1/approval-policies` | `approvals:manage` | License; `201`; `409` for a duplicate name. |
+| `POST /api/v1/approval-policies` | `approvals:manage` | `201`; `409` for a duplicate name. |
 | `GET /api/v1/approval-policies/{id}` | `approvals:read` | |
-| `PUT /api/v1/approval-policies/{id}` | `approvals:manage` | Partial; license unless it only disables. |
-| `DELETE /api/v1/approval-policies/{id}` | `approvals:manage` | `204`; no license. |
+| `PUT /api/v1/approval-policies/{id}` | `approvals:manage` | Partial. |
+| `DELETE /api/v1/approval-policies/{id}` | `approvals:manage` | `204`. |
 | `GET /api/v1/change-requests` | `approvals:read` | `?status=open|closed|all|pending|...&mine=true&page=&perPage=` |
 | `GET /api/v1/change-requests/{id}` | `approvals:read` | With the field-level `changes`, reviews, window status, the `impact` summary and what the caller may do (`viewer`). |
 | `POST /api/v1/change-requests/{id}/approve` | `approvals:approve` | `{ "comment"? }`; `403` for your own request, `409` for a second approval. |

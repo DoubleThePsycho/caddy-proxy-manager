@@ -30,8 +30,6 @@
  * provider is responsible for it. Better Auth's two-factor plugin only turns
  * password sign-ins into a challenge, so an account with TOTP enrolled gets
  * its session from a SAML sign-in without a local code.
- *
- * Sign-in never checks the license.
  */
 import type { BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthEndpoint, formCsrfMiddleware } from "better-auth/api";

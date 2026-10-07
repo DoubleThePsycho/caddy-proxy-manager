@@ -23,7 +23,7 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-/** Removes the Stripe keys (top-ups stop). Never needs a license. */
+/** Removes the Stripe keys (top-ups stop). */
 export async function DELETE(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "monetization:payments");

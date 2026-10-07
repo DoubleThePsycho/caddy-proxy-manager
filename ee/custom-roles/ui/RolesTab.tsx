@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Elastic-2.0
 "use client";
 
-import { Fragment, useState, useTransition } from "react";
-import Link from "next/link";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Plus } from "lucide-react";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import type { CustomRoleView } from "@/ee/custom-roles/store";
 import type { PermissionCatalogue, PermissionCatalogueArea } from "@/ee/custom-roles/catalogue";
 import { cn } from "@/lib/utils";
@@ -25,9 +23,6 @@ type Props = {
   /** Who holds each role, by name: the built-in roles and each custom role by id. */
   holders?: { admin: string[]; user: string[]; viewer: string[]; custom: Record<number, string[]> };
   canWrite: boolean;
-  /** The license allows creating, changing and assigning custom roles. */
-  licensed: boolean;
-  editionLabel: string;
   saveRole: (id: number | null, input: unknown) => Promise<ActionResult>;
   deleteRole: (id: number) => Promise<ActionResult>;
   /** The row open at first: "admin", "user", "viewer" or "custom-<id>". */
@@ -41,11 +36,11 @@ type Props = {
 const FAMILIES: { title: string; areas: readonly string[] }[] = [
   { title: "Traffic", areas: ["proxy_hosts", "l4_proxy_hosts", "certificates", "access_lists"] },
   { title: "Observe", areas: ["analytics", "waf", "alerts", "audit_log", "audit_streaming", "ai"] },
-  { title: "Identity", areas: ["users", "groups", "sso", "mfa_policy", "ldap", "scim", "access_reviews"] },
+  { title: "Users and sign-in", areas: ["users", "groups", "sso", "mfa_policy", "ldap", "scim", "access_reviews"] },
   { title: "Govern", areas: ["approvals", "config_history", "compliance"] },
   {
     title: "Platform",
-    areas: ["settings", "instances", "fleet", "high_availability", "backups", "config", "organizations", "monetization", "branding", "usage_reports", "license"],
+    areas: ["settings", "instances", "fleet", "high_availability", "backups", "config", "monetization", "branding"],
   },
 ];
 
@@ -88,15 +83,13 @@ function listHolders(names: string[]): string {
  * custom roles with their permissions grouped by area, their tag scope and
  * who holds them; create, edit, duplicate and delete for users:write.
  */
-export default function RolesTab({ roles, catalogue, actor, holders, canWrite, licensed, editionLabel, saveRole, deleteRole, initialOpen = null }: Props) {
+export default function RolesTab({ roles, catalogue, actor, holders, canWrite, saveRole, deleteRole, initialOpen = null }: Props) {
   const router = useRouter();
-  const { productName } = useBranding();
   const [open, setOpen] = useState<string | null>(initialOpen);
   const [draft, setDraft] = useState<RoleDraft | null>(null);
   const [deleting, setDeleting] = useState<CustomRoleView | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const canEdit = canWrite && licensed;
   const total = catalogue.areas.reduce((sum, area) => sum + area.permissions.length, 0);
   const families = familiesOf(catalogue);
   const adminLevelPermissions = new Set(catalogue.adminLevel.permissions);
@@ -115,7 +108,7 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
       userCount: holders?.admin.length ?? 0,
       detail:
         `Holds all ${total} permissions in the ${catalogue.areas.length} areas, including the administrator-level ones: ` +
-        "single sign-on, the MFA policy, directories, SCIM, the license, access reviews and approval policies.",
+        "single sign-on, the MFA policy, directories, SCIM, access reviews and approval policies.",
       custom: null,
     },
     {
@@ -137,7 +130,7 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
       name: "Viewer",
       kind: "Built-in",
       adminLevel: false,
-      description: "Same as User. Users of a deleted custom role fall back to it.",
+      description: "Like User. Users of a deleted custom role get this role.",
       permissions: new Set(),
       scopeTags: [],
       scopeText: "None",
@@ -205,7 +198,7 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
         <p className="m-0 min-w-0 flex-[1_1_420px] text-[13px] text-muted-foreground">
           Custom roles hold the permissions you choose, optionally limited to hosts and certificates with one of their tags.
         </p>
-        {canEdit && (
+        {canWrite && (
           <Button variant="outline" onClick={() => startDraft(null)} data-testid="new-custom-role">
             <Plus />
             Create role
@@ -213,13 +206,6 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
         )}
       </div>
 
-      {!licensed && (
-        <Banner tone="info" title={`Custom roles need a ${editionLabel} license.`}>
-          Creating, changing and assigning custom roles needs an active {productName} {editionLabel} license or higher. You can still delete
-          roles and take them away.{" "}
-          <Link href="/license" className="text-brand underline-offset-4 hover:underline">Licensing</Link>
-        </Banner>
-      )}
       {listError && <Banner tone="bad" live onDismiss={() => setListError(null)}>{listError}</Banner>}
 
       <section aria-label="Roles" className="min-w-0 overflow-hidden rounded-2xl border border-line bg-panel">
@@ -261,24 +247,35 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
                     </span>
                     <span className="text-[13px] text-muted-foreground">{row.description}</span>
                   </span>
-                  <span className="flex w-[110px] flex-none flex-col gap-1">
-                    <span>
-                      <span className="num">{count}</span> <span className="text-xs text-soft">of {total}</span>
+                  {/* Below md the column headings are hidden: the values move under the name, each with its label. */}
+                  <span className="flex w-full flex-wrap items-center gap-x-4 gap-y-1.5 pl-8 md:contents" data-testid="role-facts">
+                    <span className="flex flex-none flex-col gap-1 md:w-[110px]">
+                      <span>
+                        <span className="num">{count}</span>{" "}
+                        <span className="text-xs text-soft">
+                          of {total}
+                          <span className="md:hidden"> permissions</span>
+                        </span>
+                      </span>
+                      <span aria-hidden="true" className="hidden h-1 w-[88px] overflow-hidden rounded-sm bg-raise md:block">
+                        <span className="block h-1 bg-muted-foreground" style={{ width: `${total ? (count / total) * 100 : 0}%` }} />
+                      </span>
                     </span>
-                    <span aria-hidden="true" className="block h-1 w-[88px] overflow-hidden rounded-sm bg-raise">
-                      <span className="block h-1 bg-muted-foreground" style={{ width: `${total ? (count / total) * 100 : 0}%` }} />
+                    <span className="flex flex-none flex-wrap items-center gap-1 md:w-[150px]">
+                      <span className="text-xs text-soft md:hidden">Scope:</span>
+                      {row.scopeTags.length > 0
+                        ? row.scopeTags.map((tag) => (
+                            <span key={tag} className="num rounded bg-raise px-1.5 text-[11px] leading-[18px] text-muted-foreground">
+                              {tag}
+                            </span>
+                          ))
+                        : <span className="text-[13px] text-muted-foreground">{row.scopeText}</span>}
+                    </span>
+                    <span className="flex-none md:w-[70px] md:text-right">
+                      <span className="num">{row.userCount}</span>
+                      <span className="text-xs text-soft md:hidden">{row.userCount === 1 ? " user" : " users"}</span>
                     </span>
                   </span>
-                  <span className="flex w-[150px] flex-none flex-wrap gap-1">
-                    {row.scopeTags.length > 0
-                      ? row.scopeTags.map((tag) => (
-                          <span key={tag} className="num rounded bg-raise px-1.5 text-[11px] leading-[18px] text-muted-foreground">
-                            {tag}
-                          </span>
-                        ))
-                      : <span className="text-[13px] text-muted-foreground">{row.scopeText}</span>}
-                  </span>
-                  <span className="num w-[70px] flex-none text-right">{row.userCount}</span>
                 </button>
                 {expanded && (
                   <div className="flex flex-col gap-3.5 bg-panel px-[18px] pb-[18px] pt-1 md:pl-[50px]">
@@ -335,16 +332,12 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
                       </span>
                       {row.custom && canWrite && !own && (
                         <span className="flex flex-wrap gap-2">
-                          {licensed && (
-                            <Fragment>
-                              <Button variant="secondary" size="sm" onClick={() => startDraft(row.custom)}>
-                                Edit role
-                              </Button>
-                              <Button variant="ghost" size="sm" onClick={() => startDraft(row.custom, true)}>
-                                Duplicate
-                              </Button>
-                            </Fragment>
-                          )}
+                          <Button variant="secondary" size="sm" onClick={() => startDraft(row.custom)}>
+                            Edit role
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => startDraft(row.custom, true)}>
+                            Duplicate
+                          </Button>
                           <Button variant="danger" size="sm" disabled={pending} onClick={() => setDeleting(row.custom)}>
                             Delete role
                           </Button>

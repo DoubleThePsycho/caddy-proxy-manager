@@ -8,9 +8,6 @@
  * alone (its retention is the master's job), and the replica mode decides
  * what the master puts in the sync payload (replica-sync.ts).
  *
- * Licensing: changing the options needs "api_monetization", except turning
- * replica serving off. Reading never does.
- *
  * Permissions: the route guard is monetization:write; the replica options
  * decide what the master sends its replicas and where they send their
  * allowance credential, so changing them needs instances:write as well
@@ -21,12 +18,11 @@ import { config } from "@/src/lib/config";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
 import { can, type Access } from "@/src/lib/permissions";
 import { isAnalyticsEnabled } from "@/src/lib/clickhouse/client";
-import { requireFeature } from "@/ee/licensing/store";
 import { parseInteger, rejectUnknownKeys, requireRecord } from "./http";
 import { isHttpSyncAllowed } from "@/src/lib/instance-sync-http";
 import { isGateUrlAllowed } from "./replica-index";
 import { readSettingRow, writeSettingRow } from "./settings";
-import { FEATURE, REPLICA_MODES, type MonetizationOptionsView, type ReplicaMode } from "./types";
+import { REPLICA_MODES, type MonetizationOptionsView, type ReplicaMode } from "./types";
 
 export const OPTIONS_SETTING_KEY = "monetization_options";
 export const DEFAULT_USAGE_RETENTION_MONTHS = 13;
@@ -115,9 +111,8 @@ export async function getMonetizationOptionsView(given?: MonetizationOptions): P
 }
 
 /**
- * {usageRetentionMonths?, replicas?: {mode?, gateUrl?}}. Turning replica
- * serving off needs no license; everything else does. Changing the replica
- * mode sends the configuration to the replicas again.
+ * {usageRetentionMonths?, replicas?: {mode?, gateUrl?}}. Changing the
+ * replica mode sends the configuration to the replicas again.
  */
 export async function saveMonetizationOptions(body: unknown, actorUserId: number, access: Access): Promise<MonetizationOptionsView> {
   const record = requireRecord(body);
@@ -142,11 +137,6 @@ export async function saveMonetizationOptions(body: unknown, actorUserId: number
     }
     if (replicas.gateUrl !== undefined) next.replicaGateUrl = parseGateUrl(replicas.gateUrl);
   }
-  const onlyTurnsReplicasOff =
-    next.replicaMode === "off" &&
-    next.usageRetentionMonths === previous.usageRetentionMonths &&
-    next.replicaGateUrl === previous.replicaGateUrl;
-  if (!onlyTurnsReplicasOff) await requireFeature(FEATURE);
   if (next.replicaMode !== "off" && (next.replicaMode !== previous.replicaMode || next.replicaGateUrl !== previous.replicaGateUrl)) {
     const problem = await replicaModeProblem(next);
     if (problem) throw new ApiValidationError(problem);

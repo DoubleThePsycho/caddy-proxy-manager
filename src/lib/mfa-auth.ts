@@ -49,6 +49,7 @@ import { confirmDirectoryPassword } from "@/ee/ldap/confirm-password";
 import { first } from "@/src/lib/db/ops";
 import { defineRuntimeEntries } from "./shared-runtime-state";
 import { createHash } from "node:crypto";
+import { SIGN_IN_METHODS, type SignInMethod } from "./sign-in-activity";
 
 /** How long the second step of a sign-in may take before the password has to be entered again. */
 export const MFA_CHALLENGE_MAX_AGE_SECONDS = 5 * 60;
@@ -158,7 +159,10 @@ type AuthRequestContext = {
  * is none, it is not validly signed, or the session has ended. Reads the
  * database directly, so it works in database hooks too.
  */
-export async function sessionUserIdFromRequest(ctx: AuthRequestContext | null | undefined): Promise<number | null> {
+/** The unexpired session row the request's signed session cookie names, or null. */
+async function sessionFromRequest(
+  ctx: AuthRequestContext | null | undefined
+): Promise<{ userId: number; signInMethod: string | null } | null> {
   const headers = ctx?.headers ?? ctx?.request?.headers;
   const cookieHeader = headers?.get("cookie");
   const cookieName = ctx?.context?.authCookies?.sessionToken?.name;
@@ -171,11 +175,24 @@ export async function sessionUserIdFromRequest(ctx: AuthRequestContext | null | 
   const token = value.slice(0, dot);
   if (!constantTimeEqual(value.slice(dot + 1), await makeSignature(token, secret))) return null;
   const row = await first(appDb
-    .select({ userId: sessions.userId })
+    .select({ userId: sessions.userId, signInMethod: sessions.signInMethod })
     .from(sessions)
     .where(and(eq(sessions.token, token), gt(sessions.expiresAt, new Date().toISOString())))
     .limit(1));
-  return row?.userId ?? null;
+  return row ?? null;
+}
+
+export async function sessionUserIdFromRequest(ctx: AuthRequestContext | null | undefined): Promise<number | null> {
+  return (await sessionFromRequest(ctx))?.userId ?? null;
+}
+
+/**
+ * How the session the request came with was signed in to: an MFA management
+ * endpoint that replaces it gives the new session the same method.
+ */
+export async function requestSessionSignInMethod(ctx: AuthRequestContext | null | undefined): Promise<SignInMethod | null> {
+  const method = (await sessionFromRequest(ctx))?.signInMethod ?? null;
+  return method !== null && (SIGN_IN_METHODS as readonly string[]).includes(method) ? (method as SignInMethod) : null;
 }
 
 /**

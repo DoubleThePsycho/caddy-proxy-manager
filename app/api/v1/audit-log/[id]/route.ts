@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse, NotFoundError } from "@/src/lib/api-auth";
 import { getAuditEventRecord } from "@/src/lib/models/audit";
-import { readOrganizationFilterParam } from "@/ee/multi-tenancy/scope";
 import { auditEventConfigDiff } from "@/ee/config-history/versions";
 import { parseRowId } from "@/src/lib/row-ids";
 
@@ -15,12 +14,11 @@ type Params = { params: Promise<{ id: string }> };
  */
 export async function GET(request: NextRequest, { params }: Params) {
   try {
-    const { access } = await requireApiPermission(request, "audit_log:read");
+    await requireApiPermission(request, "audit_log:read");
     const { id: raw } = await params;
     const id = parseRowId(raw);
     if (id === null) throw new NotFoundError("Audit event not found");
-    const organizationId = readOrganizationFilterParam(access, null);
-    const event = await getAuditEventRecord(id, organizationId);
+    const event = await getAuditEventRecord(id);
     if (!event) throw new NotFoundError("Audit event not found");
     const { configBeforeId, configAfterId, ...rest } = event;
     const configDiff = await auditEventConfigDiff({ ...rest, configBeforeId, configAfterId });

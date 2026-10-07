@@ -1,9 +1,7 @@
 # Configuration history, rollback, export and import
 
-Feature id `config_history` (Homelab edition and up), plus free (Community) configuration export and import.
-
-- **Configuration history** (paid, `ee/config-history/`): a snapshot of the configuration after every applied change, diffs between snapshots or against the current configuration, and one-click restore.
-- **Export and import** (free, `src/lib/config-transfer.ts`): download the configuration as a passphrase-protected JSON file and load it back, on the same or another installation.
+- **Configuration history** (`ee/config-history/`, Elastic License 2.0): a snapshot of the configuration after every applied change, diffs between snapshots or against the current configuration, and one-click restore.
+- **Export and import** (`src/lib/config-transfer.ts`, MIT): download the configuration as a passphrase-protected JSON file and load it back, on the same or another installation.
 
 Both live on the **Change history** page of the dashboard (`/history`, under Govern) and under `/api/v1/`.
 
@@ -11,11 +9,11 @@ Both live on the **Change history** page of the dashboard (`/history`, under Gov
 
 - A strip shows whether recording is on, how many versions are kept and the oldest one, and the scheduled backups. **History settings** turns recording on or off, sets the retention and deletes every version.
 - **Versions** lists the versions on a timeline, newest first and grouped by day, each with its title, who made it, its size, the live marker and the change request it came from. Select one to see what it changed against the previous version, the live configuration or any other version, unified or side by side, and the **rollback preview**: the hosts and settings that would change, the later changes it would undo, later changes to the same hosts, and approval policies that would refuse it. **Roll back** asks for confirmation; the live configuration is saved as a version first.
-- **Save a version now** saves a manual version with a note. **Export or import** downloads or loads the passphrase-protected configuration file (free).
+- **Save a version now** saves a manual version with a note. **Export or import** downloads or loads the passphrase-protected configuration file.
 - The backups line links to **Backups** (`/backups`, under Change history in the sidebar), where scheduled backups are set up ([scheduled-backups.md](scheduled-backups.md)); `/history?tab=backups` opens it too.
 - Links can open a version directly: `/history?version=<id>`, with `&compare=previous|live|<id>` and `&rollback=1` to jump to the rollback preview (the audit log links its configuration changes this way).
 
-Scheduled backups of the same export file to S3-compatible storage (Business edition) are on the Backups page; see [scheduled-backups.md](scheduled-backups.md).
+Scheduled backups of the same export file to S3-compatible storage are on the Backups page; see [scheduled-backups.md](scheduled-backups.md).
 
 ## What "the configuration" is
 
@@ -36,11 +34,9 @@ Included:
 | Settings groups managed by `/api/v1/settings/{group}` | `settings` keys `general`, `acme`, `cloudflare`, `dns_provider`, `authentik`, `forward_auth`, `metrics`, `logging`, `dns`, `upstream_dns_resolution`, `geoblock`, `waf`, `error_pages`, `default_response`, `trusted_proxies` |
 | Certificate storage ([high-availability.md](high-availability.md)) | `settings` key `certificate_storage` |
 
-Excluded, so that a restore or an import can never lock anyone out or sign anyone in: users, group memberships, dashboard sessions, sign-in accounts, OAuth state and providers, API tokens, audit events, instances and sync tokens and keys, forward-auth sessions, the license, the instance mode, the history settings and every other settings key.
+Excluded, so that a restore or an import can never lock anyone out or sign anyone in: users, group memberships, dashboard sessions, sign-in accounts, OAuth state and providers, API tokens, audit events, instances and sync tokens and keys, forward-auth sessions, the instance mode, the history settings and every other settings key.
 
 A unit test keeps the settings list equal to the storage keys of `SETTINGS_HANDLERS` plus `certificate_storage`; a new settings group added there must be added to `CONFIG_SETTING_KEYS` too.
-
-Restoring a snapshot or importing a file that brings in shared certificate storage, or changes it, needs the `high_availability` license (`403` otherwise, nothing is written); one that keeps the current storage or goes back to local storage does not.
 
 ## Snapshots
 
@@ -57,7 +53,7 @@ Rows are stored exactly as in the database. Secret columns (certificate and CA p
 
 ### Automatic recording
 
-`applyCaddyConfig` (`src/lib/caddy.ts`) calls `recordConfigSnapshotAfterApply()` once Caddy has accepted a configuration and before slaves are synced. When history is enabled it reads the configuration in one transaction and stores it unless its fingerprint equals the newest snapshot's. The hook never throws and never consults the license.
+`applyCaddyConfig` (`src/lib/caddy.ts`) calls `recordConfigSnapshotAfterApply()` once Caddy has accepted a configuration and before slaves are synced. When history is enabled it reads the configuration in one transaction and stores it unless its fingerprint equals the newest snapshot's. The hook never throws.
 
 The fingerprint is the SHA-256 of the canonical content (sorted keys) without the `createdAt`/`updatedAt` columns and with each secret replaced by an HMAC of its plaintext (key derived from `SESSION_SECRET`). Saving something without changing it, or re-encrypting a secret, therefore records nothing, and the stored fingerprint cannot be used to guess a secret. Turning recording on records a first snapshot right away.
 
@@ -99,7 +95,7 @@ What a version changed is computed against the newest version kept before it, wh
 
 ### Audit events and versions
 
-An audit event about a configuration entity (proxy and L4 hosts, access lists and their users, certificates, CA and client certificates, mTLS roles and rules, groups, forward-auth grants, settings groups, certificate storage, imports and restores), recorded while history is on, stores the version before it and the version its apply recorded (`audit_events.configBeforeId`, `configAfterId`, `ee/config-history/links.ts`), and the change request that applied it (`changeRequestId`). These columns are not covered by the hash chain, like `organizationId`.
+An audit event about a configuration entity (proxy and L4 hosts, access lists and their users, certificates, CA and client certificates, mTLS roles and rules, groups, forward-auth grants, settings groups, certificate storage, imports and restores), recorded while history is on, stores the version before it and the version its apply recorded (`audit_events.configBeforeId`, `configAfterId`, `ee/config-history/links.ts`), and the change request that applied it (`changeRequestId`). These columns are not covered by the hash chain.
 
 - Most changes are recorded before Caddy is applied: the event stays pending until the apply records the next version. An apply that finds the configuration unchanged closes it with the same version on both sides ("no change").
 - Settings saves, restores and imports are recorded after the apply that stored their version: when the newest version is automatic, at most five minutes old, changed that entity and has no event for it yet, the event is linked to it.
@@ -120,9 +116,9 @@ An audit event about a configuration entity (proxy and L4 hosts, access lists an
 - later versions that changed a host this version itself changed (`sameHostWarnings`): rolling back undoes those changes as well;
 - the approval policies that protect hosts it changes (`blocked`), in which case restore answers 409;
 - how many Caddy nodes reload (this node plus, on a master, the enabled instances outside promotion-only environments);
-- `canRestore` and `reasons`: not on a sync slave, a license with `config_history`, the caller's `config_history:restore` permission, no protecting policy, and something to change.
+- `canRestore` and `reasons`: not on a sync slave, the caller's `config_history:restore` permission, no protecting policy, and something to change.
 
-## Export and import (Community, free)
+## Export and import
 
 `POST /api/v1/config/export` with `{ "passphrase": "..." }` (at least 12 characters) downloads `ingressi-configuration-<time>.json`:
 
@@ -142,7 +138,7 @@ An audit event about a configuration entity (proxy and L4 hosts, access lists an
 
 Every secret (certificate and CA private keys, access-list password hashes, encrypted strings inside settings) is decrypted with this instance's key and encrypted again with a key derived from the passphrase (scrypt N=2^17, r=8, p=1; AES-256-GCM, each value bound to its place in the file as associated data), as `pp:v1:<iv>:<tag>:<ciphertext>`. Everything else stays readable. `check` is a known value sealed the same way, which tells a wrong passphrase apart from a damaged file. User attribution is left out; `users` maps the user ids that forward-auth grants name to their email addresses. Export is refused when a stored secret no key decrypts (409) and on a sync slave (409).
 
-`POST /api/v1/config/import` takes a multipart form (`file`, `passphrase`) or JSON `{ "passphrase", "file" }` (the file as an object or as text), up to 50 MiB. The file is validated strictly (known fields, tables, columns and settings groups only, column types, unique ids, scrypt parameters in range) and the passphrase checked before anything is written: a wrong passphrase is a 400 and changes nothing. Then it replaces the configuration like a restore, with secrets encrypted with this instance's key, and applies it (502 and nothing changed if Caddy rejects it). When history is enabled, the configuration being replaced is saved first as an `import` snapshot, in the same transaction; this needs no license. Because ids from another installation mean something else here:
+`POST /api/v1/config/import` takes a multipart form (`file`, `passphrase`) or JSON `{ "passphrase", "file" }` (the file as an object or as text), up to 50 MiB. The file is validated strictly (known fields, tables, columns and settings groups only, column types, unique ids, scrypt parameters in range) and the passphrase checked before anything is written: a wrong passphrase is a 400 and changes nothing. Then it replaces the configuration like a restore, with secrets encrypted with this instance's key, and applies it (502 and nothing changed if Caddy rejects it). When history is enabled, the configuration being replaced is saved first as an `import` snapshot, in the same transaction. Because ids from another installation mean something else here:
 
 - forward-auth grants for users are mapped to the local user with the same email address, and dropped when there is none;
 - local group memberships are kept only for groups whose name did not change;
@@ -154,32 +150,24 @@ Import is refused on a sync slave (409), and when it would create, change or del
 
 All endpoints need a `config_history` permission (`read` for listing, diffs, comparisons and previews; `write`, `restore`), are documented in the OpenAPI spec (tags "Configuration History" and "Configuration") and audited.
 
-| Method and path | What | License |
-| --- | --- | --- |
-| `GET /api/v1/config-history?limit&offset` | List snapshots, newest first | no |
-| `GET /api/v1/config-history/versions?limit&offset` | Versions with titles, actors and sizes | no |
-| `GET /api/v1/config-history/compare?from&to` | Field-level differences between two versions | no |
-| `GET /api/v1/config-history/{id}/rollback-preview` | What restoring a version would do | no |
-| `POST /api/v1/config-history` `{summary?}` | Create a manual snapshot | yes |
-| `DELETE /api/v1/config-history` | Delete all snapshots | no |
-| `GET /api/v1/config-history/settings` | `{enabled, retention, configurable}` | no |
-| `PUT /api/v1/config-history/settings` `{enabled?, retention?}` | Change settings | yes, unless recording ends up off |
-| `GET /api/v1/config-history/{id}` | Metadata and a content summary (names and counts, no values) | no |
-| `DELETE /api/v1/config-history/{id}` | Delete a snapshot | no |
-| `GET /api/v1/config-history/{id}/diff?against=` | Diff | no |
-| `POST /api/v1/config-history/{id}/restore` | Restore | yes |
-| `POST /api/v1/config/export` `{passphrase}` | Export file | no (free) |
-| `POST /api/v1/config/import` | Import file | no (free) |
+| Method and path | What |
+| --- | --- |
+| `GET /api/v1/config-history?limit&offset` | List snapshots, newest first |
+| `GET /api/v1/config-history/versions?limit&offset` | Versions with titles, actors and sizes |
+| `GET /api/v1/config-history/compare?from&to` | Field-level differences between two versions |
+| `GET /api/v1/config-history/{id}/rollback-preview` | What restoring a version would do |
+| `POST /api/v1/config-history` `{summary?}` | Create a manual snapshot |
+| `DELETE /api/v1/config-history` | Delete all snapshots |
+| `GET /api/v1/config-history/settings` | `{enabled, retention}` |
+| `PUT /api/v1/config-history/settings` `{enabled?, retention?}` | Change settings |
+| `GET /api/v1/config-history/{id}` | Metadata and a content summary (names and counts, no values) |
+| `DELETE /api/v1/config-history/{id}` | Delete a snapshot |
+| `GET /api/v1/config-history/{id}/diff?against=` | Diff |
+| `POST /api/v1/config-history/{id}/restore` | Restore |
+| `POST /api/v1/config/export` `{passphrase}` | Export file |
+| `POST /api/v1/config/import` | Import file |
 
 Audit actions: `config_snapshot_created`, `config_snapshot_deleted`, `config_snapshots_deleted`, `config_history_settings_updated`, `config_restored`, `config_restore_failed`, `config_exported`, `config_imported`.
-
-## Licensing behaviour
-
-- A license that includes `config_history` (Homelab and up, active or in its grace period) is needed to turn recording on, to change settings while recording stays on, to create a manual snapshot and to restore.
-- Winding the feature down never needs one: turning recording off and deleting snapshots work with a lapsed, removed or invalid key.
-- Recording keeps running once enabled, whatever happens to the key: the hook in `applyCaddyConfig` does not look at the license.
-- Viewing snapshots, details and diffs is available to administrators without a license.
-- Export, import and the snapshot an import saves are Community features and never need a license.
 
 ## Instance sync
 

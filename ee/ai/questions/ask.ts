@@ -4,7 +4,7 @@
  *
  *   question ──model──> JSON ──schema.ts──> QuestionQuery ──run.ts──> result
  *                                                   (analytics layer, bound parameters,
- *                                                    the asker's organisation and tag scope)
+ *                                                    the asker's tag scope)
  *   result ──(aggregates, placeholders)──model──> summary   (optional)
  *
  * Nothing the model returns runs unvalidated: an answer that is not one of
@@ -13,30 +13,26 @@
  * traffic data cannot answer say so.
  *
  * Bounded: questions of at most 500 characters, at most two model calls per
- * question (each one call, no tools, no retries, 15 s and 1024 output
+ * question (each one call, no tools, no retries, the provider's timeout and 1024 output
  * tokens), one question at a time per user, 10 per 10 minutes and 100 per
  * day per user, and ClickHouse's own 30 s limit per query.
  *
  * Every question is recorded in the audit log: who asked, the question, the
- * outcome and the query that ran. Asking needs the ai_analyst feature and
- * questions to be on in the AI settings; the caller's analytics:read is
- * checked by the route.
+ * outcome and the query that ran. Asking needs questions to be on in the AI
+ * settings; the caller's analytics:read is checked by the route.
  */
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
 import { getRetentionDays } from "@/src/lib/clickhouse/client";
 import { createRateLimiter, type RateLimiter } from "@/src/lib/rate-limit";
-import { scopeTagsFor, tenantOf, type Access } from "@/src/lib/permissions";
+import { scopeTagsFor, type Access } from "@/src/lib/permissions";
 import { listProxyHosts } from "@/src/lib/models/proxy-hosts";
-import { allProxyHostDomains, scopeFor } from "@/src/lib/analytics/service";
-import { dashboardOrganizationFilter } from "@/ee/multi-tenancy/view";
-import { seenHosts } from "@/ee/multi-tenancy/analytics";
-import { requireFeature } from "@/ee/licensing/store";
+import { allProxyHostDomains } from "@/src/lib/analytics/service";
 import { requestModelText, sanitizeExplanation } from "@/ee/ai/explain";
 import { getAiProviderConfig, type ResolvedAiProvider } from "@/ee/ai/settings";
 import { analyticsHrefFor, computedSummary, describeQuery, formatPeriod } from "./describe";
 import { buildInterpretationPrompt, buildSummaryPrompt, restorePlaceholders } from "./prompts";
-import { runQuestionQuery, type QuestionScope } from "./run";
+import { runQuestionQuery, seenHosts, type QuestionScope } from "./run";
 import { getSavedQuestionRow } from "./saved";
 import { parseModelAnswer, parseQuestionQuery, parseQuestionText } from "./schema";
 import { getQuestionSettings } from "./settings";
@@ -108,22 +104,18 @@ export type AskDependencies = {
   provider: () => Promise<ResolvedAiProvider | null>;
   model: typeof requestModelText;
   now: () => Date;
-  /** The asker's scope; the default reads their organisation and tag scope. */
+  /** The asker's scope; the default reads their tag scope. */
   scope: (access: Access) => Promise<QuestionScope>;
 };
 
 /**
- * What a question may read for `access`: the stored host names of their
- * organisation (analytics:read covers every host otherwise), and as host
- * tags only the proxy hosts their role's tag scope and organisation reach.
+ * What a question may read for `access`: every host (analytics:read covers
+ * them all), and as host tags only the proxy hosts their role's tag scope
+ * reaches.
  */
 export async function questionScopeFor(access: Access): Promise<QuestionScope> {
-  const [hostScope, visible] = await Promise.all([
-    scopeFor(access),
-    listProxyHosts(scopeTagsFor(access, "proxy_hosts"), await dashboardOrganizationFilter(access)),
-  ]);
+  const visible = await listProxyHosts(scopeTagsFor(access, "proxy_hosts"));
   return {
-    hostScope,
     taggableHosts: visible.map((host) => ({ id: host.id, domains: host.domains, tags: host.tags })),
     allHosts: await allProxyHostDomains(),
     seenHosts,
@@ -198,7 +190,6 @@ async function audit(access: Access, answer: QuestionAnswer, extra: Record<strin
       requestDetailsSent: answer.privacy?.requestDetails ?? false,
       ...extra,
     },
-    organizationId: tenantOf(access),
   });
 }
 
@@ -261,9 +252,9 @@ async function requireQuestionsOn(): Promise<QuestionSettingsView> {
 }
 
 /**
- * Asks a question ({question}) for `access`. Needs the ai_analyst feature,
- * questions turned on and an AI provider. Throws AiQuestionError (502) when
- * the provider fails to interpret it; every other outcome is an answer.
+ * Asks a question ({question}) for `access`. Needs questions turned on and
+ * an AI provider. Throws AiQuestionError (502) when the provider fails to
+ * interpret it; every other outcome is an answer.
  */
 export async function askQuestion(access: Access, body: unknown, overrides: Partial<AskDependencies> = {}): Promise<QuestionAnswer> {
   const deps = dependencies(overrides);
@@ -272,7 +263,6 @@ export async function askQuestion(access: Access, body: unknown, overrides: Part
     if (key !== "question") throw new ApiValidationError(`Unknown field "${key.slice(0, 40)}" in the question`);
   }
   const question = parseQuestionText((body as Record<string, unknown>).question);
-  await requireFeature("ai_analyst");
   const settings = await requireQuestionsOn();
   const provider = await deps.provider().catch(() => null);
   if (!provider) throw new ApiValidationError("Enable and configure an AI provider first (Alerts → AI)");
@@ -330,13 +320,11 @@ export async function askQuestion(access: Access, body: unknown, overrides: Part
 /**
  * Re-runs a saved question with fresh data, without asking the model to
  * interpret it again (the summary still comes from the model when the
- * settings allow and a provider is configured). Needs the ai_analyst
- * feature and questions turned on.
+ * settings allow and a provider is configured). Needs questions turned on.
  */
 export async function runSavedQuestion(access: Access, id: number, overrides: Partial<AskDependencies> = {}): Promise<QuestionAnswer> {
   const deps = dependencies(overrides);
   const { row, query } = await getSavedQuestionRow(access, id);
-  await requireFeature("ai_analyst");
   const settings = await requireQuestionsOn();
   const provider = settings.aiSummaries ? await deps.provider().catch(() => null) : null;
   const release = await admitQuestion(access.userId);

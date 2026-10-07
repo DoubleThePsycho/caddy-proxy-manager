@@ -1,24 +1,24 @@
 /**
  * E2E tests: White-label branding (ee/white-label).
  *
- * The test stack has no license that the production keys sign, so this
- * covers what works without one: the page read-only with its notice, the
- * license gate on changes, reset and removal never needing a license, the
- * public image route, and the default branding everywhere.
+ * The page and the API for administrators, changes and reset (every test
+ * that changes the branding resets it, so later specs see the defaults),
+ * the public image route, and the default branding everywhere.
  */
 import { test, expect } from '@playwright/test';
 
 const ORIGIN = 'http://localhost:3000';
 const API = '/api/v1/branding';
 const JSON_HEADERS = { 'Content-Type': 'application/json', Origin: ORIGIN };
+/** A valid 1×1 PNG. */
+const PNG_1X1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
 
 test.describe('Branding page', () => {
-  test('shows the default branding read-only without a license', async ({ page }) => {
+  test('shows the default branding, editable by administrators', async ({ page }) => {
     await page.goto('/branding');
     await expect(page.getByRole('heading', { name: 'Branding' })).toBeVisible();
-    await expect(page.getByText('Changing the branding needs an active MSP license')).toBeVisible();
-    await expect(page.getByLabel('Product name')).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+    await expect(page.getByLabel('Product name')).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled();
     await expect(page.getByTestId('branding-preview-light')).toContainText('Ingressi');
     await expect(page.getByTestId('branding-preview-dark')).toContainText('Ingressi');
   });
@@ -33,29 +33,41 @@ test.describe('Branding page', () => {
   });
 });
 
-test.describe('Branding API without a license', () => {
+test.describe('Branding API', () => {
   test('reads the branding', async ({ page }) => {
     const response = await page.request.get(API);
     expect(response.status()).toBe(200);
     const body = await response.json();
-    expect(body).toMatchObject({ configurable: false, defaultProductName: 'Ingressi' });
+    expect(body).toMatchObject({ defaultProductName: 'Ingressi' });
   });
 
-  test('refuses changes with 403 and allows resetting and removing', async ({ page }) => {
-    const put = await page.request.put(API, { headers: JSON_HEADERS, data: { productName: 'Example Edge' } });
-    expect(put.status()).toBe(403);
-    expect((await put.json()).error).toMatch(/White-label needs an active Ingressi MSP license/);
+  test('changes the branding, uploads and removes a logo, and resets', async ({ page }) => {
+    try {
+      const put = await page.request.put(API, { headers: JSON_HEADERS, data: { productName: 'Example Edge' } });
+      expect(put.status()).toBe(200);
+      expect(await put.json()).toMatchObject({ source: 'local', effective: { productName: 'Example Edge' } });
 
-    const upload = await page.request.put(`${API}/assets/logo-light`, {
-      headers: { Origin: ORIGIN },
-      multipart: { file: { name: 'logo.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>') } },
-    });
-    expect(upload.status()).toBe(403);
+      const svg = await page.request.put(`${API}/assets/logo-light`, {
+        headers: { Origin: ORIGIN },
+        multipart: { file: { name: 'logo.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>') } },
+      });
+      expect(svg.status()).toBe(400);
 
-    // Restoring defaults never needs a license.
-    expect((await page.request.put(API, { headers: JSON_HEADERS, data: { productName: null } })).status()).toBe(200);
-    expect((await page.request.delete(`${API}/assets/logo-light`, { headers: { Origin: ORIGIN } })).status()).toBe(200);
-    expect((await page.request.delete(API, { headers: { Origin: ORIGIN } })).status()).toBe(200);
+      const png = await page.request.put(`${API}/assets/logo-light`, {
+        headers: { Origin: ORIGIN },
+        multipart: { file: { name: 'logo.png', mimeType: 'image/png', buffer: PNG_1X1 } },
+      });
+      expect(png.status()).toBe(200);
+      expect((await png.json()).assets.logoLight).toMatchObject({ type: 'image/png', width: 1, height: 1 });
+
+      const removed = await page.request.delete(`${API}/assets/logo-light`, { headers: { Origin: ORIGIN } });
+      expect(removed.status()).toBe(200);
+      expect((await removed.json()).assets.logoLight).toBeNull();
+    } finally {
+      const reset = await page.request.delete(API, { headers: { Origin: ORIGIN } });
+      expect(reset.status()).toBe(200);
+      expect(await reset.json()).toMatchObject({ source: 'default', effective: { productName: 'Ingressi' } });
+    }
   });
 
   test('the API docs title is the product name', async ({ page }) => {

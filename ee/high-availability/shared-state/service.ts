@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * High availability (feature "high_availability", Enterprise), phase 3:
- * the shared state switch, its status, and the guard that keeps the
- * certificate storage's Redis server while shared state uses it.
+ * High availability, phase 3: the shared state switch, its status, and the
+ * guard that keeps the certificate storage's Redis server while shared state
+ * uses it.
  *
  * Why a switch of its own, on the certificate storage's connection: one
  * Redis or Valkey deployment serves both (its settings, secrets, TLS,
@@ -20,11 +20,6 @@
  * Ingressi forward auth nor monetized hosts), not in configuration export,
  * history or fleet revisions, like API monetization. High availability
  * standbys share the leader's database, setting included.
- *
- * Licensing: turning shared state on, or changing its prefix while on, needs
- * "high_availability". Turning it off, removing it, reading and the status
- * never do, and the request paths never check the license: state kept in
- * Redis keeps being used when the license lapses.
  */
 import { clearSetting, getEffectiveSetting, setSetting } from "@/src/lib/settings";
 import { getInstanceMode } from "@/src/lib/instance-sync";
@@ -33,10 +28,9 @@ import { logAuditEvent } from "@/src/lib/audit";
 import { ApiConflictError, ApiValidationError } from "@/src/lib/api-errors";
 import { appDb } from "@/src/lib/db";
 import { monetizationConsumers } from "@/src/lib/db/schema";
-import { isFeatureConfigurable, requireFeature } from "@/ee/licensing/store";
 import { flushUsage, reloadMonetization } from "@/ee/monetization/engine";
 import { parseStoredCertificateStorage } from "../settings";
-import { CERTIFICATE_STORAGE_SETTING_KEY, HIGH_AVAILABILITY_FEATURE, REDIS_MODE_LABELS, type StoredRedisStorage } from "../types";
+import { CERTIFICATE_STORAGE_SETTING_KEY, REDIS_MODE_LABELS, type StoredRedisStorage } from "../types";
 import {
   createSharedRedisClient,
   getSharedState,
@@ -50,7 +44,7 @@ import { forwardAuthKeyBase } from "./forward-auth-store";
 import { isSharedStateLeader } from "./leader";
 import { drainSharedMonetization, readDrainStatus } from "./monetization-drain";
 import { monetizationKeyNames } from "./monetization-keys";
-import { parseSharedStateInput, sharedStateChangeNeedsLicense, sharedStateNamespace } from "./settings";
+import { parseSharedStateInput, sharedStateNamespace } from "./settings";
 import { SHARED_STATE_SETTING_KEY, type SharedStateKeyCounts, type SharedStateStatus, type SharedStateView, type StoredSharedState } from "./types";
 
 export const SLAVE_SHARED_STATE_ERROR =
@@ -94,7 +88,6 @@ export async function getSharedStateView(): Promise<SharedStateView> {
       tls: redis?.tls.enabled ?? false,
     },
     updatedAt: row?.updatedAt ?? null,
-    configurable: await isFeatureConfigurable(HIGH_AVAILABILITY_FEATURE),
     editable: (await getInstanceMode()) !== "slave",
     error: resolved.status === "error" ? resolved.message : null,
   };
@@ -182,8 +175,6 @@ export async function saveSharedState(body: unknown, actorUserId: number): Promi
     ) {
       return;
     }
-    if (sharedStateChangeNeedsLicense(previous, next)) await requireFeature(HIGH_AVAILABILITY_FEATURE);
-
     const leaving = previous?.enabled && (!next.enabled || previous.generation !== next.generation);
     if (next.enabled) {
       const redis = await certificateStorageRedis();
@@ -226,7 +217,7 @@ export async function saveSharedState(body: unknown, actorUserId: number): Promi
 /**
  * Turns shared state off and forgets the setting, whatever the server says:
  * the balances are written to the ledger when the server answers, and what
- * was not written is lost (in the consumers' favour). Never needs a license.
+ * was not written is lost (in the consumers' favour).
  */
 export async function removeSharedState(actorUserId: number): Promise<SharedStateView> {
   await withSettingsUpdateLock(async () => {

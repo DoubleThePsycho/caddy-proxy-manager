@@ -132,11 +132,6 @@ export function normalizeStoredSettings(value: unknown): BrandingSettings {
   };
 }
 
-/** The fields of `next` that differ from `current` and are not their defaults: what needs a license. */
-export function fieldsNeedingLicense(current: BrandingSettings, next: BrandingSettings): (keyof BrandingSettings)[] {
-  return FIELDS.filter((field) => next[field] !== current[field] && next[field] !== DEFAULT_BRANDING_SETTINGS[field]);
-}
-
 export function isDefaultSettings(settings: BrandingSettings): boolean {
   return FIELDS.every((field) => settings[field] === DEFAULT_BRANDING_SETTINGS[field]);
 }

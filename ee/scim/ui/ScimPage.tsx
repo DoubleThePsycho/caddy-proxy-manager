@@ -4,10 +4,7 @@ import { can } from "@/src/lib/permissions";
 import { listUsers } from "@/src/lib/models/user";
 import { listGroups } from "@/src/lib/models/groups";
 import { appDb } from "@/src/lib/db";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { listRoles } from "@/ee/custom-roles/service";
-import { FEATURE as CUSTOM_ROLES_FEATURE } from "@/ee/custom-roles/store";
 import {
   getScimSettingsView,
   listManagedGroups,
@@ -16,7 +13,6 @@ import {
 } from "@/ee/scim/service";
 import { isProtectedUser } from "@/ee/scim/store";
 import { listScimTokens } from "@/ee/scim/tokens";
-import { FEATURE } from "@/ee/scim/types";
 import ScimClient from "@/ee/scim/ui/ScimClient";
 
 export const metadata = { title: "SCIM provisioning" };
@@ -24,13 +20,12 @@ export const metadata = { title: "SCIM provisioning" };
 export default async function ScimPage() {
   const { access } = await requirePermission("scim:read");
   // Every view below is free of secrets (tokens show only their prefix).
-  const [settings, tokens, users, groups, roles, customRolesLicensed] = await Promise.all([
+  const [settings, tokens, users, groups, roles] = await Promise.all([
     getScimSettingsView(),
     listScimTokens(),
     listUsers(),
     listGroups(),
     listRoles(),
-    isFeatureConfigurable(CUSTOM_ROLES_FEATURE),
   ]);
   const managedUsers = await listManagedUsers();
   const managedGroups = await listManagedGroups();
@@ -54,8 +49,6 @@ export default async function ScimPage() {
       customRoles={roles.map((role) => ({ id: role.id, name: role.name, adminLevel: role.adminLevel }))}
       canWrite={can(access, "scim:write")}
       isAdmin={access.isAdmin}
-      customRolesLicensed={customRolesLicensed}
-      editionLabel={EDITION_LABELS[FEATURE_INFO[FEATURE].edition]}
       canReadSignIn={can(access, "sso:read")}
     />
   );

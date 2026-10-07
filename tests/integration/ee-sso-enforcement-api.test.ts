@@ -1,15 +1,13 @@
 /**
  * Enforced SSO configuration (ee/sso): GET/PUT /api/v1/sso/enforcement and the
- * dashboard server action. Changing the setting needs a license that includes
- * sso_enforce; reading it does not. Turning enforcement on, or changing it
- * while on, needs an enabled OAuth/OIDC provider and at least one break-glass
- * account that is an active administrator with a password.
+ * dashboard server action. Turning enforcement on, or changing it
+ * while on, needs an enabled OAuth/OIDC provider. Break-glass accounts are
+ * optional; the listed ones must exist and be able to sign in with a password.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { createTestDb, disableForeignKeys, type TestDb } from '../helpers/db';
-import { createTestSigner, licensePayload, signLicense } from '../helpers/license';
 import * as schema from '../../src/lib/db/schema';
 
 const ctx = vi.hoisted(() => ({
@@ -36,12 +34,9 @@ import { saveSsoEnforcementAction } from '@/ee/sso/ui/actions';
 import { requireApiAdmin, ApiAuthError } from '@/src/lib/api-auth';
 import { logAuditEvent } from '@/src/lib/audit';
 import { createUser } from '@/src/lib/models/user';
-import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
-import { LICENSE_SETTING_KEY } from '@/ee/licensing/store';
 import { readSsoEnforcement, writeSsoEnforcement } from '@/ee/sso/enforcement-store';
-import { NO_BREAK_GLASS_ADMIN_MESSAGE, NO_SSO_PROVIDER_MESSAGE } from '@/ee/sso/enforcement';
+import { NO_SSO_PROVIDER_MESSAGE } from '@/ee/sso/enforcement';
 
-const signer = createTestSigner();
 const PASSWORD_HASH = bcrypt.hashSync('Correct-Horse-9!', 4);
 
 function request(method: string, body?: unknown): any {
@@ -54,15 +49,6 @@ function request(method: string, body?: unknown): any {
       return body;
     },
   };
-}
-
-async function installLicense(overrides: Record<string, unknown> = {}) {
-  const key = signLicense(signer, licensePayload(signer, {
-    iat: '2026-01-01T00:00:00.000Z', exp: '2099-01-01T00:00:00.000Z', ...overrides,
-  }));
-  const now = new Date().toISOString();
-  await ctx.db.insert(schema.settings).values({ key: LICENSE_SETTING_KEY, value: JSON.stringify(key), updatedAt: now })
-    .onConflictDoUpdate({ target: schema.settings.key, set: { value: JSON.stringify(key), updatedAt: now } });
 }
 
 async function addProvider(enabled = true) {
@@ -85,7 +71,6 @@ beforeEach(async () => {
   ctx.db = createTestDb();
   await disableForeignKeys(ctx.db);
   vi.mocked(logAuditEvent).mockClear();
-  setTrustedLicenseKeysForTests(signer.keys);
   users.root = (await seed('root')).id;
   users.ops = (await seed('ops')).id;
   users.viewer = (await seed('viewer', 'user')).id;
@@ -93,15 +78,13 @@ beforeEach(async () => {
   ctx.sessionUserId = users.root;
 });
 
-afterAll(() => setTrustedLicenseKeysForTests(null));
-
 async function put(body: unknown) {
   const response = await PUT(request('PUT', body));
   return { status: response.status, data: await response.json() };
 }
 
 describe('GET /api/v1/sso/enforcement', () => {
-  it('shows the setting read-only without a license', async () => {
+  it('shows the setting', async () => {
     await addProvider();
     await writeSsoEnforcement(ctx.db, { enabled: true, breakGlassUserIds: [users.ops] });
     const response = await GET(request('GET'));
@@ -110,7 +93,6 @@ describe('GET /api/v1/sso/enforcement', () => {
     expect(data).toMatchObject({
       enabled: true,
       breakGlassUsernames: ['ops'],
-      configurable: false,
       ssoProviders: [{ id: 'dex', name: 'Dex', kind: 'oidc' }],
     });
     expect(data.breakGlassAccounts[0]).toMatchObject({ id: users.ops, role: 'admin', passwordSignIn: true, validAdmin: true });
@@ -123,58 +105,16 @@ describe('GET /api/v1/sso/enforcement', () => {
   });
 });
 
-describe('license gate', () => {
-  it.each([
-    ['no license', async () => {}],
-    ['a license past its grace period', async () => await installLicense({ iat: '2020-01-01T00:00:00.000Z', exp: '2021-01-01T00:00:00.000Z' })],
-    ['a Homelab license', async () => await installLicense({ edition: 'homelab' })],
-  ])('refuses every change through the API with %s', async (_name, setup) => {
-    await setup();
+describe('the server action', () => {
+  it('turns enforcement on', async () => {
     await addProvider();
-    for (const body of [
-      { enabled: true, breakGlassUsernames: ['ops'] },
-      { enabled: true },
-    ]) {
-      const { status, data } = await put(body);
-      expect(status).toBe(403);
-      expect(data.error).toBe('Enforced SSO needs an active Ingressi Business license or higher');
-    }
-    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: false, breakGlassUserIds: [] });
-    expect(logAuditEvent).not.toHaveBeenCalled();
-  });
-
-  it('lets an administrator turn enforcement off without a license, keeping the break-glass list', async () => {
-    await addProvider();
-    await writeSsoEnforcement(ctx.db, { enabled: true, breakGlassUserIds: [users.ops] });
-    expect((await put({ enabled: false, breakGlassUsernames: [] })).status).toBe(200);
-    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: false, breakGlassUserIds: [users.ops] });
-    expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'sso_enforcement_updated' }));
-  });
-
-  it('refuses the server action without a license, and accepts it with one', async () => {
-    await addProvider();
-    expect(await saveSsoEnforcementAction({ enabled: true, breakGlassUsernames: ['ops'] })).toEqual({
-      ok: false, error: 'Enforced SSO needs an active Ingressi Business license or higher',
-    });
-    expect((await readSsoEnforcement(ctx.db)).enabled).toBe(false);
-
-    await installLicense();
     const result = await saveSsoEnforcementAction({ enabled: true, breakGlassUsernames: ['ops'] });
-    expect(result).toMatchObject({ ok: true, view: { enabled: true, breakGlassUsernames: ['ops'], configurable: true } });
+    expect(result).toMatchObject({ ok: true, view: { enabled: true, breakGlassUsernames: ['ops'] } });
     expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [users.ops] });
-  });
-
-  it('accepts changes during the grace period of an expired license', async () => {
-    const graceExpiry = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString();
-    await installLicense({ iat: '2025-01-01T00:00:00.000Z', exp: graceExpiry });
-    await addProvider();
-    expect((await put({ enabled: true, breakGlassUsernames: ['ops'] })).status).toBe(200);
   });
 });
 
-describe('PUT /api/v1/sso/enforcement with a license', () => {
-  beforeEach(async () => await installLicense());
-
+describe('PUT /api/v1/sso/enforcement', () => {
   it('turns enforcement on, stores ids, audits the change and returns the view', async () => {
     await addProvider();
     const { status, data } = await put({ enabled: true, breakGlassUsernames: ['  OPS ', 'viewer'] });
@@ -197,22 +137,57 @@ describe('PUT /api/v1/sso/enforcement with a license', () => {
     expect((await readSsoEnforcement(ctx.db)).enabled).toBe(false);
   });
 
-  it.each([
-    ['no break-glass account', []],
-    ['only a non-admin', ['viewer']],
-  ])('refuses turning it on with %s', async (_name, names) => {
+  it('turns it on without any break-glass account', async () => {
     await addProvider();
-    const { status, data } = await put({ enabled: true, breakGlassUsernames: names });
-    expect(status).toBe(400);
-    expect(data.error).toBe(NO_BREAK_GLASS_ADMIN_MESSAGE);
+    const { status, data } = await put({ enabled: true, breakGlassUsernames: [] });
+    expect(status).toBe(200);
+    expect(data).toMatchObject({ enabled: true, breakGlassUsernames: [], breakGlassAccounts: [], warnings: [] });
+    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [] });
+    expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'sso_enforcement_updated',
+      summary: 'Turned on enforced SSO for dashboard sign-in (break-glass accounts: none)',
+    }));
   });
 
-  it('refuses a disabled administrator as the only break-glass account', async () => {
+  it('turns it on with the list omitted and none stored', async () => {
+    await addProvider();
+    expect((await put({ enabled: true })).data).toMatchObject({ enabled: true, breakGlassUsernames: [] });
+    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [] });
+  });
+
+  it('turns it on with only a non-admin break-glass account', async () => {
+    await addProvider();
+    const { status, data } = await put({ enabled: true, breakGlassUsernames: ['viewer'] });
+    expect(status).toBe(200);
+    expect(data.breakGlassAccounts).toEqual([expect.objectContaining({ id: users.viewer, passwordSignIn: true, validAdmin: false })]);
+    expect(data.warnings).toEqual([]);
+  });
+
+  it('accepts a disabled administrator as a break-glass account, which does not count as a valid administrator', async () => {
     await addProvider();
     await ctx.db.update(schema.users).set({ status: 'disabled' }).where(eq(schema.users.id, users.ops));
     const { status, data } = await put({ enabled: true, breakGlassUsernames: ['ops'] });
-    expect(status).toBe(400);
-    expect(data.error).toBe(NO_BREAK_GLASS_ADMIN_MESSAGE);
+    expect(status).toBe(200);
+    expect(data.breakGlassAccounts).toEqual([expect.objectContaining({ id: users.ops, status: 'disabled', validAdmin: false })]);
+  });
+
+  it('turns it on through the server action without a break-glass account', async () => {
+    await addProvider();
+    expect(await saveSsoEnforcementAction({ enabled: true, breakGlassUsernames: [] })).toMatchObject({
+      ok: true, view: { enabled: true, breakGlassUsernames: [] },
+    });
+    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [] });
+  });
+
+  it('warns when no provider is enabled while on, saying whether a break-glass account can still sign in', async () => {
+    await writeSsoEnforcement(ctx.db, { enabled: true, breakGlassUserIds: [users.ops] });
+    expect((await (await GET(request('GET'))).json()).warnings).toEqual([
+      'No OAuth/OIDC or SAML provider is enabled, so only break-glass accounts can sign in.',
+    ]);
+    await writeSsoEnforcement(ctx.db, { enabled: true, breakGlassUserIds: [] });
+    expect((await (await GET(request('GET'))).json()).warnings).toEqual([
+      'No OAuth/OIDC or SAML provider is enabled and no break-glass account can sign in. Enable a provider or turn enforced SSO off.',
+    ]);
   });
 
   it('refuses unknown usernames and accounts without a password', async () => {
@@ -226,13 +201,13 @@ describe('PUT /api/v1/sso/enforcement with a license', () => {
     expect((await readSsoEnforcement(ctx.db)).enabled).toBe(false);
   });
 
-  it('refuses changes that would leave no valid break-glass administrator while on', async () => {
+  it('lets the break-glass administrators be removed while on', async () => {
     await addProvider();
     expect((await put({ enabled: true, breakGlassUsernames: ['ops'] })).status).toBe(200);
-    const { status, data } = await put({ enabled: true, breakGlassUsernames: ['viewer'] });
-    expect(status).toBe(400);
-    expect(data.error).toBe(NO_BREAK_GLASS_ADMIN_MESSAGE);
-    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [users.ops] });
+    expect((await put({ enabled: true, breakGlassUsernames: ['viewer'] })).status).toBe(200);
+    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [users.viewer] });
+    expect((await put({ enabled: true, breakGlassUsernames: [] })).status).toBe(200);
+    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [] });
   });
 
   it('keeps the break-glass accounts when the list is omitted', async () => {
@@ -271,7 +246,7 @@ describe('OpenAPI', () => {
     expect(path.put).toMatchObject({ operationId: 'updateSsoEnforcement', tags: ['SSO'] });
     expect(path.put.requestBody.content['application/json'].schema).toEqual({ $ref: '#/components/schemas/SsoEnforcementInput' });
     expect(Object.keys(spec.components.schemas.SsoEnforcement.properties)).toEqual(
-      ['enabled', 'breakGlassUsernames', 'breakGlassAccounts', 'ssoProviders', 'warnings', 'configurable']
+      ['enabled', 'breakGlassUsernames', 'breakGlassAccounts', 'ssoProviders', 'warnings']
     );
   });
 });

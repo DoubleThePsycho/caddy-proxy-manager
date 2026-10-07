@@ -19,7 +19,7 @@ import { AppDialog } from "@/components/ui/AppDialog";
 import { DEFAULT_PAGE_SIZE, paginate } from "@/src/lib/pagination";
 import type { ScimManagedGroupView, ScimManagedUserView, ScimRoleMappingView } from "../types";
 import type { ScimClientProps } from "./ScimClient";
-import { callApi, Field, formatDate, LOCKED_HINT } from "./shared";
+import { callApi, Field, formatDate } from "./shared";
 
 function roleLabel(mapping: Pick<ScimRoleMappingView, "role" | "customRoleId" | "customRoleName">): string {
   if (mapping.customRoleId !== null) return mapping.customRoleName ?? `Custom role ${mapping.customRoleId}`;
@@ -35,7 +35,6 @@ function MappingsCard(props: ScimClientProps) {
   const [role, setRole] = useState("user");
   const [priority, setPriority] = useState("100");
   const [error, setError] = useState<string | null>(null);
-  const configurable = props.settings.configurable;
 
   function openForm(mapping: ScimRoleMappingView | null) {
     setEditing(mapping);
@@ -81,7 +80,7 @@ function MappingsCard(props: ScimClientProps) {
       title="Group-to-role mappings"
       count={props.mappings.length}
       actions={props.canWrite ? (
-        <Button size="sm" variant="outline" onClick={() => openForm(null)} disabled={!configurable || props.managedGroups.length === 0} title={configurable ? undefined : LOCKED_HINT}>
+        <Button size="sm" variant="outline" onClick={() => openForm(null)} disabled={props.managedGroups.length === 0}>
           <Plus /> Add mapping
         </Button>
       ) : undefined}
@@ -118,7 +117,7 @@ function MappingsCard(props: ScimClientProps) {
                   </TableCell>
                   {props.canWrite && (
                     <TableCell className="text-right whitespace-nowrap">
-                      <Button variant="ghost" size="icon-sm" title={configurable ? "Edit" : LOCKED_HINT} aria-label={`Edit the mapping of ${mapping.groupName}`} disabled={!configurable || pending} onClick={() => openForm(mapping)}>
+                      <Button variant="ghost" size="icon-sm" title="Edit" aria-label={`Edit the mapping of ${mapping.groupName}`} disabled={pending} onClick={() => openForm(mapping)}>
                         <Pencil />
                       </Button>
                       <Button variant="ghost" size="icon-sm" className="text-bad hover:text-bad" title="Delete" aria-label={`Delete the mapping of ${mapping.groupName}`} disabled={pending} onClick={() => remove(mapping)}>
@@ -156,7 +155,7 @@ function MappingsCard(props: ScimClientProps) {
                   <SelectItem
                     key={custom.id}
                     value={`custom:${custom.id}`}
-                    disabled={!props.customRolesLicensed || (custom.adminLevel && !props.isAdmin)}
+                    disabled={custom.adminLevel && !props.isAdmin}
                   >
                     {custom.name}
                   </SelectItem>
@@ -189,7 +188,6 @@ function UsersCard(props: ScimClientProps) {
   const [releasing, setReleasing] = useState<ScimManagedUserView | null>(null);
   const [query, setQuery] = useState("");
   const { page, hrefFor } = useUrlPage("usersPage");
-  const configurable = props.settings.configurable;
   const needle = query.trim().toLowerCase();
   const shown = needle
     ? props.managedUsers.filter((user) => `${user.name ?? ""} ${user.email} ${user.userName}`.toLowerCase().includes(needle))
@@ -235,7 +233,7 @@ function UsersCard(props: ScimClientProps) {
       title="SCIM users"
       count={props.managedUsers.length}
       actions={props.canWrite ? (
-        <Button size="sm" variant="outline" onClick={() => { setError(null); setUserId(String(props.userOptions[0]?.id ?? "")); setOpen(true); }} disabled={!configurable || props.userOptions.length === 0} title={configurable ? undefined : LOCKED_HINT}>
+        <Button size="sm" variant="outline" onClick={() => { setError(null); setUserId(String(props.userOptions[0]?.id ?? "")); setOpen(true); }} disabled={props.userOptions.length === 0}>
           <Plus /> Hand over an account
         </Button>
       ) : undefined}
@@ -348,7 +346,6 @@ function GroupsCard(props: ScimClientProps) {
   const [externalId, setExternalId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const { page, hrefFor } = useUrlPage("groupsPage");
-  const configurable = props.settings.configurable;
   const slice = paginate(props.managedGroups, page);
 
   function adopt() {
@@ -382,7 +379,7 @@ function GroupsCard(props: ScimClientProps) {
       title="SCIM groups"
       count={props.managedGroups.length}
       actions={props.canWrite ? (
-        <Button size="sm" variant="outline" onClick={() => { setError(null); setGroupId(String(props.groupOptions[0]?.id ?? "")); setOpen(true); }} disabled={!configurable || props.groupOptions.length === 0} title={configurable ? undefined : LOCKED_HINT}>
+        <Button size="sm" variant="outline" onClick={() => { setError(null); setGroupId(String(props.groupOptions[0]?.id ?? "")); setOpen(true); }} disabled={props.groupOptions.length === 0}>
           <Plus /> Hand over a group
         </Button>
       ) : undefined}

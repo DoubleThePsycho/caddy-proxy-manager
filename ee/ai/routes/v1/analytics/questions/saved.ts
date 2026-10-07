@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** {question, query, shared?}: the query is validated again. Needs the AI analyst license. */
+/** {question, query, shared?}: the query is validated again. */
 export async function POST(request: NextRequest) {
   try {
     const { access } = await requireApiPermission(request, "analytics:read");

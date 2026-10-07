@@ -11,7 +11,7 @@ function readExplain(value: string | null): boolean {
   throw new ApiValidationError("explain must be true or false");
 }
 
-/** Generates suggestions from the WAF events; needs a license with the AI analyst. */
+/** Generates suggestions from the WAF events. */
 export async function GET(request: NextRequest) {
   try {
     await requireApiPermission(request, "waf:read");

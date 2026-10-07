@@ -41,10 +41,6 @@ type Props = {
   /** Messages for filters in the URL that were ignored. */
   invalidFilters?: string[];
   facets: AuditFacetsView;
-  /** Whether the license allows export, verification and streaming settings. */
-  licensed: boolean;
-  /** Provider-level users see the hash chain (it spans every organisation). */
-  providerLevel: boolean;
   chain: AuditChainStatus | null;
   /** The streaming destinations, for users who may see them; null otherwise. */
   sinks: AuditSinkSummary[] | null;
@@ -101,8 +97,6 @@ export default function AuditLogClient({
   filters,
   invalidFilters = [],
   facets,
-  licensed,
-  providerLevel,
   chain,
   sinks,
   retentionDays,
@@ -170,12 +164,7 @@ export default function AuditLogClient({
                 </Link>
               </Button>
             )}
-            <Button
-              variant="outline"
-              onClick={() => setExportOpen(true)}
-              disabled={!licensed}
-              title={licensed ? undefined : "Exporting needs a Business license"}
-            >
+            <Button variant="outline" onClick={() => setExportOpen(true)}>
               <Download />
               Export CSV or JSON
             </Button>
@@ -183,16 +172,7 @@ export default function AuditLogClient({
         }
       />
 
-      {!licensed && (
-        <Banner tone="info">
-          Export, integrity verification, streaming and retention need a Business license.{" "}
-          <Link href="/license" className="text-brand underline underline-offset-4">
-            Manage the license
-          </Link>
-        </Banner>
-      )}
-
-      {providerLevel && chain && <ChainBanner chain={chain} licensed={licensed} />}
+      {chain && <ChainBanner chain={chain} />}
 
       {invalidFilters.length > 0 && (
         <Banner tone="warn" title="Some filters were ignored.">
@@ -328,7 +308,7 @@ export default function AuditLogClient({
         )}
       </SectionCard>
 
-      {providerLevel && sinks !== null && <StreamingStrip sinks={sinks} retentionDays={retentionDays} generatedAt={generatedAt} />}
+      {sinks !== null && <StreamingStrip sinks={sinks} retentionDays={retentionDays} generatedAt={generatedAt} />}
 
       <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
     </div>

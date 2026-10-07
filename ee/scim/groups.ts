@@ -10,8 +10,7 @@
  * mappings to the members concerned (role-sync.ts).
  *
  * Deleting a group SCIM created deletes it; deleting an adopted group only
- * removes the SCIM members and stops SCIM managing it. Never checks the
- * license.
+ * removes the SCIM members and stops SCIM managing it.
  */
 import { and, count, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import { appDb, nowIso, toIso } from "@/src/lib/db";

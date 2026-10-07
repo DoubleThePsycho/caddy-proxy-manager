@@ -12,14 +12,12 @@
  * reader may open it, otherwise to the analytics with the matching filters,
  * and mitigation items to the matching security events when the reader may
  * see them (links.ts builds both).
- * Times are in UTC, as everywhere in the REST API. The signals follow the
- * reader's analytics scope (their organisation's hosts), so organisation
- * users get their own; they are cached for 30 seconds per scope, so the
- * overview and its attention list share one set of ClickHouse queries.
- * Never checks the license: analytics is part of the Community edition.
+ * Times are in UTC, as everywhere in the REST API. The signals are cached
+ * for 30 seconds, so the overview and its attention list share one set of
+ * ClickHouse queries.
  */
 import { can, type Access } from "@/src/lib/permissions";
-import { allProxyHostDomains, scopeFor, visibleProxyHostDomains } from "@/src/lib/analytics/service";
+import { allProxyHostDomains, visibleProxyHostDomains } from "@/src/lib/analytics/service";
 import { SPIKE_MIN_MITIGATED, getTrafficSignals, type BlockedConcentration, type ErrorBurst, type MitigationSpike, type TrafficSignals } from "@/src/lib/analytics/signals";
 import type { Outcome } from "@/src/lib/analytics/outcome";
 import { analyticsHref, securityHref } from "@/src/lib/analytics/links";
@@ -27,31 +25,30 @@ import type { AttentionAction, AttentionItem, AttentionProvider } from "./types"
 
 type Item = Omit<AttentionItem, "source">;
 
-/** How long the signals of one scope are reused. */
+/** How long the signals are reused. */
 export const TRAFFIC_SIGNALS_CACHE_MS = 30_000;
 /** Times the usual (or the spike threshold, without history) from which a spike is a warning. */
 export const SPIKE_WARNING_FACTOR = 10;
-const MAX_CACHED_SCOPES = 100;
 
 type CacheEntry = { at: number; value: Promise<TrafficSignals> };
-const store = globalThis as typeof globalThis & { __ingressiTrafficSignals?: Map<string, CacheEntry> };
-const cache = (store.__ingressiTrafficSignals ??= new Map<string, CacheEntry>());
+const store = globalThis as typeof globalThis & { __ingressiTrafficSignalsEntry?: { entry: CacheEntry | null } };
+const cache = (store.__ingressiTrafficSignalsEntry ??= { entry: null });
 
 /** Forgets the cached signals (tests, or after the analytics were reconfigured). */
 export function clearTrafficSignalsCache(): void {
-  cache.clear();
+  cache.entry = null;
 }
 
-/** The traffic signals `access` may see, reused for TRAFFIC_SIGNALS_CACHE_MS per analytics scope. */
-export async function cachedTrafficSignals(access: Access, now: number = Date.now()): Promise<TrafficSignals> {
-  const scope = await scopeFor(access);
-  const key = scope === null ? "*" : JSON.stringify([...scope].sort());
-  const hit = cache.get(key);
+/** The traffic signals, reused for TRAFFIC_SIGNALS_CACHE_MS. */
+export async function cachedTrafficSignals(now: number = Date.now()): Promise<TrafficSignals> {
+  const hit = cache.entry;
   if (hit && now - hit.at >= 0 && now - hit.at < TRAFFIC_SIGNALS_CACHE_MS) return hit.value;
-  const value = getTrafficSignals(scope, await allProxyHostDomains());
-  if (cache.size >= MAX_CACHED_SCOPES) cache.clear();
-  cache.set(key, { at: now, value });
-  value.catch(() => cache.delete(key));
+  const value = getTrafficSignals(await allProxyHostDomains());
+  const entry = { at: now, value };
+  cache.entry = entry;
+  value.catch(() => {
+    if (cache.entry === entry) cache.entry = null;
+  });
   return value;
 }
 
@@ -250,9 +247,7 @@ export const trafficAttentionProvider: AttentionProvider = {
   id: "traffic",
   label: "Traffic",
   permissions: ["analytics:read"],
-  // The signals are limited to the reader's analytics scope: their organisation's hosts.
-  organizationAware: true,
   async collect({ access, now }) {
-    return trafficItems(access, await cachedTrafficSignals(access, now.getTime()));
+    return trafficItems(access, await cachedTrafficSignals(now.getTime()));
   },
 };

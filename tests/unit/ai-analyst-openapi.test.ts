@@ -39,9 +39,8 @@ describe('OpenAPI: AI analyst digest and WAF tuning suggestions', () => {
     }
   });
 
-  it('documents the license rule and that nothing is applied automatically', async () => {
+  it('documents that nothing is applied automatically', async () => {
     const spec = await (await GET({ headers: { get: () => null } } as any)).json();
-    expect(spec.paths['/api/v1/ai/digest'].put.description).toMatch(/\{"enabled": false\}/);
     expect(spec.paths['/api/v1/waf/tuning-suggestions'].get.description).toMatch(/Nothing is applied automatically/);
     expect(spec.paths['/api/v1/waf/tuning-suggestions/{id}/apply'].post.description).toMatch(/Suppress for host/);
   });

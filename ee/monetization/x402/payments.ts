@@ -2,8 +2,7 @@
 /**
  * x402 payments as the ledger, the overview, the attention list and the REST
  * API show them: who paid (address), how much, the settlement transaction,
- * the Stripe PaymentIntent that records it, and its state. Reading only; no
- * license check.
+ * the Stripe PaymentIntent that records it, and its state. Reading only.
  */
 import { and, count, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

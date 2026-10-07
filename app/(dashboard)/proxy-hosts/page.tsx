@@ -10,7 +10,7 @@ import { listUsers } from "@/src/lib/models/user";
 import { listGroups } from "@/src/lib/models/groups";
 import { getForwardAuthAccessForHost } from "@/src/lib/models/forward-auth";
 import { requirePermission } from "@/src/lib/auth";
-import { can, scopeTagsFor, tenantOf, type Access } from "@/src/lib/permissions";
+import { can, scopeTagsFor, type Access } from "@/src/lib/permissions";
 import { certificateIdsInScope } from "@/src/lib/access-scope";
 import { toCertificatePickerOption } from "@/src/lib/certificate-api";
 import { loadHostInsights } from "@/src/lib/proxy-host-insights";
@@ -26,7 +26,6 @@ import {
 } from "@/src/lib/proxy-host-view";
 import { paginate } from "@/src/lib/pagination";
 import { getHostApprovalContext } from "@/ee/approvals/requests";
-import { dashboardOrganizationFilter } from "@/ee/multi-tenancy/view";
 import { getUserPreferences } from "@/src/lib/preferences";
 import { parseStoredSortPreference } from "@/src/lib/list-sort-preferences";
 
@@ -43,8 +42,6 @@ export default async function ProxyHostsPage({ searchParams }: PageProps) {
   const { access, user } = await requirePermission("proxy_hosts:read");
   // A tag scope limits the list (and the counts) to hosts with one of the role's tags.
   const scope = scopeTagsFor(access, "proxy_hosts");
-  // An organisation user sees their organisation only; a provider-level user the organisation they picked (ee/multi-tenancy).
-  const organizationId = await dashboardOrganizationFilter(access);
   const [params, preferences] = await Promise.all([searchParams, getUserPreferences(Number(user.id))]);
   const query = parseHostListQuery(
     params,
@@ -53,10 +50,10 @@ export default async function ProxyHostsPage({ searchParams }: PageProps) {
   );
 
   const [allHosts, certificates, caCertificates, accessLists, authentikDefaults, forwardAuthDefaults] = await Promise.all([
-    listProxyHosts(scope, organizationId),
-    listCertificates(organizationId),
+    listProxyHosts(scope),
+    listCertificates(),
     listCaCertificates(),
-    listAccessLists(organizationId),
+    listAccessLists(),
     getAuthentikSettings(),
     getForwardAuthSettings(),
   ]);
@@ -64,8 +61,8 @@ export default async function ProxyHostsPage({ searchParams }: PageProps) {
   const [mtlsRoles, issuedClientCerts, allUsers, allGroups] = await Promise.all([
     listMtlsRoles().catch(() => []),
     listIssuedClientCertificates().catch(() => []),
-    listUsers(organizationId).catch(() => []),
-    listGroups(organizationId).catch(() => []),
+    listUsers().catch(() => []),
+    listGroups().catch(() => []),
   ]);
 
   // The form's pickers list only what the user's role can read, plus what the
@@ -76,7 +73,6 @@ export default async function ProxyHostsPage({ searchParams }: PageProps) {
   // Hosts are filtered, counted and sorted in memory: their status, traffic
   // and protection come from several sources, not from one query.
   const { rows, analyticsStatus } = await loadHostInsights(access, allHosts, {
-    organizationId,
     accessListNames: new Map(visibleAccessLists.map((list) => [list.id, list.name])),
     certificateWaitMs: CERTIFICATE_WAIT_MS,
   });
@@ -166,7 +162,6 @@ async function pickerVisibility(access: Access, visibleHosts: readonly ProxyHost
   return {
     certificate: (id: number) => usedCertificates.has(id) || readableCertificates === null || readableCertificates.has(id),
     accessList: (id: number) => allAccessLists || usedAccessLists.has(id),
-    // CA and client certificates and mTLS roles are the provider's (ee/multi-tenancy).
-    trustAnchors: can(access, "certificates:read") && scopeTagsFor(access, "certificates") === null && tenantOf(access) === null,
+    trustAnchors: can(access, "certificates:read") && scopeTagsFor(access, "certificates") === null,
   };
 }

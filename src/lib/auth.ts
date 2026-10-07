@@ -5,9 +5,7 @@ import { MFA_SETUP_PATH, mfaEnrolmentRequired } from "./mfa";
 import { can, permissionDeniedMessage, type Access, type Permission } from "./permissions";
 import { ApiClientError } from "./api-errors";
 import { accessForUser } from "@/ee/custom-roles/access";
-import { isOrganizationEnabled } from "@/ee/multi-tenancy/store";
-import { touchSessionLastSeen } from "./models/sessions";
-import { appDb } from "./db";
+import { getSessionSignInMethod, isPortalReusableSignInMethod, touchSessionLastSeen } from "./models/sessions";
 
 export type Session = {
   user: {
@@ -17,8 +15,6 @@ export type Session = {
     role: string;
     /** The user's custom role (ee/custom-roles), or null for a built-in role. */
     customRoleId?: number | null;
-    /** The user's organisation (ee/multi-tenancy), or null for the provider level. */
-    organizationId?: number | null;
     provider?: string;
     image?: string | null;
   };
@@ -84,11 +80,6 @@ export async function auth(req?: NextRequest): Promise<Session | null> {
   if (!currentUser || currentUser.status !== "active") {
     return null;
   }
-  // A disabled organisation's users (ee/multi-tenancy) have no session.
-  const organizationId = currentUser.organizationId ?? null;
-  if (organizationId !== null && !await isOrganizationEnabled(appDb, organizationId)) {
-    return null;
-  }
 
   // "Last seen" on Profile and in the users API, written at most once a minute.
   const baSession = betterAuthSession.session as { id?: string | number; updatedAt?: string | Date } | undefined;
@@ -101,7 +92,6 @@ export async function auth(req?: NextRequest): Promise<Session | null> {
       name: currentUser.name,
       role: currentUser.role,
       customRoleId: currentUser.customRoleId,
-      organizationId,
       provider: currentUser.provider || baUser.provider,
       image: currentUser.avatarUrl ?? (baUser.avatarUrl as string | null | undefined) ?? null,
     },
@@ -145,6 +135,24 @@ export async function getCurrentSessionInfo(
 }
 
 /**
+ * Whether the forward-auth portal may sign the caller in to a protected app
+ * with their dashboard session: only when an identity provider created that
+ * session (OIDC, SAML or LDAP sign-in). Single sign-on across apps then comes
+ * from the customer's identity provider; a password or passkey session (and
+ * one from before the sign-in method was recorded) is not reused, and the
+ * user signs in at the portal instead.
+ */
+export async function portalMayReuseSession(req?: NextRequest): Promise<boolean> {
+  const info = await getCurrentSessionInfo(req);
+  if (!info) return false;
+  try {
+    return isPortalReusableSignInMethod(await getSessionSignInMethod(info.id));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Require authentication. Redirects to /login if not authenticated, and to
  * the MFA setup page when the MFA policy's grace period for the account is
  * over and it has not set up MFA (src/lib/mfa.ts): such a session can only
@@ -166,14 +174,12 @@ export async function requireUser(): Promise<Session> {
   return session;
 }
 
-/** What the session's user may do (built-in role or custom role). Never checks the license. */
+/** What the session's user may do (built-in role or custom role). */
 export async function getSessionAccess(session: Session): Promise<Access> {
   return await accessForUser({
     id: Number(session.user.id),
     role: session.user.role,
     customRoleId: session.user.customRoleId ?? null,
-    // auth() reads it with the role; a session made elsewhere without it is looked up.
-    organizationId: session.user.organizationId,
   });
 }
 

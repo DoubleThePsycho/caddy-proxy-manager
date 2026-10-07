@@ -25,7 +25,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   }
 }
 
-/** Deleting never needs a license; the provider's account links and group mappings are deleted with it. */
+/** The provider's account links and group mappings are deleted with it. */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "sso:write");

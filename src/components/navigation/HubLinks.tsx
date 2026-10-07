@@ -7,7 +7,7 @@ export type HubLink = {
   title: string;
   description: string;
   icon: LucideIcon;
-  /** A short note on the right, e.g. "Enterprise". */
+  /** A short note on the right, e.g. "3 enabled". */
   note?: string;
 };
 

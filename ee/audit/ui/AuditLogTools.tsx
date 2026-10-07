@@ -25,7 +25,7 @@ function exportUrl(format: string, from: string, to: string): string {
   return `/api/v1/audit-log/export?${params.toString()}`;
 }
 
-/** Download the audit log as CSV or JSON (audit_streaming feature), optionally for a date range. */
+/** Download the audit log as CSV or JSON, optionally for a date range. */
 export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [format, setFormat] = useState("csv");
   const [from, setFrom] = useState("");
@@ -78,10 +78,9 @@ function plural(count: number, one: string, many = `${one}s`): string {
 
 /**
  * The hash chain's state from the last recorded verification, with "Verify
- * now". Shown to provider-level users only (the chain spans every
- * organisation).
+ * now".
  */
-export function ChainBanner({ chain, licensed }: { chain: AuditChainStatus; licensed: boolean }) {
+export function ChainBanner({ chain }: { chain: AuditChainStatus }) {
   const router = useRouter();
   const format = useFormat();
   const [verifying, startVerify] = useTransition();
@@ -141,13 +140,7 @@ export function ChainBanner({ chain, licensed }: { chain: AuditChainStatus; lice
         layout="stacked"
         title={title}
         actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={verify}
-            disabled={!licensed || verifying}
-            title={licensed ? undefined : "Verifying needs a Business license"}
-          >
+          <Button variant="outline" size="sm" onClick={verify} disabled={verifying}>
             {verifying ? "Verifying…" : "Verify now"}
           </Button>
         }

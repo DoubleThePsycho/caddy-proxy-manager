@@ -56,10 +56,10 @@ describe('OpenAPI: fleet management', () => {
     }
   });
 
-  it('documents pull replicas: the credential once, the permission and the license', async () => {
+  it('documents pull replicas: the credential once and the permission', async () => {
     const doc = await spec();
-    expect(doc.paths['/api/v1/fleet/pull-replicas'].post.description).toMatch(/fleet:replicas \(administrator-level\); needs the fleet feature/);
-    expect(doc.paths['/api/v1/fleet/pull-replicas/{id}/credential'].delete.description).toMatch(/never needs a license/);
+    expect(doc.paths['/api/v1/fleet/pull-replicas'].post.description).toMatch(/fleet:replicas \(administrator-level\)/);
+    expect(doc.paths['/api/v1/fleet/pull-replicas/{id}/credential'].delete.description).toMatch(/^Permission fleet:replicas\./);
     expect(doc.components.schemas.FleetPullCredential.required).toEqual(['replica', 'credential', 'env']);
     expect(Object.keys(doc.components.schemas.FleetPullReplica.properties)).not.toContain('credential');
     expect(doc.components.schemas.FleetInstance.required).toEqual(expect.arrayContaining(['syncMode', 'pull']));

@@ -60,7 +60,7 @@ function emptyPayload(): SyncPayload {
 
 const now = new Date().toISOString();
 const listRow = (overrides: Record<string, unknown> = {}) => ({
-  id: 7, name: 'Synced', description: null, createdBy: null, createdAt: now, updatedAt: now, organizationId: null,
+  id: 7, name: 'Synced', description: null, createdBy: null, createdAt: now, updatedAt: now,
   defaultAction: 'deny', denyStatus: 451, denyBody: 'No', denyRedirectUrl: null, failClosed: true, systemKey: null,
   ...overrides,
 });
@@ -179,6 +179,17 @@ describe('configuration content', () => {
     expect(parsed.tables.accessListRules).toEqual([]);
     await appDb.transaction(async (tx) => await writeConfigContent(tx, parsed, 'import'));
     expect(await ctx.db.select().from(schema.accessLists)).toEqual([expect.objectContaining({ name: 'Old', defaultAction: 'allow' })]);
+  });
+
+  it('drops the organizationId that content from releases with multi-tenancy still has', async () => {
+    const parsed = parseConfigContent({
+      version: 1,
+      tables: { accessLists: [{ id: 1, name: 'Tenant list', description: null, createdBy: null, createdAt: now, updatedAt: now, organizationId: 4 }] },
+      settings: {},
+    });
+    expect(parsed.tables.accessLists[0]).not.toHaveProperty('organizationId');
+    await appDb.transaction(async (tx) => await writeConfigContent(tx, parsed, 'restore'));
+    expect(await ctx.db.select().from(schema.accessLists)).toEqual([expect.objectContaining({ name: 'Tenant list' })]);
   });
 
   it('sends the rules to fleet revisions without attribution', async () => {

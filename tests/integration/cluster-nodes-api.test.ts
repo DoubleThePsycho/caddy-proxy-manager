@@ -1,7 +1,6 @@
 /**
  * GET /api/v1/cluster/nodes (the PostgreSQL replicas): guarded by
- * high_availability:read, readable without a license, the replicas with
- * their status and the leader, `enabled: false` on SQLite, nothing secret,
+ * high_availability:read, the replicas with their status and the leader, `enabled: false` on SQLite, nothing secret,
  * and its OpenAPI entry.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -68,10 +67,11 @@ describe('GET /api/v1/cluster/nodes', () => {
     const { status, data, cache } = await get();
     expect(status).toBe(200);
     expect(cache).toBe('no-store');
-    expect(data).toMatchObject({ enabled: false, configurable: false, nodes: [], leaderNodeId: null });
+    expect(data).toMatchObject({ enabled: false, nodes: [], leaderNodeId: null });
+    expect(data).not.toHaveProperty('configurable');
   });
 
-  it('lists the replicas, the leader and this replica, without a license and without secrets', async () => {
+  it('lists the replicas, the leader and this replica, without secrets', async () => {
     usePostgres();
     const now = new Date();
     const stale = new Date(now.getTime() - 10 * 60_000).toISOString();
@@ -103,7 +103,6 @@ describe('GET /api/v1/cluster/nodes', () => {
     expect(status).toBe(200);
     expect(data).toMatchObject({
       enabled: true,
-      configurable: false,
       nodeId: 'web-1',
       leaderNodeId: 'web-1',
       liveReplicas: 1,

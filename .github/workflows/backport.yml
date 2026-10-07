@@ -1,7 +1,7 @@
-name: Backport to LTS
+name: Backport to release lines
 
 # A merged pull request labelled "backport lts/2.0" (one label per line) gets a
-# cherry-pick pull request against that branch (ee/docs/lts.md). Conflicts
+# cherry-pick pull request against that release line's branch. Conflicts
 # are reported on the original pull request for a maintainer to resolve.
 
 on:

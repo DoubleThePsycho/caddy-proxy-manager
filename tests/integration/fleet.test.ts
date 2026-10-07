@@ -10,10 +10,10 @@
  * Covered: environment assignment and the plain sync skipping pinned
  * instances, promotion pins, canary success and failure, abort and rollback,
  * a restart in the middle of a rollout, drift states (older replicas
- * included), the alert evaluators, the license gate and the permission
- * guards that are not the route guard's.
+ * included), winding environments down, the alert evaluators and the
+ * permission guards that are not the route guard's.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { eq } from 'drizzle-orm';
 import type { AsyncLocalStorage } from 'node:async_hooks';
@@ -73,8 +73,6 @@ import { deleteUser } from '../../src/lib/models/user';
 import { APPLIED_SYNC_SETTING_KEY } from '../../src/lib/instance-sync-status';
 import { recordCaddyApplyResult, resetCaddyApplyStatusForTests } from '../../src/lib/caddy-apply-status';
 import { adminAccess, type Access, type Permission } from '../../src/lib/permissions';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import {
   assignInstance,
   createEnvironment,
@@ -188,10 +186,6 @@ async function fleetRow(instanceId: number) {
   return await dbFirst(ctx.master.select().from(schema.fleetInstances).where(eq(schema.fleetInstances.instanceId, instanceId)).limit(1));
 }
 
-async function removeLicense() {
-  await ctx.master.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-}
-
 /** staging (every change: r1) then production (promotion only: r2, r3). */
 async function stagingAndProduction(canary: Record<string, unknown> = { enabled: false }) {
   const r1 = await addReplica('r1');
@@ -214,8 +208,6 @@ beforeEach(async () => {
   delete process.env.INSTANCE_SYNC_TOKEN;
   delete process.env.INSTANCE_SLAVES;
   await resetCaddyApplyStatusForTests();
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.master, 'enterprise');
   await setSetting('instance_mode', 'master');
   const t = now();
   adminId = (await dbFirst(ctx.master.insert(schema.users).values({
@@ -234,8 +226,6 @@ beforeEach(async () => {
 afterEach(() => {
   vi.restoreAllMocks();
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('environments and assignment', () => {
   it('keeps syncing instances without an environment, and those in an environment that receives every change', async () => {
@@ -655,18 +645,11 @@ describe('drift detection', () => {
   });
 });
 
-describe('license gate', () => {
-  it('gates setting up and promoting, never winding down or the runtime', async () => {
+describe('winding down', () => {
+  it('finishes the running rollout, then releases, takes out and deletes', async () => {
     const { r2, production, staging } = await stagingAndProduction({ enabled: true, waitSeconds: 0 });
     const rollout = await startPromotion({ environmentId: production.id }, adminId);
-    await removeLicense();
-
-    await expect(createEnvironment({ name: 'qa' }, adminId)).rejects.toMatchObject({ status: 403 });
-    await expect(updateEnvironment(staging.id, { name: 'stage' }, admin())).rejects.toMatchObject({ status: 403 });
-    await expect(updateEnvironment(staging.id, { promotionOnly: true }, admin())).rejects.toMatchObject({ status: 403 });
-    await expect(assignInstance(r2.instanceId, { environmentId: staging.id }, admin())).rejects.toMatchObject({ status: 403 });
     await addMasterHost('New');
-    await expect(startPromotion({ environmentId: production.id }, adminId)).rejects.toMatchObject({ status: 403 });
 
     // The running rollout finishes, and plain syncs keep skipping the pinned instances.
     await runRolloutTick();
@@ -675,9 +658,7 @@ describe('license gate', () => {
     await syncInstances();
     expect(postsTo('r2')).toBe(0);
     expect(postsTo('r1')).toBe(1);
-    await expect(rollbackRollout(rollout.id, {}, adminId)).rejects.toMatchObject({ status: 403 });
 
-    // Winding down, re-syncing and drift checks work.
     expect((await resyncInstance(r2.instanceId, adminId)).ok).toBe(true);
     await runDriftChecks();
     await assignInstance(r2.instanceId, { environmentId: null }, admin());
@@ -686,13 +667,6 @@ describe('license gate', () => {
     await deleteEnvironment(production.id, admin());
     await deleteEnvironment(staging.id, admin());
     expect(await listFleetInstances()).toHaveLength(3);
-  });
-
-  it('lets an unlicensed install abort a running rollout', async () => {
-    const { production } = await stagingAndProduction({ enabled: true, waitSeconds: 600 });
-    const rollout = await startPromotion({ environmentId: production.id }, adminId);
-    await removeLicense();
-    expect(await abortRollout(rollout.id, adminId)).toMatchObject({ status: 'aborted' });
   });
 });
 

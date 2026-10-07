@@ -44,7 +44,7 @@ import { appDb } from "./db";
 import { certificates, proxyHosts } from "./db/schema";
 import { config } from "./config";
 import { parseStoredTags } from "./host-tags";
-import { scopeTagsFor, tagsInScope, tenantOf, type Access } from "./permissions";
+import { scopeTagsFor, tagsInScope, type Access } from "./permissions";
 
 export const MANAGED_CERT_STATES = ["valid", "renewal_due", "renewal_overdue", "expired", "missing", "mismatch", "error"] as const;
 export type ManagedCertificateState = (typeof MANAGED_CERT_STATES)[number];
@@ -570,25 +570,23 @@ export function isManagedCertificateProblem(status: ManagedCertificateStatus): b
 
 /**
  * The statuses `access` may see: those of proxy hosts within its tag scope
- * (certificates area) and its organisation, with the other hosts left out
- * of each status.
+ * (certificates area), with the other hosts left out of each status.
  */
 export async function filterManagedCertificatesForAccess(
   statuses: ManagedCertificateStatus[],
   access: Access
 ): Promise<ManagedCertificateStatus[]> {
   const scope = scopeTagsFor(access, "certificates");
-  const tenant = tenantOf(access);
-  if (scope === null && tenant === null) return statuses;
+  if (scope === null) return statuses;
   const ids = [...new Set(statuses.flatMap((status) => status.proxyHosts.map((host) => host.id)))];
   if (ids.length === 0) return [];
   const rows = await appDb
-    .select({ id: proxyHosts.id, tags: proxyHosts.tags, organizationId: proxyHosts.organizationId })
+    .select({ id: proxyHosts.id, tags: proxyHosts.tags })
     .from(proxyHosts)
     .where(inArray(proxyHosts.id, ids));
   const visible = new Set(
     rows
-      .filter((row) => tagsInScope(parseStoredTags(row.tags), scope) && (tenant === null || row.organizationId === tenant))
+      .filter((row) => tagsInScope(parseStoredTags(row.tags), scope))
       .map((row) => row.id)
   );
   return statuses

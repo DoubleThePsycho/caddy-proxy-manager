@@ -14,7 +14,7 @@ It also has a fail-closed mode, custom response codes and bodies, and trusted pr
 | CIDR | `203.0.113.0/24` | IP range in CIDR notation |
 | IP | `203.0.113.10` | Exact IP address |
 
-Rules can be **block** or **allow**. Allow rules take precedence over block rules — you can block an entire continent and then allow specific IPs or ASNs through.
+Rules can be **block** or **allow**. Allow rules win over block rules, so you can block a continent and allow specific IPs or ASNs through.
 
 ## GeoIP setup
 

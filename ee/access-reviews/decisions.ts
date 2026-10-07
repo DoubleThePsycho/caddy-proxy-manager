@@ -14,7 +14,7 @@
  *  - api_token: deleteApiToken.
  * Access that is gone or changed since the campaign started is left alone
  * and recorded as unchanged. The campaign completes when its last item is
- * confirmed. Never checks the license.
+ * confirmed.
  */
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { appDb, nowIso } from "@/src/lib/db";
@@ -28,7 +28,6 @@ import { deleteApiToken } from "@/src/lib/models/api-tokens";
 import { assertActiveAdminRemains } from "@/ee/custom-roles/escalation";
 import { auditCampaignCompleted, closeCampaign, toItemView } from "./campaigns";
 import { parseStoredIds, rejectUnknownKeys, requireRecord } from "./scope";
-import { userOrganizationId } from "@/ee/multi-tenancy/store";
 import type { AssignmentView, Decision, ItemOutcome, ReviewItemView } from "./types";
 import { asc, first } from "@/src/lib/db/ops";
 
@@ -37,23 +36,18 @@ type CampaignRow = typeof accessReviewCampaigns.$inferSelect;
 
 const MAX_COMMENT_LENGTH = 1000;
 
-/**
- * Whether `userId` reviews `campaign`. A user of an organisation
- * (ee/multi-tenancy) never does, even when named before they moved there: a
- * campaign lists users and roles of every organisation.
- */
-async function reviews(campaign: CampaignRow, userId: number): Promise<boolean> {
-  return parseStoredIds(campaign.reviewerIds).includes(userId) && await userOrganizationId(appDb, userId) === null;
+/** Whether `userId` reviews `campaign`. */
+function reviews(campaign: CampaignRow, userId: number): boolean {
+  return parseStoredIds(campaign.reviewerIds).includes(userId);
 }
 
 /** Whether `userId` is a reviewer of the open campaign `campaignId`. */
 export async function reviewsOpenCampaign(userId: number, campaignId: number): Promise<boolean> {
   const campaign = await first(appDb.select().from(accessReviewCampaigns).where(eq(accessReviewCampaigns.id, campaignId)).limit(1));
-  return campaign !== undefined && campaign.status === "open" && await reviews(campaign, userId);
+  return campaign !== undefined && campaign.status === "open" && reviews(campaign, userId);
 }
 
 async function openCampaignsReviewedBy(userId: number): Promise<CampaignRow[]> {
-  if (await userOrganizationId(appDb, userId) !== null) return [];
   return (await appDb
     .select()
     .from(accessReviewCampaigns)
@@ -108,7 +102,7 @@ async function loadDecidableItem(userId: number, itemId: number): Promise<{ item
     ? await first(appDb.select().from(accessReviewCampaigns).where(eq(accessReviewCampaigns.id, item.campaignId)).limit(1))
     : undefined;
   // Items of campaigns the caller does not review are answered as missing.
-  if (!item || !campaign || !await reviews(campaign, userId)) {
+  if (!item || !campaign || !reviews(campaign, userId)) {
     throw new ApiClientError("Review item not found", 404);
   }
   if (campaign.status !== "open") throw new ApiClientError(`This access review is ${campaign.status}`, 409);
@@ -246,7 +240,7 @@ export async function confirmDecisions(userId: number, input: unknown): Promise<
   const claimedAt = nowIso();
   const { campaign, claimed } = await appDb.transaction(async (tx) => {
     const campaign = await first(tx.select().from(accessReviewCampaigns).where(eq(accessReviewCampaigns.id, campaignId)).limit(1));
-    if (!campaign || !await reviews(campaign, userId)) {
+    if (!campaign || !reviews(campaign, userId)) {
       throw new ApiClientError("Access review not found", 404);
     }
     if (campaign.status !== "open") throw new ApiClientError(`This access review is ${campaign.status}`, 409);

@@ -3,11 +3,10 @@
  * (ee/high-availability/shared-state) on the master of the test stack, with
  * the Valkey service of the certificate storage spec.
  *
- * The stack has no license, so the certificate storage's connection (backend
- * local: Caddy is not touched) and the shared state switch are written
- * straight into the master's database, as a licensed administrator would have
- * saved them; turning shared state off needs no license and goes through the
- * API. The spec then signs in through the forward-auth portal and checks that
+ * The certificate storage's connection (backend local: Caddy is not
+ * touched) and the shared state switch, with a generation the spec knows,
+ * are written straight into the master's database; turning shared state off
+ * goes through the API. The spec then signs in through the forward-auth portal and checks that
  * the redirect intent, the session and the exchange code are in Valkey, with
  * the TTLs of their lifetimes, and none of them in SQLite.
  */
@@ -180,7 +179,7 @@ test.describe.serial('High availability: shared state (master + Valkey)', () => 
     expect(namespaceKeys().filter((key) => /\{fa\}:s:\d+$/.test(key))).toHaveLength(0);
   });
 
-  test('turns off without a license', async () => {
+  test('turns off', async () => {
     const off = await admin.request.put(`${API}/high-availability/shared-state`, { headers: json, data: { enabled: false } });
     expect(off.status()).toBe(200);
     expect(await off.json()).toMatchObject({ enabled: false, backend: 'local' });

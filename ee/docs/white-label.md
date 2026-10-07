@@ -1,8 +1,8 @@
 # White-label
 
-Feature id `white_label`, MSP edition. Source: `ee/white-label/`.
+Source: `ee/white-label/` (Elastic License 2.0).
 
-White-label lets a managed service provider resell the product to its clients under its own brand. The clients see your product name, logo, colours and support contact instead of the product's own.
+White-label puts your own brand on the dashboard and on every sign-in page. Your users see your product name, logo, colours and support contact instead of the product's own.
 
 ## What it changes
 
@@ -17,22 +17,21 @@ White-label lets a managed service provider resell the product to its clients un
 | E-mail sender name | The display name in the From header of alert and digest e-mails, in front of each channel's own address. Empty: the bare address, as before. |
 | "Powered by" note | A small note naming the real product under the sign-in forms and in the sidebar. Shown by default once a name or logo of your own is set; it can be turned off. |
 
-The forward-auth portal (`/portal`) is the page your clients' users see most: it shows the logo (or the sign-in heading when there is no logo), the footer, the support contact and the note.
+The forward-auth portal (`/portal`) is the page your users see most: it shows the logo (or the sign-in heading when there is no logo), the footer, the support contact and the note.
 
 ### What keeps the real name
 
-- The **License** page, the license texts ("needs an active … license") and the notices required by the MIT and Elastic licenses.
+- The notices required by the MIT and Elastic licenses.
 - Identifiers: HTTP header names (`X-Ingressi-*` and the forward-auth headers), the webhook `source` field, PagerDuty dedup keys, syslog app names, User-Agent strings, cookie, image and volume names, environment variables and file names.
 - The CA name of client-certificate authorities created in the dashboard, and the instructions sent to the AI model.
 - Authenticator app entries made before the change keep the name they were created with.
 
 ## Setup
 
-1. Install an MSP license (**License**).
-2. Open **Branding** in the sidebar.
-3. Fill in the fields you want; leave a field empty to keep the default. The preview shows the sign-in page in both themes as you type.
-4. Upload the logos and the favicon. Each upload is stored at once.
-5. **Save** the text fields and colours.
+1. Open **Branding** in the sidebar.
+2. Fill in the fields you want; leave a field empty to keep the default. The preview shows the sign-in page in both themes as you type.
+3. Upload the logos and the favicon. Each upload is stored at once.
+4. **Save** the text fields and colours.
 
 Pages pick the change up on the next load. **Reset to defaults** removes everything, images included.
 
@@ -54,11 +53,11 @@ Every file is at most 512 KB.
 
 | Method and path | Permission | Notes |
 | --- | --- | --- |
-| `GET /api/v1/branding` | `branding:read` | Settings, effective values, images, limits, `source` (`default`, `local`, `master`) and `configurable`. |
+| `GET /api/v1/branding` | `branding:read` | Settings, effective values, images, limits, and `source` (`default`, `local`, `master`). |
 | `PUT /api/v1/branding` | `branding:write` | Partial update: fields left out keep their values; `null` or `""` restores the default; unknown fields are refused. |
-| `DELETE /api/v1/branding` | `branding:write` | Resets everything, images included. Never needs a license. |
+| `DELETE /api/v1/branding` | `branding:write` | Resets everything, images included. |
 | `PUT /api/v1/branding/assets/{asset}` | `branding:write` | `logo-light`, `logo-dark` or `favicon`: multipart/form-data with a `file` field, or the image as the body. `413` above 512 KB. |
-| `DELETE /api/v1/branding/assets/{asset}` | `branding:write` | Never needs a license. |
+| `DELETE /api/v1/branding/assets/{asset}` | `branding:write` | Removes an image. |
 | `GET /api/branding/{asset}` | public | Serves an image (see below). |
 
 ```bash
@@ -79,12 +78,6 @@ Every change is audited: `branding_updated` (the fields changed, with old and ne
 
 The `branding` area has `read` and `write`. `branding:write` is **administrator-level**: only administrators can grant it. Whoever holds it chooses the name and logo every sign-in page of the install shows, including the forward-auth portal of every protected site, so it could be used to make those pages look like another organisation's.
 
-## Licensing
-
-- Setting a field to a value of your own, or uploading an image, needs a license that includes `white_label` (`403` otherwise).
-- Restoring a field to its default, removing an image, resetting and reading never do. Without a license the Branding page is read-only, with **Remove** and **Reset to defaults** still available.
-- Nothing on the request path checks the license: configured branding keeps showing when a license lapses.
-
 ## Instance sync
 
 The branding, images included, is part of instance sync (`white_label` in the sync payload), because slaves serve the forward-auth portal and the sign-in pages too. A slave shows the master's branding unless it has its own; resetting on the slave brings the master's back. It is not part of configuration export, history or backups, which cover what Caddy serves.
@@ -101,6 +94,6 @@ The branding, images included, is part of instance sync (`white_label` in the sy
 
 ## Limits
 
-- One branding per install: there is no per-host or per-tenant branding yet (see multi-tenancy).
+- One branding per install: there is no per-host branding.
 - The custom domain of the dashboard is set up as usual (a proxy host or `BASE_URL`), not here.
 - The product name in e-mails applies to messages sent after the change.

@@ -87,7 +87,7 @@ export type HostEditorData = {
   clientCertificates: EditorClientCertificate[];
   users: EditorUser[];
   groups: EditorGroup[];
-  /** The role may choose client certificates and mTLS roles (certificates:read without a tag scope, provider level). */
+  /** The role may choose client certificates and mTLS roles (certificates:read without a tag scope). */
   canChooseTrust: boolean;
   canChooseUsers: boolean;
   canChooseGroups: boolean;
@@ -108,8 +108,6 @@ export type HostEditorData = {
   geoblockGlobal: { enabled: boolean } | null;
   /** A default DNS provider exists, so Caddy can obtain wildcard certificates. */
   dnsProviderConfigured: boolean;
-  /** Where the host belongs, when organisations are in use. */
-  organization: string | null;
   lastSaved: { at: string; by: string | null } | null;
   historyHref: string | null;
 };

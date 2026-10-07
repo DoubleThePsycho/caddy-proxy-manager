@@ -46,7 +46,7 @@ export const GOVERNANCE_OPENAPI_PATHS = {
         "One event with its data and, for a configuration change recorded while configuration history was on, the before/after diff from " +
         "the history versions recorded with it: only the event's own entity (a proxy host with its mTLS rules and forward-auth grants), every " +
         "change for imports and restores. Secrets are never returned. Older events, and events whose versions retention deleted, have none. " +
-        "Permission audit_log:read; an organisation user reads their organisation's events only.",
+        "Permission audit_log:read.",
       operationId: "getAuditEvent",
       parameters: [idParam],
       responses: { "200": { description: "Event", content: json(ref("AuditEventDetail")) }, ...errors("401", "403", "404") },
@@ -81,7 +81,9 @@ export const GOVERNANCE_OPENAPI_PATHS = {
     get: {
       tags: ["Alerting"],
       summary: "List alerts firing now",
-      description: "Every subject firing now, most severe and newest first, with the event that started it and the channels that were told. Permission alerts:read.",
+      description:
+        "Every subject firing now, with the event that started it, the channels that were told and its dismissal or its rule's mute " +
+        "(see /api/v1/alert-silences): those neither dismissed nor muted first, then most severe and newest first. Permission alerts:read.",
       operationId: "listFiringAlerts",
       responses: {
         "200": { description: "Firing alerts", content: json({ type: "object", properties: { alerts: { type: "array", items: ref("FiringAlert") } } }) },
@@ -97,7 +99,7 @@ export const GOVERNANCE_OPENAPI_PATHS = {
         "For every domain of an enabled proxy host whose certificate Caddy obtains itself (ACME, or its internal CA), the certificate Caddy " +
         "presents, read with a TLS handshake to Caddy's HTTPS port (CADDY_TLS_ADDRESS, or the host of CADDY_API_URL on port 443): issuer, " +
         "validity, when Caddy renews it (a third of its lifetime before expiry) and a state. Results are cached (30 minutes, 5 for problems); " +
-        "?refresh=true checks names older than a minute again. Limited to the hosts within the caller's tag scope and organisation. " +
+        "?refresh=true checks names older than a minute again. Limited to the hosts within the caller's tag scope. " +
         "Permission certificates:read.",
       operationId: "listManagedCertificates",
       parameters: [{ name: "refresh", in: "query", schema: { type: "boolean" } }],
@@ -125,7 +127,7 @@ export const GOVERNANCE_OPENAPI_PATHS = {
       description:
         "Newest first. Each version has a title taken from the audit events that produced it (the manual note, or a summary of the diff " +
         "when there are none), who made it, the change requests whose approved changes it contains, how big the change was, and whether it " +
-        "is the configuration running now. Permission config_history:read; available without a license.",
+        "is the configuration running now. Permission config_history:read.",
       operationId: "listConfigVersions",
       parameters: [
         { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 200, default: 50 } },
@@ -392,7 +394,6 @@ export const GOVERNANCE_OPENAPI_SCHEMAS = {
             doneBy: { type: ["string", "null"], enum: ["data", "manual", null] },
             markedAt: { type: ["string", "null"] },
             action: { type: ["object", "null"], properties: { label: { type: "string" }, route: { type: "string" } } },
-            paid: { type: ["object", "null"], properties: { features: { type: "array", items: { type: "string" } }, configurable: { type: "boolean" } } },
           },
         },
       },

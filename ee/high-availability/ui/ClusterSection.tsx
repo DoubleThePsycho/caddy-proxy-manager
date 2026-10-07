@@ -4,7 +4,6 @@
 import { useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCw, Server } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -64,47 +63,27 @@ function copyLabel(node: NodeReport): ReactNode {
 }
 
 /** The dashboard cluster on the High availability page: read-only, configured with environment variables. */
-export default function ClusterSection({ view, editionLabel }: { view: ClusterView; editionLabel: string }) {
+export default function ClusterSection({ view }: { view: ClusterView }) {
   if (view.postgres) {
-    return <PostgresReplicasSection view={view.postgres} configurable={view.configurable} editionLabel={editionLabel} />;
+    return <PostgresReplicasSection view={view.postgres} />;
   }
-  return <LitestreamClusterSection view={view} editionLabel={editionLabel} />;
+  return <LitestreamClusterSection view={view} />;
 }
 
 /** The SQLite cluster of HA phase 2 (HA_ENABLED: a leader, standbys, Litestream). */
-function LitestreamClusterSection({ view, editionLabel }: { view: ClusterView; editionLabel: string }) {
+function LitestreamClusterSection({ view }: { view: ClusterView }) {
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
-  const actions = (
-    <>
-      <Badge variant="outline">{editionLabel}</Badge>
-      {view.enabled && (
-        <Button variant="outline" size="sm" disabled={refreshing} onClick={() => startRefresh(() => router.refresh())}>
-          <RefreshCw className={refreshing ? "animate-spin" : undefined} />
-          Refresh
-        </Button>
-      )}
-    </>
-  );
 
   if (!view.enabled) {
     return (
-      <SectionCard
-        title="Dashboard cluster"
-        headingLevel={2}
-        actions={actions}
-      >
+      <SectionCard title="Dashboard cluster" headingLevel={2}>
         <EmptyState
           compact
           headingLevel={4}
           icon={Server}
           title="High availability is off on this node"
-          description={
-            <>
-              Run two or more web containers with HA_ENABLED. It needs an active {editionLabel} license
-              {view.configurable ? ", which this install has." : "."}
-            </>
-          }
+          description="Run two or more web containers with HA_ENABLED."
           action={
             <Button asChild variant="outline" size="sm">
               <a href={DOCS_HREF} target="_blank" rel="noreferrer">
@@ -127,7 +106,12 @@ function LitestreamClusterSection({ view, editionLabel }: { view: ClusterView; e
       description="One leader serves the dashboard; a standby takes over when it stops."
       descriptionPlacement="below"
       headingLevel={2}
-      actions={actions}
+      actions={
+        <Button variant="outline" size="sm" disabled={refreshing} onClick={() => startRefresh(() => router.refresh())}>
+          <RefreshCw className={refreshing ? "animate-spin" : undefined} />
+          Refresh
+        </Button>
+      }
       padded
       contentClassName="flex flex-col gap-4"
     >

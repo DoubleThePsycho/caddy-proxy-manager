@@ -1,15 +1,8 @@
 /**
  * Global setup of tests/playwright.replicas.config.ts: PostgreSQL, Caddy and
  * two dashboard replicas (tests/docker-compose.test.replicas.yml), with
- * nothing else of the test stack.
- *
- * The stack has no license, and a second replica joins next to a live one
- * only with Enterprise high availability (ee/docs/high-availability.md,
- * "License rule"). So the two replicas join the way the rule allows without
- * one: replica A starts alone and joins as the only replica, then stops
- * cleanly (it records that it stopped); replica B starts while no replica
- * is live and joins as the only one; replica A starts again, and a node id
- * the cluster knows always joins.
+ * nothing else of the test stack. Replica A starts first (it migrates the
+ * database), then replica B joins next to it.
  */
 import { chromium } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
@@ -57,13 +50,8 @@ export default async function globalSetup() {
   replicaCompose(['up', '-d', '--build', '--wait', '--wait-timeout', '240', ...BASE_SERVICES, REPLICA_A.service], { timeoutMs: 1_200_000 });
   await waitForHealthy(REPLICA_A);
 
-  log('Stopping replica A cleanly, then starting replica B alone...');
-  replicaCompose(['stop', REPLICA_A.service]);
+  log('Starting replica B...');
   replicaCompose(['up', '-d', '--wait', '--wait-timeout', '240', REPLICA_B.service]);
-  await waitForHealthy(REPLICA_B);
-
-  log('Starting replica A again...');
-  replicaCompose(['start', REPLICA_A.service]);
   try {
     await Promise.all(REPLICAS.map((replica) => waitForHealthy(replica)));
     const leader = await soleLeader(REPLICAS, 60_000);

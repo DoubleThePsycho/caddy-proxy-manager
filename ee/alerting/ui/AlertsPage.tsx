@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 import { requirePermission } from "@/src/lib/auth";
 import { can, scopeTagsFor } from "@/src/lib/permissions";
-import { organizationFilterFor } from "@/ee/multi-tenancy/scope";
 import { listProxyHosts } from "@/src/lib/models/proxy-hosts";
 import { listAlertChannels } from "@/ee/alerting/channels";
 import { listAlertRules } from "@/ee/alerting/rules";
 import { listAlertEvents, listFiringAlerts } from "@/ee/alerting/events";
-import { getAlertingLicenseView } from "@/ee/alerting/gate";
 import { getAiSettingsView } from "@/ee/ai/settings";
 import { getDigestSettingsView } from "@/ee/ai/digest-settings";
 import { getQuestionSettings } from "@/ee/ai/questions/settings";
@@ -41,7 +39,7 @@ export default async function AlertsPage({ searchParams }: PageProps) {
   const page = parsePageParam(pageParam);
   const now = Date.now();
   // Every view below is already free of credentials; proxy hosts are reduced to ids and names.
-  const [channels, rules, firing, recent, history, hosts, ai, digest, license, questions] = await Promise.all([
+  const [channels, rules, firing, recent, history, hosts, ai, digest, questions] = await Promise.all([
     listAlertChannels(),
     listAlertRules(),
     listFiringAlerts(),
@@ -49,11 +47,10 @@ export default async function AlertsPage({ searchParams }: PageProps) {
     tab === "history" ? historyPage(page) : Promise.resolve({ events: [], total: 0, page: 1, perPage: HISTORY_PER_PAGE }),
     // Only the hosts the user may read are offered and named.
     can(access, "proxy_hosts:read")
-      ? listProxyHosts(scopeTagsFor(access, "proxy_hosts"), organizationFilterFor(access))
+      ? listProxyHosts(scopeTagsFor(access, "proxy_hosts"))
       : Promise.resolve([]),
     getAiSettingsView(),
     getDigestSettingsView(),
-    getAlertingLicenseView(),
     getQuestionSettings(),
   ]);
   const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -68,7 +65,6 @@ export default async function AlertsPage({ searchParams }: PageProps) {
       ai={ai}
       digest={digest}
       questions={questions}
-      license={license}
       canAi={canAi}
       canWrite={canWrite}
       proxyHosts={hosts.map((host) => ({ id: host.id, name: host.name || host.domains[0] || `Host #${host.id}` })).sort((a, b) => a.name.localeCompare(b.name))}

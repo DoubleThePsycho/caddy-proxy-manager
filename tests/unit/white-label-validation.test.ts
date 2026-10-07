@@ -18,7 +18,7 @@ import {
   normalizeHexColor,
   readableAccent,
 } from '@/ee/white-label/colors';
-import { fieldsNeedingLicense, normalizeStoredSettings, parseBrandingInput } from '@/ee/white-label/validation';
+import { normalizeStoredSettings, parseBrandingInput } from '@/ee/white-label/validation';
 import { DEFAULT_BRANDING_SETTINGS } from '@/ee/white-label/types';
 
 describe('colours', () => {
@@ -147,13 +147,5 @@ describe('stored settings', () => {
       showPoweredBy: 'yes',
     })).toEqual({ ...DEFAULT_BRANDING_SETTINGS, supportEmail: 'help@example.com' });
     expect(normalizeStoredSettings('garbage')).toEqual(DEFAULT_BRANDING_SETTINGS);
-  });
-
-  it('asks for a license only for values of your own', () => {
-    const current = { ...DEFAULT_BRANDING_SETTINGS, productName: 'Example Edge', showPoweredBy: false };
-    expect(fieldsNeedingLicense(current, { ...current, productName: null, showPoweredBy: true })).toEqual([]);
-    expect(fieldsNeedingLicense(current, { ...current })).toEqual([]);
-    expect(fieldsNeedingLicense(current, { ...current, productName: 'Other' })).toEqual(['productName']);
-    expect(fieldsNeedingLicense(DEFAULT_BRANDING_SETTINGS, { ...DEFAULT_BRANDING_SETTINGS, showPoweredBy: false })).toEqual(['showPoweredBy']);
   });
 });

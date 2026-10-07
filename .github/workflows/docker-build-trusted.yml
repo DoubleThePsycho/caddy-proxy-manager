@@ -5,7 +5,7 @@ on:
     branches:
       - main
       - develop
-      # Long-term-support lines (ee/docs/lts.md), e.g. lts/2.0
+      # Release lines, e.g. lts/2.0
       - 'lts/**'
     tags:
       - 'v*'
@@ -14,13 +14,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/ingressi
-  # Installs from before the rename to Ingressi and the move to the ingres-si
-  # organization (compose files and watchtower) pull the images under their
-  # old names in the maintainer's personal namespace, so every build is
-  # pushed there too.
-  LEGACY_IMAGE_NAME: fuomag9/caddy-proxy-manager
-  # The repository's GITHUB_TOKEN cannot push to a personal namespace, so the
-  # images are pushed with GHCR_PUSH_TOKEN: a classic personal access token of
+  # Images are pushed with GHCR_PUSH_TOKEN: a classic personal access token of
   # the maintainer with only the write:packages scope.
   GHCR_PUSH_USER: fuomag9
 
@@ -39,12 +33,15 @@ jobs:
           - service: web
             dockerfile: docker/web/Dockerfile
             context: .
+            description: "Ingressi dashboard and REST API: configures the Ingressi reverse proxy"
           - service: caddy
             dockerfile: docker/caddy/Dockerfile
             context: .
+            description: "Ingressi reverse proxy: Caddy with Ingressi's modules"
           - service: l4-port-manager
             dockerfile: docker/l4-port-manager/Dockerfile
             context: .
+            description: "Publishes the TCP and UDP ports of Ingressi's L4 proxy hosts"
 
     steps:
       - name: Checkout repository
@@ -56,7 +53,7 @@ jobs:
       - name: Decide which moving tags this release gets
         id: release
         run: |
-          # A patch release on an LTS line (lts/2.0 after 2.3 shipped) must not
+          # A patch release on an older release line (lts/2.0 after 2.3 shipped) must not
           # move `latest`, or the major tag, back to an older version. Only the
           # newest stable release gets `latest`, and only the newest stable
           # release of its major version gets the major tag. The minor tag
@@ -93,13 +90,25 @@ jobs:
           username: ${{ env.GHCR_PUSH_USER }}
           password: ${{ secrets.GHCR_PUSH_TOKEN }}
 
-      - name: Extract metadata (tags, labels)
+      - name: Extract metadata (tags, labels, annotations)
         id: meta
         uses: docker/metadata-action@v6
+        env:
+          # Multi-arch images: GHCR links a package to the repository through
+          # org.opencontainers.image.source on the image index, so the OCI
+          # metadata goes on the index as well as on each platform manifest.
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
+          # Each image says what it is, instead of inheriting the repository
+          # description.
+          labels: |
+            org.opencontainers.image.licenses=MIT AND Elastic-2.0
+            org.opencontainers.image.description=${{ matrix.description }}
+          annotations: |
+            org.opencontainers.image.licenses=MIT AND Elastic-2.0
+            org.opencontainers.image.description=${{ matrix.description }}
           images: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
-            ${{ env.REGISTRY }}/${{ env.LEGACY_IMAGE_NAME }}-${{ matrix.service }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
@@ -112,7 +121,7 @@ jobs:
             # {{is_default_branch}} fired on every dev push and moved `latest`
             # to unreleased builds (issue #281). Tag it only on the newest
             # stable v* tag: not on pre-release tags (e.g. v1.12.0-rc.1), and
-            # not on LTS patch releases of an older line.
+            # not on patch releases of an older line.
             type=raw,value=latest,enable=${{ steps.release.outputs.latest == 'true' }}
 
       - name: Compute app version
@@ -138,6 +147,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           build-args: |
             APP_VERSION=${{ steps.app-version.outputs.version }}
           cache-from: type=gha,scope=${{ matrix.service }}

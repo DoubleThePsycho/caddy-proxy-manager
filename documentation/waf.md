@@ -1,6 +1,6 @@
 # Web application firewall
 
-The WAF inspects requests before they reach a proxy host's upstream. It is [Coraza](https://coraza.io/) with the OWASP Core Rule Set 4.25, both built into the Caddy image. It is a Community feature.
+The WAF inspects requests before they reach a proxy host's upstream. It is [Coraza](https://coraza.io/) with the OWASP Core Rule Set 4.25, both built into the Caddy image. It is off until an administrator turns it on, for one host or for all hosts.
 
 The settings are on the **WAF settings** page (`/waf`); the matched requests are on [Security events](security-events.md) (`/security`), next to the requests the other rules stopped. Reading either needs the `waf:read` permission, changing anything `waf:write`. The old WAF events address (`/waf/events`) opens Security events filtered to the WAF.
 

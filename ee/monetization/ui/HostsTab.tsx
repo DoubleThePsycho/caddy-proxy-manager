@@ -23,7 +23,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DEFAULT_PAGE_SIZE, paginate } from "@/src/lib/pagination";
 import { decimalToMicros } from "../money";
 import type { HostMonetizationView, PlanView } from "../types";
-import { callApi, Field, LOCKED_HINT } from "./shared";
+import { callApi, Field } from "./shared";
 
 type Form = {
   enabled: boolean;
@@ -60,7 +60,6 @@ export default function HostsTab({
   hosts,
   plans,
   canWrite,
-  configurable,
   standalone,
   variant = "full",
   onShowAll,
@@ -69,7 +68,6 @@ export default function HostsTab({
   hosts: HostMonetizationView[];
   plans: PlanView[];
   canWrite: boolean;
-  configurable: boolean;
   standalone: boolean;
   variant?: "full" | "overview";
   /** Overview: switches to the Hosts tab. */
@@ -85,8 +83,8 @@ export default function HostsTab({
   const [search, setSearch] = useState("");
   const { page, hrefFor } = useUrlPage("hosts");
   const planName = new Map(plans.map((plan) => [plan.id, plan.name]));
-  const canEnable = canWrite && configurable && standalone;
-  const configureHint = canEnable ? undefined : !configurable ? LOCKED_HINT : "Managed on the master";
+  const canEnable = canWrite && standalone;
+  const configureHint = canEnable ? undefined : "Managed on the master";
 
   function planList(host: HostMonetizationView): string {
     if (!host.monetization) return "–";

@@ -4,7 +4,6 @@ import { can } from "@/src/lib/permissions";
 import { config } from "@/src/lib/config";
 import { getGeneralSettings } from "@/src/lib/settings";
 import { settingsSectionHref } from "@/src/lib/settings-sections";
-import { getUsagePingView } from "@/src/lib/usage-ping/store";
 import { loadReplicaOverrides } from "./load";
 import SettingsClient from "./SettingsClient";
 
@@ -21,17 +20,12 @@ export default async function SettingsPage({ searchParams }: { searchParams?: Pr
   const moved = old ? settingsSectionHref(old) : null;
   if (moved) redirect(moved);
 
-  const [general, usagePing, replica] = await Promise.all([
-    getGeneralSettings(),
-    getUsagePingView(),
-    loadReplicaOverrides({ general: "general" }),
-  ]);
+  const [general, replica] = await Promise.all([getGeneralSettings(), loadReplicaOverrides({ general: "general" })]);
 
   return (
     <SettingsClient
       general={general}
       baseUrl={config.baseUrl}
-      usagePing={usagePing}
       isSlave={replica.isSlave}
       overrideGeneral={replica.overrides.general}
       canWriteSettings={can(access, "settings:write")}

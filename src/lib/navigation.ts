@@ -12,7 +12,7 @@
 import type { Permission } from "./permissions";
 
 /** The counters the sidebar shows next to entries (see src/lib/nav-summary.ts). */
-export type NavBadgeKey = "alertsFiring" | "certificatesExpiring" | "approvalsPending" | "reviewsDue" | "licenseNodes";
+export type NavBadgeKey = "alertsFiring" | "certificatesExpiring" | "approvalsPending" | "reviewsDue";
 
 export type NavPage = {
   href: string;
@@ -42,11 +42,9 @@ export type NavEntryKey =
   | "compliance"
   | "fleet"
   | "high-availability"
-  | "organizations"
   | "monetization"
-  | "usage"
   | "settings"
-  | "license"
+  | "branding"
   | "profile"
   | "api-docs";
 
@@ -126,7 +124,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     ],
   },
   {
-    title: "Identity",
+    title: "Users and sign-in",
     entries: [
       {
         key: "users",
@@ -190,24 +188,15 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         label: "High availability",
         pages: [{ href: "/high-availability", label: "High availability", permission: "settings:read" }],
       },
-      { key: "organizations", label: "Organisations", pages: [{ href: "/organizations", label: "Organisations", permission: "organizations:read" }] },
       { key: "monetization", label: "API monetization", pages: [{ href: "/api-monetization", label: "API monetization", permission: "monetization:read" }] },
-      { key: "usage", label: "Usage", pages: [{ href: "/usage", label: "Usage", permission: "usage_reports:read" }] },
     ],
   },
 ];
 
 /** Under the groups, above the user menu. */
 export const NAV_FOOTER: readonly NavEntry[] = [
-  {
-    key: "settings",
-    label: "Settings",
-    pages: [
-      { href: "/settings", label: "Settings", permission: "settings:read" },
-      { href: "/branding", label: "Branding", permission: "branding:read" },
-    ],
-  },
-  { key: "license", label: "License", pages: [{ href: "/license", label: "License", permission: "license:read" }], badge: "licenseNodes" },
+  { key: "settings", label: "Settings", pages: [{ href: "/settings", label: "Settings", permission: "settings:read" }] },
+  { key: "branding", label: "Branding", pages: [{ href: "/branding", label: "Branding", permission: "branding:read" }] },
 ];
 
 /** The user menu's pages. */

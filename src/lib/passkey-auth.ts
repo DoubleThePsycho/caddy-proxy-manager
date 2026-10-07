@@ -12,9 +12,9 @@
  *    day old, the plugin's own rule), and only accounts with a local password
  *    may add one; SSO enforcement allows only break-glass accounts.
  *  - Passkey sign-in (/passkey/verify-authentication) creates its session
- *    through the session hooks in auth-server.ts: disabled accounts and
- *    organisations are refused, and while SSO is enforced only break-glass
- *    accounts get in (it is not an identity-provider sign-in).
+ *    through the session hooks in auth-server.ts: disabled accounts are
+ *    refused, and while SSO is enforced only break-glass accounts get in (it
+ *    is not an identity-provider sign-in).
  *  - A password sign-in of an account whose only second factor is a passkey
  *    does not create a session: it answers like an authenticator challenge,
  *    with `twoFactorMethods: ["passkey"]`, and the account signs in with its

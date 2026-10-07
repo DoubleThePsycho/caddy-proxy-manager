@@ -4,7 +4,7 @@ import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { createDirectory, listDirectories } from "@/ee/ldap/directories";
 import { NO_STORE, readJsonBody } from "@/ee/ldap/http";
 
-/** LDAP / Active Directory directories. Readable without a license; the service account password is never returned. */
+/** LDAP / Active Directory directories. The service account password is never returned. */
 export async function GET(request: NextRequest) {
   try {
     await requireApiPermission(request, "ldap:read");

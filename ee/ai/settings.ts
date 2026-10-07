@@ -8,17 +8,17 @@ import { clearSetting, getSetting, setSetting } from "@/src/lib/settings";
 import { decryptSecret, encryptSecret } from "@/src/lib/secret";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
-import { isWindDownOnly } from "@/ee/alerting/gate";
 import {
   isPlainObject,
   readBoolean,
   readHttpUrl,
+  readInteger,
   readSecretInput,
   readText,
   rejectUnknownKeys,
   requireObject,
 } from "@/ee/alerting/validation";
+import { DEFAULT_AI_TIMEOUT_SECONDS, MAX_AI_TIMEOUT_SECONDS, MIN_AI_TIMEOUT_SECONDS } from "./types";
 
 export const AI_SETTINGS_KEY = "ai_provider";
 export const AI_PROVIDERS = ["anthropic", "openai_compatible"] as const;
@@ -35,6 +35,8 @@ type StoredAiSettings = {
   apiKey?: string;
   /** openai_compatible only, without trailing slash, e.g. http://ollama:11434/v1 */
   baseUrl?: string;
+  /** Absent in settings saved before it existed: DEFAULT_AI_TIMEOUT_SECONDS. */
+  timeoutSeconds?: number;
 };
 
 export type AiSettingsView = {
@@ -43,6 +45,8 @@ export type AiSettingsView = {
   model: string | null;
   baseUrl: string | null;
   hasApiKey: boolean;
+  /** How long one model call may take before it is given up. */
+  timeoutSeconds: number;
   /** Enabled and complete: alert explanations will be requested. */
   configured: boolean;
   defaultModel: string;
@@ -54,10 +58,15 @@ export type ResolvedAiProvider = {
   model: string;
   apiKey: string | null;
   baseUrl: string | null;
+  timeoutSeconds: number;
 };
 
 function isProvider(value: unknown): value is AiProvider {
   return typeof value === "string" && (AI_PROVIDERS as readonly string[]).includes(value);
+}
+
+function isTimeoutSeconds(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= MIN_AI_TIMEOUT_SECONDS && value <= MAX_AI_TIMEOUT_SECONDS;
 }
 
 async function readStored(): Promise<StoredAiSettings | null> {
@@ -69,6 +78,7 @@ async function readStored(): Promise<StoredAiSettings | null> {
     model: value.model,
     apiKey: typeof value.apiKey === "string" && value.apiKey ? value.apiKey : undefined,
     baseUrl: typeof value.baseUrl === "string" && value.baseUrl ? value.baseUrl : undefined,
+    timeoutSeconds: isTimeoutSeconds(value.timeoutSeconds) ? value.timeoutSeconds : undefined,
   };
 }
 
@@ -84,6 +94,7 @@ function toView(settings: StoredAiSettings | null): AiSettingsView {
     model: settings?.model ?? null,
     baseUrl: settings?.provider === "openai_compatible" ? settings.baseUrl ?? null : null,
     hasApiKey: Boolean(settings?.apiKey),
+    timeoutSeconds: settings?.timeoutSeconds ?? DEFAULT_AI_TIMEOUT_SECONDS,
     configured: Boolean(settings?.enabled && isComplete(settings)),
     defaultModel: DEFAULT_ANTHROPIC_MODEL,
   };
@@ -99,7 +110,7 @@ function readModel(value: unknown): string {
   return model;
 }
 
-/** Removes the provider and its key. Winding down: never needs a license. */
+/** Removes the provider and its key. */
 export async function clearAiSettings(actorUserId: number): Promise<AiSettingsView> {
   const previous = await readStored();
   await clearSetting(AI_SETTINGS_KEY);
@@ -116,9 +127,8 @@ export async function clearAiSettings(actorUserId: number): Promise<AiSettingsVi
 }
 
 /**
- * Validates and stores the provider settings. Needs the ai_analyst feature,
- * except to wind down: {"provider": null} removes the provider, and
- * {"enabled": false} and/or {"apiKey": null} switch it off.
+ * Validates and stores the provider settings. {"provider": null} removes the
+ * provider; {"enabled": false} and/or {"apiKey": null} switch it off.
  */
 export async function saveAiSettings(body: unknown, actorUserId: number): Promise<AiSettingsView> {
   const record = requireObject(body, "Request body");
@@ -126,10 +136,11 @@ export async function saveAiSettings(body: unknown, actorUserId: number): Promis
     rejectUnknownKeys(record, ["provider"], "a request that removes the AI provider");
     return clearAiSettings(actorUserId);
   }
-  if (!isWindDownOnly(record, { enabled: false, apiKey: null })) await requireFeature("ai_analyst");
-  rejectUnknownKeys(record, ["enabled", "provider", "model", "apiKey", "baseUrl"], "the AI settings");
+  rejectUnknownKeys(record, ["enabled", "provider", "model", "apiKey", "baseUrl", "timeoutSeconds"], "the AI settings");
   const previous = await readStored();
-  if (!previous && isWindDownOnly(record, { enabled: false, apiKey: null })) return toView(null);
+  // Switching off a provider that was never set up changes nothing.
+  const onlyOff = Object.keys(record).length > 0 && Object.entries(record).every(([key, value]) => (key === "enabled" && value === false) || (key === "apiKey" && value === null));
+  if (!previous && onlyOff) return toView(null);
 
   const provider = record.provider !== undefined ? record.provider : previous?.provider;
   if (!isProvider(provider)) throw new ApiValidationError(`provider must be one of: ${AI_PROVIDERS.join(", ")}`);
@@ -167,20 +178,27 @@ export async function saveAiSettings(body: unknown, actorUserId: number): Promis
 
   const enabled = readBoolean(record.enabled, "enabled", previous?.enabled ?? true);
   if (enabled && provider === "anthropic" && !apiKey) throw new ApiValidationError("apiKey is required for the anthropic provider");
+  const timeoutSeconds = readInteger(
+    record.timeoutSeconds,
+    "timeoutSeconds",
+    MIN_AI_TIMEOUT_SECONDS,
+    MAX_AI_TIMEOUT_SECONDS,
+    previous?.timeoutSeconds ?? DEFAULT_AI_TIMEOUT_SECONDS
+  );
 
-  const next: StoredAiSettings = { enabled, provider, model, ...(apiKey ? { apiKey } : {}), ...(baseUrl ? { baseUrl } : {}) };
+  const next: StoredAiSettings = { enabled, provider, model, ...(apiKey ? { apiKey } : {}), ...(baseUrl ? { baseUrl } : {}), timeoutSeconds };
   await setSetting(AI_SETTINGS_KEY, next);
   await logAuditEvent({
     userId: actorUserId,
     action: "ai_settings_updated",
     entityType: "ai_settings",
     summary: `Updated the AI provider (${provider}, ${model}${enabled ? "" : ", disabled"})`,
-    data: { enabled, provider, model, baseUrl: baseUrl ?? null, apiKeyChanged: keyInput.kind !== "keep" },
+    data: { enabled, provider, model, baseUrl: baseUrl ?? null, timeoutSeconds, apiKeyChanged: keyInput.kind !== "keep" },
   });
   return toView(next);
 }
 
-/** The provider to call, or null when none is enabled and complete. Never checks the license. */
+/** The provider to call, or null when none is enabled and complete. */
 export async function getAiProviderConfig(): Promise<ResolvedAiProvider | null> {
   const settings = await readStored();
   if (!settings?.enabled || !isComplete(settings)) return null;
@@ -197,5 +215,6 @@ export async function getAiProviderConfig(): Promise<ResolvedAiProvider | null> 
     model: settings.model,
     apiKey,
     baseUrl: settings.provider === "openai_compatible" ? settings.baseUrl ?? null : ANTHROPIC_API_URL,
+    timeoutSeconds: settings.timeoutSeconds ?? DEFAULT_AI_TIMEOUT_SECONDS,
   };
 }

@@ -30,13 +30,7 @@ type Props = {
   /** Only administrators grant the admin role and administrator-level roles. */
   canAssignAdmin?: boolean;
   customRoles?: CustomRoleOption[];
-  /** The license allows assigning custom roles. */
-  customRolesLicensed?: boolean;
   totalPermissions: number;
-  /** Organisation names by id (ee/multi-tenancy), for provider-level viewers. */
-  organizationNames?: Record<number, string>;
-  /** Where new users go: the organisation of an organisation user, or the one a provider-level user picked. */
-  createOrganization?: { id: number; name: string } | null;
   /** sso:read: link to Sign-in and directories. */
   canReadSignIn?: boolean;
   /** Null without groups:read. */
@@ -72,10 +66,7 @@ export default function UsersAndGroupsClient({
   canWriteMfaPolicy = false,
   canAssignAdmin = false,
   customRoles = [],
-  customRolesLicensed = false,
   totalPermissions,
-  organizationNames = {},
-  createOrganization = null,
   canReadSignIn = false,
   groups,
   canWriteGroups = false,
@@ -99,14 +90,14 @@ export default function UsersAndGroupsClient({
     }
   };
 
-  const roleOptions = { customRoles, canAssignAdmin, customRolesLicensed };
+  const roleOptions = { customRoles, canAssignAdmin };
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">
       <Tabs value={tab} onValueChange={choose} className="flex min-w-0 flex-col gap-5">
         <PageHeader
           className="mb-0"
-          breadcrumb={["Identity", "Users and groups"]}
+          breadcrumb={["Users and sign-in", "Users and groups"]}
           title="Users and groups"
           actions={
             <>
@@ -146,7 +137,6 @@ export default function UsersAndGroupsClient({
               canWriteMfaPolicy={canWriteMfaPolicy}
               roleOptions={roleOptions}
               totalPermissions={totalPermissions}
-              organizationNames={organizationNames}
               onAddUser={canWrite ? () => setCreating(true) : undefined}
             />
           </TabsContent>
@@ -168,7 +158,6 @@ export default function UsersAndGroupsClient({
           open={creating}
           onClose={() => setCreating(false)}
           roleOptions={roleOptions}
-          createOrganization={createOrganization}
         />
       )}
     </div>

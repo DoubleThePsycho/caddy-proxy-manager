@@ -10,15 +10,13 @@
  * - analytics: ClickHouse analytics is configured.
  * - second_user: there are at least two users.
  * - single_sign_on: an enabled OAuth/OIDC provider, SAML provider or LDAP
- *   directory exists. OIDC is included in every edition; SAML and LDAP are
- *   paid features.
+ *   directory exists.
  *
  * Marks and the dismissal are stored under the settings key
  * "setup_checklist" on this node only (not synced: it is about setting up
  * this install). Marks of steps this release does not have (npm_import, from
  * releases with the Nginx Proxy Manager import) are ignored when read and
- * dropped at the next change. Changing them is audited. Never checks the
- * license.
+ * dropped at the next change. Changing them is audited.
  */
 import { and, count, eq } from "drizzle-orm";
 import { appDb, nowIso } from "./db";
@@ -28,7 +26,6 @@ import { logAuditEvent } from "./audit";
 import { ApiValidationError } from "./api-errors";
 import { isAnalyticsEnabled } from "./clickhouse/client";
 import { getManagedCertificates } from "./managed-certificates";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 
 export const SETUP_CHECKLIST_KEY = "setup_checklist";
 
@@ -63,8 +60,7 @@ const STEP_DEFINITIONS: Record<SetupStepKey, StepDefinition> = {
   },
   single_sign_on: {
     title: "Set up single sign-on",
-    description:
-      "Sign-in through an OpenID Connect provider is included. SAML providers and LDAP directories come with the paid editions.",
+    description: "Sign in through an OpenID Connect or SAML provider, or an LDAP directory.",
     action: { label: "Single sign-on", route: "/sso" },
   },
 };
@@ -78,8 +74,6 @@ export type SetupStepView = {
   doneBy: "data" | "manual" | null;
   markedAt: string | null;
   action: { label: string; route: string } | null;
-  /** The step needs a paid feature for part of what it offers (single_sign_on: SAML and LDAP). */
-  paid: { features: string[]; configurable: boolean } | null;
 };
 
 export type SetupChecklistView = {
@@ -139,12 +133,7 @@ async function dataState(): Promise<Record<SetupStepKey, boolean>> {
 }
 
 export async function getSetupChecklist(): Promise<SetupChecklistView> {
-  const [stored, data, samlConfigurable, ldapConfigurable] = await Promise.all([
-    readStored(),
-    dataState(),
-    isFeatureConfigurable("sso_saml"),
-    isFeatureConfigurable("ldap"),
-  ]);
+  const [stored, data] = await Promise.all([readStored(), dataState()]);
   const steps = SETUP_STEPS.map((key): SetupStepView => {
     const definition = STEP_DEFINITIONS[key];
     const marked = stored.marked[key] ?? null;
@@ -157,7 +146,6 @@ export async function getSetupChecklist(): Promise<SetupChecklistView> {
       doneBy,
       markedAt: marked?.at ?? null,
       action: definition.action,
-      paid: key === "single_sign_on" ? { features: ["sso_saml", "ldap"], configurable: samlConfigurable || ldapConfigurable } : null,
     };
   });
   const done = steps.filter((step) => step.done).length;

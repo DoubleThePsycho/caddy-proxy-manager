@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * Audit log retention. Setting it needs the audit_streaming feature, except
- * setting it back to 0 (keep forever), which winds it down. The daily job
- * that applies it runs whatever the license state.
+ * Audit log retention. 0 keeps events forever; a daily job applies any
+ * other value.
  */
 import { count, gte, lt, max, min } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";
@@ -10,7 +9,6 @@ import { auditEvents } from "@/src/lib/db/schema";
 import { getSetting, setSetting } from "@/src/lib/settings";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import type { AuditRetentionView } from "./types";
 
 /** Master-only; deliberately not part of instance sync. */
@@ -51,8 +49,6 @@ export function parseRetentionDays(body: unknown): number {
 }
 
 export async function setAuditRetention(body: unknown, actorUserId: number): Promise<AuditRetentionView> {
-  const keepForever = typeof body === "object" && body !== null && (body as { days?: unknown }).days === 0;
-  if (!keepForever) await requireFeature("audit_streaming");
   const days = parseRetentionDays(body);
   const previous = await getAuditRetention();
   await setSetting(AUDIT_RETENTION_KEY, { days });

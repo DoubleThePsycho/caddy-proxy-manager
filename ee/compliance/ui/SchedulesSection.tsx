@@ -22,7 +22,7 @@ import type { ReportScheduleView, ScheduleRunResult } from "../schedules";
 import { REPORT_TYPE_LABELS, SELECTABLE_REPORT_TYPES, type SelectableReportType } from "../types";
 import type { ChannelChoice, QuestionChoice } from "./ComplianceClient";
 import { describeScheduleTiming, periodText, untilText, WEEKDAY_LABELS, WEEKDAY_ORDER } from "./format";
-import { callApi, Field, LOCKED_HINT } from "./shared";
+import { callApi, Field } from "./shared";
 
 type Frequency = "weekly" | "monthly";
 
@@ -267,14 +267,12 @@ export default function SchedulesSection({
   channels,
   questions,
   canWrite,
-  configurable,
   now,
 }: {
   schedules: ReportScheduleView[];
   channels: ChannelChoice[];
   questions: QuestionChoice[];
   canWrite: boolean;
-  configurable: boolean;
   now: number;
 }) {
   const router = useRouter();
@@ -283,7 +281,6 @@ export default function SchedulesSection({
   const [editing, setEditing] = useState<ReportScheduleView | "new" | null>(null);
   const [deleting, setDeleting] = useState<ReportScheduleView | null>(null);
   const channelNames = new Map(channels.map((channel) => [channel.id, channel.name]));
-  const canConfigure = canWrite && configurable;
 
   function setEnabled(schedule: ReportScheduleView, enabled: boolean) {
     startTransition(async () => {
@@ -333,7 +330,7 @@ export default function SchedulesSection({
       count={schedules.length}
       actions={
         canWrite && (
-          <Button variant="secondary" size="sm" onClick={() => setEditing("new")} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
+          <Button variant="secondary" size="sm" onClick={() => setEditing("new")}>
             <Plus />
             New schedule
           </Button>
@@ -422,9 +419,7 @@ export default function SchedulesSection({
                   <TableCell className="align-top">
                     <Switch
                       checked={schedule.enabled}
-                      // Turning a schedule off always works; turning it on needs the license.
-                      disabled={!canWrite || pending || (!schedule.enabled && !configurable)}
-                      title={!schedule.enabled && !configurable ? LOCKED_HINT : undefined}
+                      disabled={!canWrite || pending}
                       onCheckedChange={(checked) => setEnabled(schedule, checked)}
                       aria-label={`Enable ${schedule.name}`}
                     />
@@ -432,10 +427,10 @@ export default function SchedulesSection({
                   {canWrite && (
                     <TableCell className="align-top">
                       <span className="flex justify-end gap-0.5">
-                        <Button variant="ghost" size="icon-sm" title={canConfigure ? "Run now" : LOCKED_HINT} aria-label={`Run ${schedule.name} now`} disabled={!canConfigure || pending} onClick={() => runNow(schedule)}>
+                        <Button variant="ghost" size="icon-sm" title="Run now" aria-label={`Run ${schedule.name} now`} disabled={pending} onClick={() => runNow(schedule)}>
                           <Play />
                         </Button>
-                        <Button variant="ghost" size="icon-sm" title={canConfigure ? "Edit" : LOCKED_HINT} aria-label={`Edit ${schedule.name}`} disabled={!canConfigure} onClick={() => setEditing(schedule)}>
+                        <Button variant="ghost" size="icon-sm" title="Edit" aria-label={`Edit ${schedule.name}`} onClick={() => setEditing(schedule)}>
                           <Pencil />
                         </Button>
                         <Button variant="ghost" size="icon-sm" title="Delete" aria-label={`Delete ${schedule.name}`} onClick={() => setDeleting(schedule)}>

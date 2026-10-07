@@ -1,7 +1,6 @@
 import { X509Certificate } from 'node:crypto';
 import { requirePermission } from '@/src/lib/auth';
-import { can, scopeTagsFor, tenantOf } from '@/src/lib/permissions';
-import { dashboardOrganizationFilter } from '@/ee/multi-tenancy/view';
+import { can, scopeTagsFor } from '@/src/lib/permissions';
 import CertificatesClient from './CertificatesClient';
 import { listCaCertificates, type CaCertificate } from '@/src/lib/models/ca-certificates';
 import { listIssuedClientCertificates, type IssuedClientCertificate } from '@/src/lib/models/issued-client-certificates';
@@ -58,25 +57,22 @@ export default async function CertificatesPage({ searchParams }: PageProps) {
   const { access } = await requirePermission('certificates:read');
   // A tag scope limits the certificate list to the certificates and ACME hosts
   // of in-scope proxy hosts; CA/client certificates and mTLS roles serve every
-  // host and stay hidden (see src/lib/access-scope.ts). An organisation user
-  // sees their organisation only, and none of the provider's trust anchors; a
-  // provider-level user the organisation they picked (ee/multi-tenancy).
+  // host and stay hidden (see src/lib/access-scope.ts).
   const scope = scopeTagsFor(access, 'certificates');
-  const organizationId = await dashboardOrganizationFilter(access);
-  const hideTrustAnchors = scope !== null || tenantOf(access) !== null;
-  const settingsReadable = can(access, 'settings:read') && tenantOf(access) === null;
+  const hideTrustAnchors = scope !== null;
+  const settingsReadable = can(access, 'settings:read');
   const { tab } = await searchParams;
 
   const [overview, caCerts, issuedClientCerts, roles, roleCertIds, hosts] = await Promise.all([
-    buildCertificateOverview(access, organizationId),
+    buildCertificateOverview(access),
     hideTrustAnchors ? Promise.resolve([] as CaCertificate[]) : listCaCertificates(),
     hideTrustAnchors ? Promise.resolve([] as IssuedClientCertificate[]) : listIssuedClientCertificates(),
     hideTrustAnchors ? Promise.resolve([] as MtlsRole[]) : listMtlsRoles().catch(() => [] as MtlsRole[]),
     hideTrustAnchors
       ? Promise.resolve(new Map<number, Set<number>>())
       : buildRoleCertIdMap().catch(() => new Map<number, Set<number>>()),
-    // CAs and roles serve every host, so "trusted by" looks at every organisation's hosts.
-    hideTrustAnchors ? Promise.resolve([] as ProxyHost[]) : listProxyHosts(null, undefined),
+    // CAs and roles serve every host, so "trusted by" looks at every host.
+    hideTrustAnchors ? Promise.resolve([] as ProxyHost[]) : listProxyHosts(null),
   ]);
 
   const usage = trustAnchorUsage(hosts, issuedClientCerts, roleCertIds);

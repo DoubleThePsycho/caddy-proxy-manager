@@ -16,7 +16,7 @@
  *   host is refused and nothing is written.
  *
  * Instance sync writes a replica's tables directly and is not affected: the
- * master already enforced its policies. Nothing here checks the license.
+ * master already enforced its policies.
  */
 import { ApiConflictError } from "@/src/lib/api-errors";
 import { normalizeTags, parseStoredTags } from "@/src/lib/host-tags";

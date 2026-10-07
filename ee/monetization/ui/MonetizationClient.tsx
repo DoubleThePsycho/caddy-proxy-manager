@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Elastic-2.0
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { ExternalLink, Lock, Plus } from "lucide-react";
-import { Banner } from "@/components/ui/Banner";
+import { ExternalLink, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,7 +29,7 @@ import StripeTab from "./StripeTab";
 import X402Tab from "./X402Tab";
 import type { X402SettingsView } from "../x402/settings";
 import type { X402PaymentPage } from "../x402/payments";
-import { LOCKED_HINT, monthName } from "./shared";
+import { monthName } from "./shared";
 
 type Props = {
   initialTab: MonetizationTab;
@@ -43,7 +41,6 @@ type Props = {
   ledger: LedgerPage;
   /** The ledger's filters from the address ("all" or a consumer id; "all" or an entry type). */
   ledgerFilter?: { consumer: string; type: string };
-  configurable: boolean;
   canWrite: boolean;
   /** May replace or remove the Stripe account (administrator-level). */
   canManagePayments: boolean;
@@ -58,7 +55,6 @@ type Props = {
   x402Payments: X402PaymentPage;
   /** The latest x402 payments, under the ledger; the x402 tab's page when omitted. */
   x402Latest?: X402PaymentPage;
-  editionLabel: string;
 };
 
 function TabLabel({ children, count }: { children: ReactNode; count?: number }) {
@@ -103,7 +99,7 @@ export default function MonetizationClient(props: Props) {
               </a>
             </Button>
             {props.canWrite && (
-              <Button onClick={addConsumer} disabled={!props.configurable} title={props.configurable ? undefined : LOCKED_HINT}>
+              <Button onClick={addConsumer}>
                 <Plus className="h-4 w-4" /> Add consumer
               </Button>
             )}
@@ -128,22 +124,6 @@ export default function MonetizationClient(props: Props) {
         </TabsList>
       </PageHeader>
 
-      {!props.configurable && (
-        <Banner
-          tone="info"
-          icon={Lock}
-          title="Read-only without a license."
-          actions={
-            <Link href="/license" className="text-[13px] text-brand underline-offset-4 hover:underline">
-              Licensing
-            </Link>
-          }
-        >
-          Setting up and changing API monetization needs a license with it ({props.editionLabel} edition). What is already set up keeps
-          metering and taking top-ups, and can still be disabled, revoked or deleted.
-        </Banner>
-      )}
-
       <TabsContent value="overview" className="mt-0">
         <OverviewTab
           overview={props.overview}
@@ -152,7 +132,6 @@ export default function MonetizationClient(props: Props) {
           hosts={props.hosts}
           stripe={props.stripe}
           canWrite={props.canWrite}
-          configurable={props.configurable}
           standalone={props.standalone}
           onAddConsumer={addConsumer}
           onOpenTab={changeTab}
@@ -163,7 +142,6 @@ export default function MonetizationClient(props: Props) {
           plans={props.plans}
           currency={currency}
           canWrite={props.canWrite}
-          configurable={props.configurable}
           analyticsAvailable={props.options.analyticsAvailable}
         />
       </TabsContent>
@@ -176,7 +154,6 @@ export default function MonetizationClient(props: Props) {
           monthLabel={month}
           now={now}
           canWrite={props.canWrite}
-          configurable={props.configurable}
           onAdd={addConsumer}
           onShowLedger={() => changeTab("ledger")}
         />
@@ -186,20 +163,18 @@ export default function MonetizationClient(props: Props) {
           hosts={props.hosts}
           plans={props.plans}
           canWrite={props.canWrite}
-          configurable={props.configurable}
           standalone={props.standalone}
           x402Configured={props.x402.configured}
         />
       </TabsContent>
       <TabsContent value="stripe" className="mt-0">
-        <StripeTab settings={props.stripe} canWrite={props.canManagePayments} configurable={props.configurable} />
+        <StripeTab settings={props.stripe} canWrite={props.canManagePayments} />
       </TabsContent>
       <TabsContent value="x402" className="mt-0">
         <X402Tab
           settings={props.x402}
           payments={props.x402Payments}
           canWrite={props.canManagePayments}
-          configurable={props.configurable}
         />
       </TabsContent>
       <TabsContent value="settings" className="mt-0">
@@ -207,7 +182,6 @@ export default function MonetizationClient(props: Props) {
           options={props.options}
           canWrite={props.canWrite}
           canManageReplicas={props.canWrite && props.canManageReplicas === true}
-          configurable={props.configurable}
           instanceMode={props.instanceMode}
         />
       </TabsContent>

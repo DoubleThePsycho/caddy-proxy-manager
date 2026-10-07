@@ -67,7 +67,7 @@ export function hasNarrowingFilters(filters: AuditFilters): boolean {
 }
 
 export type AuditActor = {
-  kind: "user" | "system" | "provider" | "deleted";
+  kind: "user" | "system" | "deleted";
   /** What the table shows. */
   name: string;
   email: string | null;
@@ -98,7 +98,7 @@ export type AuditEventDetail = {
   id: number;
   data: unknown;
   configDiff: AuditChangeDiff | null;
-  /** The chained event before it (provider-level users only). */
+  /** The chained event before it. */
   previousEventId: number | null;
 };
 
@@ -115,6 +115,7 @@ const ENTITY_LABELS: Record<string, string> = {
   mtls_role: "mTLS role",
   alert_rule: "Alert rule",
   alert_channel: "Alert channel",
+  alert_silence: "Alert mute or dismissal",
   setting: "Setting",
   settings: "Settings",
   user: "User",
@@ -129,7 +130,6 @@ const ENTITY_LABELS: Record<string, string> = {
   approval_policy: "Approval policy",
   backup_destination: "Backup destination",
   instance: "Instance",
-  license: "License",
   waf: "WAF",
 };
 

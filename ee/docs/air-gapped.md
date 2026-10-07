@@ -1,8 +1,6 @@
 # Air-gapped installs
 
-Feature id `air_gap`, Enterprise edition: an offline install bundle for hosts that cannot reach GitHub's container registry or the Internet, and, once announced, long-term-support releases (planned).
-
-Licensing already works offline: a license key is verified against the public key built into the release and never phones home.
+An offline install bundle for hosts that cannot reach GitHub's container registry or the Internet. Code: `ee/scripts/airgap-bundle.sh` (Elastic License 2.0).
 
 ## Building a bundle
 
@@ -63,9 +61,3 @@ To upgrade, build a bundle of the new release, run its `install.sh` in its own d
 | GeoIP blocking | Copy `GeoLite2-Country.mmdb` and `GeoLite2-ASN.mmdb` into the `geoip-data` volume (for example `docker run --rm -v <project>_geoip-data:/data -v "$PWD":/src alpine cp /src/GeoLite2-Country.mmdb /src/GeoLite2-ASN.mmdb /data/`) and refresh them with each bundle. |
 | AI analyst | Point it at a model server on your network (any OpenAI-compatible endpoint such as vLLM or Ollama). |
 | Alerts and digests | Use your internal SMTP relay and webhook endpoints. |
-| License | Works offline. Install renewed keys on the **License** page as usual. Automatic updates stay off, and the bundle's `.env.example` sets `LICENSE_AUTO_UPDATE_DISABLED=true` so they cannot be turned on. |
-| Usage ping | Off unless an administrator says yes, and the bundle's `.env.example` sets `USAGE_PING_DISABLED=true`: nothing is sent and the question is hidden. Keep the variable when you carry an older `.env` over ([documentation/usage-ping.md](../../documentation/usage-ping.md)). |
-
-## Long-term-support releases
-
-No LTS line has been announced yet. Once one is, Enterprise customers can stay on it for 24 months: security and critical fixes, backported, without new features or breaking changes. Policy, branches and image tags are in [lts.md](lts.md). Build the bundle from the LTS tag like any release.

@@ -7,7 +7,7 @@ import { resumeConsumer } from "@/ee/monetization/postpaid";
 
 type Params = { params: Promise<{ id: string }> };
 
-/** Ends a postpaid consumer's suspension (after a dispute, say). Needs the api_monetization feature. */
+/** Ends a postpaid consumer's suspension (after a dispute, say). */
 export async function POST(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "monetization:write");

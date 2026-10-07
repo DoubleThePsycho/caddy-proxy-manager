@@ -26,7 +26,7 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 });
 
 import { logAuditEvent } from '../../src/lib/audit';
-import { builtInAccess, organizationAccess, type Access } from '../../src/lib/permissions';
+import { builtInAccess, type Access } from '../../src/lib/permissions';
 import { collectAttention, registerAttentionProvider, unregisterAttentionProvider, listAttentionProviders } from '../../src/lib/attention';
 import type { AttentionProvider } from '../../src/lib/attention/types';
 import { getManagedCertificates, setManagedCertificateProbeForTests } from '../../src/lib/managed-certificates';
@@ -100,15 +100,6 @@ describe('the registry', () => {
     const mine = view.items.filter((item) => item.source === 'test-items');
     expect(mine.map((item) => item.id)).toEqual(['a', 'c', 'b']);
     expect(mine[0].title).toBe('Critical  title');
-  });
-
-  it('skips providers that do not filter to an organisation for organisation users', async () => {
-    register({ id: 'test-global', label: 'Global', permissions: [], async collect() { return [{ id: 'x', severity: 'info', title: 't', detail: 'd', actions: [], at: null }]; } });
-    const org = (await first(ctx.db.insert(schema.organizations).values({ name: 'Client', slug: 'client', createdAt: stamp(), updatedAt: stamp() }).returning()))!;
-    const tenant = organizationAccess(memberId, org.id, 'org_admin');
-    const view = await collectAttention(tenant);
-    // Certificates and traffic filter to the organisation; the test source does not.
-    expect(view.sources.map((source) => source.id)).toEqual(['certificates', 'traffic']);
   });
 
   it('registers the built-in providers', () => {
@@ -201,7 +192,6 @@ describe('setup checklist', () => {
       ['domain', false], ['first_proxy_host', false], ['analytics', false], ['second_user', true], ['single_sign_on', false],
     ]);
     expect(checklist).toMatchObject({ done: 1, total: 5, complete: false, dismissed: false });
-    expect(checklist.steps.find((step) => step.key === 'single_sign_on')!.paid).toEqual({ features: ['sso_saml', 'ldap'], configurable: false });
 
     const t = stamp();
     await ctx.db.insert(schema.proxyHosts).values({ name: 'App', domains: '["app.example.com"]', upstreams: '[]', createdAt: t, updatedAt: t });

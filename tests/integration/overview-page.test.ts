@@ -14,22 +14,17 @@ import type { TrafficSignals } from '../../src/lib/analytics/signals';
 
 const ctx = vi.hoisted(() => ({
   db: null as unknown as TestDb,
-  licensed: new Set<string>(),
   summaries: null as null | Omit<HostSummary, 'sparkline'>[],
   signals: null as null | TrafficSignals,
 }));
 
 vi.mock('../../src/lib/db', async () => (await import('../helpers/db-module')).mockDbModule(() => ctx.db));
-vi.mock('../../ee/licensing/store', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../ee/licensing/store')>()),
-  isFeatureConfigurable: vi.fn(async (feature: string) => ctx.licensed.has(feature)),
-}));
 vi.mock('../../src/lib/analytics/hosts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/lib/analytics/hosts')>();
   return {
     ...actual,
-    queryHostSummaries: vi.fn(async (input: Parameters<typeof actual.queryHostSummaries>[0], scope: Parameters<typeof actual.queryHostSummaries>[1]) => {
-      if (!ctx.summaries) return actual.queryHostSummaries(input, scope);
+    queryHostSummaries: vi.fn(async (input: Parameters<typeof actual.queryHostSummaries>[0]) => {
+      if (!ctx.summaries) return actual.queryHostSummaries(input);
       const wanted = new Set(input.hosts.map((host) => host.id));
       return {
         status: 'ok' as const,
@@ -48,7 +43,7 @@ vi.mock('../../src/lib/analytics/signals', async (importOriginal) => {
   };
 });
 
-import { builtInAccess, organizationAccess, type Access, type Permission } from '../../src/lib/permissions';
+import { builtInAccess, type Access, type Permission } from '../../src/lib/permissions';
 import { hostTone, loadOverview, parseOverviewRange, replicaNode, BUSIEST_HOSTS } from '../../src/lib/overview';
 import { updateSetupChecklist } from '../../src/lib/setup-checklist';
 import { clearTrafficSignalsCache } from '../../src/lib/attention/traffic-provider';
@@ -80,7 +75,6 @@ const load = (access: Access, range?: unknown) => loadOverview(access, { userNam
 
 beforeEach(async () => {
   ctx.db = createTestDb();
-  ctx.licensed = new Set();
   ctx.summaries = null;
   ctx.signals = null;
   vi.clearAllMocks();
@@ -94,7 +88,7 @@ beforeEach(async () => {
 describe('what each viewer gets', () => {
   it('gives the built-in viewer role what needs their attention and nothing else', async () => {
     const data = await load(builtInAccess(memberId, 'viewer'));
-    expect(data).toMatchObject({ traffic: null, hosts: null, nodes: null, changes: null, firstRun: null, askUsagePing: false });
+    expect(data).toMatchObject({ traffic: null, hosts: null, nodes: null, changes: null, firstRun: null });
     expect(Object.values(data.permissions).every((allowed) => allowed === false)).toBe(true);
     expect(data.attention.sources.map((source) => source.id)).toEqual(['my_reviews']);
   });
@@ -112,7 +106,7 @@ describe('what each viewer gets', () => {
     const analyst = await load(custom(['analytics:read']));
     expect(analyst.traffic).not.toBeNull();
     expect(analyst.hosts).not.toBeNull();
-    expect(analyst).toMatchObject({ nodes: null, changes: null, firstRun: null, askUsagePing: false });
+    expect(analyst).toMatchObject({ nodes: null, changes: null, firstRun: null });
     expect(analyst.permissions).toMatchObject({ readAnalytics: true, createProxyHost: false, readProxyHosts: false });
 
     const auditor = await load(custom(['audit_log:read', 'instances:read']));
@@ -140,8 +134,6 @@ describe('first run', () => {
   it('shows the setup checklist while the install is fresh, until it is hidden', async () => {
     const data = await load(admin());
     expect(data.firstRun?.checklist.steps.map((step) => step.key)).toEqual(['domain', 'first_proxy_host', 'analytics', 'second_user', 'single_sign_on']);
-    expect(data.firstRun).toMatchObject({ ssoEdition: 'Business', ldapEdition: 'Enterprise' });
-    expect(data.askUsagePing).toBe(true);
 
     await updateSetupChecklist({ dismissed: true }, adminId);
     expect((await load(admin())).firstRun).toBeNull();
@@ -154,11 +146,9 @@ describe('first run', () => {
     expect((await load(admin())).firstRun).toBeNull();
   });
 
-  it('is only for readers of the settings at the provider level', async () => {
+  it('is only for readers of the settings', async () => {
     expect((await load(custom(['settings:read']))).firstRun).not.toBeNull();
     expect((await load(custom(['proxy_hosts:read']))).firstRun).toBeNull();
-    const org = (await dbFirst(ctx.db.insert(schema.organizations).values({ name: 'Client', slug: 'client', createdAt: stamp(), updatedAt: stamp() }).returning()))!;
-    expect((await load(organizationAccess(memberId, org.id, 'org_admin'))).firstRun).toBeNull();
   });
 });
 
@@ -290,7 +280,6 @@ describe('recent changes', () => {
   });
 
   it('offers a roll back where the version from before is kept and the viewer may restore it', async () => {
-    ctx.licensed.add('config_history');
     const changes = (await load(admin())).changes!;
     const byText = new Map(changes.map((change) => [change.summary, change]));
     expect(byText.get('Updated proxy host Wiki')).toMatchObject({ who: 'Ada Admin', rollbackHref: '/history?version=1' });
@@ -299,9 +288,7 @@ describe('recent changes', () => {
     expect(byText.get('Updated proxy host Old')?.rollbackHref).toBeNull();
   });
 
-  it('offers no roll back without the license, the permission, or on a replica', async () => {
-    expect((await load(admin())).changes!.every((change) => change.rollbackHref === null)).toBe(true);
-    ctx.licensed.add('config_history');
+  it('offers no roll back without the permission, or on a replica', async () => {
     expect((await load(custom(['audit_log:read']))).changes!.every((change) => change.rollbackHref === null)).toBe(true);
     process.env.INSTANCE_MODE = 'slave';
     try {

@@ -14,14 +14,14 @@
 import { inArray } from "drizzle-orm";
 import { appDb } from "./db";
 import { configSnapshots } from "./db/schema";
-import { can, scopeTagsFor, tenantOf, type Access } from "./permissions";
-import { APP_VERSION } from "./app-version";
+import { can, scopeTagsFor, type Access } from "./permissions";
+import { APP_VERSION, formatVersion } from "./app-version";
 import { collectAttention, type AttentionView } from "./attention";
 import { cachedTrafficSignals } from "./attention/traffic-provider";
 import { parseAnalyticsQuery, queryAnalytics } from "./analytics/query";
 import { queryHostSummaries, type HostSummary } from "./analytics/hosts";
 import { resolveRange } from "./analytics/range";
-import { allProxyHostDomains, scopeFor } from "./analytics/service";
+import { allProxyHostDomains } from "./analytics/service";
 import { normalizeDomain } from "./analytics/scope";
 import type { TrafficSignals } from "./analytics/signals";
 import { listProxyHosts, type ProxyHost } from "./models/proxy-hosts";
@@ -30,11 +30,7 @@ import { buildCertificateOverview } from "./certificate-overview";
 import { getCaddyApplyStatus } from "./caddy-apply-status";
 import { getInstanceMode } from "./instance-sync";
 import { getSetupChecklist } from "./setup-checklist";
-import { shouldAskUsagePingQuestion } from "./usage-ping/store";
-import { dashboardOrganizationFilter } from "@/ee/multi-tenancy/view";
 import { listFleetInstances } from "@/ee/fleet/environments";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
 import type { FleetInstanceView } from "@/ee/fleet/types";
 import {
   HOST_BAD_ERROR_RATE,
@@ -101,7 +97,6 @@ export function overviewPermissions(access: Access): OverviewPermissions {
     readAuditLog: can(access, "audit_log:read"),
     readUsers: can(access, "users:read"),
     readSso: can(access, "sso:read"),
-    readLicense: can(access, "license:read"),
     writeSettings: can(access, "settings:write"),
   };
 }
@@ -125,9 +120,9 @@ function emptyTraffic(range: OverviewRange, nowSeconds: number, status: Overview
 }
 
 /** Served and mitigated requests per bucket, and the headline numbers, of `range` (analytics:read). */
-export async function loadTraffic(access: Access, range: OverviewRange, nowSeconds: number): Promise<OverviewTraffic> {
+export async function loadTraffic(range: OverviewRange, nowSeconds: number): Promise<OverviewTraffic> {
   const query = parseAnalyticsQuery({ range, metric: "requests", groupBy: "none" }, nowSeconds);
-  const result = await queryAnalytics(query, await scopeFor(access), nowSeconds);
+  const result = await queryAnalytics(query, nowSeconds);
   const series = result.headlineSeries;
   const { headline } = result;
   return {
@@ -166,7 +161,7 @@ function hostLabel(host: Pick<ProxyHost, "name" | "domains">): string {
 
 /** Whole days of certificate left per proxy host id (the earliest expiry among the certificates it uses). */
 async function certificateDaysByHost(access: Access, now: number): Promise<Map<number, number>> {
-  const overview = await buildCertificateOverview(access, await dashboardOrganizationFilter(access), { now, waitMs: CERTIFICATE_WAIT_MS });
+  const overview = await buildCertificateOverview(access, { now, waitMs: CERTIFICATE_WAIT_MS });
   const days = new Map<number, number>();
   for (const row of overview.certificates) {
     if (row.daysLeft === null || !row.active) continue;
@@ -201,7 +196,7 @@ export function hostTone(input: {
 
 /**
  * The busiest proxy hosts the viewer sees (analytics:read; the role's tag
- * scope and organisation apply), with their traffic in `range` and, for
+ * scope applies), with their traffic in `range` and, for
  * readers of certificates, the days left of their certificate.
  */
 export async function loadBusiestHosts(
@@ -211,18 +206,15 @@ export async function loadBusiestHosts(
   signals: TrafficSignals | null
 ): Promise<{ hosts: OverviewHosts; topErrorHost: OverviewTraffic["topErrorHost"] }> {
   const nowSeconds = Math.floor(now.getTime() / 1000);
-  const hosts = await listProxyHosts(scopeTagsFor(access, "proxy_hosts"), await dashboardOrganizationFilter(access));
+  const hosts = await listProxyHosts(scopeTagsFor(access, "proxy_hosts"));
   const resolved = resolveRange({ range }, nowSeconds);
   const showCertificates = can(access, "certificates:read");
   const [summaries, certificateDays] = await Promise.all([
-    queryHostSummaries(
-      {
-        range: resolved,
-        hosts: hosts.map((host) => ({ id: host.id, domains: host.domains.map(normalizeDomain).filter(Boolean) })),
-        allHosts: await allProxyHostDomains(),
-      },
-      await scopeFor(access)
-    ),
+    queryHostSummaries({
+      range: resolved,
+      hosts: hosts.map((host) => ({ id: host.id, domains: host.domains.map(normalizeDomain).filter(Boolean) })),
+      allHosts: await allProxyHostDomains(),
+    }),
     showCertificates
       ? within(() => certificateDaysByHost(access, now.getTime()), new Map<number, number>(), SECTION_TIMEOUT_MS)
       : Promise.resolve(new Map<number, number>()),
@@ -280,10 +272,6 @@ export async function loadBusiestHosts(
 
 // ── Nodes ────────────────────────────────────────────────────────────────
 
-function formatVersion(version: string): string {
-  return /^\d+\.\d+\.\d+/.test(version) ? `v${version}` : version;
-}
-
 /** How a replica is doing, as the master knows it. */
 export function replicaNode(instance: FleetInstanceView, appVersion: string = APP_VERSION): OverviewNode {
   const version = instance.drift.reportedVersion;
@@ -336,15 +324,13 @@ export async function loadNodes(access: Access): Promise<OverviewNodes> {
 
 /** Whether the viewer may roll the configuration back from the overview (History's restore). */
 async function mayRollBack(access: Access): Promise<boolean> {
-  if (!can(access, "config_history:restore") || tenantOf(access) !== null) return false;
-  if (!(await isFeatureConfigurable("config_history"))) return false;
+  if (!can(access, "config_history:restore")) return false;
   return (await getInstanceMode()) !== "slave";
 }
 
-/** The latest audit events the viewer reads (audit_log:read; their organisation's), with roll-back links where history allows. */
+/** The latest audit events (audit_log:read), with roll-back links where history allows. */
 export async function loadRecentChanges(access: Access): Promise<OverviewChange[]> {
-  const organizationId = await dashboardOrganizationFilter(access);
-  const records = await queryAuditEvents({ organizationId }, { limit: RECENT_CHANGES, offset: 0 });
+  const records = await queryAuditEvents({}, { limit: RECENT_CHANGES, offset: 0 });
   const candidates = records
     .map((record) => record.configChange)
     .filter((change): change is NonNullable<typeof change> => change !== null && change.beforeId !== null && change.afterId !== null && change.afterId !== change.beforeId)
@@ -354,11 +340,10 @@ export async function loadRecentChanges(access: Access): Promise<OverviewChange[
     const rows = await appDb.select({ id: configSnapshots.id }).from(configSnapshots).where(inArray(configSnapshots.id, [...new Set(candidates)]));
     for (const row of rows) kept.add(row.id);
   }
-  const tenant = tenantOf(access);
   return records.map((record) => {
     const change = record.configChange;
     const before = change && change.beforeId !== null && change.afterId !== null && change.afterId !== change.beforeId ? change.beforeId : null;
-    const who = record.user ? record.user.name || record.user.email || `User ${record.user.id}` : record.userId === null ? null : tenant !== null ? "Provider" : "A deleted user";
+    const who = record.user ? record.user.name || record.user.email || `User ${record.user.id}` : record.userId === null ? null : "A deleted user";
     return {
       id: record.id,
       who,
@@ -371,12 +356,12 @@ export async function loadRecentChanges(access: Access): Promise<OverviewChange[
 
 // ── Setup ────────────────────────────────────────────────────────────────
 
-/** The setup checklist while the install is fresh: settings:read at the provider level, not complete, not hidden. */
+/** The setup checklist while the install is fresh: settings:read, not complete, not hidden. */
 export async function loadFirstRun(access: Access): Promise<OverviewFirstRun | null> {
-  if (!can(access, "settings:read") || tenantOf(access) !== null) return null;
+  if (!can(access, "settings:read")) return null;
   const checklist = await getSetupChecklist();
   if (checklist.complete || checklist.dismissed) return null;
-  return { checklist, ssoEdition: EDITION_LABELS[FEATURE_INFO.sso_saml.edition], ldapEdition: EDITION_LABELS[FEATURE_INFO.ldap.edition] };
+  return { checklist };
 }
 
 // ── The page ─────────────────────────────────────────────────────────────
@@ -394,11 +379,11 @@ export async function loadOverview(
   const range = parseOverviewRange(input.range);
   const readAnalytics = can(access, "analytics:read");
 
-  const signals = readAnalytics ? within(() => cachedTrafficSignals(access, now.getTime()), null, SECTION_TIMEOUT_MS) : Promise.resolve(null);
-  const [attention, traffic, busiest, nodes, changes, firstRun, askUsagePing] = await Promise.all([
+  const signals = readAnalytics ? within(() => cachedTrafficSignals(now.getTime()), null, SECTION_TIMEOUT_MS) : Promise.resolve(null);
+  const [attention, traffic, busiest, nodes, changes, firstRun] = await Promise.all([
     within(() => collectAttention(access, { now, timeoutMs: ATTENTION_TIMEOUT_MS }), emptyAttention(now), ATTENTION_TIMEOUT_MS + 1_000),
     readAnalytics
-      ? within(() => loadTraffic(access, range, nowSeconds), emptyTraffic(range, nowSeconds, "unavailable"), SECTION_TIMEOUT_MS)
+      ? within(() => loadTraffic(range, nowSeconds), emptyTraffic(range, nowSeconds, "unavailable"), SECTION_TIMEOUT_MS)
       : Promise.resolve(null),
     readAnalytics
       ? within(
@@ -410,7 +395,6 @@ export async function loadOverview(
     can(access, "fleet:read") || can(access, "instances:read") ? within(() => loadNodes(access), null, SECTION_TIMEOUT_MS) : Promise.resolve(null),
     can(access, "audit_log:read") ? within(() => loadRecentChanges(access), [], SECTION_TIMEOUT_MS) : Promise.resolve(null),
     within(() => loadFirstRun(access), null, SECTION_TIMEOUT_MS),
-    access.isAdmin ? within(() => shouldAskUsagePingQuestion(), false, SECTION_TIMEOUT_MS) : Promise.resolve(false),
   ]);
 
   return {
@@ -420,7 +404,6 @@ export async function loadOverview(
     version: APP_VERSION,
     permissions: overviewPermissions(access),
     firstRun,
-    askUsagePing,
     attention,
     traffic: traffic ? { ...traffic, topErrorHost: busiest?.topErrorHost ?? null } : null,
     hosts: busiest?.hosts ?? null,

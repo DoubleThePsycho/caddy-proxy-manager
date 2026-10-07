@@ -20,9 +20,8 @@
  * has no event for that entity yet, the event is linked to it directly.
  *
  * changeRequestId names the change request (ee/approvals) whose approved
- * change recorded the event. The links are not covered by the hash chain,
- * like organizationId. Events recorded before this existed, or while
- * history is off, have none. Nothing here throws into the audit log.
+ * change recorded the event. The links are not covered by the hash chain.
+ * Events recorded before this existed, or while history is off, have none. Nothing here throws into the audit log.
  */
 import { and, eq, isNotNull, isNull, lt } from "drizzle-orm";
 import { auditEvents, configSnapshots, settings } from "@/src/lib/db/schema";

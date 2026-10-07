@@ -1,14 +1,14 @@
 # Sign-in and directories
 
-**Sign-in and directories** (`/sign-in`, permission `sso:read`) shows how people sign in to the dashboard and where their accounts come from, on one page. It reads stored state only: it never connects to a provider or directory, and it never checks the license.
+**Sign-in and directories** (`/sign-in`, permission `sso:read`) shows how people sign in to the dashboard and where their accounts come from, on one page. It reads stored state only: it never connects to a provider or directory.
 
 ## Enforced single sign-on
 
 The first card says whether single sign-on is required, who turned it on and when, and lists the break-glass accounts with their second factor, last sign-in and whether they can still sign in with a password. **Correct passwords refused, 7 days** counts the `sso_enforced_sign_in_refused` events of the audit log; **View in the audit log** opens them.
 
-**What the login page offers now** previews the buttons people see: each enabled OpenID Connect and SAML provider, each LDAP directory open for sign-in (marked unavailable while it fails its connection check), and the password form, which only break-glass accounts can use while SSO is enforced.
+**What the login page offers now** previews the buttons people see: each enabled OpenID Connect and SAML provider, each LDAP directory open for sign-in (marked unavailable while it fails its connection check), and the password form, which only break-glass accounts can use while SSO is enforced. Enforced without a break-glass account that can sign in, the login page has no password or passkey sign-in. For when the identity provider is down, see [Recovery](../ee/docs/sso-enforcement.md#recovery).
 
-**Turn off** (`sso:write`) turns enforcement off after a confirmation; it never needs a license. **Change break-glass accounts** opens the Single sign-on page. See `ee/docs/sso-enforcement.md`.
+**Turn off** (`sso:write`) turns enforcement off after a confirmation. **Change break-glass accounts** opens the Single sign-on page. See `ee/docs/sso-enforcement.md`.
 
 ## Where people sign in from
 

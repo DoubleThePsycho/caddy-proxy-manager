@@ -4,14 +4,14 @@
  *
  *  - the model's answer is validated before anything runs: answers off the
  *    allow-lists (prompt-injection style ones included) run nothing;
- *  - queries run with bound parameters, in the asker's organisation, with
- *    host tags limited to the proxy hosts their role reaches;
+ *  - queries run with bound parameters, with host tags limited to the proxy
+ *    hosts the asker's role reaches;
  *  - what reaches the provider: the question and schema, then aggregates
  *    only, with client addresses as placeholders by default;
- *  - license, settings and provider gates, rate limits, the audit trail,
+ *  - settings and provider gates, rate limits, the audit trail,
  *    saved questions and the OpenAPI document.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { eq } from 'drizzle-orm';
 import type { TestDb } from '../helpers/db';
@@ -82,11 +82,10 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 });
 
 import * as schema from '../../src/lib/db/schema';
-import { adminAccess, organizationAccess } from '../../src/lib/permissions';
+import { adminAccess } from '../../src/lib/permissions';
 import { logAuditEvent } from '../../src/lib/audit';
 import { deleteUser } from '../../src/lib/models/user';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
-import { installLicense, licenseSigner, setSettingRow } from '../helpers/config-fixture';
+import { setSettingRow } from '../helpers/config-fixture';
 import { resetQuestionRateLimits } from '../../ee/ai/questions/ask';
 import { POST as ask } from '../../app/api/v1/analytics/questions/route';
 import { GET as listSaved, POST as createSaved } from '../../app/api/v1/analytics/questions/saved/route';
@@ -94,9 +93,7 @@ import { DELETE as deleteSaved, GET as getSaved, PATCH as patchSaved } from '../
 import { POST as runSaved } from '../../app/api/v1/analytics/questions/saved/[id]/run/route';
 import { GET as getSettings, PUT as putSettings } from '../../app/api/v1/ai/question-settings/route';
 import { GET as getOpenApi } from '../../app/api/v1/openapi.json/route';
-import { first as dbFirst } from '@/src/lib/db/ops';
 
-const ORG = 7;
 const PROVIDER = { enabled: true, provider: 'openai_compatible', model: 'llama3.1', baseUrl: 'http://ollama.example.test:11434/v1' };
 
 function req(path: string, init?: { method?: string; body?: unknown }): NextRequest {
@@ -124,7 +121,7 @@ async function askQ(question: string) {
 }
 
 function customAccess(userId: number, permissions: Permission[], scopeTags: string[] = []): Access {
-  return { userId, role: 'viewer', isAdmin: false, customRole: { id: 1, name: 'Team' }, permissions: new Set(permissions), scopeTags, organizationId: null };
+  return { userId, role: 'viewer', isAdmin: false, customRole: { id: 1, name: 'Team' }, permissions: new Set(permissions), scopeTags };
 }
 
 function trafficCalls() {
@@ -136,7 +133,6 @@ function auditCalls(action: string) {
 }
 
 beforeEach(async () => {
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
   ctx.access = adminAccess(1);
   ctx.enabled = true;
   ctx.seen = ['shop.example.com', 'shop.example.com:443', 'admin.example.org', 'api.example.org'];
@@ -155,28 +151,24 @@ beforeEach(async () => {
   };
   vi.mocked(logAuditEvent).mockClear();
   await resetQuestionRateLimits();
-  for (const table of [schema.analyticsQuestions, schema.proxyHosts, schema.organizations, schema.users, schema.settings]) await ctx.db.delete(table);
+  for (const table of [schema.analyticsQuestions, schema.proxyHosts, schema.users, schema.settings]) await ctx.db.delete(table);
   const now = new Date().toISOString();
-  await ctx.db.insert(schema.organizations).values({ id: ORG, name: 'Client', slug: 'client', createdAt: now, updatedAt: now });
-  for (const [userId, role, organizationId] of [[1, 'admin', null], [2, 'viewer', null], [3, 'org_admin', ORG], [4, 'viewer', null], [5, 'viewer', ORG]] as const) {
+  for (const [userId, role] of [[1, 'admin'], [2, 'viewer'], [3, 'viewer'], [4, 'viewer'], [5, 'viewer']] as const) {
     await ctx.db.insert(schema.users).values({
       id: userId, email: `user${userId}@example.com`, name: `User ${userId}`, role, provider: 'credentials', subject: `user${userId}`,
-      status: 'active', organizationId, createdAt: now, updatedAt: now,
+      status: 'active', createdAt: now, updatedAt: now,
     });
   }
-  const host = async (values: { id: number; domains: string[]; tags: string[]; organizationId: number | null }) =>
+  const host = async (values: { id: number; domains: string[]; tags: string[] }) =>
     await ctx.db.insert(schema.proxyHosts).values({
       id: values.id, name: `host-${values.id}`, domains: JSON.stringify(values.domains), upstreams: '["backend:8080"]',
-      tags: JSON.stringify(values.tags), organizationId: values.organizationId, createdAt: now, updatedAt: now,
+      tags: JSON.stringify(values.tags), createdAt: now, updatedAt: now,
     });
-  await host({ id: 1, domains: ['shop.example.com'], tags: ['shop'], organizationId: ORG });
-  await host({ id: 2, domains: ['admin.example.org'], tags: ['shop', 'internal'], organizationId: null });
-  await host({ id: 3, domains: ['api.example.org'], tags: ['api'], organizationId: null });
-  await installLicense(ctx.db, 'homelab');
+  await host({ id: 1, domains: ['shop.example.com'], tags: ['shop'] });
+  await host({ id: 2, domains: ['admin.example.org'], tags: ['shop', 'internal'] });
+  await host({ id: 3, domains: ['api.example.org'], tags: ['api'] });
   await setSettingRow(ctx.db, 'ai_provider', PROVIDER);
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('asking', () => {
   it('turns the question into a validated query, runs it with bound parameters and audits it', async () => {
@@ -278,40 +270,30 @@ describe('asking', () => {
   });
 
   it('reports a provider failure as 502 and audits it', async () => {
-    ctx.replies = [{ error: 'The request to the model timed out' }];
+    const timedOut = 'The model did not answer within 60 seconds. A slower model needs a longer timeout (Alerts \u2192 AI).';
+    ctx.replies = [{ error: timedOut }];
     const { status, body } = await askQ('Which countries were blocked most?');
     expect(status).toBe(502);
-    expect(body.error).toBe('The question could not be interpreted: The request to the model timed out');
-    expect(auditCalls('analytics_question_asked')[0].data).toMatchObject({ error: 'The request to the model timed out' });
+    expect(body.error).toBe(`The question could not be interpreted: ${timedOut}`);
+    expect(auditCalls('analytics_question_asked')[0].data).toMatchObject({ error: timedOut });
   });
 });
 
 describe('scope', () => {
-  it('keeps an organisation user to their hosts, and tags to the hosts they can see', async () => {
-    ctx.access = organizationAccess(3, ORG, 'org_admin');
+  it('limits a question naming host tags to the tagged hosts, and reads every host otherwise', async () => {
     ctx.replies = [answerQuery({ hostTags: ['shop'] }), 'ok'];
     expect((await askQ('Blocked by country on the shop hosts?')).body.status).toBe('answered');
+    expect(trafficCalls().length).toBeGreaterThan(0);
     for (const call of trafficCalls()) {
-      expect(call.query_params.p_scope).toEqual(['shop.example.com', 'shop.example.com:443']);
+      expect(call.query_params.p_scope).toEqual(['admin.example.org', 'shop.example.com', 'shop.example.com:443']);
     }
 
-    ctx.calls = [];
-    ctx.replies = [answerQuery({ hostTags: ['internal'] })];
-    const internal = (await askQ('Blocked on the internal hosts?')).body;
-    expect(internal.status).toBe('clarify');
-    expect(internal.message).toBe('No proxy host you can see is tagged "internal". Tags you can use: shop.');
-    expect(trafficCalls()).toHaveLength(0);
-
-    // A host of another organisation named outright: the organisation scope still applies.
     ctx.calls = [];
     ctx.replies = [answerQuery({ breakdown: 'none', filters: [{ dim: 'host', op: 'is', value: 'admin.example.org' }] }), 'ok'];
     expect((await askQ('Requests on admin.example.org?')).body.status).toBe('answered');
     const calls = trafficCalls();
     expect(calls.length).toBeGreaterThan(0);
-    for (const call of calls) {
-      expect(call.query).toContain('host IN {p_scope:Array(String)}');
-      expect(call.query_params.p_scope).toEqual(['shop.example.com', 'shop.example.com:443']);
-    }
+    for (const call of calls) expect(call.query_params.p_scope).toBeUndefined();
   });
 
   it('resolves host tags only within the role\'s tag scope', async () => {
@@ -382,24 +364,6 @@ describe('what reaches the provider', () => {
 });
 
 describe('gates', () => {
-  it('needs the AI analyst license to ask and save, never to list or delete', async () => {
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-    const asked = await askQ('Which countries were blocked most?');
-    expect(asked.status).toBe(403);
-    expect(asked.body.error).toMatch(/AI analyst needs an active .* license/);
-    expect(ctx.modelCalls).toHaveLength(0);
-    const saved = await createSaved(req('/api/v1/analytics/questions/saved', { method: 'POST', body: { question: 'Blocked?', query: query() } }));
-    expect(saved.status).toBe(403);
-
-    const now = new Date().toISOString();
-    const row = (await dbFirst(ctx.db.insert(schema.analyticsQuestions).values({ userId: 1, question: 'Blocked?', query: JSON.stringify(query()), createdAt: now, updatedAt: now }).returning()))!;
-    expect((await listSaved(req('/api/v1/analytics/questions/saved'))).status).toBe(200);
-    expect((await patchSaved(req('/x', { method: 'PATCH', body: { shared: false } }), id(row.id))).status).toBe(200);
-    expect((await patchSaved(req('/x', { method: 'PATCH', body: { shared: true } }), id(row.id))).status).toBe(403);
-    expect((await runSaved(req('/x', { method: 'POST' }), id(row.id))).status).toBe(403);
-    expect((await deleteSaved(req('/x', { method: 'DELETE' }), id(row.id))).status).toBe(204);
-  });
-
   it('needs a provider and questions turned on', async () => {
     await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'ai_provider'));
     const none = await askQ('Which countries were blocked most?');
@@ -422,11 +386,9 @@ describe('gates', () => {
     expect(ctx.modelCalls).toHaveLength(0);
   });
 
-  it('changes the settings with ai:write; turning things off needs no license', async () => {
+  it('changes the settings with ai:write', async () => {
     expect(await (await getSettings(req('/api/v1/ai/question-settings'))).json()).toEqual({ enabled: true, aiSummaries: true, shareRequestDetails: false });
     expect((await putSettings(req('/x', { method: 'PUT', body: { shareRequestDetails: true } }))).status).toBe(200);
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-    expect((await putSettings(req('/x', { method: 'PUT', body: { shareRequestDetails: true, enabled: true } }))).status).toBe(403);
     const off = await putSettings(req('/x', { method: 'PUT', body: { shareRequestDetails: false, enabled: false } }));
     expect(off.status).toBe(200);
     expect(await off.json()).toEqual({ enabled: false, aiSummaries: true, shareRequestDetails: false });
@@ -478,7 +440,7 @@ describe('saved questions', () => {
     return { status: response.status, body: await response.json() };
   }
 
-  it('saves the validated query, shares it within the organisation and re-runs it without the interpretation call', async () => {
+  it('saves the validated query, shares it and re-runs it without the interpretation call', async () => {
     const created = await save({ question: 'Which countries were blocked most?', query: query(), shared: true });
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({ question: 'Which countries were blocked most?', shared: true, owned: true, interpretation: 'Mitigated requests by country (top 5), the last 7 days' });
@@ -489,7 +451,7 @@ describe('saved questions', () => {
     expect((await save({ question: 'Bad', query: query({ metric: 'bytes', breakdown: 'path' }) })).status).toBe(400);
     expect((await save({ question: 'Bad', query: query(), owner: 2 })).status).toBe(400);
 
-    // Shared at the provider level: another provider-level user sees it, an organisation user does not.
+    // Shared: another user who reads analytics sees it.
     ctx.access = customAccess(4, ['analytics:read']);
     const listed = await (await listSaved(req('/api/v1/analytics/questions/saved'))).json();
     expect(listed.map((q: { id: number; owned: boolean }) => [q.id, q.owned])).toEqual([[created.body.id, false]]);
@@ -504,13 +466,8 @@ describe('saved questions', () => {
     expect(ctx.modelCalls[0].prompt.system).toMatch(/You summarise/);
     expect(auditCalls('analytics_question_asked')[0].data).toMatchObject({ savedQuestionId: created.body.id });
 
-    ctx.access = organizationAccess(5, ORG, 'viewer', { id: 9, name: 'Org analysts', permissions: ['analytics:read'], scopeTags: [] });
-    expect(await (await listSaved(req('/api/v1/analytics/questions/saved'))).json()).toEqual([]);
-    expect((await getSaved(req('/x'), id(created.body.id))).status).toBe(404);
-
-    // An administrator may delete a shared question; deleting needs no license.
+    // An administrator may delete a shared question.
     ctx.access = adminAccess(2);
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
     expect((await deleteSaved(req('/x', { method: 'DELETE' }), id(created.body.id))).status).toBe(204);
   });
 

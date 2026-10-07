@@ -278,6 +278,23 @@ test.describe('Users page', () => {
     await roles.getByRole('button', { name: /^Admin/ }).click();
     await expect(page.getByText('Built-in roles cannot be edited or deleted.')).toBeVisible();
   });
+
+  test('the Roles tab labels each value on a phone, where the column headings are hidden', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/users?tab=roles');
+    const roles = page.getByRole('region', { name: 'Roles' });
+    await expect(roles.getByText('Permissions', { exact: true })).toBeHidden();
+    const viewer = roles.getByTestId('role-viewer');
+    await expect(viewer.getByText('Like User. Users of a deleted custom role get this role.')).toBeVisible();
+    const facts = viewer.getByTestId('role-facts');
+    await expect(facts).toContainText(/of \d+ permissions/);
+    await expect(facts).toContainText(/\d+ users?/);
+    await expect(viewer.getByText('Scope:', { exact: true })).toBeVisible();
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(roles.getByText('Permissions', { exact: true })).toBeVisible();
+    await expect(viewer.getByText('Scope:', { exact: true })).toBeHidden();
+  });
 });
 
 test.describe('Users page — unauthenticated access', () => {

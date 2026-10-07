@@ -1,5 +1,5 @@
 /**
- * Access list rules (Community): ordered allow/deny rules by IP address or
+ * Access list rules: ordered allow/deny rules by IP address or
  * CIDR range (IPv4 and IPv6), country, continent or AS number, and the list
  * settings that go with them (what an unmatched request gets, what a denied
  * request gets).

@@ -1,6 +1,6 @@
 # API monetization
 
-Feature id `api_monetization` (Enterprise edition). Code: `ee/monetization/` (Elastic License 2.0); the Caddy wiring is in `src/lib/caddy.ts`.
+Code: `ee/monetization/` (Elastic License 2.0); the Caddy wiring is in `src/lib/caddy.ts`.
 
 If you sell access to an API that sits behind Ingressi, Ingressi can charge your API's consumers per request and enforce it at the edge: every request to a monetized host is checked before it reaches your API, and refused once it is not paid for. Consumers pay in one of three ways:
 
@@ -125,7 +125,7 @@ A postpaid consumer uses the API first and pays afterwards, never more than its 
 
 ### Refunds and disputes
 
-Refunds and disputes made in Stripe are written to the ledger and come off the balance, so a balance stays "paid in minus used": `charge.refunded` takes off what was refunded since the last event (reference `stripe-refund:<charge>:<total refunded>`, once per total), `charge.dispute.created` takes off the disputed amount (reference `stripe-dispute:<dispute>`) and suspends a postpaid consumer until an administrator resumes it (**Resume**, `POST /api/v1/monetization/consumers/{id}/billing/resume`, needs the license). Two refunds of one payment arriving together take off the larger total once, not the sum (they run one after the other under the consumer's charge lock). A refund or dispute can arrive before the event of its payment (Stripe does not order events), or be for a top-up paid before this release: its Checkout Session is then looked up in Stripe by the PaymentIntent (`GET /v1/checkout/sessions`, which a restricted key's **Checkout Sessions** permission covers) and applied first, exactly as its own event would be, so it is still credited once. If Stripe cannot be asked, the webhook answers `503` and Stripe sends the event again. A refund you meant as goodwill on a postpaid charge brings the amount back as owed: add a positive balance adjustment to forgive it.
+Refunds and disputes made in Stripe are written to the ledger and come off the balance, so a balance stays "paid in minus used": `charge.refunded` takes off what was refunded since the last event (reference `stripe-refund:<charge>:<total refunded>`, once per total), `charge.dispute.created` takes off the disputed amount (reference `stripe-dispute:<dispute>`) and suspends a postpaid consumer until an administrator resumes it (**Resume**, `POST /api/v1/monetization/consumers/{id}/billing/resume`). Two refunds of one payment arriving together take off the larger total once, not the sum (they run one after the other under the consumer's charge lock). A refund or dispute can arrive before the event of its payment (Stripe does not order events), or be for a top-up paid before this release: its Checkout Session is then looked up in Stripe by the PaymentIntent (`GET /v1/checkout/sessions`, which a restricted key's **Checkout Sessions** permission covers) and applied first, exactly as its own event would be, so it is still credited once. If Stripe cannot be asked, the webhook answers `503` and Stripe sends the event again. A refund you meant as goodwill on a postpaid charge brings the amount back as owed: add a positive balance adjustment to forgive it.
 
 ### Webhooks
 
@@ -234,7 +234,7 @@ The **gate token** is 32 random bytes generated once per install and stored encr
 
 The gate decides **without a database query** for API keys. It keeps an in-memory index (key prefix → key hash and consumer, consumers with their billing state, plans, monetized hosts with their x402 settings) loaded at start and reloaded whenever an administrator changes something; top-ups, payments and suspensions refresh the consumer at once. Usage is counted in memory and **written to the database every 5 seconds** and when the process is stopped (SIGTERM or SIGINT), in one transaction: the balance (a relative update, so top-ups written meanwhile are kept), the free requests used this month, the keys' last use, and one `usage` ledger entry per consumer and UTC hour that is updated in place.
 
-**With several web nodes** ([high availability shared state](high-availability.md#shared-state-phase-3), Enterprise), balances, free requests and per-minute windows live in Redis or Valkey instead: each gate call runs one atomic script there (one more round trip on the internal network), so requests on several nodes never spend the same money twice. Top-ups, payments and adjustments credit the shared balance at once. The leader writes usage and credits back to the ledger every 5 seconds, idempotently; the ledger and the overview trail the gate by that much. Disabling a consumer or revoking a key is refused by every node at once; other changes reach the other nodes within seconds.
+**With several web nodes** ([high availability shared state](high-availability.md#shared-state-phase-3)), balances, free requests and per-minute windows live in Redis or Valkey instead: each gate call runs one atomic script there (one more round trip on the internal network), so requests on several nodes never spend the same money twice. Top-ups, payments and adjustments credit the shared balance at once. The leader writes usage and credits back to the ledger every 5 seconds, idempotently; the ledger and the overview trail the gate by that much. Disabling a consumer or revoking a key is refused by every node at once; other changes reach the other nodes within seconds.
 
 **Cost of one gate call:** one extra HTTP round trip from Caddy to the dashboard process on the internal network (Caddy keeps the connection alive), Next.js routing (the middleware returns at once for this path), two SHA-256 digests of short strings (gate token and API key), a constant-time comparison of each, a handful of `Map` lookups and integer arithmetic, and on plans with failed-answer credits one HMAC. No I/O beyond the HTTP exchange. Expect well under a millisecond of work in the dashboard per request on top of the hop; throughput is bounded by the single Node.js/Bun process of the dashboard. x402 payments add the facilitator's round trips and a few database writes per paid request.
 
@@ -271,16 +271,6 @@ How the unpaid exposure stays bounded:
 
 Monetization is an authentication mode of the host: it cannot be combined with Ingressi forward auth, Authentik or generic forward auth, or a basic-auth access list on the same host. Turning it on for such a host answers `400`, and so does turning one of them on for a monetized host (the proxy host form and `PUT /api/v1/proxy-hosts/{id}` show the message). WAF, geoblocking, mTLS, redirects, path rules, location rules and everything else stay available.
 
-## License
-
-| Action | License |
-| --- | --- |
-| Create or change plans, consumers (except disabling), API keys, balance adjustments, portal links | `api_monetization` required (`403` otherwise) |
-| Turn monetization or x402 on for a host, change it; save Stripe or x402 settings; change retention or replica serving; resume a suspended consumer | required |
-| Delete plans or consumers, disable consumers, revoke keys, turn portal links off, turn monetization or x402 off for a host, remove the Stripe keys, turn x402 off, turn replica serving off, remove a saved card, charge an open amount now | never |
-| The gate, x402 payments, their settlement and recording, Stripe webhooks, postpaid charges and their reconciliation, failed-answer credits, retention, portal pages and payments, the consumer API, replica allowances | never: everything already set up keeps metering and taking payments when the license lapses |
-| Reading every tab and endpoint | never |
-
 ## Instance sync, export and history
 
 Plans, consumers, keys, the ledger, payments, host settings, the gate token and the Stripe and x402 settings belong to the master: they are not part of configuration export, import or history, and the settings are not synced. While replica serving is on (Settings), the master sends its replicas the gate's index in the sync payload (settings group `monetization_replica`; see [Sync replicas](#sync-replicas-and-pull-replicas)); fleet revisions get the index of the moment they are pushed. Deleting a proxy host removes its monetization settings.
@@ -292,7 +282,7 @@ All under `/api/v1/monetization`, documented in the OpenAPI reference (tag "API 
 | Method and path | Notes |
 | --- | --- |
 | `GET`, `POST /plans`; `GET`, `PUT`, `DELETE /plans/{id}` | `{name, pricePerRequestMicros, includedRequestsPerMonth?, requestsPerMinute?, billing?, postpaidCapMicros?, postpaidThresholdMicros?, creditFailedAnswers?, acceptX402?}`. Delete: `409` while consumers or hosts use the plan. Switching billing: `409` while a consumer on it owes anything. |
-| `GET`, `POST /consumers`; `GET`, `PUT`, `DELETE /consumers/{id}` | `{name, email?, status?, planId?, overdraftAllowanceMicros?, billing?}`. `{"status": "disabled"}` needs no license. Delete keeps the ledger. The detail lists the 20 latest payments. |
+| `GET`, `POST /consumers`; `GET`, `PUT`, `DELETE /consumers/{id}` | `{name, email?, status?, planId?, overdraftAllowanceMicros?, billing?}`. Delete keeps the ledger. The detail lists the 20 latest payments. |
 | `GET`, `POST /consumers/{id}/keys`; `DELETE /consumers/{id}/keys/{keyId}` | `POST {name?}` returns `{key, rawKey}` once. Delete revokes. |
 | `POST /consumers/{id}/adjust` | `{amountMicros, reason, reference?}`; a repeated `reference` answers `409`. |
 | `POST`, `DELETE /consumers/{id}/portal-link` | `POST` returns `{url, token}` once and replaces the previous link. |

@@ -1,6 +1,6 @@
 # Users and groups
 
-**Users and groups** (Identity in the sidebar) has three tabs: **Users**, **Groups** and **Roles**. `/users` opens the first, `/groups` the second and `/users?tab=roles` the third; `/users?user=<id>` opens a user's panel. Each tab needs its own permission: Users `users:read`, Groups `groups:read`, Roles `users:read` at the provider level. It is part of the Community edition; custom roles need a license.
+**Users and groups** (Users and sign-in in the sidebar) has three tabs: **Users**, **Groups** and **Roles**. `/users` opens the first, `/groups` the second and `/users?tab=roles` the third; `/users?user=<id>` opens a user's panel. Each tab needs its own permission: Users `users:read`, Groups `groups:read`, Roles `users:read`.
 
 ## Users
 
@@ -13,7 +13,7 @@ One row per account, newest first, 25 to a page; the page is kept in the address
 - **Last sign-in:** when and how the last dashboard sign-in completed. A token-only account shows when one of its API tokens was last used.
 - **Status:** active, invited (never signed in, no token used) or disabled, with the date it was disabled. The date is recorded whichever way the account was disabled (here, the REST API, SCIM or an access review); accounts disabled before Ingressi recorded it show no date.
 
-Search looks in names, e-mails, usernames, roles and sources. **Administrators** lists the admin role, organisation administrators and administrator-level custom roles; **Invited or disabled** the accounts nobody uses.
+Search looks in names, e-mails, usernames, roles and sources. **Administrators** lists the admin role and administrator-level custom roles; **Invited or disabled** the accounts nobody uses.
 
 A banner names any active administrator who can sign in with a password and has no second factor, with **Change role** and **Disable account**. The MFA policy line under it opens **Edit policy** (`mfa_policy:write`); see `documentation/mfa.md`.
 
@@ -27,7 +27,7 @@ Click a name, or **Open details** in the row menu:
 - **Sessions:** every browser signed in, with device, place and times. **Sign out** ends one; **Sign out everywhere** ends all (for your own account, all but this one). API tokens are not affected.
 - **Account:** **Disable user** ends their dashboard and forward-auth sessions and stops their API tokens until you enable them again; **Delete user** removes the account.
 
-Every change is recorded in the audit log, and the same guards apply as through the REST API: you cannot change your own role or status, the last active administrator stays, and enforced SSO keeps a break-glass administrator.
+Every change is recorded in the audit log, and the same guards apply as through the REST API: you cannot change your own role or status, the last active administrator stays, and the last break-glass administrator of enforced SSO stays until it is taken off the break-glass list.
 
 **Add user** creates a local account with a password. Directory, SAML and SCIM accounts arrive on their own.
 
@@ -35,7 +35,7 @@ Every change is recorded in the audit log, and the same guards apply as through 
 
 The groups are listed by name, 25 to a page (`/groups?page=2`); the search looks in names, descriptions and members. A group's members dialog lists 10 members at a time, with a search once there are more; **Add a user to this group** shows the first 50 users that match its search.
 
-Forward-auth groups decide who gets through the sign-in portal of hosts protected by forward auth ([forward-auth.md](forward-auth.md)). Every request to such a host checks the user's access again, so removing a member, deleting a group or taking a host's grant away refuses the next request. With high availability shared state (Enterprise, `ee/docs/high-availability.md`) the sessions this takes access from are also ended on every web node at once. Each row shows the members, whether SCIM manages the group, the dashboard role a SCIM group-to-role mapping gives (with `scim:read`) and the hosts that let the group in (with `proxy_hosts:read`, only hosts in your tag scope). **Manage members** adds and removes people; **Edit group** renames it. A name is required, at most 100 characters and unique in its organisation; when a change is refused, the dialog says why (the name is taken, the person is already a member, the group is gone), and `POST /api/v1/groups` and `PATCH /api/v1/groups/{id}` refuse the same input with 400 or 409, and adding a member twice answers 409.
+Forward-auth groups decide who gets through the sign-in portal of hosts protected by forward auth ([forward-auth.md](forward-auth.md)). Every request to such a host checks the user's access again, so removing a member, deleting a group or taking a host's grant away refuses the next request. With high availability shared state (`ee/docs/high-availability.md`) the sessions this takes access from are also ended on every web node at once. Each row shows the members, whether SCIM manages the group, the dashboard role a SCIM group-to-role mapping gives (with `scim:read`) and the hosts that let the group in (with `proxy_hosts:read`, only hosts in your tag scope). **Manage members** adds and removes people; **Edit group** renames it. A name is required, at most 100 characters and unique; when a change is refused, the dialog says why (the name is taken, the person is already a member, the group is gone), and `POST /api/v1/groups` and `PATCH /api/v1/groups/{id}` refuse the same input with 400 or 409, and adding a member twice answers 409.
 
 Adding someone to a SCIM group by hand changes what they can reach, never their role: only memberships the identity provider sends count for role mappings.
 
@@ -60,7 +60,7 @@ Ingressi has three roles with increasing privileges:
 
 New users default to the **user** role.
 
-> **Forward Auth access** is separate from role — all roles must be explicitly granted access to each protected host via the forward auth access list ([forward-auth.md](forward-auth.md#per-host-access-control)).
+> **Forward auth access** is separate from the role: every role, administrators included, needs to be granted access to each protected host in the forward auth access list ([forward-auth.md](forward-auth.md#per-host-access-control)).
 
 ### The primary admin
 
@@ -78,7 +78,7 @@ API tokens can only be created from an authenticated dashboard session; an exist
 
 | Method and path | Permission | What |
 | --- | --- | --- |
-| `GET /api/v1/users/overview` | `users:read` | Every account as the Users tab shows it: `sources`, `secondFactor`, `roleManagedBy`, `administrator`, `breakGlass`, `primaryAdmin`, `apiTokenLastUsedAt`, and the MFA policy (null without `mfa_policy:read`). `?organizationId=` filters like `GET /api/v1/users`. |
+| `GET /api/v1/users/overview` | `users:read` | Every account as the Users tab shows it: `sources`, `secondFactor`, `roleManagedBy`, `administrator`, `breakGlass`, `primaryAdmin`, `apiTokenLastUsedAt`, and the MFA policy (null without `mfa_policy:read`). |
 | `GET /api/v1/groups/overview` | `groups:read` | Every group with members, `scim`, `roleMappings` (null without `scim:read`) and `hosts` (null without `proxy_hosts:read`). |
 | `GET /api/v1/users/{id}/sessions`, `DELETE …` | `users:read`, `users:write` | A user's sessions; see `documentation/profile.md`. |
 | `GET /api/v1/users/{id}/mfa`, `DELETE …` | `users:read`, `users:write` | A user's MFA state and the reset; see `documentation/mfa.md`. |

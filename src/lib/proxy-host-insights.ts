@@ -5,9 +5,9 @@
  * for approval, and what protects each host once its settings and the
  * global ones are combined.
  *
- * The caller passes only hosts the reader may see (its tag scope and
- * organisation). Each source fails on its own: a ClickHouse or certificate
- * check that fails leaves its columns empty instead of failing the page.
+ * The caller passes only hosts the reader may see (its tag scope). Each
+ * source fails on its own: a ClickHouse or certificate check that fails
+ * leaves its columns empty instead of failing the page.
  */
 import { and, eq, inArray } from "drizzle-orm";
 import { appDb } from "./db";
@@ -22,13 +22,12 @@ import { effectiveModeOfEngine, type WafEffectiveMode } from "./waf-host-mode";
 import { buildCertificateOverview } from "./certificate-overview";
 import type { CertificateOverviewRow } from "./certificate-renewal";
 import { queryHostSummaries, type HostSummary } from "./analytics/hosts";
-import { allProxyHostDomains, scopeFor, trafficSignalsFor } from "./analytics/service";
+import { allProxyHostDomains, trafficSignalsFor } from "./analytics/service";
 import { resolveRange } from "./analytics/range";
 import { normalizeDomain } from "./analytics/scope";
 import type { AnalyticsStatus } from "./analytics/run";
 import { isAnalyticsEnabled } from "./clickhouse/client";
 import type { TrafficSignals } from "./analytics/signals";
-import type { OrganizationFilter } from "@/ee/multi-tenancy/scope";
 import {
   HIGH_ERROR_RATE,
   HIGH_ERROR_RATE_MIN_REQUESTS,
@@ -43,7 +42,6 @@ import {
 } from "./proxy-host-view";
 
 export type HostInsightOptions = {
-  organizationId: OrganizationFilter;
   /** Names of the access lists the reader may see, by id. */
   accessListNames?: ReadonlyMap<number, string>;
   /** How long to wait for certificate handshakes that are not cached yet, in ms. */
@@ -143,13 +141,12 @@ function certificateFrom(row: CertificateOverviewRow): HostCertificate {
 /** Each proxy host's certificate in the overview: the soonest-expiring one that names it. */
 async function loadCertificates(
   access: Access,
-  organizationId: OrganizationFilter,
   waitMs: number | undefined,
   now: number
 ): Promise<Map<number, HostCertificate> | null> {
   if (!can(access, "certificates:read")) return null;
   try {
-    const overview = await buildCertificateOverview(access, organizationId, { waitMs, now });
+    const overview = await buildCertificateOverview(access, { waitMs, now });
     const byHost = new Map<number, HostCertificate>();
     // Rows come soonest expiry first, so the first row naming a host wins.
     for (const row of overview.certificates) {
@@ -187,14 +184,14 @@ type Traffic = { status: AnalyticsStatus; summaries: Map<number, HostSummary>; s
 
 async function loadTraffic(access: Access, hosts: readonly ProxyHost[], now: number): Promise<Traffic | null> {
   if (!can(access, "analytics:read")) return null;
-  // Without ClickHouse there is nothing to read (and an organisation's scope would ask ClickHouse for its hosts).
+  // Without ClickHouse there is nothing to read.
   if (!isAnalyticsEnabled()) return { status: "disabled", summaries: new Map(), signals: null };
   const range = resolveRange({ range: "24h" }, Math.floor(now / 1000));
   const domains = hosts.map((host) => ({ id: host.id, domains: host.domains.map(normalizeDomain).filter(Boolean) }));
   try {
     const [summaries, signals] = await Promise.all([
-      queryHostSummaries({ range, hosts: domains, allHosts: await allProxyHostDomains() }, await scopeFor(access)),
-      trafficSignalsFor(access).catch(() => null),
+      queryHostSummaries({ range, hosts: domains, allHosts: await allProxyHostDomains() }),
+      trafficSignalsFor().catch(() => null),
     ]);
     return {
       status: summaries.status,
@@ -239,7 +236,7 @@ export async function loadHostInsights(access: Access, hosts: readonly ProxyHost
   const [globals, traffic, certificates] = await Promise.all([
     loadGlobals(),
     loadTraffic(access, hosts, now),
-    loadCertificates(access, options.organizationId, options.certificateWaitMs, now),
+    loadCertificates(access, options.certificateWaitMs, now),
   ]);
   const pending = await loadPendingChanges(hosts.map((host) => host.id));
   const inputs = new Map<number, ProtectionInput>();

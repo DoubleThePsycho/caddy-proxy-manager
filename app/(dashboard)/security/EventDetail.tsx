@@ -158,6 +158,12 @@ function BlockChoice({ event, context }: { event: SecurityEvent; context: EventD
   );
 }
 
+/** Ends a message with a full stop unless it already ends a sentence. */
+function sentence(text: string): string {
+  const trimmed = text.trim();
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
 type LoadState = { status: "loading" } | { status: "error"; error: string } | { status: "ready"; explanation: WafEventExplanation };
 
 /** "Why it was blocked" for a WAF event: the explain API's score breakdown, matched data and the deciding rule. */
@@ -251,11 +257,11 @@ function WafEventDetail({ event, context, onClose }: { event: SecurityEvent; con
         )}
         {state.status === "error" && (
           <p role="status" className="m-0 text-[13px] text-muted-foreground">
-            {state.error}{" "}
+            {sentence(state.error)}{" "}
             {event.ruleId !== null && (
               <>
                 The event names rule <span className="num">{event.ruleId}</span>
-                {event.message ? `: ${event.message}` : "."}
+                {event.message ? `: ${sentence(event.message)}` : "."}
               </>
             )}
           </p>

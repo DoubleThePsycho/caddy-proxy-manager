@@ -118,7 +118,7 @@ describe('queryAnalytics', () => {
         { b: n + 5, requests: '9', bytes: '90', visitors: '1', mitigated: '9', e5: '0' },
       ];
     };
-    const result = await queryAnalytics(query, null, NOW);
+    const result = await queryAnalytics(query, NOW);
     expect(result.status).toBe('ok');
     expect(result.series.map((s) => s.key)).toEqual(['served', 'waf', 'geo']);
     expect(result.series[0].values[1]).toBe(30);
@@ -143,7 +143,7 @@ describe('queryAnalytics', () => {
   });
 
   it('has no previous period for 30 days with 30-day retention, and says why', async () => {
-    const result = await queryAnalytics(parseAnalyticsQuery({ range: '30d' }, NOW), null, NOW);
+    const result = await queryAnalytics(parseAnalyticsQuery({ range: '30d' }, NOW), NOW);
     expect(result.previous).toMatchObject({ available: false, reason: 'retention' });
     expect(result.headline.requests.previous).toBeNull();
     expect(result.headline.requests.delta).toBeNull();
@@ -162,7 +162,7 @@ describe('queryAnalytics', () => {
       }
       return [];
     };
-    const result = await queryAnalytics(query, null, NOW);
+    const result = await queryAnalytics(query, NOW);
     expect(result.series.map((s) => [s.key, s.label])).toEqual([
       ['b.example.com', 'b.example.com'],
       ['a.example.com', 'a.example.com'],

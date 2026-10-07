@@ -1,7 +1,7 @@
 /**
  * Server-side render of the Provisioning, Access Reviews and My reviews
- * pages: the license notice and read-only controls without a license, no
- * token secret anywhere, and reviewers' own access shown but not decidable.
+ * pages: controls for writers only, no token secret anywhere, and
+ * reviewers' own access shown but not decidable.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -24,7 +24,7 @@ function scimProps(overrides: Partial<ScimClientProps> = {}): ScimClientProps {
   return {
     settings: {
       enabled: true, providerId: 'corp', deleteMode: 'disable', defaultRole: 'user', manageRoles: true,
-      requireVerifiedEmail: true, externalIdClaim: 'sub', endpointUrl: 'https://dash.example.com/scim/v2', configurable: true,
+      requireVerifiedEmail: true, externalIdClaim: 'sub', endpointUrl: 'https://dash.example.com/scim/v2',
       providers: [{ id: 'corp', name: 'Corp IdP', enabled: true, autoLink: false }],
       counts: { users: 1, groups: 1, tokens: 1, mappings: 1 },
     },
@@ -40,8 +40,6 @@ function scimProps(overrides: Partial<ScimClientProps> = {}): ScimClientProps {
     customRoles: [],
     canWrite: true,
     isAdmin: true,
-    customRolesLicensed: true,
-    editionLabel: 'Enterprise',
     ...overrides,
   };
 }
@@ -53,15 +51,15 @@ describe('Provisioning page', () => {
     expect(html).toContain('scim_AbCdEf…');
     expect(html).toContain('Alice@Example.com');
     expect(html).toContain('Engineering');
-    expect(html).not.toContain('needs a license');
+    expect(html).toContain('>Save<');
+    expect(html).toContain('New token');
   });
 
-  it('explains the license and only offers turning SCIM off without one', () => {
-    const props = scimProps();
-    const html = renderToStaticMarkup(createElement(ScimClient, { ...props, settings: { ...props.settings, configurable: false } }));
-    expect(html).toContain('needs a license with SCIM provisioning (Enterprise edition)');
-    expect(html).toContain('Turn SCIM off');
+  it('offers no changes without scim:write', () => {
+    const html = renderToStaticMarkup(createElement(ScimClient, scimProps({ canWrite: false })));
+    expect(html).toContain('https://dash.example.com/scim/v2');
     expect(html).not.toContain('>Save<');
+    expect(html).not.toContain('New token');
   });
 });
 
@@ -73,15 +71,14 @@ describe('Access Reviews pages', () => {
     counts: { total: 4, pending: 3, drafted: 0, kept: 1, revoked: 0, unchanged: 0, failed: 0, notReviewed: 0, unreviewable: 0 },
   };
 
-  it('lists campaigns with their overdue state and explains the license', () => {
+  it('lists campaigns with their overdue state', () => {
     const html = renderToStaticMarkup(createElement(AccessReviewsClient, {
-      campaigns: [campaign], schedules: [], users: [], customRoles: [], groups: [], configurable: false, canWrite: true,
-      editionLabel: 'Enterprise', myPending: 2,
+      campaigns: [campaign], schedules: [], users: [], customRoles: [], groups: [], canWrite: true, myPending: 2,
     }));
     expect(html).toContain('Q4 review');
     expect(html).toContain('Overdue');
     expect(html).toContain('1 of 4</span> decided');
-    expect(html).toContain('needs a license with access reviews (Enterprise edition)');
+    expect(html).toContain('Start review');
     expect(html).toContain('You have 2 items to review');
   });
 

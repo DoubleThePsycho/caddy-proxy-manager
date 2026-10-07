@@ -17,12 +17,10 @@ type Props = {
   open: boolean;
   onClose: () => void;
   roleOptions: RoleOptionsProps;
-  /** The organisation the user is created in (ee/multi-tenancy), or null for the provider level. */
-  createOrganization: { id: number; name: string } | null;
 };
 
 /** Add user: a local account with a password. Directory, SAML and SCIM accounts arrive on their own. */
-export default function CreateUserDialog({ open, onClose, roleOptions, createOrganization }: Props) {
+export default function CreateUserDialog({ open, onClose, roleOptions }: Props) {
   const router = useRouter();
   const [role, setRole] = useState("user");
   const [createError, setCreateError] = useState<string | null>(null);
@@ -88,10 +86,9 @@ export default function CreateUserDialog({ open, onClose, roleOptions, createOrg
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <RoleOptions {...roleOptions} organization={createOrganization !== null} />
+                  <RoleOptions {...roleOptions} />
                 </SelectContent>
               </Select>
-              {createOrganization && <p className="text-xs text-muted-foreground">In organisation {createOrganization.name}</p>}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="create-password">Password</Label>

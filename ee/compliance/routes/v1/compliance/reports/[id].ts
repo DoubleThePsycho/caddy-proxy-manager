@@ -16,7 +16,6 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
-/** Never needs a license. */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "compliance:write");

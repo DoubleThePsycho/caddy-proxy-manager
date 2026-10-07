@@ -1,6 +1,6 @@
 # Custom roles
 
-Feature id `custom_roles`, included in the **Business** edition and above. Code: `ee/custom-roles/` (Elastic License 2.0); the permission catalogue (`src/lib/permissions.ts`), the guards (`requirePermission` in `src/lib/auth.ts`, `requireApiPermission` in `src/lib/api-auth.ts`), the scope checks (`src/lib/access-scope.ts`) and host tags (`src/lib/host-tags.ts`, see `documentation/host-tags.md`) are MIT.
+Code: `ee/custom-roles/` (Elastic License 2.0); the permission catalogue (`src/lib/permissions.ts`), the guards (`requirePermission` in `src/lib/auth.ts`, `requireApiPermission` in `src/lib/api-auth.ts`), the scope checks (`src/lib/access-scope.ts`) and host tags (`src/lib/host-tags.ts`, see `documentation/host-tags.md`) are MIT.
 
 Custom roles give users fine-grained permissions instead of all-or-nothing administrator access, optionally limited to proxy hosts, L4 hosts and certificates that carry one of the role's tags. Two teams can share one install: each team's role is scoped to its own tag.
 
@@ -14,7 +14,7 @@ Custom roles give users fine-grained permissions instead of all-or-nothing admin
 
 A user has either a built-in role or one custom role. `users.role` keeps the built-in role; a custom-role user is stored with `role = "viewer"` and `users.customRoleId` pointing at the role. Every code path that only knows the built-in roles therefore treats a custom-role user as a viewer, and a user whose role is deleted is a viewer. API tokens act with their owner's current role, custom role and scope included (the role is read on every request).
 
-An API token can also carry **scopes**: a list of permissions from the catalogue (`scopes` on `POST /api/v1/tokens`, the Profile page's "Choose permissions"). Such a token holds its owner's current permissions intersected with its scopes, a write scope with its area's read as in custom roles. It keeps the owner's tag scope and organisation, it is never an administrator (so the administrator-only paths below refuse it, whatever its owner is), and it cannot use the endpoints for its owner's own account (sessions, tokens, passkeys, preferences, MFA state, access review assignments). A scope can only name a permission the owner holds when the token is created; if the owner later loses it, the token loses it too. `getApiAccess` in `src/lib/api-auth.ts` applies the scopes on every permission check, and `organizationForNewRow` (`ee/multi-tenancy/scope.ts`), the one place that reads an account's access again from its id, applies them too. A refused scope answers `403` with `This API token's scopes do not include <permission>`.
+An API token can also carry **scopes**: a list of permissions from the catalogue (`scopes` on `POST /api/v1/tokens`, the Profile page's "Choose permissions"). Such a token holds its owner's current permissions intersected with its scopes, a write scope with its area's read as in custom roles. It keeps the owner's tag scope, it is never an administrator (so the administrator-only paths below refuse it, whatever its owner is), and it cannot use the endpoints for its owner's own account (sessions, tokens, passkeys, preferences, MFA state, access review assignments). A scope can only name a permission the owner holds when the token is created; if the owner later loses it, the token loses it too. `getApiAccess` in `src/lib/api-auth.ts` applies the scopes on every permission check. A refused scope answers `403` with `This API token's scopes do not include <permission>`.
 
 ## Permission catalogue
 
@@ -25,13 +25,13 @@ An API token can also carry **scopes**: a list of permissions from the catalogue
 | `proxy_hosts` | read, write | Proxy hosts, their mTLS access rules and forward-auth access, the GeoIP status. **Scoped.** |
 | `l4_proxy_hosts` | read, write | L4 proxy hosts and applying their ports. **Scoped.** |
 | `certificates` | read, write | Certificates. Without a scope also CA certificates, client certificates and mTLS roles. **Scoped** (see below). |
-| `access_lists` | read, write | Access lists: their rules (address, country, continent and AS number), basic-auth users and settings, where they are used and what they stopped (24 h); the global Blocked sources list (provider level only). |
+| `access_lists` | read, write | Access lists: their rules (address, country, continent and AS number), basic-auth users and settings, where they are used and what they stopped (24 h); the global Blocked sources list. |
 | `groups` | read, write | Forward-auth groups and members. |
 | `waf` | read, write | Security events (what the WAF, geo rules, access lists, sign-in and rate limits stopped) and why a request was blocked, global WAF settings (mode, paranoia level, anomaly thresholds), per-host WAF modes, rule exclusions, tuning suggestions. Every host. Blocking an address from Security events also needs `access_lists:write`. |
-| `analytics` | read | Traffic analytics, security events, traffic signals and per-host traffic summaries, the caller's saved analytics views, and plain-language analytics questions with saved questions (paid: the AI analyst, [analytics-questions.md](analytics-questions.md)). Every host; per-host summaries only for the proxy hosts the role reaches, and a question's host tags only name proxy hosts the role reaches. |
+| `analytics` | read | Traffic analytics, security events, traffic signals and per-host traffic summaries, the caller's saved analytics views, and plain-language analytics questions with saved questions (the AI analyst, [analytics-questions.md](analytics-questions.md)). Every host; per-host summaries only for the proxy hosts the role reaches, and a question's host tags only name proxy hosts the role reaches. |
 | `users` | read, write | Users, roles, custom roles, MFA resets, forward-auth sessions. |
 | `audit_log` | read | Audit log, its filters, event details with the before/after diff of configuration changes (from configuration history, secrets masked), its export and verification. Every host. |
-| `settings` | read, write | Global settings: the Settings page (the usage ping included) and the settings pages next to what they configure (Certificate settings, Host defaults, Geo blocking, Rate limiting, Analytics settings, and the pages of instance sync, OAuth providers and high availability, whose contents need their own permission too), re-applying the Caddy configuration, the setup checklist (`write` marks steps done or hides it). |
+| `settings` | read, write | Global settings: the Settings page and the settings pages next to what they configure (Certificate settings, Host defaults, Geo blocking, Rate limiting, Analytics settings, and the pages of instance sync, OAuth providers and high availability, whose contents need their own permission too), re-applying the Caddy configuration, the setup checklist (`write` marks steps done or hides it). |
 | `instances` | read, write | Instance mode, sync token, slave instances, sync-key pins; with `monetization:write`, whether and how replicas serve monetized hosts. |
 | `fleet` | read, write, promote, replicas | Fleet management: environments, revisions, rollouts, drift, pull replicas. `write` manages environments and assignments and runs drift checks; `promote` starts promotions and rollbacks, aborts rollouts and re-syncs instances, which change what slaves serve. Releasing instances from a promotion-only environment needs both. `replicas` adds and deletes pull replicas and issues, rotates and revokes their credentials; it is administrator-level, since a credential fetches the whole configuration. Every host. |
 | `high_availability` | read, write | High availability: where the Caddy nodes keep certificates and their private keys (local or shared Redis/Valkey storage), testing that storage, and whether the web nodes keep forward-auth sessions and API balances there (shared state); `read` also shows the dashboard cluster (leader, standbys, replication). `write` is administrator-level. Every host. |
@@ -45,21 +45,14 @@ An API token can also carry **scopes**: a list of permissions from the catalogue
 | `sso` | read, write | OAuth/OIDC providers, SAML providers (`/api/v1/saml-providers`) and enforced SSO. `write` is administrator-level. |
 | `mfa_policy` | read, write | The MFA policy. |
 | `ldap` | read, write | LDAP / Active Directory directories for dashboard sign-in, their group-to-role mapping, testing them. `write` is administrator-level. |
-| `license` | read, write | The license key and its automatic updates from the license server. |
 | `compliance` | read, write | Compliance reports, report schedules (evidence packs), the live control status, recorded test restores and the incident register with NIS2 notification drafts: `read` lists, views, downloads and prints them; `write` generates reports, sets up, changes, runs and deletes schedules (including which saved analytics questions they re-run), records and deletes test restores, records, classifies, edits and AI-drafts incidents, and deletes reports and incidents. Reports list every user, API token name and host, so grant `compliance:read` like `users:read` and `audit_log:read` together. Every host. |
 | `scim` | read, write | SCIM provisioning: settings, SCIM tokens, group-to-role mappings, which users and groups SCIM manages. `write` is administrator-level: its tokens create users and its mappings grant roles. |
 | `access_reviews` | read, write | Access review campaigns and schedules, their records and the evidence for their items (sign-ins, last changes, last use). `write` (start, schedule, complete, cancel, delete) is administrator-level: a campaign's reviewers can take access away from every user. Reviewers need no permission to decide the items of a campaign that names them, or to read their evidence. |
 | `monetization` | read, write, payments | API monetization: plans, consumers with their keys, balances and saved cards (charging a postpaid consumer's open amount, resuming a suspended one), monetized hosts with their x402 prices, the ledger and retention; replica serving needs `instances:write` as well. `payments` replaces or removes the Stripe account and the x402 settings (the CDP facilitator credentials, and turning x402 on, which creates the Stripe deposit address) that receive consumers' payments, and is administrator-level. Every host. |
 | `branding` | read, write | White-label branding: product name, logos, favicon, accent colour, sign-in texts, support contact, e-mail sender name. `write` is administrator-level. Every host. |
-| `organizations` | read, write | Client organisations (multi-tenancy, see [multi-tenancy.md](multi-tenancy.md)): `read` lists them with their members and limits; `write` creates, changes, disables and deletes them and moves hosts, certificates, access lists, groups and users between them. `write` is administrator-level. Every host. |
-| `usage_reports` | read | Usage per organisation and period, and its CSV export. Organisation users see their own organisation's. |
 | `approvals` | read, approve, emergency, manage | Change approvals (see [change-approvals.md](change-approvals.md)): `read` sees change requests on hosts the role can read (and its own) and comments or cancels its own; `approve` approves, rejects and applies other people's; `emergency` applies a protected change at once with a reason; `manage` creates, changes, disables and deletes approval policies. `emergency` and `manage` are administrator-level. |
 
 "Every host" areas are not limited by a tag scope: a scoped role that holds them sees data of every host.
-
-## Organisations
-
-With multi-tenancy ([multi-tenancy.md](multi-tenancy.md)) a user belongs to the provider level or to one organisation. An organisation is a second, hard scope next to the tag scope: an organisation user's role (built-in `org_admin`, `user`, `viewer`, or a custom role a provider administrator assigned) is cut down to the organisation permissions on every request, and every row they reach is their organisation's. Custom roles stay the provider's: organisation users cannot list, create, change, delete or assign them.
 
 ## Tag scope
 
@@ -67,7 +60,7 @@ A role's `scopeTags` limit its `proxy_hosts`, `l4_proxy_hosts` and `certificates
 
 - **Proxy hosts and L4 hosts.** Lists are filtered (also counts and search). Reading, changing or deleting a host outside the scope answers `404`, exactly like a missing host; so do its mTLS access rules and forward-auth access. A scoped write may add or remove only the role's own tags; other tags already on the host are kept as they are. The host must keep at least one of the role's tags, so creating a host requires one (the form pre-fills the first). Domains already served by a host outside the scope (equal, or matched through a wildcard either way) are refused, and so are L4 ports (per protocol) used by an L4 host outside the scope: a team cannot take over another team's traffic.
 - **Certificates.** Certificates are not tagged; a scoped role sees the certificates that its in-scope proxy hosts use, and the ACME hosts in its scope. It may change or delete a certificate only when every proxy host using it is in its scope (`403` when another team's host uses it too, `404` when none of its hosts does), and it cannot create certificates (a new certificate is used by no host yet). CA certificates, client certificates and mTLS roles are trust anchors for every host, so they need a `certificates` permission **without** a scope (`403` otherwise).
-- **Access lists** are not scoped: `access_lists:read` shows every list and `access_lists:write` changes lists that hosts outside a scope may use too. The Access Lists page lists only the hosts using a list that the user can see, and the requests a list stopped only on those hosts. `access_lists:write` also changes the global Blocked sources list, which applies to every host; organisation users never see or change it. The request total and what Blocked sources stopped need `analytics:read` as well. Attaching a list to a host needs `access_lists:read`.
+- **Access lists** are not scoped: `access_lists:read` shows every list and `access_lists:write` changes lists that hosts outside a scope may use too. The Access Lists page lists only the hosts using a list that the user can see, and the requests a list stopped only on those hosts. `access_lists:write` also changes the global Blocked sources list, which applies to every host. The request total and what Blocked sources stopped need `analytics:read` as well. Attaching a list to a host needs `access_lists:read`.
 - **Permissions a scoped role cannot hold** (they read or replace every host's configuration at once): `config:export`, `config:import`, `config_history:restore`, `backups:write`, `backups:restore`, `fleet:write`, `fleet:promote`, `fleet:replicas`, `high_availability:write`. Saving such a role is refused with `400`.
 
 ## Limits on every non-administrator
@@ -82,27 +75,14 @@ Whatever their role, only administrators can:
 
 ## Escalation guards
 
-None of these look at the license.
-
 - Only users with `users:write` manage roles and assign them.
 - Nobody grants a permission they do not hold, or a wider scope than their own for the scoped areas: a scoped actor can only give scopes made of its own tags, and never an unscoped scoped-area permission.
-- **Administrator-level** roles can only be created, changed or assigned by administrators, and so can the built-in admin role. A role is administrator-level when it holds any of `sso:write`, `mfa_policy:write`, `ldap:write`, `license:write`, `instances:write`, `fleet:replicas`, `high_availability:write`, `organizations:write`, `monetization:payments`, `branding:write`, `scim:write`, `access_reviews:write`, `approvals:emergency`, `approvals:manage`, or both `users:write` and `settings:write`, or both `users:write` and `approvals:approve`. These decide who can sign in (SSO, OAuth and SAML providers and the roles SAML groups grant, the MFA policy, LDAP directories and the roles their groups grant), what the instance is licensed for, which nodes receive the configuration (pushed to, or fetched with a pull replica credential), where every certificate's private key is kept (certificate storage), which organisation users and hosts belong to (multi-tenancy), where API consumers' payments go, the name and logo every sign-in page shows (which could make the pages pass for another organisation's), who is provisioned with which role (SCIM), whose access is taken away (access reviews), and whether segregation of duties holds (change approval policies and emergency changes); user management plus global settings together approach full administration, and user management plus approving could create a second account to approve one's own changes.
+- **Administrator-level** roles can only be created, changed or assigned by administrators, and so can the built-in admin role. A role is administrator-level when it holds any of `sso:write`, `mfa_policy:write`, `ldap:write`, `instances:write`, `fleet:replicas`, `high_availability:write`, `monetization:payments`, `branding:write`, `scim:write`, `access_reviews:write`, `approvals:emergency`, `approvals:manage`, or both `users:write` and `settings:write`, or both `users:write` and `approvals:approve`. These decide who can sign in (SSO, OAuth and SAML providers and the roles SAML groups grant, the MFA policy, LDAP directories and the roles their groups grant), which nodes receive the configuration (pushed to, or fetched with a pull replica credential), where every certificate's private key is kept (certificate storage), where API consumers' payments go, the name and logo every sign-in page shows (which could make the pages pass for another organisation's), who is provisioned with which role (SCIM), whose access is taken away (access reviews), and whether segregation of duties holds (change approval policies and emergency changes); user management plus global settings together approach full administration, and user management plus approving could create a second account to approve one's own changes.
 - A non-administrator only manages users whose access they hold themselves (role, status, profile, MFA reset, forward-auth sessions, deletion). An administrator is never covered, so a non-administrator can never demote, disable or delete one.
 - Nobody changes their own role, and a non-administrator cannot edit or delete the custom role they hold.
 - The last active administrator cannot be demoted, disabled or deleted (`400 This change would leave no active administrator`), and the enforced-SSO break-glass guard (`ee/docs/sso-enforcement.md`) applies to every role change as before.
 - Identity providers never set a custom role: the user-creation hook drops `customRoleId` even with `AUTH_ALLOW_OAUTH_ROLE_FROM_CLAIMS=true`, which keeps mapping role claims to the built-in roles only.
 - Every role change, creation, edit and deletion is recorded in the audit log (`custom_role` create/update/delete; user `create` naming the role given; user `update` with the old and new role; one event per user who fell back to viewer when a role is deleted).
-
-## License
-
-| Action | License |
-| --- | --- |
-| Create or change a custom role | `custom_roles` required (`403` otherwise) |
-| Assign a custom role (`customRoleId`, or `custom:<id>` in the dashboard) | required |
-| Delete a custom role (its users fall back to `viewer`) | never |
-| Take a custom role away (assign a built-in role) | never |
-| Users signing in, API tokens, every permission check | never: existing roles and assignments keep working when the license lapses |
-| Reading roles and the catalogue | never |
 
 ## MFA policy
 
@@ -111,7 +91,7 @@ The `admins` scope of the MFA policy covers administrators **and every user with
 ## Dashboard
 
 - **Users and groups → Roles** lists the built-in roles and the custom roles with how many permissions each holds, its tag scope and its users. Open a role to see its permissions grouped by area (Traffic, Observe, Identity, Govern, Platform), who holds it, and **Edit role**, **Duplicate** and **Delete role**. The editor has the permission matrix (one row per area) and the tag scope; permissions you do not hold are disabled. Deleting asks for confirmation and says how many users fall back to viewer.
-- The role picker (create user, edit user) offers the built-in roles and the custom roles. Admin and administrator-level roles are disabled for non-administrators, custom roles without a license.
+- The role picker (create user, edit user) offers the built-in roles and the custom roles. Admin and administrator-level roles are disabled for non-administrators.
 - The sidebar shows the pages whose read permission the user holds (`NAV_GROUPS` in `src/lib/navigation.ts`). Pages and server actions check the same permissions as the REST API. Sections inside a page that belong to another area are hidden: the settings pages of instance sync, OAuth providers and high availability, and certificate storage on Certificate settings, show a notice without `instances:read`, `sso:read` or `high_availability:read` (the traffic totals on Analytics settings need `analytics:read`), the AI tab on Alerts (`ai:read`), the backups line and export/import on History (`backups:read`, `config:export`, `config:import`), the MFA policy on Users (`mfa_policy:read`), the user picker on Groups (`users:read`).
 - Proxy host and L4 host forms have a **Tags** field; the lists show the tags.
 
@@ -124,10 +104,10 @@ Custom roles and user assignments are master-only, like users: they are not part
 | Method and path | Permission | Notes |
 | --- | --- | --- |
 | `GET /api/v1/roles` | `users:read` | Roles with `userCount` and `adminLevel`. |
-| `POST /api/v1/roles` | `users:write` | `{name, description?, permissions, scopeTags?}`; license; `201`. |
+| `POST /api/v1/roles` | `users:write` | `{name, description?, permissions, scopeTags?}`; `201`. |
 | `GET /api/v1/roles/{id}` | `users:read` | |
-| `PUT /api/v1/roles/{id}` | `users:write` | Partial update; license. |
-| `DELETE /api/v1/roles/{id}` | `users:write` | `{affectedUserIds}`; no license. |
+| `PUT /api/v1/roles/{id}` | `users:write` | Partial update. |
+| `DELETE /api/v1/roles/{id}` | `users:write` | `{affectedUserIds}`. |
 | `GET /api/v1/permissions` | `users:read` | The catalogue, administrator-level set and unscoped-only set. |
 
 Users: `GET /api/v1/users` and `/users/{id}` return `customRoleId`. `POST /api/v1/users` and `PUT /api/v1/users/{id}` accept `customRoleId` (a role id to assign it, `null` to take it away; `role` may then only be omitted or `"viewer"`). Hosts: proxy host and L4 host bodies carry `tags`.
@@ -146,7 +126,7 @@ A refused permission answers `403` with `Permission required: <permission>` for 
 
 ## Needs attention (overview)
 
-`GET /api/v1/overview/attention` is open to every signed-in user. Each source answers only for callers who hold one of its permissions, and only with what they may see: certificates (`certificates:read`, within the tag scope and organisation), the last Caddy apply and the setup checklist (`settings:read`), traffic signals (`analytics:read`, the organisation's hosts; links to a host only with `proxy_hosts:read` and the host in the tag scope, to the security events only with `waf:read`), failing LDAP directories (`ldap:read`) and accounts locked out by the MFA policy (`users:read`), firing alerts (`alerts:read`), change requests (`approvals:read`, the requests the role may see), access reviews (`access_reviews:read`), the fleet (`fleet:read` or `instances:read`), failing backups (`backups:read`). The caller's own access review items need no permission. Organisation users only get sources that filter to their organisation (certificates and traffic) and their own review items.
+`GET /api/v1/overview/attention` is open to every signed-in user. Each source answers only for callers who hold one of its permissions, and only with what they may see: certificates (`certificates:read`, within the tag scope), the last Caddy apply and the setup checklist (`settings:read`), traffic signals (`analytics:read`; links to a host only with `proxy_hosts:read` and the host in the tag scope, to the security events only with `waf:read`), failing LDAP directories (`ldap:read`) and accounts locked out by the MFA policy (`users:read`), firing alerts (`alerts:read`), change requests (`approvals:read`, the requests the role may see), access reviews (`access_reviews:read`), the fleet (`fleet:read` or `instances:read`), failing backups (`backups:read`). The caller's own access review items need no permission.
 
 The overview page itself (`app/(dashboard)/page.tsx`, `src/lib/overview.ts`) is open to every signed-in user and shows each section only with its read permission: the traffic figures and busiest hosts with `analytics:read` (host links with `proxy_hosts:read`, certificate days with `certificates:read`), the nodes with `fleet:read` or `instances:read`, recent changes with `audit_log:read` (roll-back links with `config_history:restore`), the setup checklist with `settings:read` (marking steps and hiding it with `settings:write`). See `documentation/overview.md`.
 
@@ -155,7 +135,6 @@ The overview page itself (`app/(dashboard)/page.tsx`, `src/lib/overview.ts`) is 
 These stay tied to the built-in admin role whatever a custom role holds:
 
 - `GET /api/v1/tokens` lists every user's API tokens and `DELETE /api/v1/tokens/{id}` deletes another user's token only for administrators; everyone else, custom roles included, sees and deletes their own.
-- The usage ping question on the Overview page, as `documentation/usage-ping.md` describes.
 - Granting the built-in admin role and administrator-level roles (above).
 - Raw Caddy JSON on proxy hosts and upstreams on port 2019 (above).
 - Break-glass accounts of enforced SSO must be built-in administrators.
@@ -163,7 +142,7 @@ These stay tied to the built-in admin role whatever a custom role holds:
 
 ## Call sites
 
-Every guard of a route, page or server action and the permission it checks. Routes and pages are listed by their file in `app/`, which gives the URL; for a paid feature that file only routes to `ee/` and the guard is in the `ee/` module it names (`ee/README.md`). Server actions of paid features are listed by their file in `ee/`. `tests/unit/permission-call-sites.test.ts` fails when this table and the code differ, and `tests/integration/custom-roles-route-guards.test.ts` calls every REST handler as a custom role without and with the permission.
+Every guard of a route, page or server action and the permission it checks. Routes and pages are listed by their file in `app/`, which gives the URL; for a feature in `ee/` that file only routes to `ee/` and the guard is in the `ee/` module it names (`ee/README.md`). Server actions of features in `ee/` are listed by their file in `ee/`. `tests/unit/permission-call-sites.test.ts` fails when this table and the code differ, and `tests/integration/custom-roles-route-guards.test.ts` calls every REST handler as a custom role without and with the permission.
 
 <!-- call-sites:start -->
 | File | Function | Permission |
@@ -222,9 +201,7 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/(dashboard)/l4-proxy-hosts/bulk-actions.ts` | `bulkL4ProxyHostsAction` | `l4_proxy_hosts:write` |
 | `app/(dashboard)/l4-proxy-hosts/page.tsx` | `L4ProxyHostsPage` | `l4_proxy_hosts:read` |
 | `app/(dashboard)/ldap/page.tsx` | `LdapPage` | `ldap:read` |
-| `app/(dashboard)/license/page.tsx` | `LicensePage` | `license:read` |
 | `app/(dashboard)/oauth-providers/page.tsx` | `OAuthProvidersPage` | `settings:read` |
-| `app/(dashboard)/organizations/page.tsx` | `OrganizationsPage` | `organizations:read` |
 | `app/(dashboard)/proxy-hosts/[id]/edit/page.tsx` | `EditProxyHostPage` | `proxy_hosts:write` |
 | `app/(dashboard)/proxy-hosts/[id]/page.tsx` | `ProxyHostPage` | `proxy_hosts:read` |
 | `app/(dashboard)/proxy-hosts/defaults/page.tsx` | `HostDefaultsPage` | `settings:read` |
@@ -276,12 +253,8 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/(dashboard)/settings/actions.ts` | `suppressWafRuleForHostAction` | `waf:write` |
 | `app/(dashboard)/settings/actions.ts` | `updateWafSettingsActionUnlocked` | `waf:write` |
 | `app/(dashboard)/settings/page.tsx` | `SettingsPage` | `settings:read` |
-| `app/(dashboard)/settings/usage-ping-actions.ts` | `setUsagePingEnabledAction` | `settings:write` |
-| `app/(dashboard)/settings/usage-ping-actions.ts` | `resetUsagePingInstallIdAction` | `settings:write` |
-| `app/(dashboard)/settings/usage-ping-actions.ts` | `previewUsagePingAction` | `settings:read` |
 | `app/(dashboard)/sign-in/page.tsx` | `SignInPage` | `sso:read` |
 | `app/(dashboard)/sso/page.tsx` | `SsoPage` | `sso:read` |
-| `app/(dashboard)/usage/page.tsx` | `UsagePage` | `usage_reports:read` |
 | `app/(dashboard)/users/actions.ts` | `createUserAction` | `users:write` |
 | `app/(dashboard)/users/actions.ts` | `updateUserRoleAction` | `users:write` |
 | `app/(dashboard)/users/actions.ts` | `updateUserStatusAction` | `users:write` |
@@ -355,6 +328,9 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/api/v1/alert-rules/[id]/route.ts` | `DELETE` | `alerts:write` |
 | `app/api/v1/alert-rules/route.ts` | `GET` | `alerts:read` |
 | `app/api/v1/alert-rules/route.ts` | `POST` | `alerts:write` |
+| `app/api/v1/alert-silences/[id]/route.ts` | `DELETE` | `alerts:write` |
+| `app/api/v1/alert-silences/route.ts` | `GET` | `alerts:read` |
+| `app/api/v1/alert-silences/route.ts` | `POST` | `alerts:write` |
 | `app/api/v1/analytics/hosts/[id]/route.ts` | `GET` | `analytics:read` |
 | `app/api/v1/analytics/hosts/route.ts` | `GET` | `analytics:read` |
 | `app/api/v1/analytics/query/route.ts` | `GET` | `analytics:read` |
@@ -545,13 +521,6 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/api/v1/ldap-directories/[id]/test/route.ts` | `POST` | `ldap:write` |
 | `app/api/v1/ldap-directories/route.ts` | `GET` | `ldap:read` |
 | `app/api/v1/ldap-directories/route.ts` | `POST` | `ldap:write` |
-| `app/api/v1/license/auto-update/check/route.ts` | `POST` | `license:write` |
-| `app/api/v1/license/auto-update/route.ts` | `GET` | `license:read` |
-| `app/api/v1/license/auto-update/route.ts` | `PUT` | `license:write` |
-| `app/api/v1/license/route.ts` | `GET` | `license:read` |
-| `app/api/v1/license/route.ts` | `PUT` | `license:write` |
-| `app/api/v1/license/route.ts` | `DELETE` | `license:write` |
-| `app/api/v1/license/verify/route.ts` | `POST` | `license:write` |
 | `app/api/v1/mfa/policy/route.ts` | `GET` | `mfa_policy:read` |
 | `app/api/v1/mfa/policy/route.ts` | `PUT` | `mfa_policy:write` |
 | `app/api/v1/monetization/consumers/[id]/adjust/route.ts` | `POST` | `monetization:write` |
@@ -602,14 +571,6 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/api/v1/oauth-providers/route.ts` | `GET` | `sso:read` |
 | `app/api/v1/oauth-providers/route.ts` | `POST` | `sso:write` |
 | `app/api/v1/openapi.json/route.ts` | `GET` | `api_docs:read` |
-| `app/api/v1/organizations/[id]/members/route.ts` | `GET` | `organizations:read` |
-| `app/api/v1/organizations/[id]/members/route.ts` | `POST` | `organizations:write` |
-| `app/api/v1/organizations/[id]/route.ts` | `GET` | `organizations:read` |
-| `app/api/v1/organizations/[id]/route.ts` | `PATCH` | `organizations:write` |
-| `app/api/v1/organizations/[id]/route.ts` | `DELETE` | `organizations:write` |
-| `app/api/v1/organizations/move/route.ts` | `POST` | `organizations:write` |
-| `app/api/v1/organizations/route.ts` | `GET` | `organizations:read` |
-| `app/api/v1/organizations/route.ts` | `POST` | `organizations:write` |
 | `app/api/v1/permissions/route.ts` | `GET` | `users:read` |
 | `app/api/v1/proxy-hosts/[id]/forward-auth-access/route.ts` | `GET` | `proxy_hosts:read` |
 | `app/api/v1/proxy-hosts/[id]/forward-auth-access/route.ts` | `PUT` | `proxy_hosts:write` |
@@ -663,10 +624,6 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/api/v1/sign-in/overview/route.ts` | `GET` | `sso:read` |
 | `app/api/v1/sso/enforcement/route.ts` | `GET` | `sso:read` |
 | `app/api/v1/sso/enforcement/route.ts` | `PUT` | `sso:write` |
-| `app/api/v1/usage-ping/reset-install-id/route.ts` | `POST` | `settings:write` |
-| `app/api/v1/usage-ping/route.ts` | `GET` | `settings:read` |
-| `app/api/v1/usage-ping/route.ts` | `PUT` | `settings:write` |
-| `app/api/v1/usage-reports/route.ts` | `GET` | `usage_reports:read` |
 | `app/api/v1/users/[id]/mfa/route.ts` | `DELETE` | `users:write` |
 | `app/api/v1/users/[id]/route.ts` | `PUT` | `users:write` |
 | `app/api/v1/users/[id]/route.ts` | `DELETE` | `users:write` |
@@ -702,6 +659,8 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `ee/alerting/ui/actions.ts` | `saveAlertRuleAction` | `alerts:write` |
 | `ee/alerting/ui/actions.ts` | `setAlertRuleEnabledAction` | `alerts:write` |
 | `ee/alerting/ui/actions.ts` | `deleteAlertRuleAction` | `alerts:write` |
+| `ee/alerting/ui/actions.ts` | `silenceAlertAction` | `alerts:write` |
+| `ee/alerting/ui/actions.ts` | `endAlertSilenceAction` | `alerts:write` |
 | `ee/alerting/ui/actions.ts` | `saveAiSettingsAction` | `ai:write` |
 | `ee/alerting/ui/actions.ts` | `removeAiSettingsAction` | `ai:write` |
 | `ee/alerting/ui/actions.ts` | `testAiProviderAction` | `ai:write` |
@@ -716,12 +675,6 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `ee/high-availability/ui/shared-state-actions.ts` | `saveSharedStateAction` | `high_availability:write` |
 | `ee/high-availability/ui/shared-state-actions.ts` | `removeSharedStateAction` | `high_availability:write` |
 | `ee/high-availability/ui/shared-state-actions.ts` | `sharedStateStatusAction` | `high_availability:read` |
-| `ee/licensing/ui/actions.ts` | `verifyLicenseAction` | `license:write` |
-| `ee/licensing/ui/actions.ts` | `installLicenseAction` | `license:write` |
-| `ee/licensing/ui/actions.ts` | `removeLicenseAction` | `license:write` |
-| `ee/licensing/ui/actions.ts` | `setLicenseAutoUpdateAction` | `license:write` |
-| `ee/licensing/ui/actions.ts` | `checkLicenseServerNowAction` | `license:write` |
-| `ee/multi-tenancy/ui/actions.ts` | `setOrganizationViewAction` | `organizations:read` |
 | `ee/sso/ui/actions.ts` | `saveSsoEnforcementAction` | `sso:write` |
 | `ee/white-label/ui/actions.ts` | `saveBrandingAction` | `branding:write` |
 | `ee/white-label/ui/actions.ts` | `uploadBrandingAssetAction` | `branding:write` |

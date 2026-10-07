@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
-import { addAccessListRule, replaceAccessListRules } from "@/src/lib/models/access-lists";
-import { findAccessListInScope } from "@/src/lib/access-scope";
+import { addAccessListRule, getAccessList, replaceAccessListRules } from "@/src/lib/models/access-lists";
 import { readJsonBody, readObjectBody } from "@/src/lib/access-list-http";
 import { routeRowId } from "@/src/lib/row-ids";
 
@@ -11,10 +10,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { access } = await requireApiPermission(request, "access_lists:read");
+    await requireApiPermission(request, "access_lists:read");
     const { id } = await params;
-    // 404 for a list of another organisation, as for a missing one.
-    const list = await findAccessListInScope(access, routeRowId(id, "Not found"));
+    const list = await getAccessList(routeRowId(id, "Not found"));
     if (!list) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -33,7 +31,6 @@ export async function POST(
     const { userId } = await requireApiPermission(request, "access_lists:write");
     const { id } = await params;
     const body = readObjectBody(await readJsonBody(request), "The rule");
-    // The model answers 404 for a list of another organisation (ee/multi-tenancy).
     const rule = await addAccessListRule(routeRowId(id), body, userId, { position: body.position });
     return NextResponse.json(rule, { status: 201 });
   } catch (error) {

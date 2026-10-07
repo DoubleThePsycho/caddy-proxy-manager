@@ -1,5 +1,5 @@
 /**
- * Rate limiting rules (Community): the shapes, limits and syntax checks
+ * Rate limiting rules: the shapes, limits and syntax checks
  * shared by the dashboard forms and the server. Free of Node imports so
  * client components can use it; the server-side validation, inheritance and
  * Caddy handlers live in caddy-rate-limit.ts.

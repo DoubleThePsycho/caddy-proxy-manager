@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Elastic-2.0
 "use client";
 
-import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -27,14 +26,10 @@ import type { LdapDirectoryView } from "@/ee/ldap/types";
 import type { ConnectionTestResult } from "@/ee/ldap/authenticate";
 import type { SignInTestResult } from "@/ee/ldap/diagnostics";
 
-const LOCKED_HINT = "Needs a license with LDAP / Active Directory";
-
 type Props = {
   directories: LdapDirectoryView[];
-  configurable: boolean;
   canWrite: boolean;
   ssoEnforced: boolean;
-  editionLabel: string;
   /** The breadcrumb links to Sign-in and directories (sso:read). Default true. */
   canReadSignIn?: boolean;
 };
@@ -229,7 +224,7 @@ const OUTCOME_LABELS: Record<SignInTestResult["outcome"], string> = {
   groups_unavailable: "The groups could not be read",
 };
 
-export default function LdapClient({ directories, configurable, canWrite, ssoEnforced, editionLabel, canReadSignIn = true }: Props) {
+export default function LdapClient({ directories, canWrite, ssoEnforced, canReadSignIn = true }: Props) {
   const router = useRouter();
   const { productName } = useBranding();
   const format = useFormat();
@@ -245,7 +240,6 @@ export default function LdapClient({ directories, configurable, canWrite, ssoEnf
   const [testResult, setTestResult] = useState<SignInTestResult | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
 
-  const canChange = configurable && canWrite;
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((previous) => ({ ...previous, [key]: value }));
 
   function openCreate() {
@@ -391,23 +385,16 @@ export default function LdapClient({ directories, configurable, canWrite, ssoEnf
     <div className="flex w-full min-w-0 flex-col gap-5">
       <PageHeader
         className="mb-0"
-        breadcrumb={["Identity", canReadSignIn ? { label: "Sign-in and directories", href: "/sign-in" } : "Sign-in and directories", "LDAP directories"]}
+        breadcrumb={["Users and sign-in", canReadSignIn ? { label: "Sign-in and directories", href: "/sign-in" } : "Sign-in and directories", "LDAP directories"]}
         title="LDAP directories"
         description={`Sign in to ${productName} with an LDAP or Active Directory account. The forward-auth portal is not affected.`}
         actions={canWrite ? (
-          <Button onClick={openCreate} disabled={!canChange || pending} title={configurable ? undefined : LOCKED_HINT}>
+          <Button onClick={openCreate} disabled={pending}>
             <Plus /> Add directory
           </Button>
         ) : undefined}
       />
 
-      {!configurable && (
-        <Banner tone="info" title="Read-only without a license.">
-          Setting up and changing directories needs an active {productName} {editionLabel} license or higher. You can still test, disable
-          and delete them.{" "}
-          <Link href="/license" className="text-brand underline-offset-4 hover:underline">Manage the license</Link>
-        </Banner>
-      )}
       {ssoEnforced && (
         <Banner tone="info" title="Enforced SSO is on.">
           Directory sign-in is refused unless a directory has <span className="font-medium text-foreground">Allow while SSO is enforced</span> turned on.
@@ -421,7 +408,7 @@ export default function LdapClient({ directories, configurable, canWrite, ssoEnf
             icon={BookUser}
             title="No directories yet"
             action={canWrite ? (
-              <Button size="sm" onClick={openCreate} disabled={!canChange || pending}>
+              <Button size="sm" onClick={openCreate} disabled={!canWrite || pending}>
                 <Plus /> Add directory
               </Button>
             ) : undefined}
@@ -448,11 +435,9 @@ export default function LdapClient({ directories, configurable, canWrite, ssoEnf
                     <TableCell>
                       <Switch
                         checked={directory.enabled}
-                        // Turning off always works; turning on needs the license.
-                        disabled={!canWrite || pending || (!configurable && !directory.enabled)}
+                        disabled={!canWrite || pending}
                         onCheckedChange={(checked) => setEnabled(directory, checked)}
                         aria-label={directory.enabled ? "Disable directory" : "Enable directory"}
-                        title={!configurable && !directory.enabled ? LOCKED_HINT : undefined}
                       />
                     </TableCell>
                     <TableCell>
@@ -509,8 +494,8 @@ export default function LdapClient({ directories, configurable, canWrite, ssoEnf
                             disabled={pending} onClick={() => openTestSignIn(directory)}>
                             <KeyRound />
                           </Button>
-                          <Button variant="ghost" size="icon-sm" title={configurable ? "Edit" : LOCKED_HINT} aria-label={`Edit "${directory.name}"`}
-                            disabled={!configurable || pending} onClick={() => openEdit(directory)}>
+                          <Button variant="ghost" size="icon-sm" title="Edit" aria-label={`Edit "${directory.name}"`}
+                            disabled={pending} onClick={() => openEdit(directory)}>
                             <Pencil />
                           </Button>
                           <Button variant="ghost" size="icon-sm" className="text-bad hover:text-bad" title="Delete" aria-label={`Delete "${directory.name}"`}

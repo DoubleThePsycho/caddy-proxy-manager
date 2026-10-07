@@ -3,18 +3,13 @@
  * Test restores of configuration backups, recorded by a person as evidence
  * that backups can be restored (business continuity controls). The test
  * itself happens elsewhere, usually on a spare instance; this is the record.
- *
- * Licensing: recording one needs "compliance_reports"; reading and deleting
- * never do.
  */
 import { count, eq, inArray } from "drizzle-orm";
 import { appDb, nowIso } from "@/src/lib/db";
 import { backupDestinations, complianceRestoreTests, users } from "@/src/lib/db/schema";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import { parseInstant, parseLine, parseMultiline, rejectUnknownKeys, requireRecord } from "./http";
-import { FEATURE } from "./types";
 import { desc, first } from "@/src/lib/db/ops";
 
 export const RESTORE_TEST_NOT_FOUND = "Restore test not found";
@@ -83,9 +78,8 @@ export async function latestSuccessfulRestoreTest(): Promise<RestoreTestView | n
   return toView(row, await destinationNames(row.backupDestinationId !== null ? [row.backupDestinationId] : []));
 }
 
-/** {testedAt, source, outcome, backupDestinationId?, backupObjectKey?, notes?}. Needs the compliance_reports feature. */
+/** {testedAt, source, outcome, backupDestinationId?, backupObjectKey?, notes?}. */
 export async function recordRestoreTest(body: unknown, actorUserId: number, now: Date = new Date()): Promise<RestoreTestView> {
-  await requireFeature(FEATURE);
   const record = requireRecord(body);
   rejectUnknownKeys(record, ["testedAt", "source", "outcome", "backupDestinationId", "backupObjectKey", "notes"], "the restore test");
   const testedAt = parseInstant(record.testedAt, "testedAt");
@@ -132,7 +126,6 @@ export async function recordRestoreTest(body: unknown, actorUserId: number, now:
   return toView(row, await destinationNames(destinationId !== null ? [destinationId] : []));
 }
 
-/** Never needs a license. */
 export async function deleteRestoreTest(id: number, actorUserId: number): Promise<void> {
   const row = await first(appDb.select().from(complianceRestoreTests).where(eq(complianceRestoreTests.id, id)).limit(1));
   if (!row) throw new ApiClientError(RESTORE_TEST_NOT_FOUND, 404);

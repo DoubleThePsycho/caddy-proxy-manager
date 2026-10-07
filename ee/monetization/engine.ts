@@ -48,7 +48,6 @@
  *
  * The state lives on globalThis because Next.js can load this module more
  * than once in the same process (instrumentation and route bundles).
- * Nothing here checks the license.
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import { eq, isNull, sql } from "drizzle-orm";

@@ -5,8 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  ArrowLeftRight, BadgeCheck, Bell, Building2, ChartColumn, ChevronsUpDown, CircleCheck, ClipboardCheck, Coins,
-  Ellipsis, FileCheck2, FileJson2, History, KeyRound, Layers, LayoutGrid, LockKeyhole, LogOut, Menu, Network, Receipt,
+  ArrowLeftRight, Bell, ChartColumn, ChevronsUpDown, CircleCheck, ClipboardCheck, Coins,
+  Ellipsis, FileCheck2, FileJson2, History, KeyRound, Layers, LayoutGrid, LockKeyhole, LogOut, Menu, Network, Palette,
   ScrollText, Search, Server, ShieldAlert, ShieldCheck, SlidersHorizontal, UserRound, Users, type LucideIcon,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -23,7 +23,6 @@ import {
 import type { NavEnvironment, NavSummary } from "@/src/lib/nav-summary";
 import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import { BrandLogo, hasLogo, PoweredBy, SupportLinks } from "@/ee/white-label/ui/BrandParts";
-import { OrganizationBadge, OrganizationSwitcher, type OrganizationSwitcherProps } from "@/ee/multi-tenancy/ui/OrganizationSwitcher";
 import { CommandPaletteProvider, useCommandPalette } from "@/components/command-palette/CommandPalette";
 
 type User = {
@@ -38,14 +37,7 @@ type User = {
   isAdmin?: boolean;
 };
 
-type Organizations = {
-  /** The organisation an organisation user belongs to (ee/multi-tenancy). */
-  organizationName?: string | null;
-  /** The organisation switcher of a provider-level user. */
-  organizationSwitcher?: OrganizationSwitcherProps | null;
-};
-
-const EMPTY_SUMMARY: NavSummary = { badges: {}, edition: null, environment: null };
+const EMPTY_SUMMARY: NavSummary = { badges: {}, environment: null };
 
 const ICONS: Record<NavEntryKey, LucideIcon> = {
   overview: LayoutGrid,
@@ -65,11 +57,9 @@ const ICONS: Record<NavEntryKey, LucideIcon> = {
   compliance: FileCheck2,
   fleet: Network,
   "high-availability": Layers,
-  organizations: Building2,
   monetization: Coins,
-  usage: Receipt,
   settings: SlidersHorizontal,
-  license: BadgeCheck,
+  branding: Palette,
   profile: UserRound,
   "api-docs": FileJson2,
 };
@@ -185,10 +175,10 @@ function SubLinks({ entry, pathname, onNavigate }: { entry: VisibleNavEntry; pat
   );
 }
 
-function BrandRow({ edition }: { edition: string | null }) {
+function BrandRow() {
   const branding = useBranding();
   return (
-    <div className="flex items-center gap-2.5 px-2 py-1">
+    <div className="flex items-center gap-2 px-2 py-1">
       {hasLogo(branding) ? (
         <BrandLogo branding={branding} className="h-7 w-auto max-w-[96px] shrink-0" />
       ) : (
@@ -199,11 +189,6 @@ function BrandRow({ edition }: { edition: string | null }) {
         </span>
       )}
       <span className="min-w-0 truncate text-[17px] font-bold tracking-[-0.01em]">{branding.productName}</span>
-      {edition && (
-        <span className="ml-auto shrink-0 rounded-full border border-line2 px-2 text-[11px] font-semibold uppercase leading-[18px] tracking-[0.04em] text-brand">
-          {edition}
-        </span>
-      )}
     </div>
   );
 }
@@ -348,14 +333,12 @@ function NavContent({
   user,
   summary,
   onNavigate,
-  organizationName,
-  organizationSwitcher,
 }: {
   pathname: string;
   user: User;
   summary: NavSummary;
   onNavigate?: () => void;
-} & Organizations) {
+}) {
   const branding = useBranding();
   const palette = useCommandPalette();
   const groups = visibleNavGroups(user, summary.badges);
@@ -365,10 +348,8 @@ function NavContent({
 
   return (
     <div className="flex h-full flex-col gap-3.5 px-3 py-4">
-      <BrandRow edition={summary.edition} />
+      <BrandRow />
       {summary.environment && <EnvironmentSwitcher environment={summary.environment} />}
-      {organizationName && <OrganizationBadge name={organizationName} />}
-      {organizationSwitcher && <OrganizationSwitcher {...organizationSwitcher} />}
       <SearchButton onOpen={() => { onNavigate?.(); palette.open(); }} />
 
       <nav aria-label="Main navigation" className="-mx-1 flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto px-1">
@@ -470,9 +451,7 @@ function Shell({
   user,
   summary,
   children,
-  organizationName,
-  organizationSwitcher,
-}: { user: User; summary: NavSummary; children: ReactNode } & Organizations) {
+}: { user: User; summary: NavSummary; children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
   const branding = useBranding();
@@ -485,8 +464,6 @@ function Shell({
           pathname={pathname}
           user={user}
           summary={summary}
-          organizationName={organizationName}
-          organizationSwitcher={organizationSwitcher}
         />
       </aside>
 
@@ -514,8 +491,6 @@ function Shell({
             user={user}
             summary={summary}
             onNavigate={() => setMobileOpen(false)}
-            organizationName={organizationName}
-            organizationSwitcher={organizationSwitcher}
           />
         </SheetContent>
       </Sheet>
@@ -534,12 +509,10 @@ export default function DashboardLayoutClient({
   user,
   children,
   summary = EMPTY_SUMMARY,
-  organizationName = null,
-  organizationSwitcher = null,
-}: { user: User; children: ReactNode; summary?: NavSummary } & Organizations) {
+}: { user: User; children: ReactNode; summary?: NavSummary }) {
   return (
     <CommandPaletteProvider userId={user.id}>
-      <Shell user={user} summary={summary} organizationName={organizationName} organizationSwitcher={organizationSwitcher}>
+      <Shell user={user} summary={summary}>
         {children}
       </Shell>
     </CommandPaletteProvider>

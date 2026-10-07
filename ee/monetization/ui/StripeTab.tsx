@@ -12,7 +12,7 @@ import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import { PORTAL_PATH, type MonetizationOverview, type StripeSettingsView } from "../types";
-import { callApi, Field, fromInput, LOCKED_HINT, money, shortTime, toInput } from "./shared";
+import { callApi, Field, fromInput, money, shortTime, toInput } from "./shared";
 
 const X402_TURNED_OFF =
   "x402 was turned off and its deposit address cleared: the address belonged to the previous Stripe key. Turn x402 on again on the x402 tab to create one with this key.";
@@ -137,11 +137,9 @@ export function StripeSummary({
 export default function StripeTab({
   settings,
   canWrite,
-  configurable,
 }: {
   settings: StripeSettingsView;
   canWrite: boolean;
-  configurable: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -152,7 +150,6 @@ export default function StripeTab({
   const [topUpUrl, setTopUpUrl] = useState(settings.topUpUrl ?? "");
   const [automaticTax, setAutomaticTax] = useState(settings.automaticTax);
   const [error, setError] = useState<string | null>(null);
-  const canChange = canWrite && configurable;
 
   function save() {
     setError(null);
@@ -210,7 +207,7 @@ export default function StripeTab({
       footer={
         canWrite ? (
           <div className="flex flex-wrap items-center gap-2 py-1">
-            <Button onClick={save} disabled={pending || !canChange} title={canChange ? undefined : LOCKED_HINT}>
+            <Button onClick={save} disabled={pending}>
               Save
             </Button>
             {(settings.hasSecretKey || settings.hasWebhookSecret) && (
@@ -245,7 +242,7 @@ export default function StripeTab({
           className="num"
           value={secretKey}
           onChange={(event) => setSecretKey(event.target.value)}
-          disabled={!canChange}
+          disabled={!canWrite}
         />
       </Field>
       <Field label="Webhook signing secret" htmlFor="stripe-webhook" hint={settings.hasWebhookSecret ? "Stored; leave empty to keep it" : "whsec_…"}>
@@ -256,16 +253,16 @@ export default function StripeTab({
           className="num"
           value={webhookSecret}
           onChange={(event) => setWebhookSecret(event.target.value)}
-          disabled={!canChange}
+          disabled={!canWrite}
         />
       </Field>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Field label="Currency" htmlFor="stripe-currency" hint="Unit of every price and balance">
-          <Input id="stripe-currency" className="num" value={currency} maxLength={3} onChange={(event) => setCurrency(event.target.value)} disabled={!canChange} />
+          <Input id="stripe-currency" className="num" value={currency} maxLength={3} onChange={(event) => setCurrency(event.target.value)} disabled={!canWrite} />
         </Field>
         <div className="sm:col-span-2">
           <Field label="Top-up amounts" htmlFor="stripe-amounts" hint="Offered to consumers, separated by commas (at most 10)">
-            <Input id="stripe-amounts" className="num" value={amounts} onChange={(event) => setAmounts(event.target.value)} disabled={!canChange} />
+            <Input id="stripe-amounts" className="num" value={amounts} onChange={(event) => setAmounts(event.target.value)} disabled={!canWrite} />
           </Field>
         </div>
       </div>
@@ -280,11 +277,11 @@ export default function StripeTab({
           value={topUpUrl}
           placeholder="https://developers.example.com/billing"
           onChange={(event) => setTopUpUrl(event.target.value)}
-          disabled={!canChange}
+          disabled={!canWrite}
         />
       </Field>
       <label className="flex items-start gap-2 text-sm">
-        <Switch checked={automaticTax} onCheckedChange={setAutomaticTax} disabled={!canChange} aria-label="Stripe Tax on Checkout" />
+        <Switch checked={automaticTax} onCheckedChange={setAutomaticTax} disabled={!canWrite} aria-label="Stripe Tax on Checkout" />
         <span className="flex flex-col gap-0.5">
           Stripe Tax on Checkout
           <span className="text-xs text-muted-foreground">

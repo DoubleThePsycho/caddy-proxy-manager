@@ -5,9 +5,7 @@
  * person, the API or a report schedule), how many events were recorded since,
  * and the chain's anchor and head as they are now.
  *
- * The chain spans every organisation's events (ee/multi-tenancy): callers
- * show this to provider-level users only. Read-only; never checks the
- * license (verifying again does, in verify.ts).
+ * Read-only; verifying again is in verify.ts.
  */
 import { and, count, eq, gt, isNotNull, lt } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";
@@ -95,8 +93,7 @@ export async function getAuditChainStatus(): Promise<AuditChainStatus> {
 
 /**
  * The chained event before event `id`, when its hash is `prevHash` (the link
- * holds); null otherwise. The chain spans every organisation: provider-level
- * callers only.
+ * holds); null otherwise.
  */
 export async function previousChainedEventId(id: number, prevHash: string | null): Promise<number | null> {
   if (!prevHash) return null;

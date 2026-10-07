@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Attention provider: scheduled backup destinations whose last backup
- * failed. Never checks the license.
+ * failed.
  */
 import { and, eq } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

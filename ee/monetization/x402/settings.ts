@@ -19,18 +19,13 @@
  *    the address (detachX402FromStripe, called by payments.ts).
  *  - whether Stripe said "Stablecoins and Crypto" is not enabled on the
  *    account, shown on the x402 tab until a later call succeeds.
- *
- * Licensing: saving needs "api_monetization"; removing (which turns x402 off)
- * never does. Paying never checks it.
  */
 import { decryptSecret, encryptSecret } from "@/src/lib/secret";
 import { ApiConflictError, ApiValidationError } from "@/src/lib/api-errors";
 import { logAuditEvent } from "@/src/lib/audit";
 import { nowIso } from "@/src/lib/db";
-import { requireFeature } from "@/ee/licensing/store";
 import { parseBoolean, parseInteger, rejectUnknownKeys, requireRecord } from "../http";
 import { readSettingRow, readStripeSecrets, writeSettingRow } from "../settings";
-import { FEATURE } from "../types";
 import { createDepositAddress, isLiveStripeKey, readAccountId, StripeCryptoError, stripeKeyFingerprint, StripeUnavailableError } from "./stripe-crypto";
 
 export const X402_SETTING_KEY = "monetization_x402";
@@ -165,7 +160,6 @@ export async function noteCryptoNotEnabled(notEnabled: boolean): Promise<void> {
  * Turning x402 on creates the Stripe deposit address when there is none yet.
  */
 export async function saveX402Settings(body: unknown, actorUserId: number): Promise<X402SettingsView> {
-  await requireFeature(FEATURE);
   const record = requireRecord(body);
   rejectUnknownKeys(record, ["enabled", "priceCents", "network", "cdpKeyId", "cdpKeySecret"]);
   const stored = (await readSettingRow<StoredX402>(X402_SETTING_KEY)) ?? {};
@@ -253,7 +247,7 @@ export async function saveX402Settings(body: unknown, actorUserId: number): Prom
  * payments to it would never be recorded with the new one). Turning x402 on
  * again creates an address with the new key. Payments already settled to the
  * old address stay in the attention list until they are recorded. Returns
- * whether anything changed. Never needs a license.
+ * whether anything changed.
  */
 export async function detachX402FromStripe(actorUserId: number, reason: "key_replaced" | "key_removed"): Promise<boolean> {
   const stored = await readSettingRow<StoredX402>(X402_SETTING_KEY);
@@ -272,7 +266,7 @@ export async function detachX402FromStripe(actorUserId: number, reason: "key_rep
   return true;
 }
 
-/** Turns x402 off and removes the CDP credentials (the deposit address is kept). Never needs a license. */
+/** Turns x402 off and removes the CDP credentials (the deposit address is kept). */
 export async function removeX402Settings(actorUserId: number): Promise<X402SettingsView> {
   const stored = (await readSettingRow<StoredX402>(X402_SETTING_KEY)) ?? {};
   await writeSettingRow(X402_SETTING_KEY, { ...stored, enabled: false, cdpKeySecret: null });

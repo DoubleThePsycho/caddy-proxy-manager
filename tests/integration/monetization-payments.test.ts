@@ -2,7 +2,7 @@
  * API monetization payments: Stripe webhook signature verification and
  * idempotent crediting (also through the route), Checkout Session creation
  * against a mocked Stripe API, the self-service portal (token) and the
- * consumer API (API key), and that none of them needs a license.
+ * consumer API (API key).
  */
 import { createHmac } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -342,14 +342,13 @@ describe('portal page and consumer API', () => {
     expect(form.get('success_url')).toMatch(/\/api-portal\?topup=success$/);
   });
 
-  it('serves the gate route without a license', async () => {
+  it('serves the gate route', async () => {
     const plan = await insertPlan(ctx.db, { pricePerRequestMicros: 0 });
     const consumer = await insertConsumer(ctx.db, { planId: plan.id });
     const { raw } = await insertKey(ctx.db, consumer.id);
     const host = await insertProxyHost(ctx.db);
     await insertMonetizedHost(ctx.db, host.id);
     const token = (await ensureGateSecret()).token;
-    // No license row exists in this database at all.
     const response = await gateRoute.GET(new Request('http://web:3000/api/monetization/gate', {
       headers: { 'X-Ingressi-Gate-Token': token, 'X-Ingressi-Host-Id': String(host.id), Authorization: `Bearer ${raw}` },
     }));

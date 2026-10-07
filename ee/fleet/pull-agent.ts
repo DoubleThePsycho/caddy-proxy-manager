@@ -17,8 +17,6 @@
  * and the reply in size (INSTANCE_SYNC_MAX_BYTES), and failures back off
  * exponentially (to 15 minutes). Messages are fixed: the credential, the
  * master's reply and the configuration are never logged.
- *
- * Runs whatever the license state: the replica holds no license of its own.
  */
 import { config as appConfig, DISALLOWED_SESSION_SECRETS } from "@/src/lib/config";
 import { getInstanceMode, getSyncRequestTimeoutMs, setSlaveLastSync, type SyncPayload } from "@/src/lib/instance-sync";

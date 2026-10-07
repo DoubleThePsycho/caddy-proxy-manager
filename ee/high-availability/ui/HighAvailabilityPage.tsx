@@ -4,7 +4,6 @@ import { SectionCard } from "@/components/ui/SectionCard";
 import { requirePermission } from "@/src/lib/auth";
 import { can } from "@/src/lib/permissions";
 import { RestrictedNotice } from "@/src/components/settings/RestrictedNotice";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
 import { getClusterView } from "@/ee/high-availability/cluster/view";
 import { getSharedStateView } from "@/ee/high-availability/shared-state/service";
 import ClusterSection from "./ClusterSection";
@@ -22,18 +21,16 @@ export default async function HighAvailabilityPage() {
   // High availability is its own permission area, as on the REST API.
   const canRead = can(access, "high_availability:read");
   const [cluster, sharedState] = canRead ? await Promise.all([getClusterView(), getSharedStateView()]) : [null, null];
-  const editionLabel = EDITION_LABELS[FEATURE_INFO.high_availability.edition];
 
   return (
     <div className="flex flex-col gap-5">
       <PageHeader className="mb-0" breadcrumb={["Platform", "High availability"]} title="High availability" />
       {cluster && sharedState ? (
         <>
-          <ClusterSection view={cluster} editionLabel={editionLabel} />
+          <ClusterSection view={cluster} />
           <SharedStateSection
             view={sharedState}
             canWrite={can(access, "high_availability:write")}
-            editionLabel={editionLabel}
             save={saveSharedStateAction}
             remove={removeSharedStateAction}
             loadStatus={sharedStateStatusAction}

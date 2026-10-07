@@ -1,16 +1,14 @@
 /**
  * Saved analytics questions in compliance report schedules (ee/compliance,
  * ee/ai/questions): a schedule copies the saved questions its editor can
- * see, needs the compliance license to change, and each run adds a "Traffic
- * questions" report that re-runs them for the period over every host, with
- * bound parameters and without asking an AI model. The copies outlive the
- * saved question and its owner.
+ * see, and each run adds a "Traffic questions" report that re-runs them for
+ * the period over every host, with bound parameters and without asking an AI
+ * model. The copies outlive the saved question and its owner.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 
 const ctx = vi.hoisted(() => ({
   db: null as unknown as TestDb,
@@ -56,8 +54,6 @@ vi.mock('../../ee/ai/explain', async (importOriginal) => {
 
 import { logAuditEvent } from '../../src/lib/audit';
 import { deleteUser } from '../../src/lib/models/user';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
-import { LicenseRequiredError } from '../../ee/licensing/store';
 import { createReportSchedule, getReportSchedule, runReportScheduleNow, updateReportSchedule } from '../../ee/compliance/schedules';
 import { generateReport, getReport } from '../../ee/compliance/reports';
 import type { AnalyticsDependencies } from '../../ee/compliance/reports/shared';
@@ -91,8 +87,6 @@ beforeEach(async () => {
   ctx.modelCalls = 0;
   ctx.seen = ['shop.example.com', 'shop.example.com:443', 'admin.example.org'];
   vi.mocked(logAuditEvent).mockClear();
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.db, 'enterprise');
   const t = NOW.toISOString();
   for (const [id, role] of [[ADMIN, 'admin'], [OTHER, 'admin']] as const) {
     await ctx.db.insert(schema.users).values({
@@ -112,10 +106,8 @@ beforeEach(async () => {
   };
 });
 
-afterAll(() => setTrustedLicenseKeysForTests(null));
-
 describe('questions in a report schedule', () => {
-  it('copies the saved questions its editor can see, with the compliance license', async () => {
+  it('copies the saved questions its editor can see', async () => {
     const schedule = await createReportSchedule({ name: 'Traffic evidence', reportTypes: [], questionIds: [ids.mine, ids.othersShared] }, ADMIN, NOW);
     expect(schedule.reportTypes).toEqual([]);
     expect(schedule.questions).toEqual([
@@ -132,9 +124,6 @@ describe('questions in a report schedule', () => {
     await expect(createReportSchedule({ name: 'x', questionIds: Array.from({ length: 11 }, (_, i) => i + 1) }, ADMIN, NOW)).rejects.toThrow(/at most 10 questions/);
     await expect(createReportSchedule({ name: 'x', questionIds: ['1'] }, ADMIN, NOW)).rejects.toThrow(/questionIds must be/);
 
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-    await expect(createReportSchedule({ name: 'x', questionIds: [ids.mine] }, ADMIN, NOW)).rejects.toBeInstanceOf(LicenseRequiredError);
-    await expect(updateReportSchedule(schedule.id, { questionIds: [ids.mine] }, ADMIN, NOW)).rejects.toBeInstanceOf(LicenseRequiredError);
     expect(await updateReportSchedule(schedule.id, { enabled: false }, ADMIN, NOW)).toMatchObject({ enabled: false, questions: schedule.questions });
   });
 

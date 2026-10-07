@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Copy, KeyRound, Plus, Trash2 } from "lucide-react";
@@ -27,7 +26,7 @@ import type {
   ScimTokenView,
 } from "../types";
 import ScimDirectoryCards from "./ScimDirectoryCards";
-import { callApi, Field, formatDate, LOCKED_HINT } from "./shared";
+import { callApi, Field, formatDate } from "./shared";
 
 export type ScimClientProps = {
   settings: ScimSettingsView;
@@ -42,8 +41,6 @@ export type ScimClientProps = {
   customRoles: { id: number; name: string; adminLevel: boolean }[];
   canWrite: boolean;
   isAdmin: boolean;
-  customRolesLicensed: boolean;
-  editionLabel: string;
   /** The breadcrumb links to Sign-in and directories (sso:read). Default true. */
   canReadSignIn?: boolean;
 };
@@ -77,28 +74,25 @@ function SettingsCard({ settings, canWrite }: { settings: ScimSettingsView; canW
   const [form, setForm] = useState<SettingsForm>(() => formOf(settings));
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const configurable = settings.configurable;
-  const editable = canWrite && configurable;
+  const editable = canWrite;
   const set = <K extends keyof SettingsForm>(key: K, value: SettingsForm[K]) => setForm((previous) => ({ ...previous, [key]: value }));
 
-  function save(turnOffOnly: boolean) {
+  function save() {
     setError(null);
-    const body = turnOffOnly
-      ? { enabled: false }
-      : {
-          enabled: form.enabled,
-          providerId: form.providerId === NO_PROVIDER ? null : form.providerId,
-          deleteMode: form.deleteMode,
-          defaultRole: form.defaultRole,
-          manageRoles: form.manageRoles,
-          requireVerifiedEmail: form.requireVerifiedEmail,
-          externalIdClaim: form.externalIdClaim.trim() || null,
-        };
+    const body = {
+      enabled: form.enabled,
+      providerId: form.providerId === NO_PROVIDER ? null : form.providerId,
+      deleteMode: form.deleteMode,
+      defaultRole: form.defaultRole,
+      manageRoles: form.manageRoles,
+      requireVerifiedEmail: form.requireVerifiedEmail,
+      externalIdClaim: form.externalIdClaim.trim() || null,
+    };
     startTransition(async () => {
       try {
         const view = await callApi<ScimSettingsView>("/api/v1/scim/settings", "PUT", body);
         setForm(formOf(view));
-        toast.success(turnOffOnly ? "SCIM turned off" : "SCIM settings saved");
+        toast.success("SCIM settings saved");
         router.refresh();
       } catch (err) {
         setError((err as Error).message);
@@ -219,19 +213,14 @@ function SettingsCard({ settings, canWrite }: { settings: ScimSettingsView; canW
         {error && <Banner tone="bad" live>{error}</Banner>}
         {canWrite && (
           <div className="flex gap-2">
-            {configurable && (
-              <Button onClick={() => save(false)} disabled={pending}>{pending ? "Saving…" : "Save"}</Button>
-            )}
-            {!configurable && settings.enabled && (
-              <Button variant="outline" onClick={() => save(true)} disabled={pending}>Turn SCIM off</Button>
-            )}
+            <Button onClick={save} disabled={pending}>{pending ? "Saving…" : "Save"}</Button>
           </div>
         )}
     </SectionCard>
   );
 }
 
-function TokensCard({ tokens, canWrite, configurable }: { tokens: ScimTokenView[]; canWrite: boolean; configurable: boolean }) {
+function TokensCard({ tokens, canWrite }: { tokens: ScimTokenView[]; canWrite: boolean }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
@@ -280,7 +269,7 @@ function TokensCard({ tokens, canWrite, configurable }: { tokens: ScimTokenView[
       title="SCIM tokens"
       count={tokens.length}
       actions={canWrite ? (
-        <Button size="sm" variant="outline" onClick={() => { setError(null); setOpen(true); }} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
+        <Button size="sm" variant="outline" onClick={() => { setError(null); setOpen(true); }}>
           <Plus /> New token
         </Button>
       ) : undefined}
@@ -382,22 +371,14 @@ export default function ScimClient(props: ScimClientProps) {
     <div className="flex w-full min-w-0 flex-col gap-5">
       <PageHeader
         className="mb-0"
-        breadcrumb={["Identity", props.canReadSignIn === false ? "Sign-in and directories" : { label: "Sign-in and directories", href: "/sign-in" }, "SCIM provisioning"]}
+        breadcrumb={["Users and sign-in", props.canReadSignIn === false ? "Sign-in and directories" : { label: "Sign-in and directories", href: "/sign-in" }, "SCIM provisioning"]}
         title="SCIM provisioning"
         description={`Let your identity provider create, update and disable ${productName} users and groups.`}
       />
 
-      {!settings.configurable && (
-        <Banner tone="info" title="Read-only without a license.">
-          Turning SCIM on and changing it needs a license with SCIM provisioning ({props.editionLabel} edition). You can still turn it
-          off, revoke tokens and remove mappings.{" "}
-          <Link href="/license" className="text-brand underline-offset-4 hover:underline">Licensing</Link>
-        </Banner>
-      )}
-
       <div className="grid gap-5 xl:grid-cols-2">
         <SettingsCard settings={settings} canWrite={props.canWrite} />
-        <TokensCard tokens={props.tokens} canWrite={props.canWrite} configurable={settings.configurable} />
+        <TokensCard tokens={props.tokens} canWrite={props.canWrite} />
       </div>
 
       <ScimDirectoryCards {...props} />

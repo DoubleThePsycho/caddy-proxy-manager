@@ -34,11 +34,6 @@ export type AuditEventInput = {
   summary?: string | null;
   /** Already serialized (usually JSON). */
   data?: string | null;
-  /**
-   * The organisation (ee/multi-tenancy) whose audit log shows the event; null
-   * for the provider level only. Not covered by the hash.
-   */
-  organizationId?: number | null;
 };
 
 /** The stored fields the hash covers. */
@@ -118,7 +113,6 @@ export async function insertAuditEvent(input: AuditEventInput): Promise<number> 
         .values({
           userId,
           ...fields,
-          organizationId: input.organizationId ?? null,
           ...links,
           prevHash,
           hash: computeAuditHash(prevHash, fields),

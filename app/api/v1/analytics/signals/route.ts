@@ -4,8 +4,8 @@ import { trafficSignalsFor } from "@/src/lib/analytics/service";
 
 export async function GET(request: NextRequest) {
   try {
-    const { access } = await requireApiPermission(request, "analytics:read");
-    return NextResponse.json(await trafficSignalsFor(access));
+    await requireApiPermission(request, "analytics:read");
+    return NextResponse.json(await trafficSignalsFor());
   } catch (error) {
     return apiErrorResponse(error);
   }

@@ -47,7 +47,7 @@ export type CertificateSettingsProps = {
   /** On a replica: the settings it overrides instead of following its master. */
   overrides: { general: boolean; acme: boolean; dnsProvider: boolean; dns: boolean };
   /** Certificate storage (ee/high-availability); null without high_availability:read. */
-  certificateStorage: { view: CertificateStorageView; canWrite: boolean; editionLabel: string } | null;
+  certificateStorage: { view: CertificateStorageView; canWrite: boolean } | null;
   /** settings:write */
   canSave: boolean;
   /** certificates:read, for the breadcrumb's link. */
@@ -85,7 +85,6 @@ export default function CertificateSettingsClient({
               <CertificateStorageSection
                 view={certificateStorage.view}
                 canWrite={certificateStorage.canWrite}
-                editionLabel={certificateStorage.editionLabel}
                 save={saveCertificateStorageAction}
                 remove={removeCertificateStorageAction}
                 test={testCertificateStorageAction}

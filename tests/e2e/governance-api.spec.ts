@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * Governance and operations endpoints on the E2E stack (no license, history
- * off): the overview's attention list, the setup checklist, audit log
- * filters and details, configuration versions and previews, firing alerts,
- * managed certificates, the live control status, and the license gates of
- * report schedules and test restores.
+ * Governance and operations endpoints on the E2E stack (history off): the
+ * overview's attention list, the setup checklist, audit log filters and
+ * details, configuration versions and previews, firing alerts, managed
+ * certificates, the live control status, report schedules and test
+ * restores.
  */
 const ORIGIN = { Origin: 'http://localhost:3000' };
 
@@ -51,7 +51,7 @@ test.describe('Governance API', () => {
     expect(facets.actions).toContain('setup_checklist_updated');
   });
 
-  test('reads configuration versions, firing alerts, managed certificates and control status without a license', async ({ page }) => {
+  test('reads configuration versions, firing alerts, managed certificates and control status', async ({ page }) => {
     const versions = await page.request.get('/api/v1/config-history/versions');
     expect(versions.status()).toBe(200);
     expect(await versions.json()).toMatchObject({ versions: expect.any(Array), recording: expect.any(Object) });
@@ -65,14 +65,20 @@ test.describe('Governance API', () => {
     expect((await status.json()).controls).toHaveLength(6);
   });
 
-  test('refuses to set up report schedules and record test restores without a license', async ({ page }) => {
-    const schedule = await page.request.post('/api/v1/compliance/schedules', { data: { name: 'Monthly evidence' }, headers: ORIGIN });
-    expect(schedule.status()).toBe(403);
+  test('sets up a report schedule and records a test restore, then deletes them', async ({ page }) => {
+    // Created off, so it never runs during the suite.
+    const schedule = await page.request.post('/api/v1/compliance/schedules', { data: { name: 'Monthly evidence', enabled: false }, headers: ORIGIN });
+    expect(schedule.status()).toBe(201);
+    const { id: scheduleId } = await schedule.json();
+    expect((await page.request.get('/api/v1/compliance/schedules')).status()).toBe(200);
+    expect((await page.request.delete(`/api/v1/compliance/schedules/${scheduleId}`, { headers: ORIGIN })).status()).toBe(204);
+
     const restore = await page.request.post('/api/v1/compliance/restore-tests', {
-      data: { testedAt: '2026-10-01', source: 'backup', outcome: 'success' },
+      data: { testedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), source: 'backup', outcome: 'success' },
       headers: ORIGIN,
     });
-    expect(restore.status()).toBe(403);
-    expect((await page.request.get('/api/v1/compliance/schedules')).status()).toBe(200);
+    expect(restore.status()).toBe(201);
+    const { id: restoreId } = await restore.json();
+    expect((await page.request.delete(`/api/v1/compliance/restore-tests/${restoreId}`, { headers: ORIGIN })).status()).toBe(204);
   });
 });

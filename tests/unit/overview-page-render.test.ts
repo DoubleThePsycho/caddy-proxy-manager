@@ -2,7 +2,7 @@
  * Server-side render of the overview (app/(dashboard)/OverviewClient.tsx):
  * the set-up overview with every section, what a viewer without
  * permissions sees, analytics being off, and the first-run layout with the
- * setup checklist and the usage ping question.
+ * setup checklist.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -12,10 +12,6 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn() }),
   usePathname: () => '/',
   useSearchParams: () => new URLSearchParams(),
-}));
-vi.mock('@/app/(dashboard)/settings/usage-ping-actions', () => ({
-  setUsagePingEnabledAction: vi.fn(),
-  previewUsagePingAction: vi.fn(),
 }));
 
 import OverviewClient from '@/app/(dashboard)/OverviewClient';
@@ -27,7 +23,7 @@ const START = Date.parse('2026-10-02T12:00:00.000Z') / 1000;
 
 const ALL: OverviewPermissions = {
   createProxyHost: true, readProxyHosts: true, readAnalytics: true, readSecurity: true, readAlerts: true,
-  readAuditLog: true, readUsers: true, readSso: true, readLicense: true, writeSettings: true,
+  readAuditLog: true, readUsers: true, readSso: true, writeSettings: true,
 };
 const NONE: OverviewPermissions = Object.fromEntries(Object.keys(ALL).map((key) => [key, false])) as OverviewPermissions;
 
@@ -52,7 +48,6 @@ function traffic(overrides: Partial<OverviewTraffic> = {}): OverviewTraffic {
 function checklist(overrides: Partial<SetupChecklistView> = {}): SetupChecklistView {
   const step = (key: SetupChecklistView['steps'][number]['key'], title: string) => ({
     key, title, description: `${title}.`, done: false, doneBy: null, markedAt: null, action: null,
-    paid: key === 'single_sign_on' ? { features: ['sso_saml', 'ldap'], configurable: false } : null,
   });
   return {
     steps: [
@@ -75,7 +70,6 @@ function data(overrides: Partial<OverviewData> = {}): OverviewData {
     version: '2.0.3',
     permissions: ALL,
     firstRun: null,
-    askUsagePing: false,
     attention: {
       generatedAt: GENERATED,
       truncated: false,
@@ -157,7 +151,6 @@ describe('the overview', () => {
     expect(html).toContain('<span class="font-semibold">Ada Admin</span> updated proxy host Wiki');
     expect(html).toContain('href="/history?version=1"');
     expect(html).toContain('Yesterday 18:22');
-    expect(html).not.toContain('data-testid="usage-ping-question"');
   });
 
   it('shows a viewer without permissions what needs their attention and their account', () => {
@@ -181,33 +174,26 @@ describe('the overview', () => {
     expect(html).not.toContain('data-testid="overview-kpis"');
     expect(render(data({ traffic: traffic({ status: 'unavailable' }) }))).toContain('ClickHouse did not answer');
   });
-
-  it('asks the usage ping question when it is due', () => {
-    expect(render(data({ askUsagePing: true }))).toContain('data-testid="usage-ping-question"');
-  });
 });
 
 describe('the first run', () => {
   const firstRun = (overrides: Partial<OverviewData> = {}) =>
     data({
-      firstRun: { checklist: checklist(), ssoEdition: 'Business', ldapEdition: 'Enterprise' },
-      askUsagePing: true,
+      firstRun: { checklist: checklist() },
       traffic: traffic({ status: 'disabled' }),
       hosts: { status: 'disabled', total: 0, certificates: true, rows: [] },
       ...overrides,
     });
 
-  it('shows the setup checklist, the usage ping question and empty traffic', () => {
+  it('shows the setup checklist and empty traffic', () => {
     const html = render(firstRun());
     expect(html).toContain('Saturday 3 October · 11:36 UTC · Ingressi <span class="num">v2.0.3</span>');
     expect(html).toMatch(/<h1[^>]*>Welcome, admin<\/h1>/);
-    expect(html).toContain('data-testid="usage-ping-question"');
     expect(html).toContain('Set up this install');
     expect(html).toContain('0 of 5 done');
     expect(html).toContain('Mark as done<span class="sr-only">: Point a domain at this server</span>');
     expect(html).toContain('id="step-analytics"');
-    expect(html).toContain('Compare editions');
-    expect(html).toContain('Business');
+    expect(html).toContain('Sign in through an OpenID Connect or SAML provider, or an LDAP directory.');
     expect(html).toContain('Hide the checklist');
     expect(html).toContain('Analytics are off.');
     expect(html).toContain('href="#step-analytics"');
@@ -221,11 +207,11 @@ describe('the first run', () => {
     const done = checklist();
     done.steps[1] = { ...done.steps[1], done: true, doneBy: 'data' };
     done.steps[0] = { ...done.steps[0], done: true, doneBy: 'manual', markedAt: GENERATED };
-    const html = render(firstRun({ permissions: { ...ALL, writeSettings: false }, firstRun: { checklist: { ...done, done: 2 }, ssoEdition: 'Business', ldapEdition: 'Enterprise' } }));
+    const html = render(firstRun({ permissions: { ...ALL, writeSettings: false }, firstRun: { checklist: { ...done, done: 2 } } }));
     expect(html).toContain('2 of 5 done');
     expect(html).not.toContain('Mark as done');
     expect(html).not.toContain('Hide the checklist');
-    const writer = render(firstRun({ firstRun: { checklist: { ...done, done: 2 }, ssoEdition: 'Business', ldapEdition: 'Enterprise' } }));
+    const writer = render(firstRun({ firstRun: { checklist: { ...done, done: 2 } } }));
     expect(writer).toContain('aria-pressed="true"');
     expect(writer).toContain('Done<span class="sr-only">: Point a domain at this server</span>');
   });

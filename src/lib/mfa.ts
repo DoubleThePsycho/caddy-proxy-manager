@@ -13,8 +13,7 @@
  * the two_factors row and the passkeys rows); it never returns a TOTP secret,
  * a backup code or a credential.
  *
- * MFA is a Community feature: nothing here looks at the license. The policy
- * is per dashboard and is not synchronized to sync slaves (users are not).
+ * The policy is per dashboard and is not synchronized to sync slaves (users are not).
  * The forward-auth portal is not affected.
  */
 import { and, count, eq, isNotNull, ne } from "drizzle-orm";
@@ -154,13 +153,12 @@ export async function canSignInWithPassword(reader: MfaReader, userId: number): 
 
 /**
  * Whether the policy covers an account. "admins" covers the built-in admin
- * role, every custom role (ee/custom-roles) and organisation administrators
- * (ee/multi-tenancy): they hold management permissions, so they are treated
- * like administrators here.
+ * role and every custom role (ee/custom-roles): they hold management
+ * permissions, so they are treated like administrators here.
  */
 function policyCovers(policy: MfaPolicy, role: string, customRoleId: number | null = null): boolean {
   if (policy.scope === "off") return false;
-  return policy.scope === "password_users" || role === "admin" || role === "org_admin" || customRoleId !== null;
+  return policy.scope === "password_users" || role === "admin" || customRoleId !== null;
 }
 
 /** How many passkeys the account has (passkeys.ts). */

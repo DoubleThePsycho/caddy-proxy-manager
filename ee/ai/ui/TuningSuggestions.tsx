@@ -2,7 +2,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { toast } from "sonner";
 import { Lock, Sparkles, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,7 +22,6 @@ const CONFIDENCE_VARIANT: Record<SuggestionConfidence, "success" | "warning" | "
 
 type Props = {
   initialSuggestions: WafTuningSuggestionView[];
-  canConfigure: boolean;
   /** Holds waf:write (finding, applying and dismissing change the WAF). Default true. */
   canWrite?: boolean;
   analyticsEnabled: boolean;
@@ -44,8 +42,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function TuningSuggestions({ initialSuggestions, canConfigure, canWrite = true, analyticsEnabled, aiConfigured, onApplied }: Props) {
-  const actionable = canConfigure && canWrite;
+export default function TuningSuggestions({ initialSuggestions, canWrite = true, analyticsEnabled, aiConfigured, onApplied }: Props) {
   const [pending, startTransition] = useTransition();
   const [suggestions, setSuggestions] = useState(initialSuggestions);
   const [explain, setExplain] = useState(false);
@@ -104,16 +101,7 @@ export default function TuningSuggestions({ initialSuggestions, canConfigure, ca
         <h2 className="m-0 text-base font-semibold">Tuning suggestions</h2>
         <p className="mt-1 text-[13px] text-muted-foreground">Likely false positives in the last 14 days of WAF events. Nothing changes until you apply one.</p>
       </div>
-      {!canConfigure && (
-        <Alert>
-          <Lock className="h-4 w-4" />
-          <AlertDescription>
-            Finding, applying and dismissing suggestions needs a license that includes the AI analyst.{" "}
-            <Link href="/license" className="underline underline-offset-2">Licensing</Link>
-          </AlertDescription>
-        </Alert>
-      )}
-      {canConfigure && !canWrite && (
+      {!canWrite && (
         <Alert>
           <Lock className="h-4 w-4" />
           <AlertDescription>Finding, applying and dismissing suggestions needs the waf:write permission.</AlertDescription>
@@ -125,11 +113,11 @@ export default function TuningSuggestions({ initialSuggestions, canConfigure, ca
         </Alert>
       )}
       <div className="flex flex-wrap items-center gap-4">
-        <Button onClick={generate} disabled={!actionable || !analyticsEnabled || pending} className="gap-1.5">
+        <Button onClick={generate} disabled={!canWrite || !analyticsEnabled || pending} className="gap-1.5">
           <Wand2 className="h-4 w-4" /> Find suggestions
         </Button>
         <label className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-          <Checkbox checked={explain && aiConfigured} onCheckedChange={(checked) => setExplain(checked === true)} disabled={!actionable || !aiConfigured} />
+          <Checkbox checked={explain && aiConfigured} onCheckedChange={(checked) => setExplain(checked === true)} disabled={!canWrite || !aiConfigured} />
           Add AI risk assessments (up to 5)
           {!aiConfigured && <span className="text-xs text-muted-foreground">Needs an AI provider (Alerts → AI).</span>}
         </label>
@@ -202,10 +190,10 @@ export default function TuningSuggestions({ initialSuggestions, canConfigure, ca
                   </Alert>
                 )}
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={() => setConfirming(suggestion)} disabled={!actionable || pending}>
+                  <Button size="sm" onClick={() => setConfirming(suggestion)} disabled={!canWrite || pending}>
                     Apply
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => dismiss(suggestion)} disabled={!actionable || pending}>
+                  <Button size="sm" variant="outline" onClick={() => dismiss(suggestion)} disabled={!canWrite || pending}>
                     Dismiss
                   </Button>
                 </div>

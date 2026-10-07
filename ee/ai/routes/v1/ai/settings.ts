@@ -22,7 +22,7 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-/** Removes the provider and its key; works without a license. */
+/** Removes the provider and its key. */
 export async function DELETE(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "ai:write");

@@ -1,8 +1,7 @@
 /**
  * Server-side render of the Roles tab (Users and groups), the role picker on
- * the Users tab and the host tag field: the license notice, the permissions
- * grouped by area, the scope and the controls a user without users:write
- * does not get.
+ * the Users tab and the host tag field: the permissions grouped by area, the
+ * scope and the controls a user without users:write does not get.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -43,8 +42,6 @@ function tab(overrides: Partial<Parameters<typeof RolesTab>[0]> = {}) {
     actor: { isAdmin: true, permissions: [], scopeTags: [], customRoleId: null },
     holders: { admin: ['admin'], user: [], viewer: ['val'], custom: { 1: ['ann', 'bob'], 2: [] } },
     canWrite: true,
-    licensed: true,
-    editionLabel: 'Business',
     saveRole: vi.fn(),
     deleteRole: vi.fn(),
     ...overrides,
@@ -59,7 +56,17 @@ describe('Roles tab', () => {
     expect(html).toContain('Administrator-level');
     expect(html).toContain(`of ${PERMISSIONS.length}`);
     expect(html).toContain('Create role');
-    expect(html).not.toContain('license or higher');
+  });
+
+  it('labels the values for narrow screens, where the column headings are hidden', () => {
+    const html = tab();
+    // The labels are hidden from md up, where the column headings show.
+    expect(html).toContain('<span class="md:hidden"> permissions</span>');
+    expect(html).toContain('<span class="text-xs text-soft md:hidden">Scope:</span>');
+    expect(html).toContain('<span class="text-xs text-soft md:hidden"> users</span>');
+    expect(html).toContain('<span class="text-xs text-soft md:hidden"> user</span>');
+    expect(html).toContain('Like User. Users of a deleted custom role get this role.');
+    expect(html).not.toContain('Same as User');
   });
 
   it('opens a custom role with its permissions grouped by area, holders and controls', () => {
@@ -81,15 +88,6 @@ describe('Roles tab', () => {
     expect(html).not.toContain('Delete role');
   });
 
-  it('shows the license notice and no create or edit without a license', () => {
-    const html = tab({ licensed: false, initialOpen: 'custom-1' });
-    expect(html).toContain('needs an active Ingressi Business license or higher');
-    expect(html).not.toContain('Create role');
-    expect(html).not.toContain('Edit role');
-    // Deleting stays possible.
-    expect(html).toContain('Delete role');
-  });
-
   it('gives a user without users:write no controls and keeps your own role out of reach', () => {
     expect(tab({ canWrite: false, initialOpen: 'custom-1' })).not.toMatch(/Create role|Delete role|Edit role/);
     const own = { isAdmin: false, permissions: ['users:write'], scopeTags: [], customRoleId: 1 };
@@ -100,7 +98,7 @@ describe('Roles tab', () => {
 
 function overviewUser(overrides: Partial<UserOverviewEntry> = {}): UserOverviewEntry {
   return {
-    id: 5, email: 'ann@example.com', username: 'ann@example.com', name: 'Ann', role: 'viewer', customRoleId: 1, organizationId: null,
+    id: 5, email: 'ann@example.com', username: 'ann@example.com', name: 'Ann', role: 'viewer', customRoleId: 1,
     status: 'active', lastSignInAt: null, lastSignInMethod: null, disabledAt: null, invited: false, createdAt: stamp,
     sources: [{ kind: 'local', label: 'Password' }], passwordSignIn: true,
     secondFactor: { state: 'authenticator_app', authenticatorApp: true, passkeys: 0, required: false, gate: 'none', deadline: null },

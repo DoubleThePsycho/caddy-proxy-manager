@@ -9,8 +9,7 @@ import { CaddyApplyError } from "./caddy-apply-error";
 import { getInstanceMode } from "./instance-sync";
 import { withSettingsUpdateLock } from "./settings-update-lock";
 import { assertReplacementApproved } from "@/ee/approvals/guard";
-import { assertCertificateStorageReplacementAllowed } from "@/ee/high-availability/guard";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
+import { parseStoredCertificateStorage } from "@/ee/high-availability/settings";
 import { revokeForwardAuthSessionsWithoutAccess } from "./models/forward-auth";
 import { invalidateSharedState } from "@/ee/high-availability/shared-state/connection";
 import {
@@ -72,9 +71,9 @@ export type ReplaceConfigurationResult = {
  * the previous configuration is written back and re-applied and a
  * ConfigurationApplyError is thrown. Refused with 409 before anything is
  * written when it would change a host that a change approval policy
- * protects (ee/approvals), and with 403 when it would set up or change
- * shared certificate storage without a license that includes it
- * (ee/high-availability). Serialized with settings updates.
+ * protects (ee/approvals), and with 400 when its certificate storage
+ * setting is not valid (ee/high-availability). Serialized with settings
+ * updates.
  */
 export async function replaceConfiguration(
   content: ConfigContent,
@@ -84,8 +83,6 @@ export async function replaceConfiguration(
   }
 ): Promise<ReplaceConfigurationResult> {
   return withSettingsUpdateLock(async () => {
-    // Read before the transaction (no non-database work inside it); used only if the certificate storage changes.
-    const storageLicensed = await isFeatureConfigurable("high_availability");
     let previous: Awaited<ReturnType<typeof capture>> | null = null;
     async function capture(tx: DbTransaction) {
       return { content: await readConfigContent(tx), dependents: await readConfigDependents(tx) };
@@ -96,12 +93,8 @@ export async function replaceConfiguration(
         previous = await capture(tx);
         // Change approvals (ee): never replace protected hosts behind the policies' back.
         await assertReplacementApproved(tx, previous.content, content);
-        // Shared certificate storage (ee): bringing it in or changing it needs the license.
-        assertCertificateStorageReplacementAllowed(
-          previous.content.settings.certificate_storage,
-          content.settings.certificate_storage,
-          storageLicensed
-        );
+        // Certificate storage (ee): a setting that is not valid is refused (400).
+        parseStoredCertificateStorage(content.settings.certificate_storage);
         await options.beforeWrite?.(tx, previous.content);
         await writeConfigContent(tx, content, options.mode, previous.dependents);
       });

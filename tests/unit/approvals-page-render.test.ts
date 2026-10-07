@@ -1,8 +1,8 @@
 /**
  * Server-side render of the Approvals page and of the notice the host dialogs
- * show for a protected host: the license notice, the field-level diff, which
- * buttons the viewer gets (never Approve on their own request) and the
- * emergency switch only for users who may use it.
+ * show for a protected host: the field-level diff, which buttons the viewer
+ * gets (never Approve on their own request) and the emergency switch only for
+ * users who may use it.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -81,7 +81,7 @@ function request(viewer: Partial<ChangeRequestView['viewer']> = {}): ChangeReque
   };
 }
 
-function render(requests: ChangeRequestView[], configurable = true, extra: { decided?: ChangeRequestView[]; alertChannels?: string[] | null } = {}) {
+function render(requests: ChangeRequestView[], extra: { decided?: ChangeRequestView[]; alertChannels?: string[] | null } = {}) {
   const decided = extra.decided ?? [];
   return renderToStaticMarkup(
     createElement(ApprovalsClient, {
@@ -90,8 +90,6 @@ function render(requests: ChangeRequestView[], configurable = true, extra: { dec
       recent: decided,
       decided: { requests: decided, total: decided.length, page: 1, perPage: 25 },
       policies: [policy],
-      configurable,
-      editionLabel: 'Enterprise',
       canManage: true,
       alertChannels: extra.alertChannels ?? null,
       now: '2026-10-05T09:00:00.000Z',
@@ -119,7 +117,6 @@ describe('Approvals page', () => {
     expect(html).toContain('Reject</button>');
     expect(html).toContain('Required to reject, optional to approve');
     expect(html).not.toContain('Emergency change</button>');
-    expect(html).not.toContain('needs an Enterprise license');
     // Tokens only, never Tailwind palette colours.
     expect(html).not.toMatch(/(red|emerald|amber)-\d{3}/);
   });
@@ -154,7 +151,7 @@ describe('Approvals page', () => {
       reviews: [{ id: 2, userId: 3, userName: 'Bob', decision: 'reject', comment: 'Still in use until next week', createdAt: '2026-10-05T08:30:00.000Z' }],
       window: { restricted: false, open: true, nextOpenAt: null, description: null },
     };
-    const html = render([], true, { decided: [rejected], alertChannels: ['Ops Slack'] });
+    const html = render([], { decided: [rejected], alertChannels: ['Ops Slack'] });
     expect(html).toContain('Recently decided');
     expect(html).toContain('Rejected by Bob');
     expect(html).toContain('“Still in use until next week”');
@@ -162,9 +159,8 @@ describe('Approvals page', () => {
     expect(html).toContain('1 policy on');
   });
 
-  it('explains the license and stays read-only without one', () => {
-    const html = render([], false);
-    expect(html).toContain('Creating and changing approval policies needs an Enterprise license with Change approvals');
+  it('says when no change is waiting', () => {
+    const html = render([]);
     expect(html).toContain('No change is waiting for approval.');
   });
 });

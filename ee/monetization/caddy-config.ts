@@ -4,7 +4,7 @@
  * monetization: the monetized proxy hosts and the gate token that Caddy sends
  * with every gate subrequest. A slave gates only the monetized hosts its
  * master sent in the replica section (replica-index.ts); without one it
- * serves none. Never checks the license.
+ * serves none.
  */
 import { eq } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

@@ -576,6 +576,7 @@ describe('Instance sync page', () => {
           source: 'manual',
         },
       ],
+      pullReplicas: { canManage: true, replicas: [] },
     });
     expect(JSON.stringify(props)).not.toContain(TOKEN);
 

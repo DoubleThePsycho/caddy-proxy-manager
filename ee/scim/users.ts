@@ -10,7 +10,7 @@
  * identity provider can never take over a local account by itself.
  *
  * Each request runs in one database transaction and is recorded in the audit
- * log with the token that made it. Never checks the license.
+ * log with the token that made it.
  */
 import { and, count, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import { appDb, nowIso, toIso } from "@/src/lib/db";

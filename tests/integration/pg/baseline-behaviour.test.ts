@@ -1,10 +1,9 @@
 /**
- * A database built by the PostgreSQL baseline (drizzle-pg/) behaves like a
- * SQLite install at drizzle/0052: the same statements, run on both, are
- * accepted or refused alike and leave the same values. Covered: the users
- * organisation-role triggers (drizzle/0041), the users.disabledAt triggers
+ * A database built by the PostgreSQL migrations (drizzle-pg/) behaves like a
+ * SQLite install: the same statements, run on both, are accepted or refused
+ * alike and leave the same values. Covered: the users.disabledAt triggers
  * (drizzle/0047), the forward_auth_access CHECK (drizzle/0017), the groups
- * name index across organisations and column defaults. Then what only
+ * name index and column defaults. Then what only
  * PostgreSQL does: SQLSTATEs, identity keys given explicit ids, int8 columns
  * and booleans through Drizzle. Runs against a real server; skipped without
  * TEST_DATABASE_URL.
@@ -45,8 +44,6 @@ function sqliteDatabase(): Database.Database {
 interface Engine {
   run(statement: string): Promise<Outcome>;
   row(statement: string): Promise<Row | undefined>;
-  /** Runs `body` with a trigger switched off, to set up a row the trigger would refuse. */
-  withoutTrigger(trigger: string, body: () => Promise<unknown>): Promise<void>;
 }
 
 function sqliteEngine(client: Database.Database): Engine {
@@ -64,15 +61,6 @@ function sqliteEngine(client: Database.Database): Engine {
     },
     async row(statement) {
       return client.prepare(statement).get() as Row | undefined;
-    },
-    async withoutTrigger(trigger, body) {
-      const { sql } = client.prepare('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?').get('trigger', trigger) as { sql: string };
-      client.exec(`DROP TRIGGER "${trigger}"`);
-      try {
-        await body();
-      } finally {
-        client.exec(sql);
-      }
     },
   };
 }
@@ -94,14 +82,6 @@ function pgEngine(database: PgTestDatabase): Engine {
     async row(statement) {
       return (await client.query<Row>(statement)).rows[0];
     },
-    async withoutTrigger(trigger, body) {
-      await client.query(`ALTER TABLE "users" DISABLE TRIGGER "${trigger}"`);
-      try {
-        await body();
-      } finally {
-        await client.query(`ALTER TABLE "users" ENABLE TRIGGER "${trigger}"`);
-      }
-    },
   };
 }
 
@@ -116,8 +96,8 @@ function insert(table: string, values: Record<string, string | number | null>): 
   return `INSERT INTO "${table}" (${columns}) VALUES (${Object.values(values).map(literal).join(', ')})`;
 }
 
-function insertUser(email: string, role: string, organizationId: number | null, extra: Record<string, string | null> = {}): string {
-  return insert('users', { email, role, organizationId, createdAt: NOW, updatedAt: NOW, ...extra });
+function insertUser(email: string, role: string, extra: Record<string, string | null> = {}): string {
+  return insert('users', { email, role, createdAt: NOW, updatedAt: NOW, ...extra });
 }
 
 /** A disabledAt as the scenarios compare it: null, a value the test gave, or "now" for a fresh timestamp. */
@@ -131,40 +111,16 @@ async function disabledAt(engine: Engine, email: string): Promise<unknown> {
   return (await engine.row(`SELECT "disabledAt" FROM "users" WHERE "email" = ${literal(email)}`))?.disabledAt;
 }
 
-async function organizationRoles(engine: Engine) {
-  const outcomes = {
-    providerAdmin: await engine.run(insertUser('root@example.com', 'admin', null)),
-    organizationAdmin: await engine.run(insertUser('owner@example.com', 'org_admin', 1)),
-    organizationUser: await engine.run(insertUser('member@example.com', 'user', 1)),
-    adminInOrganization: await engine.run(insertUser('intruder@example.com', 'admin', 1)),
-    organizationAdminOutside: await engine.run(insertUser('stray@example.com', 'org_admin', null)),
-    promoteMemberToAdmin: await engine.run(`UPDATE "users" SET "role" = 'admin' WHERE "email" = 'member@example.com'`),
-    moveAdminIntoOrganization: await engine.run(`UPDATE "users" SET "organizationId" = 1 WHERE "email" = 'root@example.com'`),
-    takeOrganizationAdminOut: await engine.run(`UPDATE "users" SET "organizationId" = NULL WHERE "email" = 'owner@example.com'`),
-    moveOrganizationAdmin: await engine.run(`UPDATE "users" SET "organizationId" = 2 WHERE "email" = 'owner@example.com'`),
-    promoteMemberToOrganizationAdmin: await engine.run(`UPDATE "users" SET "role" = 'org_admin' WHERE "email" = 'member@example.com'`),
-    // Only a write to role or organizationId is checked: a row that predates
-    // the rule keeps working until one of them changes.
-    renameMismatched: 'ok' as Outcome,
-    rewriteMismatchedRole: 'ok' as Outcome,
-  };
-  await engine.withoutTrigger('users_organization_role_insert', () => engine.run(insertUser('legacy@example.com', 'admin', 3)));
-  outcomes.renameMismatched = await engine.run(`UPDATE "users" SET "name" = 'Legacy' WHERE "email" = 'legacy@example.com'`);
-  outcomes.rewriteMismatchedRole = await engine.run(`UPDATE "users" SET "role" = 'admin' WHERE "email" = 'legacy@example.com'`);
-  const users = await engine.row(`SELECT count(*) AS count FROM "users" WHERE "email" LIKE '%@example.com'`);
-  return { ...outcomes, users: Number(users?.count) };
-}
-
 async function disabledAtHistory(engine: Engine) {
   const email = 'carol@example.org';
   const update = async (set: string) => {
     expect(await engine.run(`UPDATE "users" SET ${set} WHERE "email" = ${literal(email)}`)).toBe('ok');
     return stamp(await disabledAt(engine, email));
   };
-  expect(await engine.run(insertUser('dave@example.org', 'user', null, { status: 'disabled' }))).toBe('ok');
-  expect(await engine.run(insertUser('erin@example.org', 'user', null, { status: 'disabled', disabledAt: GIVEN }))).toBe('ok');
-  expect(await engine.run(insertUser('frank@example.org', 'user', null, { status: 'active', disabledAt: GIVEN }))).toBe('ok');
-  expect(await engine.run(insertUser(email, 'user', null))).toBe('ok');
+  expect(await engine.run(insertUser('dave@example.org', 'user', { status: 'disabled' }))).toBe('ok');
+  expect(await engine.run(insertUser('erin@example.org', 'user', { status: 'disabled', disabledAt: GIVEN }))).toBe('ok');
+  expect(await engine.run(insertUser('frank@example.org', 'user', { status: 'active', disabledAt: GIVEN }))).toBe('ok');
+  expect(await engine.run(insertUser(email, 'user'))).toBe('ok');
   const inserted = {
     active: stamp(await disabledAt(engine, email)),
     disabled: stamp(await disabledAt(engine, 'dave@example.org')),
@@ -201,18 +157,12 @@ async function forwardAuthAccess(engine: Engine) {
 }
 
 async function groupNames(engine: Engine) {
-  const group = (name: string, organizationId: number | null) =>
-    engine.run(insert('groups', { name, organizationId, createdAt: NOW, updatedAt: NOW }));
+  const group = (name: string) => engine.run(insert('groups', { name, createdAt: NOW, updatedAt: NOW }));
   return {
-    providerLevel: await group('Admins', null),
-    providerLevelAgain: await group('Admins', null),
-    firstOrganization: await group('Admins', 1),
-    secondOrganization: await group('Admins', 2),
-    firstOrganizationAgain: await group('Admins', 1),
-    otherCase: await group('admins', 1),
-    trailingSpace: await group('Admins ', 1),
-    // ifnull/coalesce(organizationId, 0): organisation ids start at 1.
-    organizationZero: await group('Admins', 0),
+    first: await group('Admins'),
+    again: await group('Admins'),
+    otherCase: await group('admins'),
+    trailingSpace: await group('Admins '),
   };
 }
 
@@ -226,21 +176,6 @@ async function userDefaults(engine: Engine) {
 }
 
 const EXPECTED = {
-  organizationRoles: {
-    providerAdmin: 'ok',
-    organizationAdmin: 'ok',
-    organizationUser: 'ok',
-    adminInOrganization: 'rejected: organization role mismatch',
-    organizationAdminOutside: 'rejected: organization role mismatch',
-    promoteMemberToAdmin: 'rejected: organization role mismatch',
-    moveAdminIntoOrganization: 'rejected: organization role mismatch',
-    takeOrganizationAdminOut: 'rejected: organization role mismatch',
-    moveOrganizationAdmin: 'ok',
-    promoteMemberToOrganizationAdmin: 'ok',
-    renameMismatched: 'ok',
-    rewriteMismatchedRole: 'rejected: organization role mismatch',
-    users: 4,
-  },
   disabledAtHistory: {
     inserted: { active: null, disabled: 'now', disabledWithTime: GIVEN, activeWithTime: GIVEN },
     disabled: 'now',
@@ -260,14 +195,10 @@ const EXPECTED = {
     swapUserForGrantedGroup: 'rejected: unique',
   },
   groupNames: {
-    providerLevel: 'ok',
-    providerLevelAgain: 'rejected: unique',
-    firstOrganization: 'ok',
-    secondOrganization: 'ok',
-    firstOrganizationAgain: 'rejected: unique',
+    first: 'ok',
+    again: 'rejected: unique',
     otherCase: 'ok',
     trailingSpace: 'ok',
-    organizationZero: 'rejected: unique',
   },
   userDefaults: {
     provider: '',
@@ -282,7 +213,6 @@ const EXPECTED = {
 
 async function scenarios(engine: Engine) {
   return {
-    organizationRoles: await organizationRoles(engine),
     disabledAtHistory: await disabledAtHistory(engine),
     forwardAuthAccess: await forwardAuthAccess(engine),
     groupNames: await groupNames(engine),
@@ -342,22 +272,15 @@ describe.skipIf(!TEST_DATABASE_URL)('PostgreSQL baseline behaviour', () => {
   }
 
   describe('PostgreSQL errors', () => {
-    it('refuses an organisation role mismatch as a check violation', async () => {
-      expect(await failure(insertUser('ivan@example.com', 'admin', 9))).toMatchObject({
-        code: '23514',
-        message: 'organization role mismatch',
-      });
-    });
-
     it('names the CHECK and the unique index a write breaks', async () => {
       expect(await failure(insert('forward_auth_access', { proxyHostId: 9, createdAt: NOW }))).toMatchObject({
         code: '23514',
         constraint: 'forward_auth_access_user_or_group_check',
       });
-      await database.client.query(insert('groups', { name: 'Operators', organizationId: 9, createdAt: NOW, updatedAt: NOW }));
-      expect(await failure(insert('groups', { name: 'Operators', organizationId: 9, createdAt: NOW, updatedAt: NOW }))).toMatchObject({
+      await database.client.query(insert('groups', { name: 'Operators', createdAt: NOW, updatedAt: NOW }));
+      expect(await failure(insert('groups', { name: 'Operators', createdAt: NOW, updatedAt: NOW }))).toMatchObject({
         code: '23505',
-        constraint: 'groups_organization_name_unique',
+        constraint: 'groups_name_unique',
       });
     });
   });

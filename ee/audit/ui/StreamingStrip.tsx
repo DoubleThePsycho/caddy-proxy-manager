@@ -57,7 +57,7 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: "ba
 
 /**
  * The streaming destinations under the audit log: status, the newest event
- * each one accepted, how many wait and the lag. Provider level only.
+ * each one accepted, how many wait and the lag.
  */
 export function StreamingStrip({ sinks, retentionDays, generatedAt }: { sinks: AuditSinkSummary[]; retentionDays: number | null; generatedAt: string }) {
   const format = useFormat();

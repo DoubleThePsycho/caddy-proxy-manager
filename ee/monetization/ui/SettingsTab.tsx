@@ -11,7 +11,7 @@ import { Banner } from "@/components/ui/Banner";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { MonetizationOptionsView, ReplicaMode } from "../types";
-import { callApi, Field, LOCKED_HINT } from "./shared";
+import { callApi, Field } from "./shared";
 
 const MODE_HINTS: Record<ReplicaMode, string> = {
   off: "Only this instance serves monetized hosts.",
@@ -25,14 +25,12 @@ export default function SettingsTab({
   options,
   canWrite,
   canManageReplicas,
-  configurable,
   instanceMode,
 }: {
   options: MonetizationOptionsView;
   canWrite: boolean;
   /** monetization:write and instances:write. */
   canManageReplicas: boolean;
-  configurable: boolean;
   instanceMode: "standalone" | "master" | "slave";
 }) {
   const router = useRouter();
@@ -41,8 +39,6 @@ export default function SettingsTab({
   const [mode, setMode] = useState<ReplicaMode>(options.replicas.mode);
   const [gateUrl, setGateUrl] = useState(options.replicas.gateUrl ?? "");
   const [error, setError] = useState<string | null>(null);
-  // Turning replica serving off works without a license; everything else needs it.
-  const canChange = canWrite && configurable;
 
   function save(body: Record<string, unknown>, message: string) {
     setError(null);
@@ -77,8 +73,7 @@ export default function SettingsTab({
           {canWrite && (
             <Button
               variant="outline"
-              disabled={pending || !canChange}
-              title={canChange ? undefined : LOCKED_HINT}
+              disabled={pending}
               onClick={() => save({ usageRetentionMonths: Number(months) }, "Retention saved")}
             >
               Save
@@ -133,8 +128,7 @@ export default function SettingsTab({
             <div>
               <Button
                 variant="outline"
-                disabled={pending || (!canChange && mode !== "off")}
-                title={canChange || mode === "off" ? undefined : LOCKED_HINT}
+                disabled={pending}
                 onClick={() => save({ replicas: { mode, gateUrl: mode === "allowance" ? gateUrl.trim() || null : null } }, "Replica serving saved")}
               >
                 Save

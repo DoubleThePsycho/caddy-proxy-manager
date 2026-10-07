@@ -119,17 +119,11 @@ describe('authentication', () => {
     }
   });
 
-  it('refuses every request while SCIM is turned off, without a license check', async () => {
+  it('refuses every request while SCIM is turned off', async () => {
     await setScimSettings(ctx.db, { enabled: false });
     const response = await usersRoute.GET(scimRequest('GET', '/scim/v2/Users', token.raw));
     expect(response.status).toBe(403);
     expect((await body(response)).detail).toMatch(/turned off/);
-  });
-
-  it('works without any license (runtime path)', async () => {
-    expect(await first(ctx.db.select().from(schema.settings).where(eq(schema.settings.key, 'license')).limit(1))).toBeUndefined();
-    const { response } = await createUser(entraUser('nolicense@example.com'));
-    expect(response.status).toBe(201);
   });
 
   it('records when the token was last used', async () => {

@@ -10,8 +10,7 @@ export async function DELETE(
   try {
     const { userId } = await requireApiPermission(request, "access_lists:write");
     const { id, entryId } = await params;
-    // The model answers 404 for a list of another organisation (ee/multi-tenancy)
-    // and only removes an entry of this list.
+    // The model only removes an entry of this list.
     const list = await removeAccessListEntry(routeRowId(id), routeRowId(entryId), userId);
     return NextResponse.json(list);
   } catch (error) {

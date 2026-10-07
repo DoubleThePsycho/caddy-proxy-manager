@@ -1,10 +1,10 @@
 # Audit streaming, export, retention and tamper evidence
 
-Feature id `audit_streaming`, included in the **Business** edition and above. Code: `ee/audit/` (Elastic License 2.0) and the free hash chain in `src/lib/audit-chain.ts` (MIT).
+Code: `ee/audit/` (Elastic License 2.0) and the hash chain in `src/lib/audit-chain.ts` (MIT).
 
 ## What it does
 
-- **Hash chain (free, always on).** Every audit event is stored with `hash = sha256(prevHash + canonicalJson(event))`, where `prevHash` is the hash of the event before it. Changing, removing or inserting an event in the middle of the log breaks the chain. Events recorded before the upgrade keep empty hashes; the chain starts at the first event recorded after it.
+- **Hash chain (always on).** Every audit event is stored with `hash = sha256(prevHash + canonicalJson(event))`, where `prevHash` is the hash of the event before it. Changing, removing or inserting an event in the middle of the log breaks the chain. Events recorded before the upgrade keep empty hashes; the chain starts at the first event recorded after it.
 - **Verification.** Recomputes the chain and reports the first event that does not match.
 - **Export.** Downloads the audit log as CSV or JSON, optionally for a date range. Exports carry the chain fields, so a copy can be checked offline.
 - **Streaming.** Sends every audit event to one or more sinks (a webhook, syslog or Splunk HEC) a few seconds after it is recorded.
@@ -17,8 +17,6 @@ In the dashboard, open **Audit log**:
 - **Export CSV or JSON** downloads the log. The banner at the top shows the last verification of the hash chain (when, how many events, the anchor and the head hash, and how many events were recorded since); **Verify now** checks it again.
 - The **Streaming** cards under the events show each sink's status, the newest event it received, how many events wait for it and its lag (how long ago the oldest waiting event was recorded).
 - **Streaming and retention** (`/audit-log/streaming`) lists the sinks with their status, last delivery, waiting events, lag and last error. Add, edit, delete or send a test event to a sink there, and set the retention.
-
-Organisation users ([multi-tenancy.md](multi-tenancy.md)) see their organisation's events only, without the chain banner or the streaming cards: the chain and the sinks span every organisation.
 
 A new sink receives events recorded from the moment it is created. Turn on **Send events already in the log** (`"backfill": true` in the API) to deliver everything that is still in the log first.
 
@@ -94,18 +92,12 @@ To verify an export offline, recompute `hash` for every event with the formula a
 
 All endpoints need an administrator (API token or session).
 
-| Endpoint | License |
-| --- | --- |
-| `GET /api/v1/audit-log/export?format=csv\|json&from=&to=` | required |
-| `GET /api/v1/audit-log/verify` | required |
-| `GET /api/v1/audit-log/retention` | not required |
-| `PUT /api/v1/audit-log/retention` `{"days": 90}` | required, except `{"days": 0}` |
-| `GET /api/v1/audit-sinks` | not required |
-| `POST /api/v1/audit-sinks` | required |
-| `GET /api/v1/audit-sinks/{id}` | not required |
-| `PUT /api/v1/audit-sinks/{id}` | required, except `{"enabled": false}` alone |
-| `DELETE /api/v1/audit-sinks/{id}` | not required |
-| `POST /api/v1/audit-sinks/{id}/test` | required |
+- `GET /api/v1/audit-log/export?format=csv|json&from=&to=`
+- `GET /api/v1/audit-log/verify`
+- `GET /api/v1/audit-log/retention`, `PUT /api/v1/audit-log/retention` `{"days": 90}`
+- `GET /api/v1/audit-sinks`, `POST /api/v1/audit-sinks`
+- `GET`, `PUT`, `DELETE /api/v1/audit-sinks/{id}`
+- `POST /api/v1/audit-sinks/{id}/test`
 
 `from` and `to` take an ISO 8601 date or date-time; a bare date as `to` includes the whole day. CSV cells starting with `=`, `+`, `-`, `@`, a tab or a carriage return get a leading apostrophe so spreadsheets do not run them as formulas.
 
@@ -128,14 +120,6 @@ A sink as returned by the API carries `lastDeliveredId` (the newest event it acc
 Every change is recorded in the audit log: `audit_sink_created`, `audit_sink_updated`, `audit_sink_deleted`, `audit_sink_tested`, `audit_retention_updated`, `audit_log_exported` and `audit_log_verified`. Secrets are never part of these records.
 
 The full schemas are in the OpenAPI document (`/api/v1/openapi.json`, tag *Audit Streaming*).
-
-## Licensing behaviour
-
-- Creating, changing, enabling and testing sinks, setting a retention period, exporting and verifying need an active license that includes `audit_streaming` (or one in its 30-day grace period). Without one these return `403`, and the dashboard shows the configuration read-only with a link to **License**.
-- Winding the feature down never needs a license, so an install whose license lapsed can always turn it off: **deleting** a sink, **disabling** one (a `PUT` whose body only sets `"enabled": false`; repeating the sink's current `name` or `type` is allowed, any other field makes it a change that needs a license) and setting the retention back to **0** (keep forever). In the dashboard the sink's on/off switch, **Delete** and **Keep events forever** stay available without a license. These actions are recorded in the audit log like any other.
-- Listing sinks and reading the retention never need a license.
-- Sinks and retention that are already set up **keep running** with an expired, removed or invalid key: the delivery and retention jobs never check the license.
-- The hash chain is free and is written for every event on every edition.
 
 ## Multi-node installs
 

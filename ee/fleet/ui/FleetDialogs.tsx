@@ -128,7 +128,6 @@ export function EnvironmentDialog({
   open,
   environment,
   nextPosition,
-  configurable,
   canRelease,
   onClose,
   onSaved,
@@ -137,7 +136,6 @@ export function EnvironmentDialog({
   /** null: create a new environment. */
   environment: EnvironmentView | null;
   nextPosition: number;
-  configurable: boolean;
   canRelease: boolean;
   onClose: () => void;
   onSaved: (message: string) => void;
@@ -153,29 +151,23 @@ export function EnvironmentDialog({
     }
   }, [open, environment, nextPosition]);
 
-  // Without a license an environment can only be released (promotion-only off), nothing else.
-  const onlyRelease = !configurable && environment !== null;
-  const releasing = environment?.promotionOnly === true && (!form.promotionOnly || onlyRelease);
+  const releasing = environment?.promotionOnly === true && !form.promotionOnly;
   async function save() {
     setError(null);
     const position = Number(form.position);
     const wait = Number(form.canaryWaitSeconds);
-    if (!onlyRelease) {
-      if (!form.name.trim()) return setError("Enter a name.");
-      if (!Number.isInteger(position) || position < 0 || position > 10000) return setError("Position must be a whole number from 0 to 10000.");
-      if (!Number.isInteger(wait) || wait < 0 || wait > MAX_CANARY_WAIT_SECONDS) {
-        return setError(`The canary wait must be a whole number of seconds from 0 to ${MAX_CANARY_WAIT_SECONDS}.`);
-      }
+    if (!form.name.trim()) return setError("Enter a name.");
+    if (!Number.isInteger(position) || position < 0 || position > 10000) return setError("Position must be a whole number from 0 to 10000.");
+    if (!Number.isInteger(wait) || wait < 0 || wait > MAX_CANARY_WAIT_SECONDS) {
+      return setError(`The canary wait must be a whole number of seconds from 0 to ${MAX_CANARY_WAIT_SECONDS}.`);
     }
-    const body = onlyRelease
-      ? { promotionOnly: false }
-      : {
-          name: form.name.trim(),
-          description: form.description.trim() || null,
-          position,
-          promotionOnly: form.promotionOnly,
-          canary: { enabled: form.canaryEnabled, waitSeconds: wait, checkCaddyStatus: form.checkCaddyStatus },
-        };
+    const body = {
+      name: form.name.trim(),
+      description: form.description.trim() || null,
+      position,
+      promotionOnly: form.promotionOnly,
+      canary: { enabled: form.canaryEnabled, waitSeconds: wait, checkCaddyStatus: form.checkCaddyStatus },
+    };
     setSaving(true);
     try {
       if (environment) {
@@ -192,34 +184,28 @@ export function EnvironmentDialog({
     }
   }
 
-  const disabled = saving || onlyRelease;
   return (
     <AppDialog
       open={open}
       onClose={onClose}
       title={environment ? `Edit environment "${environment.name}"` : "New environment"}
       maxWidth="md"
-      submitLabel={onlyRelease ? "Turn promotion-only off" : "Save"}
-      onSubmit={onlyRelease && !environment?.promotionOnly ? undefined : save}
+      submitLabel="Save"
+      onSubmit={save}
       isSubmitting={saving}
     >
       <div className="space-y-4 text-sm">
-        {onlyRelease && (
-          <Banner tone="info">
-            Without a license you can only turn promotion-only off (its instances then receive every change) or delete the environment.
-          </Banner>
-        )}
         <div className="space-y-1">
           <Label htmlFor="fleet-env-name">Name</Label>
-          <Input id="fleet-env-name" maxLength={100} value={form.name} disabled={disabled} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="production" />
+          <Input id="fleet-env-name" maxLength={100} value={form.name} disabled={saving} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="production" />
         </div>
         <div className="space-y-1">
           <Label htmlFor="fleet-env-description">Description</Label>
-          <Textarea id="fleet-env-description" maxLength={500} rows={2} value={form.description} disabled={disabled} onChange={(event) => setForm({ ...form, description: event.target.value })} />
+          <Textarea id="fleet-env-description" maxLength={500} rows={2} value={form.description} disabled={saving} onChange={(event) => setForm({ ...form, description: event.target.value })} />
         </div>
         <div className="space-y-1">
           <Label htmlFor="fleet-env-position">Position</Label>
-          <Input id="fleet-env-position" inputMode="numeric" className="max-w-32" value={form.position} disabled={disabled} onChange={(event) => setForm({ ...form, position: event.target.value })} />
+          <Input id="fleet-env-position" inputMode="numeric" className="max-w-32" value={form.position} disabled={saving} onChange={(event) => setForm({ ...form, position: event.target.value })} />
           <p className="text-xs text-soft">Promotion order, lowest first: an environment promotes from the one before it.</p>
         </div>
         <div className="flex items-center justify-between gap-4">
@@ -232,7 +218,7 @@ export function EnvironmentDialog({
           <Switch
             id="fleet-env-promotion"
             checked={form.promotionOnly}
-            disabled={saving || onlyRelease || !configurable}
+            disabled={saving}
             onCheckedChange={(checked) => setForm({ ...form, promotionOnly: checked })}
           />
         </div>
@@ -248,18 +234,18 @@ export function EnvironmentDialog({
               <Label htmlFor="fleet-env-canary">Canary first</Label>
               <p className="text-xs text-soft">Promotions go to one instance first and continue only if it stays healthy.</p>
             </div>
-            <Switch id="fleet-env-canary" checked={form.canaryEnabled} disabled={disabled} onCheckedChange={(checked) => setForm({ ...form, canaryEnabled: checked })} />
+            <Switch id="fleet-env-canary" checked={form.canaryEnabled} disabled={saving} onCheckedChange={(checked) => setForm({ ...form, canaryEnabled: checked })} />
           </div>
           <div className="space-y-1">
             <Label htmlFor="fleet-env-wait">Observe the canary for (seconds)</Label>
-            <Input id="fleet-env-wait" inputMode="numeric" className="max-w-32" value={form.canaryWaitSeconds} disabled={disabled || !form.canaryEnabled} onChange={(event) => setForm({ ...form, canaryWaitSeconds: event.target.value })} />
+            <Input id="fleet-env-wait" inputMode="numeric" className="max-w-32" value={form.canaryWaitSeconds} disabled={saving || !form.canaryEnabled} onChange={(event) => setForm({ ...form, canaryWaitSeconds: event.target.value })} />
           </div>
           <div className="flex items-center justify-between gap-4">
             <div>
               <Label htmlFor="fleet-env-caddy">Check Caddy status</Label>
               <p className="text-xs text-soft">Also fail when Caddy on the canary rejected the configuration or it changed there.</p>
             </div>
-            <Switch id="fleet-env-caddy" checked={form.checkCaddyStatus} disabled={disabled || !form.canaryEnabled} onCheckedChange={(checked) => setForm({ ...form, checkCaddyStatus: checked })} />
+            <Switch id="fleet-env-caddy" checked={form.checkCaddyStatus} disabled={saving || !form.canaryEnabled} onCheckedChange={(checked) => setForm({ ...form, checkCaddyStatus: checked })} />
           </div>
         </div>
         {error && (

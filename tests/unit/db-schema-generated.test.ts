@@ -106,10 +106,10 @@ export const things = sqliteTable(
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
     sizeBytes: integer("sizeBytes").notNull(),
     code: text("code", { length: 50 }),
-    organizationId: integer("organizationId")
+    parentId: integer("parentId")
   },
   (table) => ({
-    nameUnique: uniqueIndex("things_unique").on(sql\`ifnull(\${table.organizationId}, 0)\`, table.code),
+    nameUnique: uniqueIndex("things_unique").on(sql\`ifnull(\${table.parentId}, 0)\`, table.code),
     ownerIdx: index("things_owner_idx").on(table.ownerId)
   })
 );
@@ -119,7 +119,7 @@ export const owners = sqliteTable("owners", {
 });
 `;
     const classification = {
-      things: { id: 'int4', ownerId: 'int4', sizeBytes: 'int8', organizationId: 'int4' },
+      things: { id: 'int4', ownerId: 'int4', sizeBytes: 'int8', parentId: 'int4' },
       owners: { id: 'int4' },
     } as const;
     expect(transformToPg(source, classification)).toBe(`import { sql } from "drizzle-orm";
@@ -136,10 +136,10 @@ export const things = pgTable(
     enabled: boolean("enabled").notNull().default(true),
     sizeBytes: bigint("sizeBytes", { mode: "number" }).notNull(),
     code: text("code"),
-    organizationId: integer("organizationId")
+    parentId: integer("parentId")
   },
   (table) => ({
-    nameUnique: uniqueIndex("things_unique").on(sql\`coalesce(\${table.organizationId}, 0)\`, table.code),
+    nameUnique: uniqueIndex("things_unique").on(sql\`coalesce(\${table.parentId}, 0)\`, table.code),
     ownerIdx: index("things_owner_idx").on(table.ownerId)
   })
 );

@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { readJsonBody } from "@/src/lib/access-list-http";
 import { listAccessLists, createAccessList, type AccessListInput } from "@/src/lib/models/access-lists";
-import { readOrganizationFilterParam } from "@/ee/multi-tenancy/scope";
 
 export async function GET(request: NextRequest) {
   try {
-    const { access } = await requireApiPermission(request, "access_lists:read");
-    // Organisation users get their organisation's lists; provider-level users can filter (?organizationId=).
-    const lists = await listAccessLists(readOrganizationFilterParam(access, request.nextUrl.searchParams.get("organizationId")));
+    await requireApiPermission(request, "access_lists:read");
+    const lists = await listAccessLists();
     return NextResponse.json(lists);
   } catch (error) {
     return apiErrorResponse(error);

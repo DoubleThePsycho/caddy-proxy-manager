@@ -116,6 +116,16 @@ export function parseJsonObject(value: string | null | undefined): Record<string
   }
 }
 
+/** A rule's stored channelIds (a JSON array); anything unreadable is no channel. */
+export function parseChannelIds(value: string): number[] {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((id): id is number => Number.isInteger(id) && id > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function parseId(value: string | number): number {
   const id = parseRowId(value);
   if (id === null) throw new ApiValidationError("Invalid id");

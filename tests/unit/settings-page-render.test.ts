@@ -49,10 +49,6 @@ vi.mock('@/ee/high-availability/ui/certificate-storage-actions', () => ({
   removeCertificateStorageAction: vi.fn(),
   testCertificateStorageAction: vi.fn(),
 }));
-vi.mock('../../app/(dashboard)/settings/usage-ping-actions', () => ({
-  setUsagePingEnabledAction: vi.fn(),
-  resetUsagePingInstallIdAction: vi.fn(),
-}));
 
 import SettingsClient, { type SettingsClientProps } from '../../app/(dashboard)/settings/SettingsClient';
 import CertificateSettingsClient, { type CertificateSettingsProps } from '../../app/(dashboard)/certificates/settings/CertificateSettingsClient';
@@ -68,11 +64,10 @@ import { countChanges } from '@/src/components/settings/settings-form';
 import { NAV_PAGES } from '../../src/lib/navigation';
 import { SETTINGS_PAGES, SETTINGS_SECTIONS, findSettingsSection, settingsSectionHref } from '../../src/lib/settings-sections';
 import { GEOIP_ASN_DB, GEOIP_COUNTRY_DB, getGeoIpDatabases, getGeoIpStatus } from '../../src/lib/geoip-status';
-import type { UsagePingView } from '../../src/lib/usage-ping/store';
 
 /** Every id `/settings?section=` (or `#`) accepted by the old Settings page. */
 const OLD_SECTION_IDS = [
-  'general', 'acme', 'sync', 'high-availability', 'backups', 'usage-ping', 'trusted-proxies', 'upstream-dns',
+  'general', 'acme', 'sync', 'high-availability', 'backups', 'trusted-proxies', 'upstream-dns',
   'geoblock', 'rate-limit', 'error-pages', 'forward-auth', 'oauth', 'analytics', 'branding',
   'default-response', 'dns-providers', 'dns-resolvers', 'certificate-storage', 'shared-state', 'authentik', 'metrics', 'logging',
   'instance-sync',
@@ -101,7 +96,6 @@ describe('where each setting is', () => {
     expect(settingsSectionHref('backups')).toBe('/backups');
     expect(settingsSectionHref('branding')).toBe('/branding');
     expect(settingsSectionHref('general')).toBe('/settings');
-    expect(settingsSectionHref('usage-ping')).toBe('/settings#usage-ping');
     // The groups of the old page, as ?group=.
     expect(settingsSectionHref('networking')).toBe('/proxy-hosts/defaults#trusted-proxies');
     expect(settingsSectionHref('nope')).toBeNull();
@@ -155,31 +149,11 @@ describe('GeoIP status helper', () => {
   });
 });
 
-const usagePing = {
-  status: 'unanswered',
-  enabled: false,
-  disabledByEnv: false,
-  role: 'master',
-  endpoint: 'https://ping.example.com/v1/ping',
-  endpointError: null,
-  installId: null,
-  answeredAt: null,
-  answeredBy: null,
-  nextAttemptAt: null,
-  lastSuccessAt: null,
-  lastAttemptAt: null,
-  lastResult: null,
-  lastError: null,
-  pendingErasures: 0,
-  payload: { schema: 1 },
-} as unknown as UsagePingView;
-
 describe('Settings page', () => {
   function render(overrides: Partial<SettingsClientProps> = {}) {
     const props: SettingsClientProps = {
       general: { primaryDomain: 'example.com', acmeEmail: 'admin@example.com' },
       baseUrl: 'https://dashboard.example.com',
-      usagePing,
       isSlave: false,
       overrideGeneral: false,
       canWriteSettings: true,
@@ -188,13 +162,11 @@ describe('Settings page', () => {
     return decode(renderToStaticMarkup(createElement(SettingsClient, props)));
   }
 
-  it('shows the general settings and the usage ping on one page, without the old group list', () => {
+  it('shows the general settings, without the old group list', () => {
     const html = render();
     expect(html).toMatch(/<h1[^>]*>Settings/);
     expect(html).toContain('Primary domain');
     expect(html).toContain('https://dashboard.example.com');
-    expect(html).toContain('id="usage-ping"');
-    expect(html).toContain('data-testid="usage-ping-section"');
     expect(html.match(/data-testid="settings-save-bar"/g)).toHaveLength(1);
     expect(html).not.toContain('Search settings');
     expect(html).not.toContain('Settings navigation');
@@ -374,8 +346,7 @@ describe('High availability page', () => {
   it('shows the dashboard cluster, or how to set one up', () => {
     const off = renderToStaticMarkup(
       createElement(ClusterSection, {
-        view: { enabled: false, configurable: false, error: null, node: null, lease: null, replication: null, lastRestore: null, nodes: [], config: null },
-        editionLabel: 'Enterprise',
+        view: { enabled: false, error: null, node: null, lease: null, replication: null, lastRestore: null, nodes: [], config: null },
       })
     );
     expect(off).toContain('High availability is off on this node');
@@ -385,10 +356,8 @@ describe('High availability page', () => {
     const on = decode(
       renderToStaticMarkup(
         createElement(ClusterSection, {
-          editionLabel: 'Enterprise',
           view: {
             enabled: true,
-            configurable: true,
             error: null,
             node: { id: 'web-1', role: 'leader', startedAt: now, statusUpdatedAt: now },
             lease: { holder: 'web-1', epoch: 7, ttlSeconds: 15, checkedAt: now, error: null },
@@ -431,9 +400,7 @@ describe('Backups page', () => {
         createElement(BackupsTab, {
           destinations: [],
           runs: { runs, total: 60, page: 1, perPage: 25 },
-          configurable: true,
           isSlave: false,
-          editionLabel: 'Business',
           minPassphraseLength: 12,
           paginateRuns: true,
         })

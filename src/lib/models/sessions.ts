@@ -1,10 +1,11 @@
 import { and, eq, inArray, ne } from "drizzle-orm";
-import { desc } from "@/src/lib/db/ops";
+import { desc, first } from "@/src/lib/db/ops";
 import { appDb, nowIso } from "../db";
 import { sessions } from "../db/schema";
 import { logAuditEvent } from "../audit";
 import { parseUserAgent, type DeviceInfo } from "../user-agent";
 import { lookupIpLocation, type IpLocation } from "../geoip-lookup";
+import type { SignInMethod } from "../sign-in-activity";
 
 /**
  * Active management-UI session for a user, as shown in the profile's
@@ -97,6 +98,31 @@ export async function touchSessionLastSeen(sessionId: number, updatedAt: string 
   } catch {
     // Bookkeeping only; never fail a request over it.
   }
+}
+
+/**
+ * The sign-in methods whose dashboard session the forward-auth portal reuses:
+ * an identity provider signed the user in (OIDC, SAML, an LDAP directory).
+ * A password or passkey session is one Ingressi itself authenticated; the
+ * portal asks that user to sign in at the portal instead.
+ */
+const PORTAL_REUSABLE_SIGN_IN_METHODS: ReadonlySet<string> = new Set<SignInMethod>(["sso", "saml", "ldap"]);
+
+export function isPortalReusableSignInMethod(method: string | null | undefined): boolean {
+  return typeof method === "string" && PORTAL_REUSABLE_SIGN_IN_METHODS.has(method);
+}
+
+/** Records how the sign-in that created the session was made (written once, when the sign-in completes). */
+export async function setSessionSignInMethod(sessionId: number, method: SignInMethod | null): Promise<void> {
+  await appDb.update(sessions).set({ signInMethod: method }).where(eq(sessions.id, sessionId));
+}
+
+/** How the sign-in that created the session was made; null when unknown (sessions from before this was recorded). */
+export async function getSessionSignInMethod(sessionId: number): Promise<string | null> {
+  const row = await first(
+    appDb.select({ signInMethod: sessions.signInMethod }).from(sessions).where(eq(sessions.id, sessionId)).limit(1)
+  );
+  return row?.signInMethod ?? null;
 }
 
 /**

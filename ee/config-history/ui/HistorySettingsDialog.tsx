@@ -16,7 +16,6 @@ type Props = {
   open: boolean;
   onClose: () => void;
   settings: HistorySettings;
-  configurable: boolean;
   canWrite: boolean;
   total: number;
   limits: { minRetention: number; maxRetention: number };
@@ -24,11 +23,8 @@ type Props = {
   onChanged: (message: string) => void;
 };
 
-/**
- * Recording and retention, and deleting every version. Without a license
- * recording can be turned off (and kept off), never on; deleting never needs one.
- */
-export function HistorySettingsDialog({ open, onClose, settings, configurable, canWrite, total, limits, onChanged }: Props) {
+/** Recording and retention, and deleting every version. */
+export function HistorySettingsDialog({ open, onClose, settings, canWrite, total, limits, onChanged }: Props) {
   const [pending, startTransition] = useTransition();
   const [enabled, setEnabled] = useState(settings.enabled);
   const [retention, setRetention] = useState(String(settings.retention));
@@ -44,7 +40,6 @@ export function HistorySettingsDialog({ open, onClose, settings, configurable, c
   }
 
   const changed = enabled !== settings.enabled || retention !== String(settings.retention);
-  const editable = canWrite && (configurable || !enabled);
 
   function save() {
     setError(null);
@@ -103,7 +98,7 @@ export function HistorySettingsDialog({ open, onClose, settings, configurable, c
               id="history-enabled"
               checked={enabled}
               onCheckedChange={setEnabled}
-              disabled={pending || !canWrite || (!configurable && !settings.enabled)}
+              disabled={pending || !canWrite}
             />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -115,16 +110,11 @@ export function HistorySettingsDialog({ open, onClose, settings, configurable, c
               max={limits.maxRetention}
               value={retention}
               onChange={(event) => setRetention(event.target.value)}
-              disabled={pending || !editable}
+              disabled={pending || !canWrite}
               className="max-w-40"
             />
             <p className="m-0 text-xs text-muted-foreground">Older versions are deleted.</p>
           </div>
-          {!configurable && (
-            <p className="m-0 text-xs text-muted-foreground">
-              Without a license recording can be turned off, not on; versions already kept stay visible and can be deleted.
-            </p>
-          )}
           {!canWrite && <p className="m-0 text-xs text-muted-foreground">Your role can read the history but not change these settings.</p>}
           {canWrite && total > 0 && (
             <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">

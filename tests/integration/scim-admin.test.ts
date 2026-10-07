@@ -1,10 +1,7 @@
 /**
  * SCIM administration (/api/v1/scim/*) and the SSO linking of SCIM users:
  *
- *  - license gate (Enterprise "scim"): turning on, changing settings,
- *    creating tokens, adding or changing mappings and handing users or groups
- *    to SCIM are refused without it; reading, turning off, revoking,
- *    deleting mappings and releasing never need it;
+ *  - reading, turning off, revoking, deleting mappings and releasing;
  *  - tokens are shown once and stored hashed;
  *  - mappings are role grants (escalation guards) and only on SCIM groups;
  *  - handing over: the only way a local account becomes visible to SCIM;
@@ -15,13 +12,12 @@
  *    mapProfileToUser;
  *  - permissions: scim:write is administrator-level.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import { body, entraUser, idParams, insertLocalUser, insertScimToken, now, scimRequest, setScimSettings } from '../helpers/scim';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -35,7 +31,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 
 import { requireApiAdmin } from '../../src/lib/api-auth';
 import { logAuditEvent } from '../../src/lib/audit';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { isAdminLevel, PERMISSION_AREAS, type Access } from '../../src/lib/permissions';
 import { mapOAuthProvider } from '../../src/lib/auth-server';
 import { canLinkScimSignIn, noteScimSignInLink } from '../../ee/scim/binding';
@@ -53,7 +48,6 @@ import * as scimUsersRoute from '../../app/scim/v2/Users/route';
 import * as scimUserRoute from '../../app/scim/v2/Users/[id]/route';
 import { first } from '@/src/lib/db/ops';
 
-const LICENSE_ERROR = 'SCIM provisioning needs an active Ingressi Enterprise license or higher';
 const ADMIN_ID = 1;
 
 function req(method: string, path: string, payload?: unknown): NextRequest {
@@ -63,10 +57,6 @@ function req(method: string, path: string, payload?: unknown): NextRequest {
     init.headers['content-type'] = 'application/json';
   }
   return new NextRequest(`http://localhost${path}`, init);
-}
-
-async function removeLicense() {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
 }
 
 async function insertProvider(id: string, autoLink = false) {
@@ -85,50 +75,18 @@ async function insertScimGroup(name: string): Promise<number> {
 beforeEach(async () => {
   ctx.db = createTestDb();
   vi.clearAllMocks();
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
   await insertLocalUser(ctx.db, { id: ADMIN_ID, email: 'admin@localhost', role: 'admin' });
-  await installLicense(ctx.db, 'enterprise');
   vi.mocked(requireApiAdmin).mockResolvedValue({ userId: ADMIN_ID, role: 'admin', authMethod: 'bearer' });
 });
 
-afterAll(() => setTrustedLicenseKeysForTests(null));
-
-describe('license gate', () => {
-  it('refuses setting up and changing SCIM without a license', async () => {
-    const group = await insertScimGroup('Eng');
-    const local = await insertLocalUser(ctx.db, { email: 'local@example.com' });
-    const localGroup = (await first(ctx.db.insert(schema.groups).values({ name: 'Local', createdAt: now(), updatedAt: now() }).returning()))!;
-    const mapping = (await first(ctx.db.insert(schema.scimRoleMappings).values({ groupId: group, role: 'user', createdAt: now(), updatedAt: now() }).returning()))!;
-    await removeLicense();
-    const responses = [
-      await settingsRoute.PUT(req('PUT', '/x', { enabled: true })),
-      await settingsRoute.PUT(req('PUT', '/x', { deleteMode: 'delete' })),
-      await tokensRoute.POST(req('POST', '/x', { name: 'Entra' })),
-      await mappingsRoute.POST(req('POST', '/x', { groupId: group, role: 'viewer' })),
-      await mappingRoute.PUT(req('PUT', '/x', { priority: 1 }), idParams(mapping.id)),
-      await managedUsersRoute.POST(req('POST', '/x', { userId: local, userName: 'local@example.com' })),
-      await managedGroupsRoute.POST(req('POST', '/x', { groupId: localGroup.id })),
-    ];
-    for (const response of responses) {
-      expect(response.status).toBe(403);
-      expect((await response.json()).error).toBe(LICENSE_ERROR);
-    }
-    expect(await ctx.db.select().from(schema.scimTokens)).toEqual([]);
-  });
-
-  it('refuses a Business license (Enterprise feature)', async () => {
-    await installLicense(ctx.db, 'business');
-    expect((await tokensRoute.POST(req('POST', '/x', { name: 'Entra' }))).status).toBe(403);
-  });
-
-  it('lets an unlicensed admin read, turn off, revoke, delete mappings and release', async () => {
+describe('reading and undoing', () => {
+  it('lets an admin read, turn off, revoke, delete mappings and release', async () => {
     await setScimSettings(ctx.db, { enabled: true });
     const token = await insertScimToken(ctx.db);
     const group = await insertScimGroup('Eng');
     const mapping = (await first(ctx.db.insert(schema.scimRoleMappings).values({ groupId: group, role: 'user', createdAt: now(), updatedAt: now() }).returning()))!;
     const user = await insertLocalUser(ctx.db, { email: 'managed@example.com' });
     await ctx.db.insert(schema.scimUsers).values({ userId: user, userName: 'managed', userNameKey: 'managed', createdAt: now(), updatedAt: now() });
-    await removeLicense();
 
     for (const response of [
       await settingsRoute.GET(req('GET', '/x')),
@@ -156,7 +114,7 @@ describe('settings', () => {
     await insertProvider('entra');
     const response = await settingsRoute.PUT(req('PUT', '/x', { enabled: true, providerId: 'entra', externalIdClaim: 'oid', deleteMode: 'delete' }));
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ enabled: true, providerId: 'entra', externalIdClaim: 'oid', deleteMode: 'delete', configurable: true });
+    expect(await response.json()).toMatchObject({ enabled: true, providerId: 'entra', externalIdClaim: 'oid', deleteMode: 'delete' });
     expect(vi.mocked(logAuditEvent)).toHaveBeenCalledWith(expect.objectContaining({ action: 'update', entityType: 'scim_settings', userId: ADMIN_ID }));
 
     for (const bad of [{ providerId: 'missing' }, { externalIdClaim: 'has space' }, { deleteMode: 'wipe' }, { defaultRole: 'admin' }, { surprise: 1 }]) {
@@ -388,8 +346,8 @@ describe('linking the first SSO sign-in', () => {
 });
 
 describe('permissions', () => {
-  it('has a paid scim area whose write is administrator-level', () => {
-    expect(PERMISSION_AREAS.scim).toMatchObject({ actions: ['read', 'write'], paid: true });
+  it('has a scim area whose write is administrator-level', () => {
+    expect(PERMISSION_AREAS.scim).toMatchObject({ actions: ['read', 'write'] });
     expect(isAdminLevel(['scim:write'])).toBe(true);
     expect(isAdminLevel(['scim:read'])).toBe(false);
   });

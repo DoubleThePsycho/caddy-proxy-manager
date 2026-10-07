@@ -4,6 +4,11 @@
  * Safe to import from client components (no server-only dependencies).
  */
 
+/** How long one model call may take, in seconds (the ai_provider setting); settings saved without it get the default. */
+export const DEFAULT_AI_TIMEOUT_SECONDS = 60;
+export const MIN_AI_TIMEOUT_SECONDS = 5;
+export const MAX_AI_TIMEOUT_SECONDS = 300;
+
 export const AI_GENERATED_SUMMARY_LABEL = "AI-generated summary";
 export const AI_GENERATED_RISK_LABEL = "AI-generated risk assessment";
 

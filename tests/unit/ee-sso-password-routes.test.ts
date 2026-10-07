@@ -21,7 +21,7 @@ function serverFiles(dir: string): string[] {
   return files;
 }
 
-/** The route handlers and server actions of paid features (ee/<feature>/routes, ee/<feature>/ui/*actions.ts). */
+/** The route handlers and server actions of ee/ features (ee/<feature>/routes, ee/<feature>/ui/*actions.ts). */
 function eeServerFiles(dir: string): string[] {
   const files: string[] = [];
   for (const entry of readdirSync(dir)) {

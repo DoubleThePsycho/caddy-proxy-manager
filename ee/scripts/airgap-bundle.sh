@@ -122,10 +122,6 @@ sed -E "s#^([[:space:]]*image:[[:space:]]*)[^[:space:]]*/(ingressi|caddy-proxy-m
   "$REPO_ROOT/docker-compose.yml" > "$BUNDLE/docker-compose.yml"
 cp "$REPO_ROOT/docker/clickhouse/config.d/low-disk-write.xml" "$BUNDLE/docker/clickhouse/config.d/"
 cp "$REPO_ROOT/.env.example" "$BUNDLE/.env.example"
-# An air-gapped host can never reach the usage ping endpoint: turn it off.
-printf '\n# Air-gapped bundle: no usage ping, and no question about it.\nUSAGE_PING_DISABLED=true\n' >> "$BUNDLE/.env.example"
-# Nor the license server: renewed keys are installed by hand.
-printf '\n# Air-gapped bundle: no automatic license updates.\nLICENSE_AUTO_UPDATE_DISABLED=true\n' >> "$BUNDLE/.env.example"
 
 {
   echo "{"

@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * The fleet bookkeeping that instance sync (src/lib/instance-sync.ts) and
- * instance deletion (src/lib/models/instances.ts) call. These are runtime
- * paths: nothing here checks the license, so environments keep working as
- * configured when a license lapses.
+ * instance deletion (src/lib/models/instances.ts) call.
  */
 import { and, eq } from "drizzle-orm";
 import { appDb, nowIso } from "@/src/lib/db";

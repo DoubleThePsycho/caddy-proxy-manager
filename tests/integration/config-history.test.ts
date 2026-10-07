@@ -2,14 +2,14 @@
  * Configuration history (ee/config-history) on a real in-memory database:
  * snapshot content, automatic recording, retention, restore round trips, the
  * pre-restore safety snapshot, rollback when Caddy rejects, slave refusal and
- * the license gate on every write path.
+ * deleting snapshots.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { createTestDb, disableForeignKeys, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
 import {
-  CA_KEY, CERT_KEY, DNS_TOKEN, ENTRY_HASH, OUTSIDE, installLicense, licenseSigner, now, seedConfiguration, setSettingRow,
+  CA_KEY, CERT_KEY, DNS_TOKEN, ENTRY_HASH, OUTSIDE, now, seedConfiguration, setSettingRow,
   type Fixture,
 } from '../helpers/config-fixture';
 
@@ -26,8 +26,6 @@ import {
   CONFIG_SETTING_KEYS, CONFIG_TABLE_NAMES, readCurrentConfigContent, type ConfigContent,
 } from '../../src/lib/config-content';
 import { ConfigurationApplyError, ConfigurationWriteError } from '../../src/lib/config-replace';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
-import { LicenseRequiredError } from '../../ee/licensing/store';
 import {
   getSnapshotContent, listSnapshots, recordConfigSnapshotAfterApply,
 } from '../../ee/config-history/snapshots';
@@ -45,11 +43,8 @@ beforeEach(async () => {
   ctx.db = createTestDb();
   vi.clearAllMocks();
   vi.mocked(applyCaddyConfig).mockResolvedValue(undefined as never);
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
   fx = await seedConfiguration(ctx.db);
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 async function enableHistory(retention = 200): Promise<void> {
   await setSettingRow(ctx.db, HISTORY_SETTING_KEY, { enabled: true, retention });
@@ -84,7 +79,6 @@ async function changeConfiguration(): Promise<void> {
 
 describe('snapshot content', () => {
   it('holds every configuration table and settings group, with secrets as stored', async () => {
-    await installLicense(ctx.db);
     const snapshot = await createManualSnapshot(fx.adminId);
     const raw = await storedContent(snapshot.id);
     const parsed = JSON.parse(raw) as ConfigContent;
@@ -108,8 +102,7 @@ describe('snapshot content', () => {
     expect(snapshot.fingerprint).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('excludes users, memberships, sessions, tokens, OAuth, instances, audit, license and other settings', async () => {
-    await installLicense(ctx.db);
+  it('excludes users, memberships, sessions, tokens, OAuth, instances, audit and other settings', async () => {
     const raw = await storedContent((await createManualSnapshot(fx.adminId)).id);
     for (const value of Object.values(OUTSIDE)) {
       expect(raw).not.toContain(value);
@@ -119,7 +112,7 @@ describe('snapshot content', () => {
       'auditEvents', 'forwardAuthSessions', 'configSnapshots']) {
       expect(parsed.tables).not.toHaveProperty(excluded);
     }
-    for (const key of ['license', 'instance_mode', HISTORY_SETTING_KEY, 'instance_master_token']) {
+    for (const key of ['instance_mode', HISTORY_SETTING_KEY, 'instance_master_token']) {
       expect(parsed.settings).not.toHaveProperty(key);
     }
   });
@@ -153,17 +146,6 @@ describe('automatic recording', () => {
     await ctx.db.update(schema.proxyHosts).set({ updatedAt: '2030-01-01T00:00:00.000Z' });
     await recordConfigSnapshotAfterApply();
     expect(await snapshotCount()).toBe(1);
-  });
-
-  it('keeps recording without a license once enabled (recording is not gated)', async () => {
-    await enableHistory();
-    // An expired key past its grace period.
-    await installLicense(ctx.db, 'homelab', { iat: '2020-01-01T00:00:00.000Z', exp: '2021-01-01T00:00:00.000Z' });
-    await recordConfigSnapshotAfterApply();
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-    await ctx.db.update(schema.proxyHosts).set({ name: 'Still recorded' });
-    await recordConfigSnapshotAfterApply();
-    expect(await snapshotCount()).toBe(2);
   });
 
   it('records nothing on a sync slave', async () => {
@@ -200,7 +182,6 @@ describe('automatic recording', () => {
 
 describe('history settings', () => {
   it('records a first snapshot when recording is turned on, and prunes when retention shrinks', async () => {
-    await installLicense(ctx.db);
     await updateHistorySettings({ enabled: true }, fx.adminId);
     expect(await snapshotCount()).toBe(1);
     for (let index = 0; index < 3; index++) await createManualSnapshot(fx.adminId);
@@ -214,14 +195,12 @@ describe('history settings', () => {
   it.each([
     [{}], [{ enabled: 'yes' }], [{ retention: 0 }], [{ retention: 10_001 }], [{ retention: 2.5 }], [{ other: true }], [null],
   ])('rejects %j', async (body) => {
-    await installLicense(ctx.db);
     await expect(updateHistorySettings(body, fx.adminId)).rejects.toMatchObject({ status: 400 });
   });
 });
 
 describe('restore', () => {
   it('round-trips: snapshot, change, restore gives the snapshot content back', async () => {
-    await installLicense(ctx.db);
     const original = await readCurrentConfigContent();
     const snapshot = await createManualSnapshot(fx.adminId);
     await changeConfiguration();
@@ -238,7 +217,6 @@ describe('restore', () => {
   });
 
   it('leaves users, memberships, sessions, tokens and other settings alone', async () => {
-    await installLicense(ctx.db);
     const snapshot = await createManualSnapshot(fx.adminId);
     await changeConfiguration();
     const outside = async () => ({
@@ -260,7 +238,6 @@ describe('restore', () => {
   });
 
   it('saves the configuration it replaces first, which restores back', async () => {
-    await installLicense(ctx.db);
     const snapshot = await createManualSnapshot(fx.adminId);
     await changeConfiguration();
     const changed = await readCurrentConfigContent();
@@ -276,7 +253,6 @@ describe('restore', () => {
   });
 
   it('puts the previous configuration back when Caddy rejects the restored one', async () => {
-    await installLicense(ctx.db);
     const snapshot = await createManualSnapshot(fx.adminId);
     await changeConfiguration();
     const changed = await readCurrentConfigContent();
@@ -295,7 +271,6 @@ describe('restore', () => {
   });
 
   it('keeps the restore when only the slave sync failed', async () => {
-    await installLicense(ctx.db);
     const original = await readCurrentConfigContent();
     const snapshot = await createManualSnapshot(fx.adminId);
     await changeConfiguration();
@@ -308,7 +283,6 @@ describe('restore', () => {
   });
 
   it('changes nothing, not even the safety snapshot, when the snapshot conflicts with itself', async () => {
-    await installLicense(ctx.db);
     const content = await readCurrentConfigContent();
     const t = now();
     content.tables.groups.push({ ...content.tables.groups[0], id: 99, createdAt: t, updatedAt: t });
@@ -328,7 +302,6 @@ describe('restore', () => {
   });
 
   it('refuses a snapshot that does not fit the schema with 409', async () => {
-    await installLicense(ctx.db);
     const bad = (await dbFirst(ctx.db.insert(schema.configSnapshots).values({
       createdAt: now(), reason: 'manual', summary: 'bad', fingerprint: 'x',
       content: JSON.stringify({ version: 1, tables: { proxyHosts: [{ id: 1, bogus: true }] }, settings: {} }), sizeBytes: 1,
@@ -338,7 +311,6 @@ describe('restore', () => {
   });
 
   it('drops grants for users deleted since the snapshot and clears their attribution', async () => {
-    await installLicense(ctx.db);
     const snapshot = await createManualSnapshot(fx.adminId);
     await ctx.db.delete(schema.forwardAuthAccess).where(eq(schema.forwardAuthAccess.userId, fx.memberId));
     await ctx.db.delete(schema.groupMembers).where(eq(schema.groupMembers.userId, fx.memberId));
@@ -360,7 +332,6 @@ describe('restore', () => {
 
   it('works with foreign keys off, as in production', async () => {
     await disableForeignKeys(ctx.db);
-    await installLicense(ctx.db);
     const original = await readCurrentConfigContent();
     const snapshot = await createManualSnapshot(fx.adminId);
     await changeConfiguration();
@@ -371,14 +342,12 @@ describe('restore', () => {
   });
 
   it('returns 404 for an unknown snapshot', async () => {
-    await installLicense(ctx.db);
     await expect(restoreSnapshot(12345, fx.adminId)).rejects.toThrow('Snapshot not found');
   });
 });
 
 describe('sync slaves', () => {
   it('refuse restores and manual snapshots with 409', async () => {
-    await installLicense(ctx.db);
     const snapshot = await createManualSnapshot(fx.adminId);
     await setSettingRow(ctx.db, 'instance_mode', 'slave');
     const before = await readCurrentConfigContent();
@@ -394,7 +363,6 @@ describe('sync slaves', () => {
   });
 
   it('refuse when the mode comes from INSTANCE_MODE', async () => {
-    await installLicense(ctx.db);
     const snapshot = await createManualSnapshot(fx.adminId);
     vi.stubEnv('INSTANCE_MODE', 'slave');
     try {
@@ -405,43 +373,10 @@ describe('sync slaves', () => {
   });
 });
 
-describe('license gate', () => {
-  async function expectLicenseRequired(promise: Promise<unknown>) {
-    const error = (await promise.catch((e) => e)) as LicenseRequiredError;
-    expect(error).toBeInstanceOf(LicenseRequiredError);
-    expect(error.status).toBe(403);
-  }
-
-  it('guards every write path without a license', async () => {
-    await installLicense(ctx.db);
-    const snapshot = await createManualSnapshot(fx.adminId);
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-    await changeConfiguration();
-    const before = await readCurrentConfigContent();
-
-    await expectLicenseRequired(createManualSnapshot(fx.adminId));
-    await expectLicenseRequired(updateHistorySettings({ enabled: true }, fx.adminId));
-    await expectLicenseRequired(restoreSnapshot(snapshot.id, fx.adminId));
-
-    expect(await readCurrentConfigContent()).toEqual(before);
-    expect(await snapshotCount()).toBe(1);
-    expect(await dbFirst(ctx.db.select().from(schema.settings).where(eq(schema.settings.key, HISTORY_SETTING_KEY)).limit(1))).toBeUndefined();
-  });
-
-  it('needs the license to change settings while recording stays on', async () => {
-    await enableHistory(200);
-    await expectLicenseRequired(updateHistorySettings({ retention: 50 }, fx.adminId));
-    await expectLicenseRequired(updateHistorySettings({ enabled: true }, fx.adminId));
-    expect((await dbFirst(ctx.db.select().from(schema.settings).where(eq(schema.settings.key, HISTORY_SETTING_KEY)).limit(1)))!.value)
-      .toBe(JSON.stringify({ enabled: true, retention: 200 }));
-  });
-
-  it('lets a lapsed install wind history down: turn recording off and delete snapshots', async () => {
-    await installLicense(ctx.db);
+describe('deleting', () => {
+  it('turns recording off and deletes snapshots', async () => {
     await updateHistorySettings({ enabled: true }, fx.adminId);
     for (let index = 0; index < 3; index++) await createManualSnapshot(fx.adminId);
-    // Expired past the grace period.
-    await installLicense(ctx.db, 'homelab', { iat: '2020-01-01T00:00:00.000Z', exp: '2021-01-01T00:00:00.000Z' });
 
     expect(await updateHistorySettings({ enabled: false, retention: 2 }, fx.adminId)).toEqual({ enabled: false, retention: 2 });
     expect(await snapshotCount()).toBe(2);
@@ -456,29 +391,11 @@ describe('license gate', () => {
 
     expect(await deleteAllSnapshots(fx.adminId)).toBe(1);
     expect(await snapshotCount()).toBe(0);
-    // Turning it back on needs a license again.
-    await expectLicenseRequired(updateHistorySettings({ enabled: true }, fx.adminId));
-  });
-
-  it('refuses an edition without the feature and a key past its grace period', async () => {
-    await installLicense(ctx.db, 'homelab', { iat: '2020-01-01T00:00:00.000Z', exp: '2021-01-01T00:00:00.000Z' });
-    await expectLicenseRequired(createManualSnapshot(fx.adminId));
-  });
-
-  it('keeps history readable without a license', async () => {
-    await installLicense(ctx.db);
-    const snapshot = await createManualSnapshot(fx.adminId);
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-
-    expect((await listSnapshots()).total).toBe(1);
-    expect((await getSnapshotDetail(snapshot.id)).content.counts.proxyHosts).toBe(1);
-    expect((await getSnapshotDiff(snapshot.id, 'current')).diff.entities).toEqual([]);
   });
 });
 
 describe('snapshot detail and diff', () => {
   it('summarizes content by name without values', async () => {
-    await installLicense(ctx.db);
     const detail = await getSnapshotDetail((await createManualSnapshot(fx.adminId, { summary: 'Before upgrade' })).id);
     expect(detail.summary).toBe('Before upgrade');
     expect(detail.content.items.proxyHosts).toEqual([{ id: fx.hostId, label: 'App' }]);
@@ -487,7 +404,6 @@ describe('snapshot detail and diff', () => {
   });
 
   it('compares with the current configuration, the previous snapshot or another snapshot', async () => {
-    await installLicense(ctx.db);
     const first = await createManualSnapshot(fx.adminId);
     await changeConfiguration();
     const second = await createManualSnapshot(fx.adminId);

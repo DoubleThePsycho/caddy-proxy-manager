@@ -50,7 +50,6 @@ function list(id: number, name: string, overrides: Partial<AccessList> = {}): Ac
     system: null,
     createdAt: STAMP,
     updatedAt: STAMP,
-    organizationId: null,
     ...overrides,
   };
 }
@@ -108,10 +107,9 @@ describe('Access lists: the list of lists', () => {
     expect(html).toMatch(/href="\/access-lists\?tab=blocked-sources"[^>]*>Blocked sources/);
   });
 
-  it('leaves out the counts without analytics, the tabs for organisation users and the actions when read-only', () => {
-    const html = renderList({ stats: stats(false), blockedCount: null, canWrite: false });
+  it('leaves out the counts without analytics and the actions when read-only', () => {
+    const html = renderList({ stats: stats(false), canWrite: false });
     expect(html).not.toContain('Stopped, 24 h');
-    expect(html).not.toContain('Access list sections');
     expect(html).not.toContain('New access list');
     expect(html).not.toContain('More actions for');
   });

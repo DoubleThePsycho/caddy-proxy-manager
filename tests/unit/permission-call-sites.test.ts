@@ -1,6 +1,6 @@
 /**
- * Every guard of a route, page or server action (in app/, or in ee/ where a
- * paid one lives) names one permission from the catalogue, the call-site
+ * Every guard of a route, page or server action (in app/, or in ee/ for ee/
+ * features) names one permission from the catalogue, the call-site
  * table in ee/docs/custom-roles.md matches the code, no route or page is left
  * on the old administrator-only guards, and the sidebar shows each page to
  * exactly the users its page guard lets in.
@@ -195,7 +195,7 @@ describe('navigation', () => {
     const [, auditLog] = sidebar({ permissions: ['audit_streaming:read'] });
     expect([auditLog.key, auditLog.href]).toEqual(['audit-log', '/audit-log/streaming']);
     const hrefs = sidebar({ permissions: ['groups:read', 'ldap:read', 'branding:read'] }).map((entry) => [entry.key, entry.href]);
-    expect(hrefs).toEqual([['overview', '/'], ['users', '/groups'], ['sign-in', '/ldap'], ['settings', '/branding']]);
+    expect(hrefs).toEqual([['overview', '/'], ['users', '/groups'], ['sign-in', '/ldap'], ['branding', '/branding']]);
   });
 
   it('shows a reviewer without access_reviews:read their own reviews only while some are pending', () => {

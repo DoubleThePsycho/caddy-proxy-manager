@@ -13,8 +13,6 @@
  * the problems and the spec prints them.
  */
 import { randomBytes } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { request as playwrightRequest, type APIRequestContext } from '@playwright/test';
 import { createClient } from '@clickhouse/client';
 import forge from 'node-forge';
@@ -25,9 +23,6 @@ export const BASE = 'http://localhost:3000';
 const ORIGIN = { Origin: BASE };
 const PASSWORD = 'Shots-Example-2026!';
 
-/** Where the development license key is read from: SHOTS_LICENSE_FILE, else tests/.auth/license.txt (git-ignored, removed by the teardown). */
-export const LICENSE_FILE = process.env.SHOTS_LICENSE_FILE || resolve(__dirname, '../.auth/license.txt');
-
 type Json = Record<string, any>;
 
 export class Seeder {
@@ -37,7 +32,7 @@ export class Seeder {
   constructor(private readonly admin: APIRequestContext) {}
 
   /** One REST call; a failure is recorded (status and the start of the answer) and returns null. */
-  async call(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, data?: unknown, options: { as?: APIRequestContext; quiet?: boolean } = {}): Promise<Json | null> {
+  async call(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, data?: unknown, options: { as?: APIRequestContext } = {}): Promise<Json | null> {
     const ctx = options.as ?? this.admin;
     const response = await ctx.fetch(`${BASE}${path}`, { method, headers: ORIGIN, data, failOnStatusCode: false, timeout: 120_000 });
     if (response.ok()) {
@@ -48,8 +43,7 @@ export class Seeder {
         return {};
       }
     }
-    // Never echo the body of the license call (the answer names the licensee).
-    const body = options.quiet ? '' : (await response.text()).slice(0, 300);
+    const body = (await response.text()).slice(0, 300);
     this.problems.push(`${method} ${path}: ${response.status()} ${body}`);
     return null;
   }
@@ -148,17 +142,7 @@ async function bearer(token: string): Promise<APIRequestContext> {
 export async function seedAll(admin: APIRequestContext): Promise<Seeder> {
   const s = new Seeder(admin);
 
-  await s.step('license', async () => {
-    if (!existsSync(LICENSE_FILE)) {
-      s.problems.push(`No license key at ${LICENSE_FILE}: paid screens show their unlicensed state`);
-      return;
-    }
-    const key = readFileSync(LICENSE_FILE, 'utf8').trim();
-    await s.call('PUT', '/api/v1/license', { key }, { quiet: true });
-  });
-
   await s.step('basics', async () => {
-    await s.call('PUT', '/api/v1/usage-ping', { enabled: false });
     await s.call('PUT', '/api/v1/setup-checklist', { dismissed: true });
     await s.call('PUT', '/api/v1/settings/logging', { enabled: true, format: 'json' });
     // An ACME directory that does not exist: the stack never asks a public CA for example.com certificates.

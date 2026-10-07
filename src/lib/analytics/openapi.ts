@@ -17,8 +17,7 @@ export const ANALYTICS_OPENAPI_TAG = {
   name: TAG,
   description:
     "Traffic analytics from ClickHouse: queries over a range with filters, top values, the request log, per-host summaries, " +
-    "security events, traffic signals and saved views. Permission analytics:read. Organisation users (and a provider's " +
-    "organisation view) only see their organisation's hosts. When analytics is off or ClickHouse cannot answer, a query " +
+    "security events, traffic signals and saved views. Permission analytics:read. When analytics is off or ClickHouse cannot answer, a query " +
     'still answers 200 with empty data and status "disabled" or "unavailable". Analytics are kept for the retention ' +
     "window (CLICKHOUSE_RETENTION_DAYS, 30 days by default).",
 };
@@ -146,7 +145,7 @@ export const ANALYTICS_OPENAPI_PATHS = {
     "Summarise traffic per proxy host",
     "getAnalyticsHostSummaries",
     "Requests, 5xx responses, mitigated requests, bytes sent and a sparkline (about 24 points) for each proxy host the " +
-      "caller's role and organisation reach (a tag-scoped role gets its tagged hosts only). A host's traffic is that of " +
+      "caller's role reaches (a tag-scoped role gets its tagged hosts only). A host's traffic is that of " +
       "the Host names its domains serve: equal to a domain, or one label under a wildcard domain, port and case ignored.",
     [
       ...rangeParams("24h"),
@@ -236,7 +235,7 @@ export const ANALYTICS_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "List saved analytics views",
       operationId: "listAnalyticsViews",
-      description: "Permission analytics:read. The caller's views and the views others of the same organisation (or of the provider level) shared.",
+      description: "Permission analytics:read. The caller's views and the views others shared.",
       responses: { "200": { description: "Views", content: json({ type: "array", items: ref("AnalyticsView") }) }, ...errors("401", "403") },
     },
     post: {
@@ -818,7 +817,7 @@ export const ANALYTICS_OPENAPI_SCHEMAS = {
     additionalProperties: false,
     properties: {
       name: { type: "string", minLength: 1, maxLength: 100 },
-      shared: { type: "boolean", default: false, description: "List it for everyone of your organisation who can read analytics" },
+      shared: { type: "boolean", default: false, description: "List it for everyone who can read analytics" },
       range: { ...viewRange, default: "24h" },
       filters: { type: "array", maxItems: MAX_FILTERS, items: ref("AnalyticsFilter") },
       metric: { type: "string", enum: [...METRICS], default: "requests" },

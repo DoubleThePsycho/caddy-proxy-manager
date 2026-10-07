@@ -3,7 +3,6 @@
  * (GET /api/v1/certificates/overview), spread into
  * app/api/v1/openapi.json/route.ts.
  */
-import { ORGANIZATION_FILTER_PARAMETER } from "@/ee/multi-tenancy/openapi";
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 
@@ -24,7 +23,6 @@ export const CERTIFICATE_OVERVIEW_OPENAPI_PATHS = {
         "until Caddy has obtained one. A role scoped to tags sees the certificates of its in-scope proxy hosts. " +
         "No PEM or key material is returned.",
       operationId: "getCertificateOverview",
-      parameters: [ORGANIZATION_FILTER_PARAMETER],
       responses: {
         "200": { description: "The overview", content: { "application/json": { schema: ref("CertificateOverview") } } },
         "401": { $ref: "#/components/responses/Unauthorized" },

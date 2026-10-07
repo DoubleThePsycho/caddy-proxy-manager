@@ -1,5 +1,5 @@
-# High availability example (ee/docs/high-availability.md, Enterprise
-# edition): two dashboard nodes, one leader and one warm standby, with
+# High availability example (ee/docs/high-availability.md): two dashboard
+# nodes, one leader and one warm standby, with
 #   - Valkey for the leader lease,
 #   - MinIO (S3-compatible) for the database replica that Litestream writes,
 #   - a Caddy load balancer that sends the dashboard to the leader only.
@@ -16,9 +16,9 @@
 #   HA_S3_ACCESS_KEY_ID=...        MinIO's root user (letters and digits)
 #   HA_S3_SECRET_ACCESS_KEY=...    MinIO's root password (8 or more letters and digits)
 #
-# Set it up from an install that ran without high availability and has an
-# Enterprise license installed: the first leader turns that database (the
-# caddy-manager-data volume) into the cluster's first replica.
+# Set it up from an install that ran without high availability: the first
+# leader turns that database (the caddy-manager-data volume) into the
+# cluster's first replica.
 #
 # Not for production as it is: run Valkey and the object storage highly
 # available on other machines, keep their ports private, and use TLS when

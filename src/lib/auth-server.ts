@@ -28,7 +28,6 @@ import { SAML_ACS_PATH_PREFIX, parseSamlProviderId, samlAccountIssuer } from "@/
 import { samlSignInPlugin } from "@/ee/saml/plugin";
 import { isDirectorySessionAllowedUnderSsoEnforcement } from "@/ee/ldap/sso";
 import { canLinkScimSignIn } from "@/ee/scim/binding";
-import { isUserOrganizationBlocked } from "@/ee/multi-tenancy/store";
 import {
   MFA_DISABLED_PATHS,
   auditTwoFactorChange,
@@ -36,11 +35,13 @@ import {
   isMfaSessionRotation,
   mfaAfterRequest,
   mfaBeforeRequest,
+  requestSessionSignInMethod,
   signInAuditSummary,
   type MfaHookContext,
 } from "./mfa-auth";
 import { PASSKEY_DISABLED_PATHS, PASSKEY_SIGN_IN_PATH, createPasskeyPlugin, passkeyGuardPlugin } from "./passkey-auth";
-import { completedSignIn, noteFirstSignInStep, recordSignIn } from "./sign-in-activity";
+import { completedSignIn, noteFirstSignInStep, recordSignIn, type SignInMethod } from "./sign-in-activity";
+import { setSessionSignInMethod } from "./models/sessions";
 import { first } from "@/src/lib/db/ops";
 
 /** The enabled OAuth/OIDC providers, as Better Auth is built with them. */
@@ -174,27 +175,13 @@ const providerCache = defineCachedValue<LoadedProviders>("sign-in providers", {
  * are intentionally left untouched.
  */
 export function enforceSafeUserDefaults<T extends object>(user: T): T & { role: string; status: string } {
-  return { ...withoutOrganization(withoutCustomRole(user)), role: "user", status: "active" };
-}
-
-/**
- * Drops an `organizationId` from a user Better Auth is about to create: only
- * a provider administrator puts users into an organisation (ee/multi-tenancy),
- * never an identity provider's claims, whatever
- * AUTH_ALLOW_OAUTH_ROLE_FROM_CLAIMS says. Accounts that sign up are
- * provider-level.
- */
-export function withoutOrganization<T extends object>(user: T): T {
-  if (!("organizationId" in user)) return user;
-  const { organizationId: _dropped, ...rest } = user as T & { organizationId?: unknown };
-  void _dropped;
-  return rest as T;
+  return { ...withoutCustomRole(user), role: "user", status: "active" };
 }
 
 /**
  * Drops a `customRoleId` from a user Better Auth is about to create. Custom
- * roles (ee/custom-roles) are only ever assigned by a user with users:write
- * (and, for a custom role, the license); an identity provider's claims can
+ * roles (ee/custom-roles) are only ever assigned by a user with users:write;
+ * an identity provider's claims can
  * never set one, not even with AUTH_ALLOW_OAUTH_ROLE_FROM_CLAIMS=true, which
  * maps claims to the built-in roles only.
  */
@@ -252,6 +239,20 @@ async function refuseSignUpUnderSsoEnforcement(path: string): Promise<void> {
     message: "Email and password sign up is not enabled",
     code: "EMAIL_PASSWORD_SIGN_UP_DISABLED",
   });
+}
+
+/**
+ * Records on a new session how its sign-in was made. A session left without
+ * one (the write failed) is simply not reused by the forward-auth portal.
+ */
+async function markSessionSignInMethod(session: unknown, method: SignInMethod | null): Promise<void> {
+  const id = Number((session as { id?: unknown } | null)?.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return;
+  try {
+    await setSessionSignInMethod(id, method);
+  } catch {
+    // Bookkeeping only; never fail a sign-in over it.
+  }
 }
 
 /** Ingressi's checks on Better Auth requests; they run before the plugins' hooks. */
@@ -448,7 +449,7 @@ function createAuth(providers: LoadedProviders): any {
             // above. Operators who trust their IdP to manage roles can opt out
             // with AUTH_ALLOW_OAUTH_ROLE_FROM_CLAIMS=true.
             if (config.auth.allowOauthRoleFromClaims) {
-              return { data: withoutOrganization(withoutCustomRole(named)) };
+              return { data: withoutCustomRole(named) };
             }
             return { data: enforceSafeUserDefaults(named) };
           },
@@ -596,8 +597,6 @@ function createAuth(providers: LoadedProviders): any {
               .where(eq(schema.users.id, userId))
               .limit(1));
             if (user?.status !== "active") throw invalidCredentials(context?.path);
-            // A disabled organisation's users (ee/multi-tenancy) cannot sign in.
-            if (await isUserOrganizationBlocked(appDb, userId)) throw invalidCredentials(context?.path);
             // Enforced SSO (ee/sso): only identity-provider sign-ins and
             // break-glass accounts get a session. The password has already
             // been checked here, so the refusal is the one a wrong password
@@ -643,13 +642,23 @@ function createAuth(providers: LoadedProviders): any {
               // Null when the session is not a completed sign-in: a password
               // sign-in that still needs its second factor, or MFA being
               // turned on or off.
-              const summary = await signInAuditSummary(userId, context as Parameters<typeof signInAuditSummary>[1]);
+              const requestContext = context as Parameters<typeof signInAuditSummary>[1];
+              const summary = await signInAuditSummary(userId, requestContext);
               if (summary === null) {
+                // Turning MFA on or off replaces the caller's session: the new
+                // one keeps how the user signed in.
+                if (await isMfaSessionRotation(userId, requestContext)) {
+                  await markSessionSignInMethod(session, await requestSessionSignInMethod(requestContext));
+                }
                 await noteFirstSignInStep(userId, context);
                 return;
               }
+              const signIn = await completedSignIn(userId, context);
+              // The forward-auth portal reuses only sessions an identity
+              // provider created (portalMayReuseSession in auth.ts).
+              await markSessionSignInMethod(session, signIn.method);
               // users.lastSignInAt / lastSignInMethod and sign_in_sources (Users page, Sign-in and directories, their APIs).
-              await recordSignIn(userId, await completedSignIn(userId, context));
+              await recordSignIn(userId, signIn);
               const { createAuditEvent } = await import("./models/audit");
               await createAuditEvent({
                 userId,

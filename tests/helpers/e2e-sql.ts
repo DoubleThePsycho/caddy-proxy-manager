@@ -2,8 +2,8 @@
  * SQL against a test stack's application database, whichever dialect it
  * runs on (tests/helpers/e2e-stack.ts).
  *
- * Specs seed what the UI cannot (a directory configured while licensed, a
- * user with a given status) or read back what the UI does not show. The
+ * Specs seed what the UI cannot (a directory written straight into the
+ * database, a user with a given status) or read back what the UI does not show. The
  * script runs inside the web container with Bun, against the database its
  * DATABASE_URL names: bun:sqlite for a file, Bun's PostgreSQL client for a
  * postgres:// URL. In the script, `db` is the same on both:

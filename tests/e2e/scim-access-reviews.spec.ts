@@ -2,8 +2,7 @@
  * E2E: SCIM provisioning over real HTTP through the middleware, and the
  * Provisioning, Access Reviews and My reviews pages.
  *
- * SCIM is switched on and a SCIM token is stored directly in the database
- * (the request path never checks the license, so no license is needed).
+ * SCIM is switched on and a SCIM token is stored directly in the database.
  */
 import { test, expect } from '@playwright/test';
 import { createHash, randomBytes } from 'node:crypto';
@@ -100,6 +99,7 @@ test.describe('pages', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'SCIM provisioning' })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: 'Sign-in and directories' })).toBeVisible();
     await expect(page.locator('input[readonly]').first()).toHaveValue(/\/scim\/v2$/);
+    await expect(page.getByRole('button', { name: 'New token' })).toBeEnabled();
   });
 
   test('Access reviews and My reviews render', async ({ page }) => {
@@ -107,6 +107,7 @@ test.describe('pages', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Access reviews' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Campaigns' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Schedules' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Start review' }).first()).toBeEnabled();
     await page.goto('/my-reviews');
     await expect(page.getByRole('heading', { level: 1, name: 'My reviews' })).toBeVisible();
   });

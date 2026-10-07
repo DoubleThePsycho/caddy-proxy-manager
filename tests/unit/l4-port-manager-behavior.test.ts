@@ -343,7 +343,8 @@ describe('L4 port manager entrypoint behavior (executes the real script)', () =>
     child = startSidecar();
     captureOutput();
     await waitUntil(() => readStatus()?.state === 'applied', 10_000);
-    expect(output).toContain('not recreating it');
+    // The status file is written just before the log line: wait for the line.
+    await waitUntil(() => output.includes('not recreating it'), 10_000);
     await new Promise((r) => setTimeout(r, 1500));
     expect(composeUpInvocations()).toBe(0);
   });
@@ -362,7 +363,8 @@ describe('L4 port manager entrypoint behavior (executes the real script)', () =>
     child = startSidecar();
     captureOutput();
     await waitUntil(() => readStatus()?.state === 'applied', 10_000);
-    expect(output).toContain('not recreating it');
+    // The status file is written just before the log line: wait for the line.
+    await waitUntil(() => output.includes('not recreating it'), 10_000);
     expect(composeUpInvocations()).toBe(0);
   });
 });

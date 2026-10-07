@@ -1,26 +1,17 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * The supervisor's direct work on this node's SQLite file, before the
- * dashboard process opens it: putting a restored copy in place, switching the
- * file to WAL (Litestream needs it), and reading the installed license when
- * the cluster is set up from this node.
+ * dashboard process opens it: putting a restored copy in place and switching
+ * the file to WAL (Litestream needs it).
  */
 import { Database } from "bun:sqlite";
 import { closeSync, existsSync, fsyncSync, openSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname } from "node:path";
-import { canConfigure, evaluateLicense } from "@/ee/licensing/license";
-import { getTrustedLicenseKeys } from "@/ee/licensing/public-keys";
-import { HIGH_AVAILABILITY_FEATURE } from "../types";
 import { databaseFiles, litestreamMetaPath } from "./litestream";
-
-/** The settings key the license is stored under (ee/licensing/store.ts). */
-const LICENSE_SETTING_KEY = "license";
 
 export interface LocalDatabase {
   /** A database file with content exists at `path`. */
   exists(path: string): boolean;
-  /** The license installed in the database at `path` lets an administrator set up high availability. */
-  licenseAllowsHa(path: string, now: Date): boolean;
   /** Replaces the database at `livePath` (and its journal files) with the restored file at `restoredPath`. */
   install(restoredPath: string, livePath: string): void;
   /** Forgets Litestream's local state for `livePath`, so replication starts afresh in a new replica. */
@@ -47,21 +38,6 @@ export const localDatabase: LocalDatabase = {
       return statSync(path).isFile() && statSync(path).size > 0;
     } catch {
       return false;
-    }
-  },
-
-  licenseAllowsHa(path, now) {
-    let db: InstanceType<typeof Database> | null = null;
-    try {
-      db = new Database(path, { readonly: true });
-      const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(LICENSE_SETTING_KEY) as { value?: unknown } | null;
-      const key = typeof row?.value === "string" ? (JSON.parse(row.value) as unknown) : null;
-      const state = evaluateLicense(typeof key === "string" && key.length > 0 ? key : null, getTrustedLicenseKeys(), now);
-      return canConfigure(state, HIGH_AVAILABILITY_FEATURE);
-    } catch {
-      return false;
-    } finally {
-      db?.close();
     }
   },
 

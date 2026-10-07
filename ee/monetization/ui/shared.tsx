@@ -6,7 +6,6 @@ import { Label } from "@/components/ui/label";
 import { decimalToMicros, formatMoney, microsToDecimal } from "../money";
 
 export const API_BASE = "/api/v1/monetization";
-export const LOCKED_HINT = "Needs a license with API monetization";
 
 async function readError(response: Response): Promise<string> {
   try {

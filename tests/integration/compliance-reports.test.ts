@@ -2,16 +2,14 @@
  * Compliance reports (ee/compliance): the contents of each report against a
  * seeded install, findings, the SHA-256 of the canonical JSON and its
  * stability, the integrity check against the audit log, CSV and JSON
- * exports, the license gate (generating needs Enterprise; reading,
- * downloading and deleting never do), validation, and that no secret ever
- * appears in a report.
+ * exports, reading, downloading and deleting stored reports, validation,
+ * and that no secret ever appears in a report.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import { API_TOKEN_HASH, SECRETS, pemKeyOfTestCertificates, seedCompliance, type Seed } from '../helpers/compliance';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -26,7 +24,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 import { requireApiAdmin } from '../../src/lib/api-auth';
 import { logAuditEvent } from '../../src/lib/audit';
 import { insertAuditEvent } from '../../src/lib/audit-chain';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { ADMIN_LEVEL_PERMISSIONS, PERMISSION_AREAS, isAdminLevel } from '../../src/lib/permissions';
 import { canonicalJson, sha256Hex } from '../../ee/compliance/canonical';
 import { buildReportDocument, csvSections, generateReport, getReport, reportCsv, reportJson } from '../../ee/compliance/reports';
@@ -38,7 +35,6 @@ import * as exportRoute from '../../app/api/v1/compliance/reports/[id]/export/ro
 import * as controlsRoute from '../../app/api/v1/compliance/controls/route';
 import { first as dbFirst } from '@/src/lib/db/ops';
 
-const LICENSE_ERROR = 'Compliance reports needs an active Ingressi Enterprise license or higher';
 const NOW = new Date('2026-09-30T12:00:00.000Z');
 let seed: Seed;
 
@@ -82,13 +78,9 @@ function codes(document: ComplianceReportDocument): string[] {
 beforeEach(async () => {
   ctx.db = createTestDb();
   vi.clearAllMocks();
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
   seed = await seedCompliance(ctx.db, NOW);
-  await installLicense(ctx.db, 'enterprise');
   vi.mocked(requireApiAdmin).mockResolvedValue({ userId: seed.adminId, role: 'admin', authMethod: 'bearer' });
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('access review', () => {
   it('lists every user with role, permissions, scope, MFA, sign-in, identities, tokens and groups', async () => {
@@ -446,25 +438,9 @@ describe('REST API', () => {
   });
 });
 
-describe('license gate', () => {
-  async function removeLicense() {
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-  }
-
-  it('refuses to generate without an Enterprise license', async () => {
-    await removeLicense();
-    let response = await reportsRoute.POST(req('POST', '/x', { type: 'access_review' }));
-    expect(response.status).toBe(403);
-    expect((await response.json()).error).toBe(LICENSE_ERROR);
-    await installLicense(ctx.db, 'business');
-    response = await reportsRoute.POST(req('POST', '/x', { type: 'access_review' }));
-    expect(response.status).toBe(403);
-    expect(await ctx.db.select().from(schema.complianceReports)).toHaveLength(0);
-  });
-
-  it('lets an unlicensed install read, download and delete stored reports', async () => {
+describe('stored reports', () => {
+  it('reads, downloads and deletes stored reports', async () => {
     const created: StoredReportDetail = await (await reportsRoute.POST(req('POST', '/x', { type: 'access_review' }))).json();
-    await removeLicense();
     expect((await reportsRoute.GET(req('GET', '/x'))).status).toBe(200);
     expect((await reportRoute.GET(req('GET', '/x'), params(created.id))).status).toBe(200);
     expect((await exportRoute.GET(req('GET', '/x?format=csv'), params(created.id))).status).toBe(200);
@@ -477,8 +453,8 @@ describe('license gate', () => {
 });
 
 describe('permissions', () => {
-  it('has a paid, instance-wide compliance area that is not administrator-level', () => {
-    expect(PERMISSION_AREAS.compliance).toMatchObject({ actions: ['read', 'write'], paid: true, instanceWide: true });
+  it('has an instance-wide compliance area that is not administrator-level', () => {
+    expect(PERMISSION_AREAS.compliance).toMatchObject({ actions: ['read', 'write'], instanceWide: true });
     expect(ADMIN_LEVEL_PERMISSIONS).not.toContain('compliance:write');
     expect(isAdminLevel(['compliance:read', 'compliance:write'])).toBe(false);
   });

@@ -329,12 +329,10 @@ export default function HostDetailClient({ host, detail, can: allowed }: { host:
         title={<span className="[overflow-wrap:anywhere]">{domain}</span>}
         description={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {status && (
-              <span className={cn("inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold", BADGE_CLASS[status.tone])}>
-                <span aria-hidden="true" className={cn("h-1.5 w-1.5 rounded-full", DOT_CLASS[status.tone])} />
-                {status.label}
-              </span>
-            )}
+            <span className={cn("inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-xs font-semibold", BADGE_CLASS[status.tone])}>
+              <span aria-hidden="true" className={cn("h-1.5 w-1.5 rounded-full", DOT_CLASS[status.tone])} />
+              {status.label}
+            </span>
             {row.name !== domain && <span>{row.name}</span>}
             {otherDomains.length > 0 && (
               <span className="text-soft">

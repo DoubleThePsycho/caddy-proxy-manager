@@ -15,7 +15,6 @@ import { redirect } from "next/navigation";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Administrator",
-  org_admin: "Organisation administrator",
   user: "User",
   viewer: "Viewer",
 };

@@ -11,10 +11,10 @@
  * key and pinning on first contact, conditional pulls, apply and report,
  * replay of a reply, a stolen credential, another replica's credential, a
  * disabled replica, rotation and revocation, rollouts with a pull canary
- * (success, failure, timeout, abort, restart), drift from reports, the
- * license gate, permissions and the REST routes.
+ * (success, failure, timeout, abort, restart), drift from reports, deleting
+ * a replica, permissions and the REST routes.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
@@ -109,8 +109,6 @@ import { resetCaddyApplyStatusForTests } from '../../src/lib/caddy-apply-status'
 import { applyCaddyConfig } from '../../src/lib/caddy';
 import { logAuditEvent } from '../../src/lib/audit';
 import { adminAccess, isAdminLevel, UNSCOPED_ONLY_PERMISSIONS } from '../../src/lib/permissions';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import { assignInstance, createEnvironment } from '../../ee/fleet/environments';
 import { abortRollout, getRollout, resyncInstance, rollbackRollout, runRolloutTick, startPromotion } from '../../ee/fleet/rollouts';
 import { runDriftChecks } from '../../ee/fleet/drift';
@@ -275,10 +273,6 @@ async function environmentRow(id: number) {
   return (await dbFirst(ctx.master.select().from(schema.fleetEnvironments).where(eq(schema.fleetEnvironments.id, id)).limit(1)))!;
 }
 
-async function removeLicense() {
-  await ctx.master.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-}
-
 function auditActions(): string[] {
   return vi.mocked(logAuditEvent).mock.calls.map(([event]) => (event as { action: string }).action);
 }
@@ -312,8 +306,6 @@ beforeEach(async () => {
   vi.mocked(logAuditEvent).mockClear();
   vi.mocked(applyCaddyConfig).mockReset();
   vi.mocked(applyCaddyConfig).mockResolvedValue(undefined as never);
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.master, 'enterprise');
   await setSetting('instance_mode', 'master');
   const t = now();
   adminId = (await dbFirst(ctx.master.insert(schema.users).values({
@@ -333,8 +325,6 @@ beforeEach(async () => {
 afterEach(() => {
   vi.restoreAllMocks();
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('registration', () => {
   it('issues a credential once, stores only its hash and gives the replica its environment', async () => {
@@ -773,14 +763,9 @@ describe('the agent', () => {
   });
 });
 
-describe('license and permissions', () => {
-  it('needs the license to add replicas and rotate credentials, never to revoke, delete or serve', async () => {
+describe('deletion and permissions', () => {
+  it('serves a configured replica, then revokes and deletes it with its key pin', async () => {
     const replica = await addReplica('edge');
-    await removeLicense();
-    await expect(createPullReplica({ name: 'other' }, adminId)).rejects.toMatchObject({ status: 403 });
-    await expect(rotatePullCredential(replica.instanceId, adminId)).rejects.toMatchObject({ status: 403 });
-
-    // A configured replica keeps working.
     await round(replica);
     expect(await hostsOn(replica)).toEqual(['App']);
     await addMasterHost('New');

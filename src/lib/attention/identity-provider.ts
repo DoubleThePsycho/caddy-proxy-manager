@@ -7,9 +7,8 @@
  * - Accounts the MFA policy has locked out of the dashboard until they set
  *   up MFA, for readers of the users (users:read).
  *
- * Both cover every account and directory of this dashboard, so
- * organisation users never get them. Reads stored state only and never
- * checks the license (the directory check is a runtime path).
+ * Both cover every account and directory of this dashboard. Reads stored
+ * state only.
  */
 import { can } from "@/src/lib/permissions";
 import { getIdentityHealth } from "@/src/lib/identity-health";

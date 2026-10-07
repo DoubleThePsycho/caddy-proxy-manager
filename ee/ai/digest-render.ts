@@ -52,22 +52,6 @@ export function digestIntro(content: DigestContent): string {
   return `${brandName()} security digest for the ${content.facts.period.hours} hours up to ${to} (${content.timeZone}).`;
 }
 
-function licenseLine(license: DigestFacts["license"]): string {
-  const edition = license.edition ? `${license.edition}${license.trial ? " trial" : ""} license` : "License";
-  switch (license.status) {
-    case "unlicensed":
-      return "No license installed (Community edition).";
-    case "active":
-      return `${edition}, active until ${license.expiresAt ? day(license.expiresAt) : "further notice"}.`;
-    case "grace":
-      return `${edition} expired on ${license.expiresAt ? day(license.expiresAt) : "?"}; paid features stay editable during the grace period. Renew it soon.`;
-    case "expired":
-      return `${edition} expired on ${license.expiresAt ? day(license.expiresAt) : "?"}; configured paid features keep working but can no longer be changed.`;
-    case "invalid":
-      return "The installed license key is not valid.";
-  }
-}
-
 /** The digest as format-neutral sections of plain text (unescaped). */
 export function digestSections(content: DigestContent): DigestSection[] {
   const { facts, timeZone } = content;
@@ -171,7 +155,6 @@ export function digestSections(content: DigestContent): DigestSection[] {
         ],
   });
 
-  sections.push({ heading: "License", kind: "paragraph", lines: [licenseLine(facts.license)] });
   if (facts.notes.length) sections.push({ heading: "Notes", kind: "list", lines: facts.notes });
   return sections;
 }

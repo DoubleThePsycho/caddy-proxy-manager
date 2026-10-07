@@ -106,7 +106,7 @@ async function outcome(fn: (...args: unknown[]) => unknown, isPage: boolean, use
   }
 }
 
-// Dashboard pages (their app/ files, routed into ee/ for paid features) and server actions, paid ones in ee/<feature>/ui/.
+// Dashboard pages (their app/ files, routed into ee/ for ee/ features) and server actions, ee/ ones in ee/<feature>/ui/.
 const sites = findPermissionCallSites().filter((site) => site.file.startsWith('app/(dashboard)/') || /^ee\/.+\/ui\//.test(site.file));
 const files = [...new Set(sites.map((site) => site.file))];
 

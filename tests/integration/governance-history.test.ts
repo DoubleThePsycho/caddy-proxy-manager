@@ -5,12 +5,12 @@
  * audit log's filters, details and diffs (src/lib/models/audit.ts and the
  * REST routes), on a real in-memory database.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner, now, seedConfiguration, setSettingRow, type Fixture } from '../helpers/config-fixture';
+import { now, seedConfiguration, setSettingRow, type Fixture } from '../helpers/config-fixture';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
@@ -27,7 +27,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 
 const { logAuditEvent } = await vi.importActual<typeof import('../../src/lib/audit')>('../../src/lib/audit');
 
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { recordConfigSnapshotAfterApply } from '../../ee/config-history/snapshots';
 import { createManualSnapshot, updateHistorySettings } from '../../ee/config-history/service';
 import { HISTORY_SETTING_KEY } from '../../ee/config-history/settings';
@@ -46,11 +45,8 @@ let fx: Fixture;
 
 beforeEach(async () => {
   ctx.db = createTestDb();
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
   fx = await seedConfiguration(ctx.db);
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 async function enableHistory(): Promise<number> {
   await setSettingRow(ctx.db, HISTORY_SETTING_KEY, { enabled: true, retention: 200 });
@@ -160,7 +156,6 @@ describe('audit events linked to versions', () => {
     expect(await lastEvent()).toMatchObject({ configBeforeId: null, configAfterId: null });
     expect(await auditEventConfigDiff(await lastEvent())).toBeNull();
 
-    await installLicense(ctx.db);
     await enableHistory();
     await logAuditEvent({ userId: fx.adminId, action: 'update', entityType: 'proxy_host', entityId: fx.hostId, summary: 'Pending' });
     const pendingId = (await lastEvent()).id;
@@ -191,7 +186,6 @@ describe('versions', () => {
   it('titles versions from their audit events and says how big each change was', async () => {
     const first = await enableHistory();
     const change = await changeHost(['backend-v2:8080'], 'Changed the upstream of App');
-    await installLicense(ctx.db);
     const manual = await createManualSnapshot(fx.adminId, { summary: 'Before the upgrade' });
 
     const list = await listVersions();
@@ -286,17 +280,12 @@ describe('rollback preview', () => {
     ]);
     expect(preview.reload).toEqual({ nodes: 1, instances: [], heldBack: [] });
     expect(preview.blocked).toBeNull();
-    // No license installed.
-    expect(preview.canRestore).toBe(false);
-    expect(preview.reasons).toEqual(['Rolling back needs a license that includes configuration history.']);
-
-    await installLicense(ctx.db);
+    expect(preview).toMatchObject({ canRestore: true, reasons: [] });
     expect(await previewRollback(a.versionId, builtInAccess(fx.adminId, 'admin'))).toMatchObject({ canRestore: true, reasons: [] });
     expect((await previewRollback(a.versionId, builtInAccess(fx.memberId, 'user'))).reasons).toEqual(['Rolling back needs the config_history:restore permission.']);
   });
 
   it('says when the version is the running configuration', async () => {
-    await installLicense(ctx.db);
     await enableHistory();
     const { versionId } = await changeHost(['backend-a:8080'], 'Changed the upstream of App');
     const preview = await previewRollback(versionId);
@@ -305,7 +294,6 @@ describe('rollback preview', () => {
   });
 
   it('refuses when an approval policy protects a host the rollback changes, naming the policy', async () => {
-    await installLicense(ctx.db);
     const first = await enableHistory();
     await changeHost(['backend-a:8080'], 'Changed the upstream of App');
     await ctx.db.insert(schema.approvalPolicies).values({ name: 'Production', createdAt: now(), updatedAt: now() });
@@ -355,15 +343,6 @@ describe('audit log filters and details', () => {
     expect(facets.actions).toEqual(['audit_log_pruned', 'create', 'update']);
     expect(facets.entityTypes).toEqual(['access_list', 'audit_log', 'proxy_host']);
     expect(facets.actors.map((actor) => actor.id).sort()).toEqual([fx.adminId, fx.memberId, null].sort());
-  });
-
-  it('keeps organisation logs apart and does not name the provider to an organisation', async () => {
-    const org = (await dbFirst(ctx.db.insert(schema.organizations).values({ name: 'Client', slug: 'client', createdAt: now(), updatedAt: now() }).returning()))!;
-    await logAuditEvent({ userId: fx.adminId, action: 'update', entityType: 'proxy_host', entityId: fx.hostId, summary: 'In the organisation', organizationId: org.id });
-    await logAuditEvent({ userId: fx.adminId, action: 'update', entityType: 'proxy_host', entityId: fx.hostId, summary: 'Provider level', organizationId: null });
-    const events = await queryAuditEvents({ organizationId: org.id }, { limit: 50, offset: 0 });
-    expect(events.map((event) => event.summary)).toEqual(['In the organisation']);
-    expect(events[0].user).toBeNull();
   });
 
   it('serves an event with its configuration diff over the REST API', async () => {

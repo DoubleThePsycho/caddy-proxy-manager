@@ -23,9 +23,7 @@
  *   at once with a mandatory reason, unless a covering policy forbids them;
  *   they are flagged on the request and in the audit log.
  *
- * Nothing here checks the license: configured policies keep being enforced,
- * and requests keep moving, when it lapses. Applies run one at a time on this
- * node.
+ * Applies run one at a time on this node.
  */
 import { createHash } from "node:crypto";
 import { and, count, eq, inArray, lt } from "drizzle-orm";
@@ -36,7 +34,7 @@ import { logUnexpectedApiError } from "@/src/lib/api-auth";
 import { logAuditEvent } from "@/src/lib/audit";
 import { CaddyApplyError } from "@/src/lib/caddy-apply-error";
 import { normalizeTags, parseStoredTags } from "@/src/lib/host-tags";
-import { can, scopeTagsFor, tagsInScope, tenantOf, type Access, type Permission } from "@/src/lib/permissions";
+import { can, scopeTagsFor, tagsInScope, type Access, type Permission } from "@/src/lib/permissions";
 import {
   assertDomainsFreeOutsideScope,
   assertForwardAuthAccessAllowed,
@@ -562,14 +560,8 @@ export function parseRequestId(raw: string): number {
   return id;
 }
 
-/**
- * For the host dialogs: the enabled policies and whether the user may make
- * emergency changes. Policies are the provider's (ee/multi-tenancy):
- * organisation users get none, and a protected change of theirs comes back
- * as a change request.
- */
+/** For the host dialogs: the enabled policies and whether the user may make emergency changes. */
 export async function getHostApprovalContext(access: Access): Promise<HostApprovalContext> {
-  if (tenantOf(access) !== null) return { policies: [], canEmergency: false };
   return { policies: await readEnabledPolicyRules(), canEmergency: can(access, "approvals:emergency") };
 }
 
@@ -578,7 +570,7 @@ export type HostChangePreview = {
   approval: {
     /** A covering policy turns the change into a change request. */
     required: boolean;
-    /** The covering policies; empty for organisation users, whose policies are the provider's. */
+    /** The covering policies. */
     policies: { id: number; name: string }[];
     /** Distinct approvals the change request needs (from someone other than the requester). */
     requiredApprovals: number;
@@ -599,7 +591,7 @@ export type HostChangePreview = {
  * Previews a host change without storing anything: whether a change approval
  * policy covers it (and what it asks for), what changes field by field and
  * its impact. The caller has checked the permission and the scope, as for
- * gateHostChange. Reads only; never checks the license.
+ * gateHostChange. Reads only.
  */
 export async function previewHostChange(params: { access: Access; change: HostChange; now?: Date }): Promise<HostChangePreview> {
   const { access, change } = params;
@@ -615,7 +607,7 @@ export async function previewHostChange(params: { access: Access; change: HostCh
   return {
     approval: {
       required: covering.length > 0,
-      policies: tenantOf(access) === null ? covering.map((policy) => ({ id: policy.id, name: policy.name })) : [],
+      policies: covering.map((policy) => ({ id: policy.id, name: policy.name })),
       requiredApprovals: covering.length > 0 ? requiredApprovalsFor(covering) : 0,
       operations,
       window,
@@ -771,12 +763,12 @@ class ApplyRefused extends Error {}
 /** The requester's access now: active account, the write permission, and (below) the scope. */
 async function requesterAccess(row: RequestRow): Promise<Access> {
   const user = await first(appDb
-    .select({ id: users.id, role: users.role, customRoleId: users.customRoleId, status: users.status, organizationId: users.organizationId })
+    .select({ id: users.id, role: users.role, customRoleId: users.customRoleId, status: users.status })
     .from(users)
     .where(eq(users.id, row.requestedBy))
     .limit(1));
   if (!user || user.status !== "active") throw new ApplyRefused("The requester's account is no longer active");
-  const access = await accessForUser({ id: user.id, role: user.role, customRoleId: user.customRoleId, organizationId: user.organizationId ?? null });
+  const access = await accessForUser({ id: user.id, role: user.role, customRoleId: user.customRoleId });
   const permission = writePermission(rowTargetType(row));
   if (!can(access, permission)) throw new ApplyRefused(`The requester no longer holds the ${permission} permission`);
   return access;
@@ -983,7 +975,7 @@ async function applyRequest(id: number, actorId: number | null, via: ApplyVia, f
 
 // ── Decisions ─────────────────────────────────────────────────────────
 
-/** Marks pending requests past their expiry as expired. Never checks the license. */
+/** Marks pending requests past their expiry as expired. */
 export async function expireDueRequests(now: Date = new Date()): Promise<number> {
   const at = now.toISOString();
   const rows = await appDb
@@ -1191,7 +1183,7 @@ export async function emergencyApplyChangeRequest(access: Access, id: number, in
 
 /**
  * The scheduler's run: expires due requests and applies approved ones whose
- * change windows are open. Never checks the license.
+ * change windows are open.
  */
 export async function applyDueChangeRequests(now: Date = new Date()): Promise<{ expired: number; applied: number; failed: number }> {
   const expired = await expireDueRequests(now);

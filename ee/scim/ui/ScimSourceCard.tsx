@@ -18,7 +18,6 @@ export function ScimSourceCard({ scim, format }: { scim: ScimSourceView; format:
         <>
           {plural(scim.tokens.count, "token")}
           {token ? <>, latest <span className="num">{token.prefix}…</span> ({token.name})</> : ""}
-          {!scim.configurable ? " · read-only without a license" : ""}
         </>
       }
       footerActions={<ConfigureLink href="/scim" name="SCIM provisioning" />}

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { getCurrentSessionId } from "@/src/lib/auth";
 import { ApiClientError } from "@/src/lib/api-errors";
-import { findUserInScope } from "@/src/lib/access-scope";
+import { getUserById } from "@/src/lib/models/user";
 import { describeUserSessions, signOutSessions } from "@/src/lib/models/sessions";
 import { assertCanManageUserId } from "@/ee/custom-roles/service";
 import { routeRowId } from "@/src/lib/row-ids";
@@ -19,10 +19,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { access } = await requireApiPermission(request, "users:read");
+    await requireApiPermission(request, "users:read");
     const targetId = parseUserId((await params).id);
-    // A user of another organisation (ee/multi-tenancy) is not found, as a missing one.
-    if (!(await findUserInScope(access, targetId))) throw new ApiClientError("User not found", 404);
+    if (!(await getUserById(targetId))) throw new ApiClientError("User not found", 404);
     const currentId = await getCurrentSessionId(request);
     return NextResponse.json(await describeUserSessions(targetId, currentId), { headers: NO_STORE });
   } catch (error) {
@@ -41,7 +40,7 @@ export async function DELETE(
   try {
     const { access, userId } = await requireApiPermission(request, "users:write");
     const targetId = parseUserId((await params).id);
-    if (!(await findUserInScope(access, targetId))) throw new ApiClientError("User not found", 404);
+    if (!(await getUserById(targetId))) throw new ApiClientError("User not found", 404);
     // Only users whose access the caller holds themselves (ee/custom-roles).
     await assertCanManageUserId(access, targetId);
     const keep = targetId === userId ? await getCurrentSessionId(request) : null;

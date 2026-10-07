@@ -3,8 +3,8 @@
  * responses signed in-process by a test identity provider: starting a
  * sign-in, the binding cookie and login CSRF, IdP-initiated responses,
  * replay, linking and provisioning, the account id, group-to-role mapping,
- * the required group, enforced SSO, MFA, disabled accounts, that no Better
- * Auth route manages providers, and that sign-in never needs a license.
+ * the required group, enforced SSO, MFA, disabled accounts, and that no
+ * Better Auth route manages providers.
  *
  * Like ldap-sign-in.test.ts, this boots the real db module and the real
  * auth-server against the application database: a SQLite file, or in the
@@ -96,7 +96,7 @@ let providerCounter = 0;
 
 type ProviderRow = typeof import('../../src/lib/db/schema').samlProviders.$inferInsert;
 
-/** A provider row as the administration code stores it (no license involved). */
+/** A provider row as the administration code stores it. */
 async function addProvider(overrides: Partial<ProviderRow> = {}, mappings: Array<{ group: string; role: string }> = []): Promise<number> {
   providerCounter += 1;
   const now = new Date().toISOString();
@@ -410,25 +410,17 @@ describe('accounts', () => {
     expect(auditEvents().map((e) => e.action)).toContain('saml_account_linked');
   });
 
-  it('never links an administrator, a custom-role user, an organisation user, the primary admin or a break-glass account by e-mail', async () => {
+  it('never links an administrator, a custom-role user, the primary admin or a break-glass account by e-mail', async () => {
     const id = await addProvider({ linkExistingAccounts: true });
     const boss = await localAccount('boss', 'admin');
     const custom = await localAccount('custom');
-    const member = await localAccount('member');
     const keeper = await localAccount('keeper');
     const { eq } = await import('drizzle-orm');
     await app.db.update(app.schema.users).set({ role: 'viewer', customRoleId: 7 }).where(eq(app.schema.users.id, custom.id));
-    const now = new Date().toISOString();
-    const [org] = await app.db
-      .insert(app.schema.organizations)
-      .values({ name: 'Client A', slug: 'client-a', createdAt: now, updatedAt: now })
-      .returning();
-    await app.db.update(app.schema.users).set({ organizationId: org.id }).where(eq(app.schema.users.id, member.id));
     await app.ssoStore.writeSsoEnforcement(app.db, { enabled: false, breakGlassUserIds: [keeper.id] });
     const cases: Array<[string, string, string]> = [
       ['boss@example.com', 'boss-subject', 'privileged_account'],
       ['custom@example.com', 'custom-subject', 'privileged_account'],
-      ['member@example.com', 'member-subject', 'privileged_account'],
       ['root@example.com', 'root-subject', 'protected_account'],
       ['keeper@example.com', 'keeper-subject', 'protected_account'],
     ];
@@ -437,7 +429,7 @@ describe('accounts', () => {
       refused(result, b);
       expect(lastRefusal()?.data, email).toMatchObject({ failure });
     }
-    for (const user of [boss, custom, member, keeper]) expect((await accountRows(user.id)).map((a) => a.providerId)).toEqual(['credential']);
+    for (const user of [boss, custom, keeper]) expect((await accountRows(user.id)).map((a) => a.providerId)).toEqual(['credential']);
     expect((await accountRows(primaryAdminId)).map((a) => a.providerId)).toEqual(['credential']);
   });
 
@@ -645,16 +637,5 @@ describe('provider management is not a Better Auth route', () => {
       .filter((path): path is string => typeof path === 'string' && (path.includes('saml') || path.startsWith('/sso')))
       .sort();
     expect(samlPaths).toEqual(['/saml/acs/:providerId', '/saml/metadata/:providerId', '/sign-in/saml']);
-  });
-});
-
-describe('licensing', () => {
-  it('signs in without any license installed', async () => {
-    const { eq } = await import('drizzle-orm');
-    expect(await dbFirst(app.db.select().from(app.schema.settings).where(eq(app.schema.settings.key, 'license')).limit(1))).toBeUndefined();
-    const id = await addProvider();
-    const who = person('nolicense');
-    const { browser: b, result } = await signIn(id, { ...who, attributes: { email: who.email } });
-    signedInOk(result, b);
   });
 });

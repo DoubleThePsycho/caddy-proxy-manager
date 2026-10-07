@@ -29,7 +29,7 @@
  * (with the usage retention job).
  *
  * The option needs ClickHouse analytics, the pipeline that reads the access
- * log: without it the gate issues no charge ids. Never checks the license.
+ * log: without it the gate issues no charge ids.
  */
 import { lt, sql, eq } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

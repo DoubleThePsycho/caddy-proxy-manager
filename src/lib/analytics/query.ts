@@ -162,7 +162,11 @@ function emptyResult(query: AnalyticsQuery, now: number): Omit<AnalyticsQueryRes
 }
 
 /** Runs `query` for the hosts in `scope`. Never throws for ClickHouse failures (status says so). */
-export async function queryAnalytics(query: AnalyticsQuery, scope: HostScope, now = Math.floor(Date.now() / 1000)): Promise<AnalyticsQueryResult> {
+export async function queryAnalytics(
+  query: AnalyticsQuery,
+  now = Math.floor(Date.now() / 1000),
+  scope: HostScope = null
+): Promise<AnalyticsQueryResult> {
   const empty = emptyResult(query, now);
   return withAnalytics('query', empty, async () => {
     const { range, metric, groupBy } = query;

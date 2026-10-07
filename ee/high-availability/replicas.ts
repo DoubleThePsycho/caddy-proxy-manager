@@ -1,18 +1,9 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * PostgreSQL replicas, the Enterprise part (D6; ee/docs/high-availability.md,
- * "PostgreSQL replicas"): the license rule a new replica joins under, and
+ * PostgreSQL replicas (ee/docs/high-availability.md, "PostgreSQL replicas"):
  * the view the High availability page and GET /api/v1/cluster/nodes show.
- *
- * The rule: one replica on a PostgreSQL database is free. A node id the
- * cluster does not know may join next to a live replica only while the
- * installed license lets an administrator set up high availability (the
- * Enterprise feature, active or in its grace period). It is read once, when
- * the node joins; known replicas start and run whatever the license says
- * (src/lib/cluster-nodes.ts).
+ * Joining is src/lib/cluster-nodes.ts.
  */
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 import {
   currentReplicaIdentity,
   listClusterNodes,
@@ -23,25 +14,9 @@ import {
 import { getLeaderStatus } from "@/src/lib/db/leader";
 import { replicaRefusal } from "@/ee/high-availability/replica-admission";
 import type { DbExecutor } from "@/src/lib/db/types";
-import { HIGH_AVAILABILITY_FEATURE } from "./types";
 import type { PostgresReplicasView } from "./cluster/types";
 
-/** D6: whether a new replica may join next to a live one, by the license installed at `now`. */
-export async function replicaJoinAllowed(now: Date): Promise<boolean> {
-  return await isFeatureConfigurable(HIGH_AVAILABILITY_FEATURE, now);
-}
-
-/** What a refused replica logs and answers requests with. */
-export function replicaRefusedMessage(): string {
-  const edition = EDITION_LABELS[FEATURE_INFO[HIGH_AVAILABILITY_FEATURE].edition];
-  return (
-    "This replica was not admitted: another replica is already running on this PostgreSQL database, and more than one " +
-    `replica needs an active ${edition} license with high availability. Install the license on a running replica; this ` +
-    "one tries again every 30 seconds and joins on its own. The replicas already running are not affected."
-  );
-}
-
-/** The replicas as the replica answering sees them. Reading never needs a license. */
+/** The replicas as the replica answering sees them. */
 export async function getPostgresReplicasView(options: { now?: Date; db?: DbExecutor } = {}): Promise<PostgresReplicasView> {
   const now = options.now ?? new Date();
   const identity = currentReplicaIdentity();

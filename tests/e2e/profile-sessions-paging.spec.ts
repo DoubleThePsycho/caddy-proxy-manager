@@ -5,9 +5,8 @@ import { test, expect } from '@playwright/test';
  * through the REST sign-in endpoint, the list shows 25 a page with the page
  * in the address, and every session the test made is signed out afterwards.
  *
- * Sessions stand in for the paged lists that need a license (organisations)
- * or are capped (API tokens, at most 10 per account): the stack runs without
- * a license, and sessions page the same way.
+ * Sessions stand in for the paged lists that are capped (API tokens, at
+ * most 10 per account): sessions page the same way.
  */
 
 const BASE_URL = 'http://localhost:3000';

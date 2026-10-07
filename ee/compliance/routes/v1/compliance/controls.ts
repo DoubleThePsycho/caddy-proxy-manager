@@ -4,7 +4,7 @@ import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { NO_STORE } from "@/ee/compliance/http";
 import { describeControlMapping } from "@/ee/compliance/controls";
 
-/** The control mapping of every report and of the incident drafts. Available without a license. */
+/** The control mapping of every report and of the incident drafts. */
 export async function GET(request: NextRequest) {
   try {
     await requireApiPermission(request, "compliance:read");

@@ -17,7 +17,7 @@ async function kindFrom({ params }: Params): Promise<AssetKind> {
 
 /**
  * Uploads a logo or the favicon: multipart/form-data with a "file" field, or
- * the image as the body. Needs the license.
+ * the image as the body.
  */
 export async function PUT(request: NextRequest, context: Params) {
   try {
@@ -29,7 +29,7 @@ export async function PUT(request: NextRequest, context: Params) {
   }
 }
 
-/** Removes a logo or the favicon. Never needs a license. */
+/** Removes a logo or the favicon. */
 export async function DELETE(request: NextRequest, context: Params) {
   try {
     const { userId } = await requireApiPermission(request, "branding:write");

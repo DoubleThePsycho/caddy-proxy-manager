@@ -4,21 +4,18 @@
  * optional per-minute limit, how the plan's consumers pay (prepaid, or
  * postpaid up to a hard cap with a saved card), whether requests answered
  * with a 5xx are credited back, and whether key holders may pay with x402.
- *
- * Licensing: creating and changing a plan needs "api_monetization"; deleting
- * one never does (it is refused while consumers or hosts still use the plan).
+ * Deleting a plan is refused while consumers or hosts still use it.
  */
 import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { appDb, nowIso } from "@/src/lib/db";
 import { monetizationConsumers, monetizationHosts, monetizationPayments, monetizationPlans } from "@/src/lib/db/schema";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiConflictError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import { isAnalyticsEnabled } from "@/src/lib/clickhouse/client";
 import { reloadMonetization } from "./engine";
 import { parseAmount, parseBoolean, parseInteger, parseName, rejectUnknownKeys, requireRecord } from "./http";
 import { MAX_POSTPAID_CAP_MICROS } from "./billing-rules";
-import { BILLING_MODES, FEATURE, type BillingMode, type PlanView } from "./types";
+import { BILLING_MODES, type BillingMode, type PlanView } from "./types";
 import { asc, first } from "@/src/lib/db/ops";
 
 export const PLAN_NOT_FOUND = "Plan not found";
@@ -172,7 +169,6 @@ async function assertNameFree(name: string, exceptId?: number): Promise<void> {
 }
 
 export async function createPlan(body: unknown, actorUserId: number): Promise<PlanView> {
-  await requireFeature(FEATURE);
   const input = parsePlan(body);
   assertPlanConsistent(input);
   const stamp = nowIso();
@@ -195,7 +191,6 @@ export async function createPlan(body: unknown, actorUserId: number): Promise<Pl
 
 export async function updatePlan(id: number, body: unknown, actorUserId: number): Promise<PlanView> {
   const existing = await requirePlanRow(id);
-  await requireFeature(FEATURE);
   const input = parsePlan(body, existing);
   assertPlanConsistent(input, existing);
   await assertPlanBillingChangeable(existing, input);
@@ -261,7 +256,7 @@ async function assertPlanBillingChangeable(existing: PlanRow, input: ParsedPlan)
   }
 }
 
-/** Never needs a license. Refused while a consumer is on the plan or a host lists it. */
+/** Refused while a consumer is on the plan or a host lists it. */
 export async function deletePlan(id: number, actorUserId: number): Promise<void> {
   // The checks and the delete in one transaction: no consumer or host takes the plan in between.
   const existing = await appDb.transaction(async (tx) => {

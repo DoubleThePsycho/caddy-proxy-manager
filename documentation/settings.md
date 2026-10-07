@@ -1,6 +1,6 @@
 # Settings
 
-Settings are on pages next to what they configure. **Settings** itself, at the bottom of the sidebar, holds the settings of the install: the primary domain, the dashboard address and the usage ping. Branding has a page of its own under it (MSP edition, [white-label.md](../ee/docs/white-label.md)).
+Settings are on pages next to what they configure. **Settings** itself, at the bottom of the sidebar, holds the settings of the install: the primary domain and the dashboard address. Branding has a page of its own under it ([white-label.md](../ee/docs/white-label.md)).
 
 ## Where each setting is
 
@@ -8,7 +8,7 @@ The pages are listed under their sidebar entry, which shows them while one of it
 
 | Page | Sidebar entry | What it holds |
 | --- | --- | --- |
-| Settings (`/settings`) | Settings | Primary domain, the dashboard address (`BASE_URL`, read-only), the usage ping ([usage-ping.md](usage-ping.md)) |
+| Settings (`/settings`) | Settings | Primary domain, the dashboard address (`BASE_URL`, read-only) |
 | Certificate settings (`/certificates/settings`) | Certificates | Let's Encrypt or your own ACME directory and its root certificate, the contact e-mail, DNS-01 providers and resolvers, certificate storage |
 | Host defaults (`/proxy-hosts/defaults`) | Proxy hosts | Requests for unknown hosts ([default-response.md](default-response.md)), fallback error pages, trusted proxies, upstream DNS pinning ([upstream-dns-pinning.md](upstream-dns-pinning.md)), Authentik and generic forward auth defaults for new hosts |
 | Geo blocking (`/geo-blocking`) | Security events | Default geo blocking rules and the GeoLite2 databases ([geo-blocking.md](geo-blocking.md)) |
@@ -23,7 +23,7 @@ Every page needs `settings:read`, and saving needs `settings:write`, except Back
 
 ## Saving
 
-A page has one save bar under its forms. It counts the fields you changed; **Save changes** saves every changed card of the page, and **Discard** puts the page back as it was loaded. The browser asks before leaving a page with unsaved changes. DNS-01 providers, certificate storage, OAuth providers, replicas, shared state, backups and the usage ping save each change on their own, since they ask for confirmation or credentials.
+A page has one save bar under its forms. It counts the fields you changed; **Save changes** saves every changed card of the page, and **Discard** puts the page back as it was loaded. The browser asks before leaving a page with unsaved changes. DNS-01 providers, certificate storage, OAuth providers, replicas, shared state and backups save each change on their own, since they ask for confirmation or credentials.
 
 On an instance sync replica, each card that the master syncs has **Override the master's settings on this replica**. Off, the card follows the master.
 
@@ -46,7 +46,6 @@ Links to the old Settings page keep working: `/settings?section=<id>`, `/setting
 | Old id | Opens |
 | --- | --- |
 | `general` | `/settings` |
-| `usage-ping` | `/settings#usage-ping` |
 | `acme` | `/certificates/settings` |
 | `dns-providers`, `dns-resolvers`, `certificate-storage` | `/certificates/settings#<id>` |
 | `default-response`, `error-pages`, `trusted-proxies`, `upstream-dns`, `forward-auth`, `authentik` | `/proxy-hosts/defaults#<id>` |

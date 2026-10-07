@@ -1,16 +1,14 @@
 /**
- * REST endpoints of LDAP / Active Directory directories: the license gate on
- * setting up, enabling and changing a directory (and none on reading,
- * testing, disabling and deleting), validation, the service account password
+ * REST endpoints of LDAP / Active Directory directories: setting up,
+ * changing, testing, disabling and deleting a directory, validation, the service account password
  * never leaving the server, deleting a directory's account links with it,
  * the test endpoints against a fake directory, and SESSION_SECRET rotation.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import { fakeLdap, group, person } from '../helpers/fake-ldap';
 
 const ctx = vi.hoisted(() => ({
@@ -37,7 +35,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 import { requireApiAdmin } from '../../src/lib/api-auth';
 import { logAuditEvent } from '../../src/lib/audit';
 import { decryptSecret } from '../../src/lib/secret';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import * as listRoute from '../../app/api/v1/ldap-directories/route';
 import * as detailRoute from '../../app/api/v1/ldap-directories/[id]/route';
 import * as testRoute from '../../app/api/v1/ldap-directories/[id]/test/route';
@@ -45,7 +42,6 @@ import * as testSignInRoute from '../../app/api/v1/ldap-directories/[id]/test-si
 import { first } from '@/src/lib/db/ops';
 
 const SERVICE_PASSWORD = fakeLdap.servicePassword;
-const LICENSE_ERROR = 'LDAP / Active Directory needs an active Ingressi Enterprise license or higher';
 
 let adminId: number;
 
@@ -57,15 +53,11 @@ beforeEach(async () => {
   ctx.db = createTestDb();
   vi.clearAllMocks();
   fakeLdap.reset();
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.db, 'enterprise');
   adminId = (await first(ctx.db.insert(schema.users).values({
     email: 'admin@example.com', role: 'admin', status: 'active', createdAt: now(), updatedAt: now(),
   }).returning()))!.id;
   vi.mocked(requireApiAdmin).mockResolvedValue({ userId: adminId, role: 'admin', authMethod: 'bearer' } as never);
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 function req(method: string, path: string, body?: unknown): NextRequest {
   const init: { method: string; headers: Record<string, string>; body?: string } = { method, headers: {} };
@@ -95,40 +87,24 @@ async function create(overrides: Record<string, unknown> = {}): Promise<{ id: nu
   return response.json();
 }
 
-async function removeLicense() {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-}
-
-describe('license gate', () => {
-  it('refuses creating, changing and enabling without a license', async () => {
+describe('managing directories', () => {
+  it('creates, changes, enables and disables a directory', async () => {
     const { id } = await create();
     const disabled = await create({ name: 'Disabled', enabled: false });
-    await removeLicense();
 
     const responses = [
       await listRoute.POST(req('POST', '/api/v1/ldap-directories', body({ name: 'New' }))),
       await detailRoute.PUT(req('PUT', `/api/v1/ldap-directories/${id}`, { name: 'Renamed' }), params(id)),
-      await detailRoute.PUT(req('PUT', `/api/v1/ldap-directories/${id}`, { enabled: false, allowWhenSsoEnforced: true }), params(id)),
       await detailRoute.PUT(req('PUT', `/api/v1/ldap-directories/${disabled.id}`, { enabled: true }), params(disabled.id)),
     ];
-    for (const response of responses) {
-      expect(response.status).toBe(403);
-      expect((await response.json()).error).toBe(LICENSE_ERROR);
-    }
+    for (const response of responses) expect(response.status).toBeLessThan(300);
     expect((await ctx.db.select().from(schema.ldapDirectories)).map((row) => [row.name, row.enabled]).sort())
-      .toEqual([['Corp LDAP', true], ['Disabled', false]]);
+      .toEqual([['Disabled', true], ['New', true], ['Renamed', true]]);
   });
 
-  it('is not enough with a Business license', async () => {
-    await installLicense(ctx.db, 'business');
-    const response = await listRoute.POST(req('POST', '/api/v1/ldap-directories', body()));
-    expect(response.status).toBe(403);
-  });
-
-  it('lets an unlicensed admin read, test, disable and delete directories', async () => {
+  it('reads, tests, disables and deletes directories', async () => {
     const { id } = await create();
     fakeLdap.entries.push(person('alice'));
-    await removeLicense();
 
     expect((await listRoute.GET(req('GET', '/api/v1/ldap-directories'))).status).toBe(200);
     expect((await detailRoute.GET(req('GET', `/api/v1/ldap-directories/${id}`), params(id))).status).toBe(200);

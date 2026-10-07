@@ -4,11 +4,9 @@
  * each group limited to what the caller may read.
  *
  * - Hosts, certificates and users follow the same filters as their lists:
- *   the role's permission, its tag scope (proxy hosts, L4 hosts and
- *   certificates) and the organisation (an organisation user only ever gets
- *   their organisation's rows; a provider-level user the organisation view
- *   the dashboard shows them). Rows are read with only the columns a result
- *   needs: never certificate keys or password hashes.
+ *   the role's permission and its tag scope (proxy hosts, L4 hosts and
+ *   certificates). Rows are read with only the columns a result needs: never
+ *   certificate keys or password hashes.
  * - Actions need the write permission of the page they open; pages, the
  *   permission of their page guard (src/lib/navigation.ts); the sections of
  *   the settings pages (src/lib/settings-sections.ts), settings:read plus the
@@ -21,29 +19,18 @@ import { and, or, type SQL } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { appDb } from "./db";
 import { certificates, l4ProxyHosts, proxyHosts, users } from "./db/schema";
-import { can, listHeldPermissions, scopeTagsFor, tenantOf, type Access, type Permission } from "./permissions";
+import { can, listHeldPermissions, scopeTagsFor, type Access, type Permission } from "./permissions";
 import { tagsMatchAny } from "./host-tag-filter";
 import { certificateIdsInScope } from "./access-scope";
 import { NAV_ACCOUNT, NAV_FOOTER, NAV_GROUPS, visibleNavPages, type NavEntryKey } from "./navigation";
 import { SETTINGS_SECTIONS } from "./settings-sections";
 import { BRAND_NAME, documentationUrl } from "./brand";
 import { normalizeSearchQuery, SEARCH_LIMITS, type SearchResponse, type SearchResult, type SearchRunAction } from "./search-results";
-import { organizationCondition, type OrganizationFilter } from "@/ee/multi-tenancy/scope";
-import { dashboardOrganizationFilter } from "@/ee/multi-tenancy/view";
 import { brandName } from "@/ee/white-label/store";
 import { asc, likeText } from "@/src/lib/db/ops";
 
 /** Rows read per table before ranking, so the best matches win over the first ones. */
 const CANDIDATES = 25;
-
-export type SearchOptions = {
-  /**
-   * The organisation filter for hosts, certificates and users; by default the
-   * one the dashboard's lists use for the caller (dashboardOrganizationFilter).
-   * Ignored for organisation users, who always get their own organisation.
-   */
-  organizationFilter?: OrganizationFilter;
-};
 
 // ── Matching ──────────────────────────────────────────────────────────
 
@@ -99,15 +86,14 @@ function result(fields: Omit<SearchResult, "external" | "mono" | "run" | "verb">
 
 // ── Hosts, certificates, users ────────────────────────────────────────
 
-async function searchProxyHosts(access: Access, query: string, organization: OrganizationFilter) {
+async function searchProxyHosts(access: Access, query: string) {
   const scope = scopeTagsFor(access, "proxy_hosts");
   const rows = await appDb
     .select({ id: proxyHosts.id, name: proxyHosts.name, domains: proxyHosts.domains, enabled: proxyHosts.enabled })
     .from(proxyHosts)
     .where(and(
       or(contains(proxyHosts.name, query), contains(proxyHosts.domains, query)),
-      scope ? tagsMatchAny(proxyHosts.tags, scope) : undefined,
-      organizationCondition(proxyHosts.organizationId, organization)
+      scope ? tagsMatchAny(proxyHosts.tags, scope) : undefined
     ))
     .orderBy(asc(proxyHosts.name), asc(proxyHosts.id))
     .limit(CANDIDATES);
@@ -156,11 +142,11 @@ async function searchL4Hosts(access: Access, query: string): Promise<SearchResul
   );
 }
 
-async function searchCertificates(access: Access, query: string, organization: OrganizationFilter): Promise<SearchResult[]> {
+async function searchCertificates(access: Access, query: string): Promise<SearchResult[]> {
   const rows = await appDb
     .select({ id: certificates.id, name: certificates.name, type: certificates.type, domainNames: certificates.domainNames })
     .from(certificates)
-    .where(and(or(contains(certificates.name, query), contains(certificates.domainNames, query)), organizationCondition(certificates.organizationId, organization)))
+    .where(or(contains(certificates.name, query), contains(certificates.domainNames, query)))
     .orderBy(asc(certificates.name), asc(certificates.id))
     .limit(CANDIDATES * 4);
   const inScope = await certificateIdsInScope(access);
@@ -180,12 +166,12 @@ async function searchCertificates(access: Access, query: string, organization: O
   );
 }
 
-async function searchUsers(query: string, organization: OrganizationFilter): Promise<SearchResult[]> {
+async function searchUsers(query: string): Promise<SearchResult[]> {
   // Only the columns a result shows: never passwordHash or anything secret.
   const rows = await appDb
     .select({ id: users.id, name: users.name, email: users.email, username: users.username, status: users.status })
     .from(users)
-    .where(and(or(contains(users.email, query), contains(users.name, query), contains(users.username, query)), organizationCondition(users.organizationId, organization)))
+    .where(or(contains(users.email, query), contains(users.name, query), contains(users.username, query)))
     .orderBy(asc(users.email), asc(users.id))
     .limit(CANDIDATES);
   return ranked(rows, (row) => matchRank(query, row.name || row.email, [row.email, row.username ?? ""]), SEARCH_LIMITS.users).map((row) =>
@@ -316,7 +302,7 @@ function pageResults(access: Access): (SearchResult & { keywords: string[] })[] 
   });
 }
 
-/** Settings that live on other pages, shown with the settings sections; providerOnly ones not to client organisations. */
+/** Settings that live on other pages, shown with the settings sections. */
 const OTHER_SETTINGS: readonly {
   id: string;
   title: string;
@@ -324,7 +310,6 @@ const OTHER_SETTINGS: readonly {
   keywords: readonly string[];
   href: string;
   permission: Permission | null;
-  providerOnly?: boolean;
 }[] = [
   { id: "api-tokens", title: "API tokens", subtitle: "Profile · Bearer tokens for /api/v1", keywords: ["token", "bearer", "rest", "api key"], href: "/profile", permission: null },
   { id: "mfa", title: "Multi-factor authentication", subtitle: "Profile · authenticator app and backup codes", keywords: ["mfa", "totp", "2fa", "two-factor"], href: "/profile", permission: null },
@@ -336,7 +321,6 @@ const OTHER_SETTINGS: readonly {
     keywords: ["block", "ban", "blocklist", "deny", "ip", "address", "country", "blocked sources"],
     href: "/access-lists?tab=blocked-sources",
     permission: "access_lists:read",
-    providerOnly: true,
   },
   { id: "branding", title: "Branding", subtitle: "Product name, logos and colours", keywords: ["white label", "logo", "colour", "color", "theme"], href: "/branding", permission: "branding:read" },
 ];
@@ -355,9 +339,7 @@ function settingsResults(access: Access): (SearchResult & { keywords: readonly s
         keywords: section.keywords,
       }))
     : [];
-  const others = OTHER_SETTINGS.filter(
-    (item) => (item.permission === null || can(access, item.permission)) && (!item.providerOnly || tenantOf(access) === null)
-  ).map((item) => ({
+  const others = OTHER_SETTINGS.filter((item) => item.permission === null || can(access, item.permission)).map((item) => ({
     ...result({ group: "settings", kind: "setting", id: `setting:${item.id}`, title: item.title, subtitle: item.subtitle, href: item.href }),
     keywords: item.keywords,
   }));
@@ -383,7 +365,6 @@ const DOCS: readonly { id: string; title: string; subtitle: string; keywords: re
   { id: "sign-in-and-directories", title: "Sign-in and directories", subtitle: "Enforced SSO, OIDC, SAML, LDAP and SCIM on one page", keywords: ["sign-in", "sso", "oidc", "saml", "ldap", "scim", "break-glass"], path: "documentation/sign-in-and-directories.md" },
   { id: "mfa", title: "Multi-factor authentication", subtitle: "Authenticator codes, backup codes, policy", keywords: ["mfa", "totp", "2fa", "two-factor"], path: "documentation/mfa.md" },
   { id: "host-tags", title: "Host tags", subtitle: "Labels on hosts, and roles limited to them", keywords: ["tags", "labels", "scope"], path: "documentation/host-tags.md" },
-  { id: "usage-ping", title: "Anonymous usage ping", subtitle: "Exactly what is sent, and the privacy notice", keywords: ["usage", "telemetry", "privacy"], path: "documentation/usage-ping.md" },
   { id: "charts", title: "Charts", subtitle: "Reading the traffic charts with a mouse, keyboard or screen reader", keywords: ["charts", "graphs", "keyboard", "screen reader"], path: "documentation/charts.md" },
   { id: "configuration", title: "Configuration reference", subtitle: "The environment variables of the web container", keywords: ["environment", "variables", "env", "docker compose"], path: "documentation/configuration.md" },
   { id: "upgrade-notes", title: "Upgrade notes", subtitle: "What to check before upgrading from each release", keywords: ["upgrade", "release", "version", "breaking changes"], path: "documentation/upgrade-notes.md" },
@@ -398,7 +379,6 @@ const DOCS: readonly { id: string; title: string; subtitle: string; keywords: re
   { id: "proxy-hosts", title: "Proxy hosts", subtitle: "The list, a host's page and upstream health", keywords: ["hosts", "upstreams", "health", "bulk", "status"], path: "documentation/proxy-hosts.md" },
   { id: "proxy-host-editor", title: "Proxy host editor", subtitle: "Sections, the review before saving, and preview", keywords: ["editor", "edit host", "new host", "review", "preview"], path: "documentation/proxy-host-editor.md" },
   { id: "upgrading-to-ingressi", title: "Upgrading from Caddy Proxy Manager", subtitle: "Every name the rename changed, and what keeps working", keywords: ["rename", "caddy proxy manager", "cpm", "x-cpm", "migration"], path: "documentation/upgrading-to-ingressi.md" },
-  { id: "licenses", title: "Licenses", subtitle: "Buying, trials, installing keys and automatic updates", keywords: ["license", "key", "trial", "renewal", "stripe", "refresh token", "edition"], path: "ee/docs/licenses.md" },
   { id: "custom-roles", title: "Custom roles and permissions", subtitle: "Permissions, tag scopes and the endpoint table", keywords: ["roles", "rbac", "permissions", "scope"], path: "ee/docs/custom-roles.md" },
   { id: "sso-enforcement", title: "Enforced single sign-on", subtitle: "Break-glass accounts and lockout guards", keywords: ["sso", "break-glass", "enforce"], path: "ee/docs/sso-enforcement.md" },
   { id: "sso-saml", title: "SAML sign-in", subtitle: "Entra ID, Okta and other SAML providers", keywords: ["saml", "sso", "entra", "okta"], path: "ee/docs/sso-saml.md" },
@@ -414,7 +394,6 @@ const DOCS: readonly { id: string; title: string; subtitle: string; keywords: re
   { id: "compliance-reports", title: "Compliance reports", subtitle: "Access, change and certificate reports", keywords: ["compliance", "nis2", "report"], path: "ee/docs/compliance-reports.md" },
   { id: "fleet", title: "Fleet management", subtitle: "Environments, promotions and drift", keywords: ["fleet", "environments", "promote", "replicas"], path: "ee/docs/fleet.md" },
   { id: "high-availability", title: "High availability", subtitle: "Shared certificate storage, shared request-path state, a dashboard cluster with failover and PostgreSQL replicas", keywords: ["redis", "valkey", "cluster", "ha", "failover", "standby", "litestream", "replication", "shared state", "sessions", "balances", "postgresql", "replicas", "leader election", "load balancer", "upstreams", "health check"], path: "ee/docs/high-availability.md" },
-  { id: "multi-tenancy", title: "Multi-tenancy", subtitle: "Client organisations and their limits", keywords: ["organisations", "organizations", "tenants", "msp"], path: "ee/docs/multi-tenancy.md" },
   { id: "white-label", title: "White-label branding", subtitle: "Product name, logos and colours", keywords: ["branding", "white label", "logo"], path: "ee/docs/white-label.md" },
   { id: "scheduled-backups", title: "Scheduled backups", subtitle: "Encrypted backups to S3-compatible storage", keywords: ["backup", "s3", "restore"], path: "ee/docs/scheduled-backups.md" },
   { id: "audit-streaming", title: "Audit streaming", subtitle: "Send the audit log to a SIEM", keywords: ["siem", "syslog", "audit", "retention"], path: "ee/docs/audit-streaming.md" },
@@ -462,25 +441,20 @@ function suggestions(access: Access): SearchResult[] {
   return [...actions, ...pages];
 }
 
-export async function searchDashboard(access: Access, rawQuery: string, options: SearchOptions = {}): Promise<SearchResponse> {
+export async function searchDashboard(access: Access, rawQuery: string): Promise<SearchResponse> {
   const query = normalizeSearchQuery(rawQuery);
   if (!query) return { query, results: suggestions(access) };
-
-  const tenant = tenantOf(access);
-  const organization: OrganizationFilter =
-    tenant !== null ? tenant : "organizationFilter" in options ? options.organizationFilter : await dashboardOrganizationFilter(access);
 
   const results: SearchResult[] = [];
   let exactHost = false;
   if (can(access, "proxy_hosts:read")) {
-    const hosts = await searchProxyHosts(access, query, organization);
+    const hosts = await searchProxyHosts(access, query);
     exactHost = hosts.exact;
     results.push(...hosts.results);
   }
-  // L4 hosts belong to the provider level: organisation users never get them.
-  if (tenant === null && can(access, "l4_proxy_hosts:read")) results.push(...(await searchL4Hosts(access, query)));
-  if (can(access, "certificates:read")) results.push(...(await searchCertificates(access, query, organization)));
-  if (can(access, "users:read")) results.push(...(await searchUsers(query, organization)));
+  if (can(access, "l4_proxy_hosts:read")) results.push(...(await searchL4Hosts(access, query)));
+  if (can(access, "certificates:read")) results.push(...(await searchCertificates(access, query)));
+  if (can(access, "users:read")) results.push(...(await searchUsers(query)));
 
   // Actions: a host name that no visible host has yet offers to create it.
   const allowed = allowedActions(access);

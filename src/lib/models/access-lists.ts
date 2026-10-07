@@ -26,12 +26,6 @@ import {
   type AccessListRuleKind,
   type AccessListSettings,
 } from "../access-list-rules";
-import {
-  assertActorReaches,
-  organizationCondition,
-  organizationForNewRow,
-  type OrganizationFilter,
-} from "@/ee/multi-tenancy/scope";
 import { asc, first } from "@/src/lib/db/ops";
 import type { AppTx } from "@/src/lib/db/types";
 
@@ -74,8 +68,6 @@ export type AccessList = {
   system: typeof BLOCKED_SOURCES_KEY | null;
   createdAt: string;
   updatedAt: string;
-  /** The owning organisation (ee/multi-tenancy), or null for the provider level. */
-  organizationId: number | null;
 };
 
 export type AccessListInput = {
@@ -89,8 +81,6 @@ export type AccessListInput = {
   denyBody?: string | null;
   denyRedirectUrl?: string | null;
   failClosed?: boolean;
-  /** Create only: the organisation (ee/multi-tenancy); see ProxyHostInput.organizationId. */
-  organizationId?: number | null;
 };
 
 export type AccessListUpdate = {
@@ -194,8 +184,7 @@ function toAccessList(row: AccessListRow, entries: AccessListEntryRow[], rules: 
     failClosed: Boolean(row.failClosed),
     system: isSystemList(row) ? BLOCKED_SOURCES_KEY : null,
     createdAt: toIso(row.createdAt)!,
-    updatedAt: toIso(row.updatedAt)!,
-    organizationId: row.organizationId ?? null
+    updatedAt: toIso(row.updatedAt)!
   };
 }
 
@@ -222,35 +211,27 @@ async function hydrate(lists: AccessListRow[]): Promise<AccessList[]> {
 }
 
 /** Lists users created: never the global Blocked sources list. */
-function userListsCondition(organizationId?: OrganizationFilter) {
-  const tenant = organizationCondition(accessLists.organizationId, organizationId);
-  return tenant ? and(tenant, isNull(accessLists.systemKey)) : isNull(accessLists.systemKey);
-}
+const USER_LISTS = isNull(accessLists.systemKey);
 
-/** `organizationId` limits the list to one organisation's lists (see listProxyHosts). */
-export async function listAccessLists(organizationId?: OrganizationFilter): Promise<AccessList[]> {
+export async function listAccessLists(): Promise<AccessList[]> {
   const lists = await appDb.query.accessLists.findMany({
-    where: userListsCondition(organizationId),
+    where: USER_LISTS,
     orderBy: (table) => [asc(table.name), asc(table.id)]
   });
   return hydrate(lists);
 }
 
-export async function countAccessLists(organizationId?: OrganizationFilter): Promise<number> {
+export async function countAccessLists(): Promise<number> {
   const [row] = await appDb
     .select({ value: count() })
     .from(accessLists)
-    .where(userListsCondition(organizationId));
+    .where(USER_LISTS);
   return row?.value ?? 0;
 }
 
-export async function listAccessListsPaginated(
-  limit: number,
-  offset: number,
-  organizationId?: OrganizationFilter
-): Promise<AccessList[]> {
+export async function listAccessListsPaginated(limit: number, offset: number): Promise<AccessList[]> {
   const lists = await appDb.query.accessLists.findMany({
-    where: userListsCondition(organizationId),
+    where: USER_LISTS,
     // The id last, so that every page is the same on every database.
     orderBy: (table) => [asc(table.name), asc(table.id)],
     limit,
@@ -271,11 +252,10 @@ async function findListRow(id: number): Promise<AccessListRow | undefined> {
   return appDb.query.accessLists.findFirst({ where: (table, operators) => operators.eq(table.id, id) });
 }
 
-/** The list row the actor may change; "not found" (404) when missing or of another organisation. */
-async function reachableList(id: number, actorUserId: number): Promise<AccessListRow> {
+/** The list row; "not found" (404) when missing. */
+async function requireListRow(id: number): Promise<AccessListRow> {
   const list = await findListRow(id);
   if (!list) throw new Error(NOT_FOUND);
-  await assertActorReaches(actorUserId, list.organizationId, NOT_FOUND);
   return list;
 }
 
@@ -441,8 +421,6 @@ export async function createAccessList(input: AccessListInput, actorUserId: numb
     throw new ApiValidationError("users must not repeat a username");
   }
 
-  // Multi-tenancy (ee): an organisation user's lists go to their organisation.
-  const organizationId = await organizationForNewRow(actorUserId, input.organizationId);
   const now = nowIso();
   // Async hashing keeps a bulk create from blocking the event loop (and with
   // it forward-auth checks) for the whole batch.
@@ -455,7 +433,6 @@ export async function createAccessList(input: AccessListInput, actorUserId: numb
         name,
         description,
         createdBy: actorUserId,
-        organizationId,
         defaultAction: settings.defaultAction ?? "allow",
         denyStatus: settings.denyStatus ?? DEFAULT_DENY_STATUS,
         denyBody: settings.denyBody ?? null,
@@ -510,9 +487,9 @@ type PreparedChange = {
   rules: AccessListRuleData[] | null;
 };
 
-async function prepareListChange(id: number, input: AccessListUpdate, actorUserId: number): Promise<PreparedChange> {
+async function prepareListChange(id: number, input: AccessListUpdate): Promise<PreparedChange> {
   if (!isRecord(input)) throw new ApiValidationError("Access list must be an object");
-  const existing = await reachableList(id, actorUserId);
+  const existing = await requireListRow(id);
   const name = input.name !== undefined ? normalizeListName(input.name) : existing.name;
   const description = input.description !== undefined ? normalizeListDescription(input.description) : existing.description;
   const settings = normalizeListSettings(input as Record<string, unknown>);
@@ -526,7 +503,7 @@ async function prepareListChange(id: number, input: AccessListUpdate, actorUserI
 
 /** Updates a list's name, description, settings and, when `rules` is present, all of its rules. */
 export async function updateAccessList(id: number, input: AccessListUpdate, actorUserId: number) {
-  const { existing, name, description, settings, rules } = await prepareListChange(id, input, actorUserId);
+  const { name, description, settings, rules } = await prepareListChange(id, input);
 
   const now = nowIso();
   const changes = await appDb.transaction(async (tx) => {
@@ -544,7 +521,6 @@ export async function updateAccessList(id: number, input: AccessListUpdate, acto
     entityId: id,
     summary: `Updated access list ${name}${ruleSummary ? ` (${ruleSummary})` : ""}`,
     data: hasListSettings(input as Record<string, unknown>) || changes ? { ...settings, ...(changes ? { rules: changes } : {}) } : undefined,
-    organizationId: existing.organizationId ?? null
   });
 
   await applyCaddyConfig();
@@ -556,7 +532,7 @@ export async function updateAccessList(id: number, input: AccessListUpdate, acto
  * the member changes, in one transaction and one Caddy apply.
  */
 export async function saveAccessList(id: number, input: AccessListSave, actorUserId: number) {
-  const { existing, name, description, settings, rules } = await prepareListChange(id, input, actorUserId);
+  const { existing, name, description, settings, rules } = await prepareListChange(id, input);
   if (input.expectedUpdatedAt !== undefined && isoOrNull(existing.updatedAt) !== isoOrNull(input.expectedUpdatedAt)) {
     throw new ApiConflictError("Someone else changed this access list since you opened it; reload it and try again");
   }
@@ -614,7 +590,6 @@ export async function saveAccessList(id: number, input: AccessListSave, actorUse
     return rules ? await replaceRulesInTx(tx, id, rules, ruleIdsOf(input.rules as unknown[]), actorUserId, now) : null;
   });
 
-  const organizationId = existing.organizationId ?? null;
   const ruleSummary = changes ? describeRuleChanges(changes) : null;
   await logAuditEvent({
     userId: actorUserId,
@@ -623,7 +598,6 @@ export async function saveAccessList(id: number, input: AccessListSave, actorUse
     entityId: id,
     summary: `Updated access list ${name}${ruleSummary ? ` (${ruleSummary})` : ""}`,
     data: { ...settings, ...(changes ? { rules: changes } : {}) },
-    organizationId,
   });
   for (const member of add) {
     await logAuditEvent({
@@ -632,7 +606,6 @@ export async function saveAccessList(id: number, input: AccessListSave, actorUse
       entityType: "access_list_entry",
       entityId: id,
       summary: `Added user ${member.username} to access list ${name}`,
-      organizationId,
     });
   }
   for (const entry of currentEntries) {
@@ -643,7 +616,6 @@ export async function saveAccessList(id: number, input: AccessListSave, actorUse
         entityType: "access_list_entry",
         entityId: entry.id,
         summary: `Removed user ${entry.username} from access list ${name}`,
-        organizationId,
       });
     } else if (passwords.some((item) => item.id === entry.id)) {
       await logAuditEvent({
@@ -652,7 +624,6 @@ export async function saveAccessList(id: number, input: AccessListSave, actorUse
         entityType: "access_list_entry",
         entityId: entry.id,
         summary: `Set a new password for user ${entry.username} of access list ${name}`,
-        organizationId,
       });
     }
   }
@@ -666,7 +637,7 @@ export async function addAccessListEntry(
   entry: { username: string; password: string },
   actorUserId: number
 ) {
-  const list = await reachableList(accessListId, actorUserId);
+  const list = await requireListRow(accessListId);
   if (isSystemList(list)) throw new ApiValidationError("The Blocked sources list has no members");
   const member = normalizeMemberInput(entry, "entry");
 
@@ -691,14 +662,13 @@ export async function addAccessListEntry(
     entityType: "access_list_entry",
     entityId: accessListId,
     summary: `Added user ${member.username} to access list ${list.name}`,
-    organizationId: list.organizationId ?? null
   });
   await applyCaddyConfig();
   return (await getAccessList(accessListId))!;
 }
 
 export async function removeAccessListEntry(accessListId: number, entryId: number, actorUserId: number) {
-  const list = await reachableList(accessListId, actorUserId);
+  const list = await requireListRow(accessListId);
 
   // Only an entry of this list: the list is what the caller was checked against.
   await appDb
@@ -711,7 +681,6 @@ export async function removeAccessListEntry(accessListId: number, entryId: numbe
     entityType: "access_list_entry",
     entityId: entryId,
     summary: `Removed entry from access list ${list.name}`,
-    organizationId: list.organizationId ?? null
   });
   await applyCaddyConfig();
   return (await getAccessList(accessListId))!;
@@ -723,7 +692,7 @@ export async function removeAccessListEntry(accessListId: number, entryId: numbe
  * list cannot be deleted; its entries can.
  */
 export async function deleteAccessList(id: number, actorUserId: number) {
-  const existing = await reachableList(id, actorUserId);
+  const existing = await requireListRow(id);
   if (isSystemList(existing)) {
     throw new ApiValidationError("The Blocked sources list cannot be deleted; remove its entries instead");
   }
@@ -742,7 +711,6 @@ export async function deleteAccessList(id: number, actorUserId: number) {
     entityType: "access_list",
     entityId: id,
     summary: `Deleted access list ${existing.name}`,
-    organizationId: existing.organizationId ?? null
   });
   await applyCaddyConfig();
 }
@@ -771,7 +739,6 @@ async function auditRule(
     entityId: ruleId,
     summary,
     data,
-    organizationId: list.organizationId ?? null,
   });
 }
 
@@ -807,7 +774,7 @@ export async function addAccessListRule(
   actorUserId: number,
   options: { position?: unknown } = {}
 ): Promise<AccessListRule> {
-  const list = await reachableList(accessListId, actorUserId);
+  const list = await requireListRow(accessListId);
   const rule = normalizeRuleInput(input);
   assertSystemListInput(list, { settings: {}, rules: [rule] });
   const position = options.position;
@@ -824,8 +791,8 @@ export async function addAccessListRule(
   return readRule(ruleId);
 }
 
-async function reachableRule(accessListId: number, ruleId: number, actorUserId: number) {
-  const list = await reachableList(accessListId, actorUserId);
+async function ruleOfList(accessListId: number, ruleId: number) {
+  const list = await requireListRow(accessListId);
   const row =
     Number.isSafeInteger(ruleId) && ruleId > 0
       ? await appDb.query.accessListRules.findFirst({
@@ -844,7 +811,7 @@ export async function updateAccessListRule(
   input: unknown,
   actorUserId: number
 ): Promise<AccessListRule> {
-  const { list, row } = await reachableRule(accessListId, ruleId, actorUserId);
+  const { list, row } = await ruleOfList(accessListId, ruleId);
   const rule = normalizeRuleInput(input, { existingExpiry: isoOrNull(row.expiresAt) });
   assertSystemListInput(list, { settings: {}, rules: [rule] });
 
@@ -872,7 +839,7 @@ export async function updateAccessListRule(
 }
 
 export async function removeAccessListRule(accessListId: number, ruleId: number, actorUserId: number): Promise<void> {
-  const { list, row } = await reachableRule(accessListId, ruleId, actorUserId);
+  const { list, row } = await ruleOfList(accessListId, ruleId);
   const now = nowIso();
   await appDb.transaction(async (tx) => {
     await tx.delete(accessListRules).where(eq(accessListRules.id, ruleId));
@@ -892,7 +859,7 @@ export async function reorderAccessListRules(
   ruleIds: unknown,
   actorUserId: number
 ): Promise<AccessListRule[]> {
-  const list = await reachableList(accessListId, actorUserId);
+  const list = await requireListRow(accessListId);
   if (!Array.isArray(ruleIds) || !ruleIds.every((id) => typeof id === "number" && Number.isSafeInteger(id))) {
     throw new ApiValidationError("ruleIds must be an array of rule ids");
   }
@@ -917,7 +884,6 @@ export async function reorderAccessListRules(
     entityId: accessListId,
     summary: `Reordered the rules of access list ${list.name}`,
     data: { ruleIds: order },
-    organizationId: list.organizationId ?? null,
   });
   await applyCaddyConfig();
   return listAccessListRules(accessListId);
@@ -960,7 +926,6 @@ export function blockedSourcesPlaceholder(): BlockedSourcesPlaceholder {
     system: BLOCKED_SOURCES_KEY,
     createdAt: null,
     updatedAt: null,
-    organizationId: null,
   };
 }
 
@@ -972,12 +937,8 @@ export async function getBlockedSourcesList(): Promise<AccessList | null> {
   return hydrated;
 }
 
-/**
- * The Blocked sources list row, created on first use. It is provider-level:
- * an organisation user never reaches it ("not found").
- */
-export async function ensureBlockedSourcesList(actorUserId: number): Promise<AccessListRow> {
-  await assertActorReaches(actorUserId, null, NOT_FOUND);
+/** The Blocked sources list row, created on first use. */
+export async function ensureBlockedSourcesList(): Promise<AccessListRow> {
   const existing = await blockedSourcesRow();
   if (existing) return existing;
   const now = nowIso();
@@ -988,7 +949,6 @@ export async function ensureBlockedSourcesList(actorUserId: number): Promise<Acc
       description: BLOCKED_SOURCES_DESCRIPTION,
       systemKey: BLOCKED_SOURCES_KEY,
       createdBy: null,
-      organizationId: null,
       defaultAction: "allow",
       denyStatus: DEFAULT_DENY_STATUS,
       createdAt: now,
@@ -1058,7 +1018,7 @@ export async function addBlockedSource(
   });
   assertBlockedSourceRules([rule]);
 
-  const list = await ensureBlockedSourcesList(actorUserId);
+  const list = await ensureBlockedSourcesList();
   const values = JSON.stringify(rule.values);
   // Looking for the same entry and adding or updating it in one transaction,
   // so two requests blocking the same source do not add it twice.
@@ -1089,7 +1049,6 @@ export async function addBlockedSource(
 
 /** Removes an entry from the Blocked sources list. */
 export async function removeBlockedSource(entryId: number, actorUserId: number): Promise<void> {
-  await assertActorReaches(actorUserId, null, RULE_NOT_FOUND);
   const list = await blockedSourcesRow();
   if (!list) throw new Error(RULE_NOT_FOUND);
   await removeAccessListRule(list.id, entryId, actorUserId);
@@ -1140,7 +1099,6 @@ export async function deleteExpiredAccessListRules(now: Date = new Date()): Prom
       entityType: list && isSystemList(list) ? "blocked_source" : "access_list_rule",
       entityId: row.id,
       summary: `Rule "${ruleText(rule)}" of access list ${list?.name ?? `#${row.accessListId}`} expired`,
-      organizationId: list?.organizationId ?? null,
     });
   }
   await applyCaddyConfig();
@@ -1156,8 +1114,7 @@ export type AccessListUsage = {
   enabled: boolean;
 };
 
-/** `organizationId` limits the hosts listed to one organisation's (see listProxyHosts). */
-export async function getAccessListUsageMap(organizationId?: OrganizationFilter): Promise<Map<number, AccessListUsage[]>> {
+export async function getAccessListUsageMap(): Promise<Map<number, AccessListUsage[]>> {
   const rows = await appDb
     .select({
       id: proxyHosts.id,
@@ -1167,7 +1124,6 @@ export async function getAccessListUsageMap(organizationId?: OrganizationFilter)
       accessListId: proxyHosts.accessListId,
     })
     .from(proxyHosts)
-    .where(organizationCondition(proxyHosts.organizationId, organizationId))
     .orderBy(asc(proxyHosts.id));
 
   const map = new Map<number, AccessListUsage[]>();

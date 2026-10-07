@@ -20,9 +20,6 @@ import { normalizeTags, parseStoredTags, serializeTags } from "../host-tags";
 import { tagsMatchAny } from "../host-tag-filter";
 import { assertProxyHostAuthCompatible, forgetDeletedProxyHost } from "@/ee/monetization/host-guard";
 import { assertHostCreateApproved, assertHostDeleteApproved, assertHostUpdateApproved } from "@/ee/approvals/guard";
-import { checkProxyHostCreate, checkProxyHostUpdate } from "@/ee/multi-tenancy/hosts";
-import { assertProxyHostRoom } from "@/ee/multi-tenancy/guard";
-import { assertActorReaches, organizationCondition, type OrganizationFilter } from "@/ee/multi-tenancy/scope";
 import { normalizeProxyHostRateLimit, readStoredHostRateLimit } from "../caddy-rate-limit";
 import type { ProxyHostRateLimit, RateLimitMode, RateLimitRule } from "../rate-limit-rules";
 import { deleteWafExclusionsForHost, replaceWholeScopeExclusions, syncWafExclusionMirror } from "./waf-exclusion-mirror";
@@ -641,8 +638,6 @@ export type ProxyHost = {
   rateLimit: ProxyHostRateLimit | null;
   /** Free-form tags (src/lib/host-tags.ts); a custom role can be scoped to them. */
   tags: string[];
-  /** The owning organisation (ee/multi-tenancy), or null for the provider level. */
-  organizationId: number | null;
 };
 
 export type ProxyHostInput = {
@@ -681,13 +676,6 @@ export type ProxyHostInput = {
   rateLimit?: ProxyHostRateLimitInput | null;
   /** Free-form tags; an array of strings (or a comma-separated string). */
   tags?: string[] | null;
-  /**
-   * Create only: the organisation (ee/multi-tenancy) the host belongs to. An
-   * organisation user's hosts always go to their organisation; a
-   * provider-level user needs organizations:write and the license. Moving an
-   * existing host goes through the organisations API.
-   */
-  organizationId?: number | null;
 };
 
 type ProxyHostRow = typeof proxyHosts.$inferSelect;
@@ -2511,7 +2499,6 @@ function parseProxyHost(row: ProxyHostRow): ProxyHost {
     errorPages: meta.error_pages ?? [],
     rateLimit: meta.rate_limit ?? null,
     tags: parseStoredTags(row.tags),
-    organizationId: row.organizationId ?? null,
   };
 }
 
@@ -2534,33 +2521,17 @@ function proxyHostSearchCondition(search?: string): SQL | undefined {
     : undefined;
 }
 
-/**
- * `organizationId` limits the list to one organisation's hosts (null: the
- * provider level's); undefined lists every organisation's. Callers pass
- * organizationFilterFor(access) (ee/multi-tenancy/scope.ts).
- */
-export async function listProxyHosts(
-  scopeTags?: readonly string[] | null,
-  organizationId?: OrganizationFilter
-): Promise<ProxyHost[]> {
+export async function listProxyHosts(scopeTags?: readonly string[] | null): Promise<ProxyHost[]> {
   const hosts = await appDb
     .select()
     .from(proxyHosts)
-    .where(and(proxyHostScopeCondition(scopeTags), organizationCondition(proxyHosts.organizationId, organizationId)))
+    .where(proxyHostScopeCondition(scopeTags))
     .orderBy(desc(proxyHosts.createdAt), desc(proxyHosts.id));
   return hosts.map(parseProxyHost);
 }
 
-export async function countProxyHosts(
-  search?: string,
-  scopeTags?: readonly string[] | null,
-  organizationId?: OrganizationFilter
-): Promise<number> {
-  const where = and(
-    proxyHostSearchCondition(search),
-    proxyHostScopeCondition(scopeTags),
-    organizationCondition(proxyHosts.organizationId, organizationId)
-  );
+export async function countProxyHosts(search?: string, scopeTags?: readonly string[] | null): Promise<number> {
+  const where = and(proxyHostSearchCondition(search), proxyHostScopeCondition(scopeTags));
   const [row] = await appDb.select({ value: count() }).from(proxyHosts).where(where);
   return row?.value ?? 0;
 }
@@ -2580,14 +2551,9 @@ export async function listProxyHostsPaginated(
   search?: string,
   sortBy?: string,
   sortDir?: "asc" | "desc",
-  scopeTags?: readonly string[] | null,
-  organizationId?: OrganizationFilter
+  scopeTags?: readonly string[] | null
 ): Promise<ProxyHost[]> {
-  const where = and(
-    proxyHostSearchCondition(search),
-    proxyHostScopeCondition(scopeTags),
-    organizationCondition(proxyHosts.organizationId, organizationId)
-  );
+  const where = and(proxyHostSearchCondition(search), proxyHostScopeCondition(scopeTags));
   const col = (sortBy && PROXY_HOST_SORT_COLUMNS[sortBy]) || proxyHosts.createdAt;
   const dir = sortDir === "asc" ? asc : desc;
   const hosts = await appDb
@@ -2652,17 +2618,12 @@ export async function createProxyHost(rawInput: ProxyHostInput, actorUserId: num
   const tags = normalizeTags(input.tags);
   // Change approvals (ee): a host a policy protects is only created through an approved change request.
   await assertHostCreateApproved("proxy_host", input.name, tags);
-  // Multi-tenancy (ee): the host's organisation, what an organisation user may
-  // set, references and domains of other organisations.
-  const organizationId = await checkProxyHostCreate(actorUserId, input, domains);
   await assertAttachableAccessList(input.accessListId);
 
   const now = nowIso();
   const meta = buildMeta({}, input, input.waf ? await getWafSettings() : null);
-  // The organisation's host limit is checked in the transaction that inserts
-  // the host, with its WAF exclusion records.
+  // The host and its WAF exclusion records are inserted together.
   const record = await appDb.transaction(async (tx) => {
-    await assertProxyHostRoom(tx, organizationId);
     const [record] = await tx
       .insert(proxyHosts)
       .values({
@@ -2681,7 +2642,6 @@ export async function createProxyHost(rawInput: ProxyHostInput, actorUserId: num
         skipHttpsHostnameValidation: input.skipHttpsHostnameValidation ?? false,
         enabled: input.enabled ?? true,
         tags: serializeTags(tags),
-        organizationId,
         createdAt: now,
         updatedAt: now
       })
@@ -2725,12 +2685,9 @@ export async function updateProxyHost(id: number, rawInput: Partial<ProxyHostInp
   if (!existing) {
     throw new Error("Proxy host not found");
   }
-  // Multi-tenancy (ee): an organisation user reaches only their organisation's hosts.
-  await assertActorReaches(actorUserId, existing.organizationId, "Proxy host not found");
   await assertHostUpdateApproved("proxy_host", existing, input);
 
   const domainList = input.domains ? normalizeProxyHostDomains(input.domains) : existing.domains;
-  await checkProxyHostUpdate(actorUserId, existing, input, input.domains ? domainList : null);
   if (input.accessListId !== undefined && input.accessListId !== existing.accessListId) {
     await assertAttachableAccessList(input.accessListId);
   }
@@ -2840,7 +2797,6 @@ export async function deleteProxyHost(id: number, actorUserId: number) {
   if (!existing) {
     throw new Error("Proxy host not found");
   }
-  await assertActorReaches(actorUserId, existing.organizationId, "Proxy host not found");
   await assertHostDeleteApproved("proxy_host", existing);
 
   // Foreign keys are not enforced (SQLite runs with them off, PostgreSQL has
@@ -2868,8 +2824,7 @@ export async function deleteProxyHost(id: number, actorUserId: number) {
     action: "delete",
     entityType: "proxy_host",
     entityId: id,
-    summary: `Deleted proxy host ${existing.name}`,
-    organizationId: existing.organizationId
+    summary: `Deleted proxy host ${existing.name}`
   });
   await applyCaddyConfig();
 }

@@ -3,7 +3,7 @@
  * HTTP handler, against an in-memory directory behind a fake ldapts client:
  * the search-then-bind flow, filter escaping, empty passwords, unknown users
  * versus wrong passwords, linking and provisioning, group-to-role mapping,
- * MFA, enforced SSO, TLS settings, and that sign-in never needs a license.
+ * MFA, enforced SSO and TLS settings.
  *
  * Like auth-mfa.test.ts, this boots the real db module and the real
  * auth-server against the application database: a SQLite file, or in the
@@ -89,7 +89,7 @@ async function localAccount(username: string, role: 'admin' | 'user' = 'user', e
 
 let directoryCounter = 0;
 
-/** A directory row as the administration code stores it (no license involved). */
+/** A directory row as the administration code stores it. */
 async function addDirectory(overrides: Partial<typeof import('../../src/lib/db/schema').ldapDirectories.$inferInsert> = {}): Promise<number> {
   directoryCounter += 1;
   const now = new Date().toISOString();
@@ -565,15 +565,5 @@ describe('transport', () => {
 
     const allowed = await addDirectory({ url: 'ldap://ldap.example.com:389', startTls: false, allowUnencrypted: true });
     expect((await signIn(browser(), allowed, 'yuri', 'yuri-password')).status).toBe(200);
-  });
-});
-
-describe('licensing', () => {
-  it('signs in without any license installed', async () => {
-    const { eq } = await import('drizzle-orm');
-    expect(await dbFirst(app.db.select().from(app.schema.settings).where(eq(app.schema.settings.key, 'license')).limit(1))).toBeUndefined();
-    const id = await addDirectory();
-    fakeLdap.entries.push(person('zoe'));
-    expect((await signIn(browser(), id, 'zoe', 'zoe-password')).status).toBe(200);
   });
 });

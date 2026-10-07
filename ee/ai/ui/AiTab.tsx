@@ -3,7 +3,6 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AiProvider, AiSettingsView } from "@/ee/ai/settings";
-import type { DigestSettingsView } from "@/ee/ai/types";
+import { MAX_AI_TIMEOUT_SECONDS, MIN_AI_TIMEOUT_SECONDS, type DigestSettingsView } from "@/ee/ai/types";
 import type { AlertChannelView } from "@/ee/alerting/types";
 import type { QuestionSettingsView } from "@/ee/ai/questions/types";
 import { removeAiSettingsAction, saveAiSettingsAction, testAiProviderAction } from "@/ee/alerting/ui/actions";
@@ -29,13 +28,12 @@ const PROVIDER_LABELS: Record<AiProvider, string> = {
 
 type Props = {
   settings: AiSettingsView;
-  canConfigure: boolean;
   digest?: DigestSettingsView;
   channels?: AlertChannelView[];
   questions?: QuestionSettingsView;
 };
 
-export default function AiTab({ settings, canConfigure, digest, channels = [], questions }: Props) {
+export default function AiTab({ settings, digest, channels = [], questions }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [enabled, setEnabled] = useState(settings.provider ? settings.enabled : true);
@@ -43,6 +41,7 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
   const [model, setModel] = useState(settings.model ?? "");
   const [baseUrl, setBaseUrl] = useState(settings.baseUrl ?? "");
   const [apiKey, setApiKey] = useState("");
+  const [timeoutSeconds, setTimeoutSeconds] = useState(String(settings.timeoutSeconds));
   const [removeKey, setRemoveKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -55,6 +54,9 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
     if (provider === "openai_compatible") input.baseUrl = baseUrl.trim();
     if (removeKey) input.apiKey = null;
     else if (apiKey.trim()) input.apiKey = apiKey.trim();
+    // A number when it is one; anything else goes as typed, so the server's range check names the field.
+    const seconds = timeoutSeconds.trim();
+    input.timeoutSeconds = seconds !== "" && Number.isFinite(Number(seconds)) ? Number(seconds) : seconds;
     startTransition(async () => {
       const result = await saveAiSettingsAction(input);
       if (!result.ok) {
@@ -100,16 +102,7 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
         padded
         contentClassName="flex flex-col gap-4"
       >
-          {!canConfigure && (
-            <Banner tone="info">
-              Setting up the AI analyst needs a license that includes it; a provider already set up keeps working and can
-              still be removed.{" "}
-              <Link href="/license" className="text-brand underline underline-offset-2">
-                Licensing
-              </Link>
-            </Banner>
-          )}
-          <fieldset disabled={!canConfigure || pending} className="flex flex-col gap-4">
+          <fieldset disabled={pending} className="flex flex-col gap-4">
             <div className="space-y-1.5">
               <Label>Provider</Label>
               <Select
@@ -118,7 +111,6 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
                   setProvider(value as AiProvider);
                   setModel(value === settings.provider ? settings.model ?? "" : "");
                 }}
-                disabled={!canConfigure}
               >
                 <SelectTrigger aria-label="AI provider">
                   <SelectValue />
@@ -157,18 +149,35 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
                 value={apiKey}
                 onChange={(event) => setApiKey(event.target.value)}
                 placeholder={keyStored ? "Stored; leave empty to keep" : ""}
-                disabled={removeKey || !canConfigure}
+                disabled={removeKey}
               />
               {keyStored && (
                 <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Checkbox checked={removeKey} onCheckedChange={(checked) => setRemoveKey(checked === true)} disabled={!canConfigure} />
+                  <Checkbox checked={removeKey} onCheckedChange={(checked) => setRemoveKey(checked === true)} />
                   Remove the stored key
                 </label>
               )}
               <p className="text-xs text-muted-foreground">Changing the provider or base URL asks for it again.</p>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ai-timeout">Timeout (seconds)</Label>
+              <Input
+                id="ai-timeout"
+                type="number"
+                inputMode="numeric"
+                min={MIN_AI_TIMEOUT_SECONDS}
+                max={MAX_AI_TIMEOUT_SECONDS}
+                step={1}
+                value={timeoutSeconds}
+                onChange={(event) => setTimeoutSeconds(event.target.value)}
+                className="w-32"
+              />
+              <p className="text-xs text-muted-foreground">
+                {MIN_AI_TIMEOUT_SECONDS} to {MAX_AI_TIMEOUT_SECONDS}. Slow models, such as large self-hosted ones, need more.
+              </p>
+            </div>
             <label className="flex items-center gap-2 text-sm">
-              <Switch checked={enabled} onCheckedChange={setEnabled} disabled={!canConfigure} />
+              <Switch checked={enabled} onCheckedChange={setEnabled} />
               Enabled
             </label>
           </fieldset>
@@ -178,14 +187,13 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
             </Banner>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button onClick={save} disabled={!canConfigure || pending}>
+            <Button onClick={save} disabled={pending}>
               Save
             </Button>
-            <Button variant="outline" onClick={test} disabled={!canConfigure || pending || !settings.configured}>
+            <Button variant="outline" onClick={test} disabled={pending || !settings.configured}>
               Explain a sample alert
             </Button>
             {settings.provider && (
-              // Removing the provider always works, with or without a license.
               <Button variant="danger" onClick={remove} disabled={pending}>
                 Remove provider
               </Button>
@@ -211,8 +219,8 @@ export default function AiTab({ settings, canConfigure, digest, channels = [], q
         </p>
       </SectionCard>
 
-      {digest && <DigestSection settings={digest} channels={channels} canConfigure={canConfigure} aiConfigured={settings.configured} />}
-      {questions && <QuestionSettingsSection settings={questions} canConfigure={canConfigure} aiConfigured={settings.configured} />}
+      {digest && <DigestSection settings={digest} channels={channels} aiConfigured={settings.configured} />}
+      {questions && <QuestionSettingsSection settings={questions} aiConfigured={settings.configured} />}
     </div>
   );
 }

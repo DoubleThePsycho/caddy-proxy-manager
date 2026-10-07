@@ -34,7 +34,6 @@ import { describeWindows } from "@/ee/approvals/windows";
 import type { Weekday } from "@/ee/backups/types";
 import { requestJson } from "./client-api";
 
-const LOCKED_HINT = "Needs a license with Change approvals";
 const DAYS: { day: Weekday; label: string }[] = [
   { day: "monday", label: "Mon" },
   { day: "tuesday", label: "Tue" },
@@ -124,11 +123,9 @@ function bodyFromForm(form: Form) {
 
 export default function PoliciesTab({
   policies,
-  configurable,
   canManage,
 }: {
   policies: ApprovalPolicyView[];
-  configurable: boolean;
   canManage: boolean;
 }) {
   const router = useRouter();
@@ -137,7 +134,6 @@ export default function PoliciesTab({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<Form>(emptyForm);
   const [deleting, setDeleting] = useState<ApprovalPolicyView | null>(null);
-  const canEdit = canManage && configurable;
 
   function openCreate() {
     setEditing(null);
@@ -205,7 +201,7 @@ export default function PoliciesTab({
       description="Several policies on one change combine to the strictest."
       actions={
         canManage && (
-          <Button onClick={openCreate} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
+          <Button onClick={openCreate}>
             <Plus /> New policy
           </Button>
         )
@@ -277,10 +273,9 @@ export default function PoliciesTab({
                 <TableCell>
                   <Switch
                     checked={policy.enabled}
-                    disabled={!canManage || pending || (!policy.enabled && !configurable)}
+                    disabled={!canManage || pending}
                     onCheckedChange={(checked) => setEnabled(policy, checked)}
                     aria-label={`Enable ${policy.name}`}
-                    title={!policy.enabled && !configurable ? LOCKED_HINT : undefined}
                   />
                 </TableCell>
                 {canManage && (
@@ -289,8 +284,7 @@ export default function PoliciesTab({
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        disabled={!canEdit}
-                        title={configurable ? "Edit" : LOCKED_HINT}
+                        title="Edit"
                         onClick={() => openEdit(policy)}
                         aria-label={`Edit ${policy.name}`}
                       >

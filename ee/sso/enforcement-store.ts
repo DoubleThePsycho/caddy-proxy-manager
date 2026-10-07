@@ -4,8 +4,7 @@
  *
  * Everything here takes a database reader or writer (the database or a
  * transaction on it), so a check and the write it guards can share one
- * transaction. Await every check: a promise is always truthy. Nothing here looks at the license:
- * enforcement and its lockout guards keep working without one.
+ * transaction. Await every check: a promise is always truthy.
  *
  * Break-glass accounts are stored by user id, not by username. An id follows
  * the account through renames (including an ADMIN_USERNAME change of the
@@ -202,9 +201,14 @@ export async function countValidBreakGlassAdmins(
   return (await describeBreakGlassAccounts(reader, config.breakGlassUserIds, change)).filter((a) => a.validAdmin).length;
 }
 
+/** Some break-glass account can sign in on the login page: it is active and has a password. */
+export function canAnyBreakGlassSignIn(accounts: readonly BreakGlassAccount[]): boolean {
+  return accounts.some((account) => account.passwordSignIn && account.status === "active");
+}
+
 export const LAST_BREAK_GLASS_ADMIN_MESSAGE =
-  "Enforced SSO needs at least one break-glass account that is an active administrator with a password, " +
-  "and this change would leave none. Add another break-glass administrator on the SSO page first, or turn enforced SSO off.";
+  "This is the last break-glass administrator for enforced SSO. To go without one, remove it from the break-glass " +
+  "accounts on the Single sign-on page first.";
 
 /** A lockout guard refusal (400); the message is safe to show. */
 export class BreakGlassGuardError extends ApiValidationError {
@@ -216,9 +220,11 @@ export class BreakGlassGuardError extends ApiValidationError {
 
 /**
  * Throws BreakGlassGuardError when SSO is enforced and `change` would take the
- * number of valid break-glass administrators from at least one to none. A
- * change that cannot make things worse is allowed even when there is already
- * none. Call it inside the transaction that makes the change.
+ * number of valid break-glass administrators from at least one to none, so an
+ * administrator does not lose that way in by accident. Break-glass accounts
+ * are optional: going without one is a choice made on the SSO page, and a
+ * change is allowed when there is already none. Call it inside the
+ * transaction that makes the change.
  */
 export async function assertBreakGlassAdminRemains(reader: SsoReader, change: AccountChange): Promise<void> {
   const config = await readSsoEnforcement(reader);

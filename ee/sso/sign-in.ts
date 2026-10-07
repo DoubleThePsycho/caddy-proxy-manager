@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Enforced SSO on the sign-in path. Called from Better Auth's hooks in
- * src/lib/auth-server.ts. Deliberately license-free: enforcement keeps
- * working with an expired or removed license key.
+ * src/lib/auth-server.ts.
  */
 import { SAML_ACS_PATH } from "@/ee/saml/constants";
-import { readSsoEnforcement, type SsoReader } from "./enforcement-store";
+import { canAnyBreakGlassSignIn, describeBreakGlassAccounts, readSsoEnforcement, type SsoReader } from "./enforcement-store";
 
 /**
  * Better Auth endpoints (route templates, as hooks see them) that sign a user
@@ -26,6 +25,17 @@ export const SSO_SESSION_PATHS: ReadonlySet<string> = new Set(["/callback/:id", 
 
 export async function isSsoEnforced(reader: SsoReader): Promise<boolean> {
   return (await readSsoEnforcement(reader)).enabled;
+}
+
+/**
+ * Enforced SSO as the login page shows it: whether it is on, and whether a
+ * break-glass account can sign in with a password. Enforced without one, the
+ * login page offers no password or passkey sign-in for local accounts.
+ */
+export async function loginPageEnforcement(reader: SsoReader): Promise<{ enforced: boolean; breakGlass: boolean }> {
+  const config = await readSsoEnforcement(reader);
+  if (!config.enabled) return { enforced: false, breakGlass: false };
+  return { enforced: true, breakGlass: canAnyBreakGlassSignIn(await describeBreakGlassAccounts(reader, config.breakGlassUserIds)) };
 }
 
 /**

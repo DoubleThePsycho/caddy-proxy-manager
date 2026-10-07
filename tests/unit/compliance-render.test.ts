@@ -1,5 +1,5 @@
 /**
- * Server-side render of the compliance views: the read-only license notice,
+ * Server-side render of the compliance views: the page and its actions,
  * report documents and the print view (values rendered as text, the
  * statement and SHA-256 shown), and incident drafts with their AI label.
  */
@@ -203,9 +203,7 @@ function renderPage(overrides: Partial<ClientProps> = {}) {
       destinations: [],
       sources: { alertEvents: [], proxyHosts: [] },
       mapping: describeControlMapping(),
-      configurable: true,
       canWrite: true,
-      editionLabel: 'Enterprise',
       ...overrides,
     })
   );
@@ -227,12 +225,16 @@ describe('compliance page', () => {
     expect(reports).toContain('href="/compliance?tab=reports&amp;page=2"');
   });
 
-  it('shows a read-only notice without a license and keeps stored items available', () => {
-    const html = renderPage({ configurable: false });
-    expect(html).toContain('needs a license with compliance reports (Enterprise edition)');
-    expect(html).toContain('Incidents can still be assessed, classified and closed');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*title="Needs a license with compliance reports"[^>]*>.*Generate report/);
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*title="Needs a license with compliance reports"[^>]*>.*Record an incident/);
+  it('offers generating a report and recording an incident to writers', () => {
+    const html = renderPage();
+    for (const label of ['Generate report', 'Record an incident']) {
+      const button = html.match(new RegExp(`<button([^>]*)>(?:(?!</button>).)*${label}`, 's'));
+      expect(button, label).not.toBeNull();
+      expect(button![1]).not.toContain('disabled=""');
+    }
+    const reader = renderPage({ canWrite: false });
+    expect(reader).not.toContain('Generate report');
+    expect(reader).not.toContain('Record an incident');
   });
 
   it('shows the next schedule, the last evidence pack, the controls, test restores and the register', () => {
@@ -321,7 +323,7 @@ describe('incident drafts', () => {
     expect(printed).toContain('Not assessed yet');
     expect(printed).toContain('NIS2 Art. 23(3)(a)');
     const editor = renderToStaticMarkup(
-      createElement(IncidentEditor, { initial: incident, proxyHosts: [], canWrite: true, configurable: true, aiConfigured: false, editionLabel: 'Enterprise' })
+      createElement(IncidentEditor, { initial: incident, proxyHosts: [], canWrite: true, aiConfigured: false })
     );
     expect(editor).toContain('AI-generated first draft');
     expect(editor).toContain('Nothing is sent from here');

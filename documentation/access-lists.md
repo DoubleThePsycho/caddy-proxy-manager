@@ -1,6 +1,6 @@
 # Access lists
 
-An access list decides who may reach the proxy hosts it is attached to: which addresses and networks, which countries, continents and networks (AS numbers), and who has to sign in with a username and password first. It is a Community feature.
+An access list decides who may reach the proxy hosts it is attached to: which addresses and networks, which countries, continents and networks (AS numbers), and who has to sign in with a username and password first.
 
 One list can serve many hosts. A host uses at most one list, set in the proxy host's settings. Changing a list changes every host using it at once.
 
@@ -9,7 +9,7 @@ One list can serve many hosts. A host uses at most one list, set in the proxy ho
 **Traffic → Access lists** has two tabs:
 
 - **Lists**: the lists you attach to hosts. Each row says in plain words what the list does ("Allows only 203.0.113.0/26 and private networks · basic auth for 2 users"), which hosts use it (with links to them) and, with analytics on, what it stopped in the last 24 hours. Search finds a list by its name, description, rule values and notes, basic-auth users, or the hosts using it. **New access list** asks for a name and whether it starts as a **blocklist** (everyone gets in except what you deny; also the choice for basic auth only) or an **allowlist** (only what you allow gets in), then opens the list's page.
-- **Blocked sources** (`/access-lists?tab=blocked-sources`): the global list described [below](#blocked-sources), with search. **Block a source** adds an address, network, country, continent or AS number at once; **Unblock** removes it at once. Only provider-level users see this tab.
+- **Blocked sources** (`/access-lists?tab=blocked-sources`): the global list described [below](#blocked-sources), with search. **Block a source** adds an address, network, country, continent or AS number at once; **Unblock** removes it at once.
 
 A list's page (`/access-lists/{id}`) shows its rules in the order they are checked, then **Everyone else**: the default action, for requests no rule matches. The summary under the title follows your changes as you make them. It warns when the list would deny every request, and when allow rules change nothing because everyone else is allowed too. Changes are saved together with **Save list**; leaving the page with unsaved changes asks first.
 
@@ -55,7 +55,7 @@ A list can also have members (**Basic auth** on the list's page): usernames and 
 
 **Blocked sources** is one global list that applies to every host, before anything else: before rate limiting, the WAF, path rules and each host's own list. It only denies, and lets through everything it does not name. Use it for scanners and networks that keep probing.
 
-The **Block** button on a Security events entry adds the address here. An entry can carry a reason and an expiry; expired entries stop applying at once and are removed within a minute. Only provider-level users see and change it; organisation users (multi-tenancy) do not.
+The **Block** button on a Security events entry adds the address here. An entry can carry a reason and an expiry; expired entries stop applying at once and are removed within a minute.
 
 Blocked sources applies to HTTP hosts. L4 (TCP/UDP) hosts are not covered.
 

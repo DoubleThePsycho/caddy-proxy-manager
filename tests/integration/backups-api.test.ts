@@ -1,15 +1,13 @@
 /**
- * REST endpoints of scheduled backups: the license gate on every paid write
- * path, winding down (disable, delete) and read access without a license,
- * validation, secret redaction and status codes. The storage is a fake S3
+ * REST endpoints of scheduled backups: the write paths, disabling and
+ * deleting, read access, validation, secret redaction and status codes. The storage is a fake S3
  * bucket behind the global fetch.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner, seedConfiguration, type Fixture } from '../helpers/config-fixture';
+import { seedConfiguration, type Fixture } from '../helpers/config-fixture';
 import { FakeS3 } from '../helpers/fake-s3';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -24,7 +22,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 import { requireApiAdmin, ApiAuthError } from '../../src/lib/api-auth';
 import { applyCaddyConfig } from '../../src/lib/caddy';
 import { CaddyApplyError } from '../../src/lib/caddy-apply-error';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import * as listRoute from '../../app/api/v1/backup-destinations/route';
 import * as detailRoute from '../../app/api/v1/backup-destinations/[id]/route';
 import * as testRoute from '../../app/api/v1/backup-destinations/[id]/test/route';
@@ -37,7 +34,6 @@ import { first } from '@/src/lib/db/ops';
 const SECRET = 'route-secret-access-key-SENTINEL';
 const PASSPHRASE = 'route passphrase SENTINEL';
 const ENDPOINT = 'http://minio:9000';
-const LICENSE_ERROR = 'Scheduled backups needs an active Ingressi Business license or higher';
 
 let fx: Fixture;
 let fake: FakeS3;
@@ -46,16 +42,13 @@ beforeEach(async () => {
   ctx.db = createTestDb();
   vi.clearAllMocks();
   vi.mocked(applyCaddyConfig).mockResolvedValue(undefined as never);
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
   fx = await seedConfiguration(ctx.db);
-  await installLicense(ctx.db, 'business');
   vi.mocked(requireApiAdmin).mockResolvedValue({ userId: fx.adminId, role: 'admin', authMethod: 'bearer' });
   fake = new FakeS3({ endpoint: ENDPOINT, bucket: 'backups', pathStyle: true, accessKeyId: 'minioadmin' });
   vi.stubGlobal('fetch', fake.fetch);
 });
 
 afterEach(() => vi.unstubAllGlobals());
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 function req(method: string, path: string, body?: unknown): NextRequest {
   const init: { method: string; headers: Record<string, string>; body?: string } = { method, headers: {} };
@@ -89,39 +82,9 @@ async function create(overrides: Record<string, unknown> = {}): Promise<{ id: nu
   return response.json();
 }
 
-async function removeLicense() {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-}
-
-describe('license gate', () => {
-  it('refuses creating, changing, enabling, testing, running and restoring without a license', async () => {
+describe('destinations', () => {
+  it('lets an admin view, disable and delete destinations', async () => {
     const { id } = await create();
-    const disabled = await create({ name: 'Disabled', enabled: false });
-    await removeLicense();
-
-    const responses = [
-      await listRoute.POST(req('POST', '/api/v1/backup-destinations', body())),
-      await detailRoute.PUT(req('PUT', `/api/v1/backup-destinations/${id}`, { name: 'Renamed' }), params(id)),
-      await detailRoute.PUT(req('PUT', `/api/v1/backup-destinations/${id}`, { enabled: false, retention: 9 }), params(id)),
-      await detailRoute.PUT(req('PUT', `/api/v1/backup-destinations/${disabled.id}`, { enabled: true }), params(disabled.id)),
-      await testRoute.POST(req('POST', `/api/v1/backup-destinations/${id}/test`), params(id)),
-      await runRoute.POST(req('POST', `/api/v1/backup-destinations/${id}/run`), params(id)),
-      await restoreRoute.POST(
-        req('POST', `/api/v1/backup-destinations/${id}/restore`, { key: 'cfg/ingressi-config-2026-01-01T00-00-00.000Z.json' }),
-        params(id)
-      ),
-    ];
-    for (const response of responses) {
-      expect(response.status).toBe(403);
-      expect((await response.json()).error).toBe(LICENSE_ERROR);
-    }
-    expect(fake.requests).toHaveLength(0);
-    expect((await ctx.db.select().from(schema.backupDestinations)).map((row) => row.name).sort()).toEqual(['Disabled', 'MinIO']);
-  });
-
-  it('lets an unlicensed admin view, disable and delete destinations', async () => {
-    const { id } = await create();
-    await removeLicense();
 
     expect((await listRoute.GET(req('GET', '/api/v1/backup-destinations'))).status).toBe(200);
     expect((await detailRoute.GET(req('GET', `/api/v1/backup-destinations/${id}`), params(id))).status).toBe(200);
@@ -137,7 +100,7 @@ describe('license gate', () => {
     expect((await detailRoute.GET(req('GET', `/api/v1/backup-destinations/${id}`), params(id))).status).toBe(404);
   });
 
-  it('allows every paid write with a Business license', async () => {
+  it('changes, tests, runs and restores a destination', async () => {
     const { id } = await create();
     const updated = await detailRoute.PUT(req('PUT', `/api/v1/backup-destinations/${id}`, { retention: 7 }), params(id));
     expect(updated.status).toBe(200);
@@ -156,12 +119,6 @@ describe('license gate', () => {
     expect(restored.status).toBe(200);
     expect(await restored.json()).toMatchObject({ ok: true, key: run.objectKey, beforeSnapshotId: null });
     expect((await first(ctx.db.select().from(schema.proxyHosts).limit(1)))!.name).toBe('App');
-  });
-
-  it('a lower edition does not include scheduled backups', async () => {
-    await installLicense(ctx.db, 'homelab');
-    const response = await listRoute.POST(req('POST', '/api/v1/backup-destinations', body()));
-    expect(response.status).toBe(403);
   });
 });
 

@@ -19,7 +19,7 @@ import { formatCount } from "@/components/ui/chart-format";
 import { cn } from "@/lib/utils";
 import { decimalsFor } from "../money";
 import type { BillingMode, PlanView } from "../types";
-import { callApi, Field, fromInput, LOCKED_HINT, money, toInput } from "./shared";
+import { callApi, Field, fromInput, money, toInput } from "./shared";
 
 type Form = {
   name: string;
@@ -50,13 +50,11 @@ export default function PlansTab({
   plans,
   currency,
   canWrite,
-  configurable,
   analyticsAvailable = true,
 }: {
   plans: PlanView[];
   currency: string;
   canWrite: boolean;
-  configurable: boolean;
   /** ClickHouse analytics is configured (failed-answer credits can be turned on). */
   analyticsAvailable?: boolean;
 }) {
@@ -67,7 +65,6 @@ export default function PlansTab({
   const [form, setForm] = useState<Form>(EMPTY);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<PlanView | null>(null);
-  const canChange = canWrite && configurable;
   // Prices in one column line up on the same number of decimals.
   const priceDecimals = decimalsFor(
     plans.map((plan) => plan.pricePerRequestMicros),
@@ -143,7 +140,7 @@ export default function PlansTab({
   }
 
   const addButton = canWrite ? (
-    <Button size="sm" variant="outline" onClick={() => openForm(null)} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
+    <Button size="sm" variant="outline" onClick={() => openForm(null)}>
       <Plus className="h-4 w-4" /> Add plan
     </Button>
   ) : null;
@@ -218,8 +215,7 @@ export default function PlansTab({
                           variant="ghost"
                           size="icon-sm"
                           aria-label={`Edit plan ${plan.name}`}
-                          title={canChange ? "Edit" : LOCKED_HINT}
-                          disabled={!canChange}
+                          title="Edit"
                           onClick={() => openForm(plan)}
                         >
                           <Pencil className="h-4 w-4" />

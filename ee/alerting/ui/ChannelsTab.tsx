@@ -24,7 +24,6 @@ import { paginate } from "@/src/lib/pagination";
 import {
   CHANNEL_TYPE_LABELS,
   CHANNEL_TYPES,
-  FREE_CHANNEL_TYPES,
   type AlertChannelView,
   type AlertRuleView,
   type ChannelType,
@@ -34,8 +33,6 @@ import {
 } from "@/ee/alerting/types";
 import { deleteAlertChannelAction, saveAlertChannelAction, setAlertChannelEnabledAction, testAlertChannelAction } from "./actions";
 import { channelDestination } from "./format";
-
-const LOCKED_HINT = "Needs a license with Alerting";
 
 type Form = {
   name: string;
@@ -170,14 +167,13 @@ function SecretField(props: {
 type Props = {
   channels: AlertChannelView[];
   rules: AlertRuleView[];
-  canConfigurePaid: boolean;
   /** The user holds alerts:write; without it the tab is read-only. */
   canWrite?: boolean;
 };
 
 type TestOutcome = { ok: boolean; text: string; at: number };
 
-export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrite = true }: Props) {
+export default function ChannelsTab({ channels, rules, canWrite = true }: Props) {
   const router = useRouter();
   const format = useFormat();
   const [pending, startTransition] = useTransition();
@@ -191,7 +187,6 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
 
-  const canChange = (type: ChannelType) => canConfigurePaid || FREE_CHANNEL_TYPES.includes(type);
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((previous) => ({ ...previous, [key]: value }));
   const stored = (key: string) => Boolean(editing && (editing.config as Record<string, unknown>)[key]);
   const usedBy = (channel: AlertChannelView) => rules.filter((rule) => rule.channelIds.includes(channel.id)).length;
@@ -284,7 +279,7 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
           tone="bad"
           title={`${channel.name} could not deliver${channel.lastDeliveryAt ? ` on ${format.dateTime(channel.lastDeliveryAt)}` : ""}: ${channel.lastDeliveryError}`}
           actions={
-            canWrite && canChange(channel.type) ? (
+            canWrite ? (
               <Button variant="outline" size="sm" onClick={() => openEdit(channel)}>
                 Edit {channel.name}
               </Button>
@@ -359,7 +354,6 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
             </TableHeader>
             <TableBody>
               {shown.items.map((channel) => {
-                const locked = !canChange(channel.type);
                 const destination = channelDestination(channel);
                 const used = usedBy(channel);
                 const test = tests[channel.id];
@@ -405,11 +399,9 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
                       {canWrite ? (
                         <Switch
                           checked={channel.enabled}
-                          // Turning off always works; turning a paid channel on needs the license.
-                          disabled={pending || (locked && !channel.enabled)}
+                          disabled={pending}
                           onCheckedChange={(checked) => setEnabled(channel, checked)}
                           aria-label={`Enabled: ${channel.name}`}
-                          title={locked && !channel.enabled ? LOCKED_HINT : undefined}
                         />
                       ) : (
                         <span className="text-muted-foreground">{channel.enabled ? "On" : "Off"}</span>
@@ -421,8 +413,7 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
                           <Button
                             variant="secondary"
                             size="sm"
-                            title={locked ? LOCKED_HINT : undefined}
-                            disabled={locked || pending}
+                            disabled={pending}
                             onClick={() => sendTest(channel)}
                           >
                             <Send /> {testing === channel.id ? "Sending…" : "Send test"}
@@ -431,8 +422,6 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
                             variant="link"
                             size="sm"
                             className="px-2"
-                            title={locked ? LOCKED_HINT : undefined}
-                            disabled={locked}
                             onClick={() => openEdit(channel)}
                             aria-label={`Edit channel ${channel.name}`}
                           >
@@ -479,9 +468,8 @@ export default function ChannelsTab({ channels, rules, canConfigurePaid, canWrit
               </SelectTrigger>
               <SelectContent>
                 {CHANNEL_TYPES.map((type) => (
-                  <SelectItem key={type} value={type} disabled={!canChange(type)}>
+                  <SelectItem key={type} value={type}>
                     {CHANNEL_TYPE_LABELS[type]}
-                    {!canChange(type) ? " (license)" : ""}
                   </SelectItem>
                 ))}
               </SelectContent>

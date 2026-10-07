@@ -7,10 +7,9 @@ import { appDb, nowIso, toIso } from "@/src/lib/db";
 import { alertRules, alertRuleStates, proxyHosts } from "@/src/lib/db/schema";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import { getChannelTypes } from "./channels";
 import { lastFiredAtByRule } from "./events";
-import { isWindDownOnly, requireRuleLicense } from "./gate";
+import { deleteRuleDismissalsUntilResolved, deleteRuleSilences, silenceViewsByTarget } from "./silences";
 import {
   DEFAULT_RULE_PARAMS,
   FOR_DURATION_RULE_TYPES,
@@ -21,14 +20,15 @@ import {
   SCOPED_RULE_TYPES,
   isRuleType,
   type AlertRuleView,
+  type AlertSilenceView,
   type CertExpiringParams,
-  type ChannelType,
   type ErrorRateParams,
   type RuleParams,
   type RuleScope,
   type RuleType,
 } from "./types";
 import {
+  parseChannelIds,
   parseJsonObject,
   readBoolean,
   readInteger,
@@ -136,8 +136,6 @@ export function describeRuleScope(type: RuleType, scope: RuleScope, params: Reco
       return "Every slave instance";
     case "caddy_apply_failed":
       return "This node";
-    case "license_expiring":
-      return "This installation";
     case "backup_failed":
       return "Every enabled backup destination";
     case "approval_pending":
@@ -184,9 +182,6 @@ export function normalizeRuleParams(type: RuleType, raw: unknown, existing?: Rec
         minRequests: readInteger(input.minRequests, "params.minRequests", 1, 10_000_000),
         perHost: readBoolean(input.perHost, "params.perHost", true),
       };
-    case "license_expiring":
-      rejectUnknownKeys(input, ["days"], "params");
-      return { days: readInteger(input.days, "params.days", 1, 365) };
     case "backup_failed":
       rejectUnknownKeys(input, ["minFailures"], "params");
       return { minFailures: readInteger(input.minFailures, "params.minFailures", 1, 100) };
@@ -219,15 +214,6 @@ function readChannelIds(value: unknown): number[] {
   return [...new Set(value as number[])];
 }
 
-function parseChannelIds(value: string): number[] {
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter((id): id is number => Number.isInteger(id) && id > 0) : [];
-  } catch {
-    return [];
-  }
-}
-
 export function toStoredRule(row: RuleRow): StoredRule | null {
   if (!isRuleType(row.type)) return null;
   let params: RuleParams[RuleType];
@@ -254,7 +240,7 @@ export function toStoredRule(row: RuleRow): StoredRule | null {
 type RuleStatesView = { firing: AlertRuleView["firing"]; pending: AlertRuleView["pending"] };
 const NO_STATES: RuleStatesView = { firing: [], pending: [] };
 
-function toView(row: RuleRow, states: RuleStatesView, lastFiredAt: string | null = null): AlertRuleView {
+function toView(row: RuleRow, states: RuleStatesView, lastFiredAt: string | null = null, mute: AlertSilenceView | null = null): AlertRuleView {
   const type = isRuleType(row.type) ? row.type : "caddy_apply_failed";
   const params = parseJsonObject(row.params);
   const scope = SCOPED_RULE_TYPES.includes(type) ? parseStoredScope(row.scope) : ALL;
@@ -274,6 +260,7 @@ function toView(row: RuleRow, states: RuleStatesView, lastFiredAt: string | null
     firing: states.firing,
     pending: states.pending,
     lastFiredAt,
+    mute,
     createdAt: toIso(row.createdAt)!,
     updatedAt: toIso(row.updatedAt)!,
   };
@@ -311,41 +298,35 @@ async function getRuleRow(id: number): Promise<RuleRow | null> {
 }
 
 export async function listAlertRules(): Promise<AlertRuleView[]> {
-  const [rows, firing, lastFired] = await Promise.all([
+  const [rows, firing, lastFired, silences] = await Promise.all([
     appDb.select().from(alertRules).orderBy(asc(alertRules.name), asc(alertRules.id)),
     firingByRule(),
     lastFiredAtByRule(),
+    silenceViewsByTarget(),
   ]);
-  return rows.map((row) => toView(row, firing.get(row.id) ?? NO_STATES, lastFired.get(row.id) ?? null));
+  // Rows of a rule type that no longer exists stay stored but are not listed.
+  return rows
+    .filter((row) => isRuleType(row.type))
+    .map((row) => toView(row, firing.get(row.id) ?? NO_STATES, lastFired.get(row.id) ?? null, silences.mutes.get(row.id) ?? null));
 }
 
 export async function getAlertRule(id: number): Promise<AlertRuleView | null> {
   const row = await getRuleRow(id);
-  if (!row) return null;
-  return toView(row, (await firingByRule()).get(id) ?? NO_STATES, (await lastFiredAtByRule([id])).get(id) ?? null);
-}
-
-/** Channel types of ids still stored; used for the license check of an existing rule. */
-async function existingChannelTypes(ids: number[]): Promise<ChannelType[]> {
-  const types: ChannelType[] = [];
-  for (const id of ids) {
-    try {
-      types.push(...(await getChannelTypes([id])).values());
-    } catch {
-      // A channel that no longer exists does not affect the check.
-    }
-  }
-  return types;
+  if (!row || !isRuleType(row.type)) return null;
+  return toView(
+    row,
+    (await firingByRule()).get(id) ?? NO_STATES,
+    (await lastFiredAtByRule([id])).get(id) ?? null,
+    (await silenceViewsByTarget()).mutes.get(id) ?? null
+  );
 }
 
 export async function createAlertRule(body: unknown, actorUserId: number): Promise<AlertRuleView> {
   const record = requireObject(body, "Request body");
   const type = readRuleType(record.type);
   const channelIds = readChannelIds(record.channelIds);
-  const channelTypes = await getChannelTypes(channelIds);
-  await requireRuleLicense(type, [...channelTypes.values()]);
+  await getChannelTypes(channelIds);
   const explain = readBoolean(record.explain, "explain", false);
-  if (explain) await requireFeature("ai_analyst");
 
   rejectUnknownKeys(record, RULE_FIELDS, "the rule");
   const name = readName(record.name);
@@ -386,23 +367,15 @@ export async function createAlertRule(body: unknown, actorUserId: number): Promi
 
 export async function updateAlertRule(id: number, body: unknown, actorUserId: number): Promise<AlertRuleView> {
   const row = await getRuleRow(id);
-  if (!row) throw notFound();
-  const type = readRuleType(row.type);
+  if (!row || !isRuleType(row.type)) throw notFound();
+  const type = row.type;
   const record = requireObject(body, "Request body");
   if (record.type !== undefined && record.type !== type) {
     throw new ApiValidationError("The type of an alert rule cannot be changed; create a new rule instead");
   }
-  const previousChannelIds = parseChannelIds(row.channelIds);
-  const channelIds = record.channelIds !== undefined ? readChannelIds(record.channelIds) : previousChannelIds;
-  const channelTypes = await getChannelTypes(channelIds);
-  // Disabling the rule or its explanations is winding down and never needs a
-  // license; any other change to a paid rule does. Both the current and the
-  // resulting configuration must be in the carve-out.
-  if (!isWindDownOnly(record, { enabled: false, explain: false })) {
-    await requireRuleLicense(type, [...(await existingChannelTypes(previousChannelIds)), ...channelTypes.values()]);
-  }
+  const channelIds = record.channelIds !== undefined ? readChannelIds(record.channelIds) : parseChannelIds(row.channelIds);
+  await getChannelTypes(channelIds);
   const explain = readBoolean(record.explain, "explain", row.explain);
-  if (explain && !row.explain) await requireFeature("ai_analyst");
 
   rejectUnknownKeys(record, RULE_FIELDS, "the rule");
   const name = record.name !== undefined ? readName(record.name) : row.name;
@@ -429,8 +402,10 @@ export async function updateAlertRule(id: number, body: unknown, actorUserId: nu
     .where(eq(alertRules.id, id))
     .returning();
   if (!enabled) {
-    // A disabled rule stops watching: forget what was firing (no resolve notice).
+    // A disabled rule stops watching: forget what was firing (no resolve
+    // notice), and so the dismissals that last until those alerts resolve.
     await appDb.delete(alertRuleStates).where(eq(alertRuleStates.ruleId, id));
+    await deleteRuleDismissalsUntilResolved(id);
   }
   await logAuditEvent({
     userId: actorUserId,
@@ -440,29 +415,36 @@ export async function updateAlertRule(id: number, body: unknown, actorUserId: nu
     summary: `Updated ${RULE_TYPE_LABELS[type]} alert rule "${name}"`,
     data: { type, name, enabled, params, channelIds, cooldownMinutes, notifyOnResolve, explain, scope, forMinutes },
   });
-  return toView(updated, enabled ? (await firingByRule()).get(id) ?? NO_STATES : NO_STATES, (await lastFiredAtByRule([id])).get(id) ?? null);
+  return toView(
+    updated,
+    enabled ? (await firingByRule()).get(id) ?? NO_STATES : NO_STATES,
+    (await lastFiredAtByRule([id])).get(id) ?? null,
+    (await silenceViewsByTarget()).mutes.get(id) ?? null
+  );
 }
 
 export async function deleteAlertRule(id: number, actorUserId: number): Promise<void> {
   const row = await getRuleRow(id);
   if (!row) throw notFound();
-  const type = readRuleType(row.type);
-  // Deleting is winding down: no license check.
-  // Foreign-key cascades are not enforced: delete the state rows explicitly.
-  // History (alert_events) is kept.
+  // A rule of a type that no longer exists can still be deleted.
+  const type = row.type;
+  const label = isRuleType(type) ? RULE_TYPE_LABELS[type] : type;
+  // Foreign-key cascades are not enforced: delete the state rows, mutes and
+  // dismissals explicitly. History (alert_events) is kept.
   await appDb.delete(alertRuleStates).where(eq(alertRuleStates.ruleId, id));
+  await deleteRuleSilences(id);
   await appDb.delete(alertRules).where(eq(alertRules.id, id));
   await logAuditEvent({
     userId: actorUserId,
     action: "alert_rule_deleted",
     entityType: "alert_rule",
     entityId: id,
-    summary: `Deleted ${RULE_TYPE_LABELS[type]} alert rule "${row.name}"`,
+    summary: `Deleted ${label} alert rule "${row.name}"`,
     data: { type, name: row.name },
   });
 }
 
-/** Enabled rules for the evaluator (no license check: configured rules keep running). */
+/** Enabled rules for the evaluator; rows of a removed rule type are skipped. */
 export async function listEnabledRules(): Promise<StoredRule[]> {
   const rows = await appDb.select().from(alertRules).where(eq(alertRules.enabled, true)).orderBy(asc(alertRules.id));
   return rows.map(toStoredRule).filter((rule): rule is StoredRule => rule !== null);

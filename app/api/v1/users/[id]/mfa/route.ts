@@ -3,7 +3,7 @@ import { requireApiUser, requireApiPermission, apiErrorResponse, ApiAuthError, g
 import { can } from "@/src/lib/permissions";
 import { assertCanManageUserId } from "@/ee/custom-roles/service";
 import { ApiClientError } from "@/src/lib/api-errors";
-import { findUserInScope } from "@/src/lib/access-scope";
+import { getUserById } from "@/src/lib/models/user";
 import { adminResetUserMfa, getMfaStatus } from "@/src/lib/mfa";
 import { routeRowId } from "@/src/lib/row-ids";
 
@@ -26,8 +26,7 @@ export async function GET(
     if (!can(access, "users:read") && (auth.userId !== targetId || auth.tokenScopes)) {
       throw new ApiAuthError("Forbidden", 403);
     }
-    // A user of another organisation (ee/multi-tenancy) is not found, as a missing one.
-    if (!(await findUserInScope(access, targetId))) throw new ApiClientError("User not found", 404);
+    if (!(await getUserById(targetId))) throw new ApiClientError("User not found", 404);
     return NextResponse.json(await getMfaStatus(targetId), { headers: NO_STORE });
   } catch (error) {
     return apiErrorResponse(error);

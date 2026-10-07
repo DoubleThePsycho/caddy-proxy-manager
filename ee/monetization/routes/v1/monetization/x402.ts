@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** Where payments go (the Stripe deposit address, the CDP credentials): administrator-level, like the Stripe account. Needs the api_monetization feature. */
+/** Where payments go (the Stripe deposit address, the CDP credentials): administrator-level, like the Stripe account. */
 export async function PUT(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "monetization:payments");
@@ -24,7 +24,7 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-/** Turns x402 off and removes the CDP key secret. Never needs a license. */
+/** Turns x402 off and removes the CDP key secret. */
 export async function DELETE(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "monetization:payments");

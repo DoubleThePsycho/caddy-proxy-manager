@@ -16,7 +16,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
-/** Delete the pull replica with its credential, key pin and fleet records. No license needed. */
+/** Delete the pull replica with its credential, key pin and fleet records. */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "fleet:replicas");

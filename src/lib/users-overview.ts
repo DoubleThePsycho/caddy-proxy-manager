@@ -5,8 +5,7 @@
  * group with its members, whether SCIM manages it, the role SCIM mappings
  * give its members and the hosts it lets them reach.
  *
- * Reads only. Callers pass the Access of the signed-in user and the
- * organisation filter (ee/multi-tenancy) the page or request uses; what the
+ * Reads only. Callers pass the Access of the signed-in user; what the
  * caller may not read is left out (null), never filled with someone else's
  * data. No secret, password hash or token value is read into the result.
  */
@@ -35,7 +34,6 @@ import { readSsoEnforcement } from "@/ee/sso/enforcement-store";
 import { parseLdapProviderId } from "@/ee/ldap/constants";
 import { PRIMARY_ADMIN_USER_ID, readScimSettings } from "@/ee/scim/store";
 import { listCustomRoleViews } from "@/ee/custom-roles/store";
-import { organizationCondition, type OrganizationFilter } from "@/ee/multi-tenancy/scope";
 import { asc, first } from "@/src/lib/db/ops";
 
 export type AccountSourceKind = "local" | "oidc" | "saml" | "ldap" | "scim";
@@ -71,7 +69,6 @@ export type UserOverviewEntry = {
   username: string | null;
   role: User["role"];
   customRoleId: number | null;
-  organizationId: number | null;
   status: string;
   lastSignInAt: string | null;
   lastSignInMethod: string | null;
@@ -85,7 +82,7 @@ export type UserOverviewEntry = {
   secondFactor: UserSecondFactor;
   /** A directory, SAML provider or SCIM sets the role at each sign-in or change; a change made here does not last. */
   roleManagedBy: string | null;
-  /** Holds administrator-level access: the admin role, an organisation administrator or an administrator-level custom role. */
+  /** Holds administrator-level access: the admin role or an administrator-level custom role. */
   administrator: boolean;
   /** One of the break-glass accounts of enforced SSO (ee/sso). */
   breakGlass: boolean;
@@ -210,9 +207,9 @@ function secondFactorOf(
   return { state: "not_needed", ...base };
 }
 
-/** Every account `access` may list in `organizationId`, as the Users page shows it. */
-export async function getUsersOverview(access: Access, organizationId: OrganizationFilter, now: Date = new Date()): Promise<UsersOverview> {
-  const list = await listUsers(organizationId);
+/** Every account, as the Users page shows it to `access`. */
+export async function getUsersOverview(access: Access, now: Date = new Date()): Promise<UsersOverview> {
+  const list = await listUsers();
   const ids = list.map((user) => user.id);
   const listed = new Set(ids);
   const breakGlass = new Set((await readSsoEnforcement(appDb)).breakGlassUserIds.filter((id) => listed.has(id)));
@@ -244,7 +241,6 @@ export async function getUsersOverview(access: Access, organizationId: Organizat
       username: user.username,
       role: user.role,
       customRoleId: user.customRoleId,
-      organizationId: user.organizationId,
       status: user.status,
       lastSignInAt: user.lastSignInAt,
       lastSignInMethod: user.lastSignInMethod,
@@ -256,7 +252,7 @@ export async function getUsersOverview(access: Access, organizationId: Organizat
       secondFactor: secondFactorOf(mfa.get(user.id), passwordSignIn, userSources, policy.deadline),
       roleManagedBy: roleManagers.get(user.id) ?? null,
       administrator:
-        (user.customRoleId === null && (user.role === "admin" || user.role === "org_admin")) ||
+        (user.customRoleId === null && user.role === "admin") ||
         (user.customRoleId !== null && adminLevelRoles.has(user.customRoleId)),
       breakGlass: breakGlass.has(user.id),
       primaryAdmin: user.id === PRIMARY_ADMIN_USER_ID,
@@ -292,7 +288,6 @@ export type GroupOverviewEntry = {
   id: number;
   name: string;
   description: string | null;
-  organizationId: number | null;
   createdAt: string;
   updatedAt: string;
   members: { userId: number; email: string; name: string | null }[];
@@ -316,9 +311,9 @@ function firstDomain(raw: string): string {
   return "";
 }
 
-/** Every forward-auth group `access` may list in `organizationId`, as the Groups tab shows it. */
-export async function getGroupsOverview(access: Access, organizationId: OrganizationFilter, now: Date = new Date()): Promise<GroupsOverview> {
-  const list = await listGroups(organizationId);
+/** Every forward-auth group, as the Groups tab shows it to `access`. */
+export async function getGroupsOverview(access: Access, now: Date = new Date()): Promise<GroupsOverview> {
+  const list = await listGroups();
   const ids = list.map((group) => group.id);
   const managed = new Map(
     (ids.length === 0 ? [] : await appDb.select().from(scimGroups).where(inArray(scimGroups.groupId, ids)))
@@ -361,7 +356,7 @@ export async function getGroupsOverview(access: Access, organizationId: Organiza
         ? []
         : await appDb.select({ id: proxyHosts.id, name: proxyHosts.name, domains: proxyHosts.domains, tags: proxyHosts.tags })
           .from(proxyHosts)
-          .where(and(inArray(proxyHosts.id, hostIds), organizationCondition(proxyHosts.organizationId, organizationId)))
+          .where(inArray(proxyHosts.id, hostIds))
       )
         // A role limited to tags sees only the hosts it reaches.
         .filter((row) => tagsInScope(parseStoredTags(row.tags), scope))
@@ -383,7 +378,6 @@ export async function getGroupsOverview(access: Access, organizationId: Organiza
       id: group.id,
       name: group.name,
       description: group.description,
-      organizationId: group.organizationId,
       createdAt: group.createdAt,
       updatedAt: group.updatedAt,
       members: group.members.map((member) => ({ userId: member.userId, email: member.email, name: member.name })),

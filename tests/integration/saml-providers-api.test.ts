@@ -1,19 +1,17 @@
 /**
- * REST endpoints of SAML providers (/api/v1/saml-providers): the license
- * gate on creating, enabling and changing a provider (and none on reading,
- * disabling and deleting), validation, IdP metadata parsed on save, the SP
+ * REST endpoints of SAML providers (/api/v1/saml-providers): creating,
+ * changing, disabling and deleting a provider, validation, IdP metadata parsed on save, the SP
  * signing key never leaving the server, the SP metadata, deleting a
  * provider's accounts and mappings with it, SESSION_SECRET rotation, enforced
  * SSO counting SAML providers, SCIM choosing one, and the permission guards
  * through the real role resolution.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import { createTestKey, idpMetadataXml, IDP_ENTITY_ID, IDP_SSO_URL, type TestKey } from '../helpers/saml-idp';
 
 const ctx = vi.hoisted(() => ({
@@ -36,7 +34,6 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 import { logAuditEvent } from '../../src/lib/audit';
 import { decryptSecret } from '../../src/lib/secret';
 import { createUser } from '../../src/lib/models/user';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { listEnabledSsoProviders, updateSsoEnforcement } from '../../ee/sso/enforcement';
 import { serviceProviderUrls } from '../../ee/saml/store';
 import { updateScimSettings } from '../../ee/scim/service';
@@ -45,7 +42,6 @@ import * as detailRoute from '../../app/api/v1/saml-providers/[id]/route';
 import * as metadataRoute from '../../app/api/v1/saml-providers/[id]/metadata/route';
 import { first } from '@/src/lib/db/ops';
 
-const LICENSE_ERROR = 'SAML single sign-on needs an active Ingressi Business license or higher';
 
 /** A P-256 certificate (openssl req -x509 -newkey ec), for the RSA-only check. */
 const EC_CERTIFICATE = `-----BEGIN CERTIFICATE-----
@@ -73,8 +69,6 @@ function now() {
 beforeEach(async () => {
   ctx.db = createTestDb();
   vi.mocked(logAuditEvent).mockClear();
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.db, 'business');
   adminId = (await createUser({
     email: 'admin@example.com', username: 'admin', role: 'admin', provider: 'credentials', subject: 'admin',
     passwordHash: bcrypt.hashSync('Correct-Horse-9!', 4),
@@ -88,8 +82,6 @@ beforeEach(async () => {
   idp ??= createTestKey('idp.example.com');
   idpNext ??= createTestKey('idp-next.example.com');
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 function req(method: string, path: string, body?: unknown, token = ADMIN_TOKEN): NextRequest {
   const init: { method: string; headers: Record<string, string>; body?: string } = { method, headers: { authorization: `Bearer ${token}` } };
@@ -118,39 +110,23 @@ async function create(overrides: Record<string, unknown> = {}): Promise<Record<s
   return response.json();
 }
 
-async function removeLicense() {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-}
-
-describe('license gate', () => {
-  it('refuses creating, changing and enabling without a license', async () => {
+describe('managing providers', () => {
+  it('creates, changes and enables a provider', async () => {
     const { id } = await create();
     const disabled = await create({ name: 'Disabled', enabled: false });
-    await removeLicense();
 
     const responses = [
       await listRoute.POST(req('POST', '/api/v1/saml-providers', body({ name: 'New' }))),
       await detailRoute.PUT(req('PUT', `/api/v1/saml-providers/${id}`, { name: 'Renamed' }), params(id)),
-      await detailRoute.PUT(req('PUT', `/api/v1/saml-providers/${id}`, { enabled: false, provisionUsers: true }), params(id)),
       await detailRoute.PUT(req('PUT', `/api/v1/saml-providers/${disabled.id}`, { enabled: true }), params(disabled.id)),
-      await detailRoute.PUT(req('PUT', `/api/v1/saml-providers/${id}`, { enabled: false, generateSpKey: true }), params(id)),
     ];
-    for (const response of responses) {
-      expect(response.status).toBe(403);
-      expect((await response.json()).error).toBe(LICENSE_ERROR);
-    }
+    for (const response of responses) expect(response.status).toBeLessThan(300);
     expect((await ctx.db.select().from(schema.samlProviders)).map((row) => [row.name, row.enabled]).sort())
-      .toEqual([['Corp IdP', true], ['Disabled', false]]);
+      .toEqual([['Disabled', true], ['New', true], ['Renamed', true]]);
   });
 
-  it('is not included in the Homelab edition', async () => {
-    await installLicense(ctx.db, 'homelab');
-    expect((await listRoute.POST(req('POST', '/api/v1/saml-providers', body()))).status).toBe(403);
-  });
-
-  it('lets an unlicensed admin read, download the metadata, disable and delete providers', async () => {
+  it('reads, serves the metadata, disables and deletes providers', async () => {
     const { id } = await create();
-    await removeLicense();
     expect((await listRoute.GET(req('GET', '/api/v1/saml-providers'))).status).toBe(200);
     expect((await detailRoute.GET(req('GET', `/api/v1/saml-providers/${id}`), params(id))).status).toBe(200);
     expect((await metadataRoute.GET(req('GET', `/api/v1/saml-providers/${id}/metadata`), params(id))).status).toBe(200);
@@ -334,7 +310,6 @@ describe('enforced SSO and SCIM', () => {
   });
 
   it('lets SCIM choose a SAML provider for sign-in, and only an existing one', async () => {
-    await installLicense(ctx.db, 'enterprise');
     const created = await create();
     const view = await updateScimSettings({ providerId: `saml:${created.id}` }, adminId);
     expect(view.providerId).toBe(`saml:${created.id}`);

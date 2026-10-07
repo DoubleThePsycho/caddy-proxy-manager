@@ -42,10 +42,9 @@ describe('OpenAPI: compliance reports and incident drafts', () => {
     }
   });
 
-  it('documents the license rule and that nothing is sent', async () => {
+  it('documents the permissions and that nothing is sent', async () => {
     const spec = await (await GET({ headers: { get: () => null } } as any)).json();
-    expect(spec.paths['/api/v1/compliance/reports'].post.description).toMatch(/needs the compliance_reports feature/);
-    expect(spec.paths['/api/v1/compliance/reports/{id}'].delete.description).toMatch(/works without a license/);
+    expect(spec.paths['/api/v1/compliance/reports'].post.description).toMatch(/Permission compliance:write/);
     expect(spec.paths['/api/v1/compliance/incidents'].post.description).toMatch(/Nothing is sent anywhere/);
     expect(spec.paths['/api/v1/compliance/incidents/{id}/draft'].post.description).toMatch(/aggregated facts only, as untrusted data, and no tools/);
   });

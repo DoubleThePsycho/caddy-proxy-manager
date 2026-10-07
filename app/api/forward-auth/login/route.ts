@@ -14,7 +14,6 @@ import { logAuditEvent } from "@/src/lib/audit";
 import { getClientIp } from "@/src/lib/client-ip";
 import { getUserPasswordHash } from "@/src/lib/models/user";
 import { beginPortalLoginAttempt } from "@/src/lib/forward-auth-login-limiter";
-import { isUserOrganizationBlocked } from "@/ee/multi-tenancy/store";
 
 // Compared against when the account does not exist, is inactive or has no
 // password, so those cases take as long to reject as a wrong password. A cost-12
@@ -56,8 +55,7 @@ async function checkCredentials(username: string, password: string) {
   const user = await appDb.query.users.findFirst({
     where: (table, operators) => operators.eq(table.email, email)
   });
-  // A disabled organisation's users (ee/multi-tenancy) are refused like inactive accounts.
-  const usable = user && user.status === "active" && !await isUserOrganizationBlocked(appDb, user.id);
+  const usable = user && user.status === "active";
   const passwordHash = usable ? await getUserPasswordHash(user) : null;
   const isValid = await bcrypt.compare(password, passwordHash ?? DUMMY_PASSWORD_HASH);
   return { user, valid: Boolean(passwordHash) && isValid };

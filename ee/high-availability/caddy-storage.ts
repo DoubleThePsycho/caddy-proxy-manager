@@ -4,8 +4,7 @@
  * (buildCaddyDocument in src/lib/caddy.ts): the caddy.storage.redis module
  * (github.com/pberkel/caddy-storage-redis) when shared storage is on, nothing
  * for local storage. Runs on every node, master or slave, from the setting in
- * effect there, and never checks the license: storage that is configured
- * keeps working when a license lapses.
+ * effect there.
  *
  * The module runs every string field through Caddy's placeholder replacer,
  * so a secret named as an environment variable becomes {env.NAME} (the Caddy

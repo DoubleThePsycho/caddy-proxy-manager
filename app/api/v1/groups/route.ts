@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { listGroups, createGroup } from "@/src/lib/models/groups";
-import { readOrganizationFilterParam } from "@/ee/multi-tenancy/scope";
 
 export async function GET(request: NextRequest) {
   try {
-    const { access } = await requireApiPermission(request, "groups:read");
-    // Organisation users get their organisation's groups; provider-level users can filter (?organizationId=).
-    const allGroups = await listGroups(readOrganizationFilterParam(access, request.nextUrl.searchParams.get("organizationId")));
+    await requireApiPermission(request, "groups:read");
+    const allGroups = await listGroups();
     return NextResponse.json(allGroups);
   } catch (error) {
     return apiErrorResponse(error);

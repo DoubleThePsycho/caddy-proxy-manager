@@ -19,8 +19,8 @@ import * as sqliteSchema from '../../src/lib/db/schema.sqlite';
 /**
  * Differences between the migrated database and schema.sqlite.ts that are
  * known and accepted. None today: users.provider/subject declare the DEFAULT ''
- * of 0022_nullable_provider_subject, and the schema declares the indexes of
- * 0007_linking_tokens and 0041_multi_tenancy, so the PostgreSQL baseline
+ * of 0022_nullable_provider_subject, and the schema declares the index of
+ * 0007_linking_tokens, so the PostgreSQL baseline
  * (drizzle-pg/), built from the schema, matches a SQLite install.
  */
 const KNOWN_DRIFT: string[] = [];
@@ -199,14 +199,14 @@ describe('SQLite migrations match schema.sqlite.ts', () => {
     const altered = migratedDatabase();
     altered.exec(`
       ALTER TABLE settings ADD COLUMN extra TEXT;
-      DROP INDEX users_organization_idx;
+      DROP INDEX users_email_unique;
       CREATE TABLE stray (id INTEGER PRIMARY KEY);
       CREATE UNIQUE INDEX sessions_extra_unique ON sessions (userAgent, ipAddress);
     `);
     // Database-only tables first, then each table in schema order (users, sessions, ..., settings).
     expect(schemaDrift(altered).filter((entry) => !KNOWN_DRIFT.includes(entry))).toEqual([
       'table stray: in the database only',
-      'index users_organization_idx on users: missing from the database',
+      'index users_email_unique on users: missing from the database',
       'unique index sessions_extra_unique on sessions (userAgent, ipAddress): in the database only',
       'settings.extra: in the database only',
     ]);

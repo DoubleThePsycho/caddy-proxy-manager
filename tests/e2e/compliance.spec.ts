@@ -1,16 +1,16 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * Compliance page and API on the E2E stack, which runs without a license:
- * everything is readable, generating and drafting are refused with 403.
+ * Compliance page and API on the E2E stack: the page and its actions, reading
+ * over the API, and generating a report and recording an incident (both
+ * deleted again).
  */
 test.describe('Compliance', () => {
-  test('page loads with the license notice, overview, tabs and control mapping', async ({ page }) => {
+  test('page loads with the overview, tabs and control mapping', async ({ page }) => {
     await page.goto('/compliance');
     await expect(page).not.toHaveURL(/login/);
     await expect(page.getByRole('heading', { name: 'Compliance', level: 1 })).toBeVisible();
-    await expect(page.getByText(/needs a license with compliance reports/i)).toBeVisible();
-    await expect(page.getByRole('button', { name: /generate report/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /generate report/i })).toBeEnabled();
 
     // Overview: schedule, last report, live controls, test restores and the incident register.
     await expect(page.getByRole('heading', { name: 'Next scheduled report' })).toBeVisible();
@@ -18,8 +18,8 @@ test.describe('Compliance', () => {
     await expect(page.getByText('TLS on every host')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Test restores' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Incident register' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /record an incident/i })).toBeDisabled();
-    await expect(page.getByRole('button', { name: /record a test restore/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /record an incident/i })).toBeEnabled();
+    await expect(page.getByRole('button', { name: /record a test restore/i })).toBeEnabled();
 
     await page.getByRole('tab', { name: /control mapping/i }).click();
     await expect(page.getByText('does not by itself show compliance', { exact: false }).first()).toBeVisible();
@@ -27,7 +27,7 @@ test.describe('Compliance', () => {
 
     await page.getByRole('tab', { name: /reports/i }).click();
     await expect(page.getByRole('heading', { name: 'Report schedules' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /new schedule/i })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /new schedule/i })).toBeEnabled();
   });
 
   test('switches the control references between NIS2 and ISO/IEC 27001', async ({ page }) => {
@@ -51,7 +51,7 @@ test.describe('Compliance', () => {
     await expect(page).toHaveURL(/\/compliance$/);
   });
 
-  test('API reads without a license and refuses to generate', async ({ page }) => {
+  test('API reads, generates a report and records an incident', async ({ page }) => {
     const list = await page.request.get('/api/v1/compliance/reports');
     expect(list.status()).toBe(200);
     expect(await list.json()).toMatchObject({ reports: [], page: 1 });
@@ -59,18 +59,19 @@ test.describe('Compliance', () => {
     const controls = await page.request.get('/api/v1/compliance/controls');
     expect(controls.status()).toBe(200);
 
-    const generate = await page.request.post('/api/v1/compliance/reports', {
-      data: { type: 'access_review' },
-      headers: { Origin: 'http://localhost:3000' },
-    });
-    expect(generate.status()).toBe(403);
-    expect((await generate.json()).error).toMatch(/Enterprise license/);
+    const headers = { Origin: 'http://localhost:3000' };
+    const generate = await page.request.post('/api/v1/compliance/reports', { data: { type: 'access_review' }, headers });
+    expect(generate.status()).toBe(201);
+    const report = await generate.json();
+    expect((await page.request.delete(`/api/v1/compliance/reports/${report.id}`, { headers })).status()).toBe(204);
 
     const draft = await page.request.post('/api/v1/compliance/incidents', {
-      data: { title: 'E2E incident' },
-      headers: { Origin: 'http://localhost:3000' },
+      data: { title: 'E2E incident', detectedAt: new Date(Date.now() - 60_000).toISOString() },
+      headers,
     });
-    expect(draft.status()).toBe(403);
+    expect(draft.status()).toBe(201);
+    const incident = await draft.json();
+    expect((await page.request.delete(`/api/v1/compliance/incidents/${incident.id}`, { headers })).status()).toBe(204);
   });
 
   test('print views of missing items answer 404', async ({ page }) => {

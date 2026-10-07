@@ -15,7 +15,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
-/** Partial update; {"enabled": false} needs no license, any other change does. */
+/** Partial update; fields left out keep their values. */
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "compliance:write");
@@ -26,7 +26,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   }
 }
 
-/** Never needs a license; the reports it generated are kept. */
+/** The reports it generated are kept. */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "compliance:write");

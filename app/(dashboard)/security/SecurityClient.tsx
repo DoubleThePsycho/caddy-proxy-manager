@@ -585,7 +585,6 @@ export default function SecurityClient({ data }: { data: SecurityPageData }) {
       <div className="rounded-2xl border border-line bg-panel px-5 py-4">
         <TuningSuggestions
           initialSuggestions={data.tuning.suggestions}
-          canConfigure={data.tuning.canConfigure}
           canWrite={data.permissions.canWriteWaf}
           analyticsEnabled={data.tuning.analyticsEnabled}
           aiConfigured={data.tuning.aiConfigured}

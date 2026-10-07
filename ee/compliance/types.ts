@@ -6,8 +6,6 @@
 import type { Classification, IncidentAssessment, NotificationStatus, TimelineEntry } from "./incident-register";
 import type { QuestionQuery } from "@/ee/ai/questions/types";
 
-export const FEATURE = "compliance_reports" as const;
-
 export const COMPLIANCE_TABS = ["overview", "reports", "mapping"] as const;
 export type ComplianceTab = (typeof COMPLIANCE_TABS)[number];
 

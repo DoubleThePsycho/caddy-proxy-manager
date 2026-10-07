@@ -6,7 +6,7 @@ import { runReportScheduleNow, SCHEDULE_NOT_FOUND } from "@/ee/compliance/schedu
 
 type Params = { params: Promise<{ id: string }> };
 
-/** Runs the schedule now for the week or month that has ended; license. */
+/** Runs the schedule now for the week or month that has ended. */
 export async function POST(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "compliance:write");

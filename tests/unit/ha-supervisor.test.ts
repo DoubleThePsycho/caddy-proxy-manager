@@ -2,7 +2,7 @@
  * The high availability supervisor (ee/high-availability/cluster/supervisor.ts)
  * with Redis, object storage, Litestream and the dashboard process replaced
  * by fakes: promotion with the restore step, the first start with an empty
- * bucket (and its license gate), a restore that fails, an empty replica,
+ * bucket, a restore that fails, an empty replica,
  * Redis that lost its data or cannot be reached, the old leader coming back,
  * crash-only fencing, a lost bucket, pruning and the graceful hand-over.
  */
@@ -205,13 +205,8 @@ class FakeLitestream implements LitestreamPort {
 
 class FakeLocal implements LocalDatabase {
   hasDatabase = true;
-  licensed = true;
   exists() {
     return this.hasDatabase;
-  }
-  licenseAllowsHa() {
-    events.push('license-check');
-    return this.licensed;
   }
   install(restored: string, live: string) {
     events.push(`install:${restored}->${live}`);
@@ -317,27 +312,25 @@ describe('promotion', () => {
     // The dashboard read "leader" from the status file before it started.
     const leaderStatus = statuses.findIndex((entry) => entry.role === 'leader');
     expect(leaderStatus).toBeGreaterThanOrEqual(0);
-    expect(events).not.toContain('license-check');
   });
 
-  it('sets the cluster up from its own database when the bucket is empty, which needs the license', async () => {
+  it('sets the cluster up from its own database when the bucket is empty', async () => {
     const node = supervisor();
     await node.standbyTick();
     expect(node.role).toBe('leader');
-    expect(events).toContain('license-check');
     expect(litestream.restores).toEqual([]);
     expect(events.some((event) => event.startsWith('install:'))).toBe(false);
     expect(status().lastRestore).toMatchObject({ ok: true, source: 'bootstrap', replicaId: null });
     expect(store.pointer).toMatchObject({ replicaId: 'e1-c3c3c3c3', previous: null });
   });
 
-  it('does not set a cluster up without the license, gives the lease back and waits before trying again', async () => {
-    local.licensed = false;
+  it('does not set a cluster up from nothing, gives the lease back and waits before trying again', async () => {
+    local.hasDatabase = false;
     const node = supervisor();
     await node.standbyTick();
 
     expect(node.role).toBe('standby');
-    expect(status().lastRestore).toMatchObject({ ok: false, error: expect.stringMatching(/needs an Enterprise license/) });
+    expect(status().lastRestore).toMatchObject({ ok: false, error: expect.stringMatching(/no database to start it from/) });
     expect(store.released).toHaveLength(1);
     expect(store.holder).toBeNull();
     expect(litestream.replicates).toEqual([]);
@@ -348,15 +341,6 @@ describe('promotion', () => {
     vi.advanceTimersByTime(5_000);
     await node.standbyTick();
     expect(store.acquireCalls).toHaveLength(2);
-  });
-
-  it('does not set a cluster up from nothing', async () => {
-    local.hasDatabase = false;
-    const node = supervisor();
-    await node.standbyTick();
-    expect(node.role).toBe('standby');
-    expect(status().lastRestore?.error).toMatch(/no database to start it from/);
-    expect(events).not.toContain('license-check');
   });
 
   it('gives the lease back when the restore fails, never serving as the leader', async () => {
@@ -384,7 +368,6 @@ describe('promotion', () => {
     await node.standbyTick();
     expect(node.role).toBe('standby');
     expect(status().lastRestore?.error).toMatch(/is empty in object storage/);
-    expect(events).not.toContain('license-check');
   });
 
   it('recovers from its own database when the replica is empty and HA_RECOVER_FROM_LOCAL is set', async () => {

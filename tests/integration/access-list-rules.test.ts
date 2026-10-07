@@ -236,8 +236,8 @@ describe('the editor save', () => {
 describe('the Blocked sources list', () => {
   it('is created on first use, once, and is never one of the lists users manage', async () => {
     expect(await getBlockedSourcesList()).toBeNull();
-    const first = await ensureBlockedSourcesList(ADMIN);
-    const second = await ensureBlockedSourcesList(ADMIN);
+    const first = await ensureBlockedSourcesList();
+    const second = await ensureBlockedSourcesList();
     expect(second.id).toBe(first.id);
     expect(await listAccessLists()).toEqual([]);
     expect(await countAccessLists()).toBe(0);
@@ -266,7 +266,7 @@ describe('the Blocked sources list', () => {
     await expect(addBlockedSource({ address: '192.0.2.1', expiresAt: '2030-01-01T00:00:00Z', expiresInSeconds: 60 }, ADMIN)).rejects.toThrow(/not both/);
     await expect(addBlockedSource({ address: '192.0.2.1', expiresInSeconds: 5 }, ADMIN)).rejects.toThrow(/at least 60/);
     await expect(addBlockedSource({ address: '192.0.2.1', extra: true } as never, ADMIN)).rejects.toThrow(/unknown field/);
-    const list = await ensureBlockedSourcesList(ADMIN);
+    const list = await ensureBlockedSourcesList();
     await expect(updateAccessList(list.id, { rules: [allow('192.0.2.1')] }, ADMIN)).rejects.toThrow(/only holds deny rules/);
     await expect(addAccessListRule(list.id, allow('192.0.2.1'), ADMIN)).rejects.toThrow(/only holds deny rules/);
     await expect(updateAccessList(list.id, { name: 'Mine' }, ADMIN)).rejects.toThrow(/cannot be renamed/);
@@ -276,7 +276,7 @@ describe('the Blocked sources list', () => {
   });
 
   it('cannot be attached to a host', async () => {
-    const list = await ensureBlockedSourcesList(ADMIN);
+    const list = await ensureBlockedSourcesList();
     await expect(createProxyHost({ name: 'app', domains: ['app.example.com'], upstreams: ['10.0.0.5:8080'], accessListId: list.id }, ADMIN))
       .rejects.toThrow(/every host/);
     const host = await createProxyHost({ name: 'app', domains: ['app.example.com'], upstreams: ['10.0.0.5:8080'] }, ADMIN);

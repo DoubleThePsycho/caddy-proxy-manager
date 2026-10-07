@@ -41,12 +41,6 @@ export interface AttentionProvider {
    * only returns items about the reader).
    */
   permissions: readonly Permission[];
-  /**
-   * Whether the provider filters its items to the reader's organisation
-   * (ee/multi-tenancy). Providers that do not are skipped for organisation
-   * users.
-   */
-  organizationAware?: boolean;
   /** The items for this reader; may return items without `source` (the registry sets it). */
   collect(context: AttentionContext): Promise<Omit<AttentionItem, "source">[]>;
 }

@@ -2,8 +2,8 @@
  * PostgreSQL replicas (ee/docs/high-availability.md#postgresql-replicas).
  * The test stack runs one dashboard: on PostgreSQL it is the only replica
  * and leads the background jobs; on SQLite nothing of this runs. Two
- * replicas, the handover and the license rule are covered by
- * tests/integration/pg/ and tests/integration/cluster-nodes.test.ts.
+ * replicas and the handover are covered by tests/integration/pg/,
+ * tests/integration/cluster-nodes.test.ts and tests/e2e/replicas/.
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
 

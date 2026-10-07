@@ -1,9 +1,9 @@
 /**
- * Enforced SSO lockout guards on user management: while SSO is enforced, no
- * change through the user model, the Users page actions or /api/v1/users may
- * leave the install without an active break-glass administrator that can
- * sign in with a password. The guards ignore the license (none is installed
- * here): they protect the install, they do not configure the feature.
+ * Enforced SSO lockout guards on user management: while SSO is enforced with
+ * a break-glass administrator (an active administrator that can sign in with
+ * a password), no change through the user model, the Users page actions or
+ * /api/v1/users may take away the last one by accident. Break-glass accounts
+ * are optional: once the account is off the list, the change goes through.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import bcrypt from 'bcryptjs';
@@ -104,6 +104,17 @@ describe('user model guards', () => {
     await ctx.db.update(schema.users).set({ status: 'disabled' }).where(eq(schema.users.id, ids.glass));
     await userModel.updateUserRole(ids.glass, 'viewer');
     expect((await userRow(ids.glass))?.role).toBe('viewer');
+  });
+
+  it('allows the changes once the account is off the break-glass list, also with none left', async () => {
+    await enforce(true, [ids.glass]);
+    await expect(userModel.deleteUser(ids.glass)).rejects.toBeInstanceOf(BreakGlassGuardError);
+    await enforce(true, []);
+    await userModel.updateUserRole(ids.glass, 'user');
+    await userModel.updateUserStatus(ids.glass, 'disabled');
+    await userModel.deleteUser(ids.glass);
+    expect(await userRow(ids.glass)).toBeUndefined();
+    expect(await readSsoEnforcement(ctx.db)).toEqual({ enabled: true, breakGlassUserIds: [] });
   });
 
   it('removes a deleted account from the break-glass list', async () => {

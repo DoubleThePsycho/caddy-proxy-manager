@@ -4,8 +4,6 @@
  * components (no server-only dependencies).
  */
 
-export const FEATURE = "fleet" as const;
-
 export const DRIFT_STATUSES = ["in_sync", "drifted", "unreachable", "older_version", "unknown"] as const;
 export type DriftStatus = (typeof DRIFT_STATUSES)[number];
 

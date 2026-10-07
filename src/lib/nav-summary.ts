@@ -1,25 +1,21 @@
 /**
- * What the sidebar shows besides its links: the counters next to entries,
- * the edition, and the instance's place in the fleet. Read on every full
+ * What the sidebar shows besides its links: the counters next to entries
+ * and the instance's place in the fleet. Read on every full
  * page load of the dashboard, so each part is a small query, guarded by the
  * read permission of the page it points to, and never throws: a counter
  * that fails is left out.
  */
 import { X509Certificate } from "node:crypto";
-import { and, count, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { appDb } from "./db";
-import { alertRuleStates, alertRules, certificates } from "./db/schema";
+import { certificates } from "./db/schema";
 import { can, type Access } from "./permissions";
 import type { NavBadge, NavBadges } from "./navigation";
 import { getInstanceMode, type InstanceMode } from "./instance-sync";
 import { certificateIdsInScope } from "./access-scope";
-import { organizationCondition } from "@/ee/multi-tenancy/scope";
-import { dashboardOrganizationFilter } from "@/ee/multi-tenancy/view";
 import { countPendingChangeRequests } from "@/ee/approvals/requests";
-import { getLicenseState, countManagedNodes } from "@/ee/licensing/store";
-import { EDITION_LABELS } from "@/ee/licensing/features";
 import { listEnvironmentRows, listFleetInstances } from "@/ee/fleet/environments";
-import { first } from "@/src/lib/db/ops";
+import { countFiringAlertsNeedingAttention } from "@/ee/alerting/events";
 
 const DAY_MS = 86_400_000;
 
@@ -42,8 +38,6 @@ export type NavEnvironment = {
 
 export type NavSummary = {
   badges: NavBadges;
-  /** The licensed edition ("Enterprise"), or null without a valid license. */
-  edition: string | null;
   environment: NavEnvironment | null;
 };
 
@@ -59,15 +53,10 @@ async function safely<T>(read: () => Promise<T> | T, fallback: T): Promise<T> {
   }
 }
 
+/** Alerts firing now, without the dismissed ones and those of muted rules. */
 async function alertsBadge(access: Access): Promise<NavBadge | null> {
   if (!can(access, "alerts:read")) return null;
-  const row = await first(appDb
-    .select({ value: count() })
-    .from(alertRuleStates)
-    .innerJoin(alertRules, eq(alertRules.id, alertRuleStates.ruleId))
-    .where(and(eq(alertRuleStates.status, "firing"), eq(alertRules.enabled, true)))
-    .limit(1));
-  const firing = row?.value ?? 0;
+  const firing = await countFiringAlertsNeedingAttention();
   return firing > 0 ? { text: String(firing), tone: "warn", label: plural(firing, "alert firing", "alerts firing") } : null;
 }
 
@@ -90,12 +79,11 @@ function validTo(id: number, pem: string): number | null {
 
 async function certificatesBadge(access: Access, now: number): Promise<NavBadge | null> {
   if (!can(access, "certificates:read")) return null;
-  const organizationId = await dashboardOrganizationFilter(access);
   const inScope = await certificateIdsInScope(access);
   const rows = await appDb
     .select({ id: certificates.id, pem: certificates.certificatePem })
     .from(certificates)
-    .where(and(eq(certificates.type, "imported"), isNotNull(certificates.certificatePem), organizationCondition(certificates.organizationId, organizationId)));
+    .where(and(eq(certificates.type, "imported"), isNotNull(certificates.certificatePem)));
   const limit = now + CERTIFICATE_EXPIRY_BADGE_DAYS * DAY_MS;
   const expiring = rows.filter((row) => {
     if (inScope !== null && !inScope.has(row.id)) return false;
@@ -125,23 +113,6 @@ export function reviewsBadge(reviews: ReviewSummary, now: number): NavBadge | nu
     text: days === 0 ? "Today" : `${days}d`,
     tone: days <= 7 ? "warn" : "neutral",
     label: `${items} to decide, due ${days === 0 ? "today" : `in ${plural(days, "day", "days")}`}`,
-  };
-}
-
-async function licenseInfo(access: Access): Promise<{ edition: string | null; badge: NavBadge | null }> {
-  const state = await getLicenseState();
-  const valid = (state.status === "active" || state.status === "grace") && state.license !== null;
-  const edition = valid ? EDITION_LABELS[state.license!.edition] ?? null : null;
-  if (!valid || !can(access, "license:read")) return { edition, badge: null };
-  const nodes = await countManagedNodes();
-  const licensed = state.license!.nodes;
-  return {
-    edition,
-    badge: {
-      text: `${nodes} of ${licensed} nodes`,
-      tone: nodes > licensed ? "warn" : "neutral",
-      label: `${nodes} of ${licensed} licensed nodes in use`,
-    },
   };
 }
 
@@ -183,11 +154,10 @@ async function environmentSummary(access: Access): Promise<NavEnvironment | null
 /** Everything the sidebar shows for `access` besides its links. */
 export async function getNavSummary(access: Access, reviews: ReviewSummary, now: Date = new Date()): Promise<NavSummary> {
   const at = now.getTime();
-  const [alertsFiring, certificatesExpiring, approvalsPending, license, environment] = await Promise.all([
+  const [alertsFiring, certificatesExpiring, approvalsPending, environment] = await Promise.all([
     safely(async () => await alertsBadge(access), null),
     safely(() => certificatesBadge(access, at), null),
     safely(async () => await approvalsBadge(access), null),
-    safely(() => licenseInfo(access), { edition: null, badge: null }),
     safely(() => environmentSummary(access), null),
   ]);
   return {
@@ -196,9 +166,7 @@ export async function getNavSummary(access: Access, reviews: ReviewSummary, now:
       certificatesExpiring,
       approvalsPending,
       reviewsDue: reviewsBadge(reviews, at),
-      licenseNodes: license.badge,
     },
-    edition: license.edition,
     environment,
   };
 }

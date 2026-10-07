@@ -25,7 +25,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   }
 }
 
-/** Deleting never needs a license; the directory's account links are deleted with it. */
+/** The directory's account links are deleted with it. */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "ldap:write");

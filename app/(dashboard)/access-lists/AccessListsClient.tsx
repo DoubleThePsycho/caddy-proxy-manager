@@ -21,8 +21,8 @@ type Props = {
   /** Hosts using each list, by list id (only hosts the user can see). */
   usage: Record<number, AccessListUsage[]>;
   stats: AccessListStats;
-  /** Entries of the Blocked sources list; null hides its tab (organisation users). */
-  blockedCount: number | null;
+  /** Entries of the Blocked sources list. */
+  blockedCount: number;
   canWrite: boolean;
 };
 

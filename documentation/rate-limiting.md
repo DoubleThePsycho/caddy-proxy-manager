@@ -1,6 +1,6 @@
 # Rate limiting
 
-Rate limiting answers `429 Too Many Requests` to clients that send too many requests to a proxy host. It is a Community feature.
+Rate limiting answers `429 Too Many Requests` to clients that send too many requests to a proxy host.
 
 Caddy does the limiting with the [caddy-ratelimit](https://github.com/mholt/caddy-ratelimit) plugin, which the Caddy image of this release includes.
 

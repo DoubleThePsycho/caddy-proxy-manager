@@ -2,12 +2,9 @@
 import { requirePermission } from "@/src/lib/auth";
 import { can } from "@/src/lib/permissions";
 import { DEFAULT_PAGE_SIZE, parsePageParam } from "@/src/lib/pagination";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { getFleetOverview } from "@/ee/fleet/overview";
 import { listRevisions } from "@/ee/fleet/revisions";
 import { listRollouts } from "@/ee/fleet/rollouts";
-import { FEATURE } from "@/ee/fleet/types";
 import FleetClient, { type ServerPage } from "./FleetClient";
 
 export const metadata = { title: "Fleet" };
@@ -27,9 +24,8 @@ export default async function FleetPage({ searchParams }: { searchParams?: Promi
   const { access } = await requirePermission("fleet:read");
   const search = (await searchParams) ?? {};
   // The overview carries no secrets: revisions are listed without content.
-  const [overview, configurable, rolloutPage, revisionPage] = await Promise.all([
+  const [overview, rolloutPage, revisionPage] = await Promise.all([
     getFleetOverview(),
-    isFeatureConfigurable(FEATURE),
     pageOf(parsePageParam(search.rollouts), async (offset) => {
       const { rollouts, total } = await listRollouts({ limit: DEFAULT_PAGE_SIZE, offset });
       return { items: rollouts, total };
@@ -45,8 +41,6 @@ export default async function FleetPage({ searchParams }: { searchParams?: Promi
       rolloutPage={rolloutPage}
       revisionPage={revisionPage}
       now={new Date().toISOString()}
-      configurable={configurable}
-      editionLabel={EDITION_LABELS[FEATURE_INFO[FEATURE].edition]}
       allowed={{ write: can(access, "fleet:write"), promote: can(access, "fleet:promote"), replicas: can(access, "fleet:replicas") }}
     />
   );

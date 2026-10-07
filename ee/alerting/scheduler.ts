@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Runs the alert evaluator every minute. Started from src/instrumentation.ts
- * (never in tests). The evaluator never checks the license.
+ * (never in tests).
  */
 import { runAlertEvaluation } from "./engine";
 import { onShutdown } from "@/src/lib/shutdown";

@@ -7,8 +7,8 @@
  * POST /api/v1/analytics/questions, the answer shows under it, and it can be
  * saved (/api/v1/analytics/questions/saved) to run again with fresh data or
  * to add to a compliance report schedule. The API decides what is allowed;
- * without a license, an AI provider or with questions turned off, the box
- * explains why it is read-only.
+ * without an AI provider or with questions turned off, the box explains why
+ * it is read-only.
  */
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
@@ -71,16 +71,6 @@ function Unavailable({ availability, canOpenAiSettings }: Pick<AskPanelProps, "a
   if (!availability.analyticsEnabled) {
     return <Banner tone="info" title="Traffic analytics is off." />;
   }
-  if (!availability.licensed) {
-    return (
-      <Banner tone="info" title="Read-only without a license.">
-        Asking needs a license that includes the AI analyst.{" "}
-        <Link href="/license" className="text-brand underline-offset-4 hover:underline">
-          Licensing
-        </Link>
-      </Banner>
-    );
-  }
   if (!availability.enabled) {
     return <Banner tone="info" title="Questions are turned off.">An administrator turned them off in the AI settings (Alerts → AI).</Banner>;
   }
@@ -133,7 +123,7 @@ function SavedList({
               <span className="text-xs text-soft [overflow-wrap:anywhere]">{question.interpretation}</span>
             </span>
             {question.shared && (
-              <Badge variant="muted" title={question.owned ? "Shared with your organisation" : `Shared by ${question.ownerName ?? "another user"}`}>
+              <Badge variant="muted" title={question.owned ? "Shared with everyone who can read analytics" : `Shared by ${question.ownerName ?? "another user"}`}>
                 <Users className="size-3" aria-hidden="true" />
                 {question.owned ? "Shared" : (question.ownerName ?? "Shared")}
               </Badge>
@@ -146,7 +136,7 @@ function SavedList({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  title={question.shared ? "Stop sharing" : "Share with your organisation"}
+                  title={question.shared ? "Stop sharing" : "Share with everyone who can read analytics"}
                   aria-label={question.shared ? `Stop sharing "${question.question}"` : `Share "${question.question}"`}
                   aria-pressed={question.shared}
                   disabled={busy || (!question.shared && !canRun)}
@@ -170,7 +160,7 @@ function SavedList({
 }
 
 export function AskPanel({ availability, isAdmin, canOpenAiSettings, variant = "card", onSavedChange }: AskPanelProps) {
-  const ready = availability.analyticsEnabled && availability.licensed && availability.enabled && availability.providerConfigured;
+  const ready = availability.analyticsEnabled && availability.enabled && availability.providerConfigured;
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState<QuestionAnswer | null>(null);
@@ -264,7 +254,7 @@ export function AskPanel({ availability, isAdmin, canOpenAiSettings, variant = "
       ) : (
         <span className="flex items-center gap-2">
           <label className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-            <Checkbox checked={share} onCheckedChange={(checked) => setShare(checked === true)} aria-label="Share with your organisation" />
+            <Checkbox checked={share} onCheckedChange={(checked) => setShare(checked === true)} aria-label="Share with everyone who can read analytics" />
             Share
           </label>
           <Button variant="secondary" size="sm" onClick={() => void save()} disabled={busy}>

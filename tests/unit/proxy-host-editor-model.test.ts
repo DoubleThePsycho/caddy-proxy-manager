@@ -69,7 +69,6 @@ function host(overrides: Partial<ProxyHost> = {}): ProxyHost {
     errorPages: [{ statuses: [502, 503], body: '<h1>Down</h1>' }],
     rateLimit: { enabled: true, mode: 'merge', rules: [{ path: '/login', methods: ['POST'], key: 'client_ip', events: 5, window: '30s' }] },
     tags: ['prod'],
-    organizationId: null,
     ...overrides,
   };
 }

@@ -12,8 +12,7 @@
  * memory (src/lib/db/cached-value.ts), loaded at start-up, so sign-in pages
  * and e-mails never wait for or fail because of the database. Before the
  * first load, and when the database cannot be read, it is the default
- * branding. Nothing here looks at the license: branding that is already
- * configured keeps showing when a license lapses.
+ * branding.
  *
  * The code that changes the rows reads them again at once: writeBranding,
  * clearBranding, applying a sync payload and changing the instance mode

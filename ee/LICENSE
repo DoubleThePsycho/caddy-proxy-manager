@@ -4,8 +4,8 @@ Copyright (c) 2026 fuomag9. Licensed under the Elastic License 2.0 (the
 Everything under this ee/ directory is licensed under the Elastic License 2.0;
 everything outside it is licensed under the MIT License (../LICENSE). Files
 outside ee/ that route to ee/ (pages and API routes in app/ that only
-re-export code from ee/) contain no paid functionality: the functionality
-they route to is here, under the Elastic License 2.0.
+re-export code from ee/) contain no code under the Elastic License 2.0; the
+code they route to is here.
 
 Elastic License 2.0
 

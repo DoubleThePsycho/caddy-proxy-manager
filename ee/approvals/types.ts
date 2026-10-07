@@ -6,8 +6,6 @@
 import type { Weekday } from "@/ee/backups/types";
 import type { ChangeImpact } from "./impact";
 
-export const FEATURE = "approvals" as const;
-
 export const TARGET_TYPES = ["proxy_host", "l4_proxy_host"] as const;
 export type TargetType = (typeof TARGET_TYPES)[number];
 

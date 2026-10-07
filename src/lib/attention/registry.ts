@@ -1,12 +1,11 @@
 /**
  * The attention providers and how their items are collected for a reader.
- * Each provider runs only when the reader holds one of its permissions (and,
- * for organisation users, only when it filters to their organisation), with
+ * Each provider runs only when the reader holds one of its permissions, with
  * its own time limit; a provider that fails or is slow is reported as such
  * and never hides the others. Items come back most severe first, then
  * newest first.
  */
-import { can, tenantOf, type Access } from "@/src/lib/permissions";
+import { can, type Access } from "@/src/lib/permissions";
 import type { AttentionItem, AttentionProvider, AttentionSeverity, AttentionSourceStatus, AttentionView } from "./types";
 
 export const ATTENTION_PROVIDER_TIMEOUT_MS = 4_000;
@@ -31,7 +30,6 @@ export function listAttentionProviders(): AttentionProvider[] {
 
 /** Whether `access` may see the provider's items. */
 export function mayRead(provider: AttentionProvider, access: Access): boolean {
-  if (tenantOf(access) !== null && !provider.organizationAware) return false;
   return provider.permissions.length === 0 || provider.permissions.some((permission) => can(access, permission));
 }
 

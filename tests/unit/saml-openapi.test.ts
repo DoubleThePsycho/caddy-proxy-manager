@@ -10,7 +10,6 @@ vi.mock('@/src/lib/api-auth', () => ({
 
 import { GET } from '@/app/api/v1/openapi.json/route';
 import { ADMIN_LEVEL_PERMISSIONS, PERMISSION_AREAS } from '@/src/lib/permissions';
-import { FEATURE_INFO } from '@/ee/licensing/features';
 import { NAV_PAGES } from '@/src/lib/navigation';
 
 async function spec() {
@@ -57,7 +56,6 @@ describe('OpenAPI: SAML providers', () => {
   });
 
   it('ships the feature with administrator-level management in the sso area', () => {
-    expect(FEATURE_INFO.sso_saml).toMatchObject({ edition: 'business' });
     expect(PERMISSION_AREAS.sso.actions).toEqual(['read', 'write']);
     expect(ADMIN_LEVEL_PERMISSIONS).toContain('sso:write');
     expect(NAV_PAGES.find((page) => page.href === '/saml')?.permission).toBe('sso:read');
@@ -68,6 +66,6 @@ describe('OpenAPI: SAML providers', () => {
     for (const heading of ['Microsoft Entra ID', 'Okta', 'Google Workspace', 'Keycloak', 'How the former blockers are closed']) {
       expect(doc, heading).toContain(heading);
     }
-    expect(readFileSync(resolve(__dirname, '../../ee/docs/README.md'), 'utf8')).toMatch(/\| SAML single sign-on \| Business \| \[sso-saml\.md\]/);
+    expect(readFileSync(resolve(__dirname, '../../ee/docs/README.md'), 'utf8')).toMatch(/\| SAML single sign-on \| \[sso-saml\.md\]/);
   });
 });

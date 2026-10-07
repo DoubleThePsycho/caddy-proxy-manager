@@ -5,10 +5,12 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import bcrypt from 'bcryptjs';
+import { eq } from 'drizzle-orm';
 import { createTestDb } from '../helpers/db';
-import { FEATURE_INFO } from '@/ee/licensing/features';
+import * as schema from '../../src/lib/db/schema';
 import { parseSsoEnforcement, readSsoEnforcement, writeSsoEnforcement } from '@/ee/sso/enforcement-store';
-import { SSO_SESSION_PATHS, isSessionAllowedUnderSsoEnforcement } from '@/ee/sso/sign-in';
+import { SSO_SESSION_PATHS, isSessionAllowedUnderSsoEnforcement, loginPageEnforcement } from '@/ee/sso/sign-in';
 
 describe('parseSsoEnforcement', () => {
   it('treats a missing row as off', () => {
@@ -62,19 +64,44 @@ describe('isSessionAllowedUnderSsoEnforcement', () => {
   });
 });
 
-describe('enforced SSO shipping', () => {
-  it('is available as a Business feature, and so is SAML', () => {
-    expect(FEATURE_INFO.sso_enforce).toMatchObject({ edition: 'business' });
-    expect(FEATURE_INFO.sso_saml).toMatchObject({ edition: 'business' });
-  });
+describe('loginPageEnforcement', () => {
+  it('says whether a break-glass account can sign in with a password', async () => {
+    const db = createTestDb();
+    const now = new Date().toISOString();
+    const user = async (username: string, status = 'active') => {
+      const [row] = await db.insert(schema.users).values({
+        email: `${username}@example.com`, username, role: 'admin', status, createdAt: now, updatedAt: now,
+      }).returning();
+      await db.insert(schema.accounts).values({
+        accountId: String(row.id), providerId: 'credential', userId: row.id,
+        password: bcrypt.hashSync('Correct-Horse-9!', 4), createdAt: now, updatedAt: now,
+      });
+      return row.id;
+    };
+    const glass = await user('glass');
+    const disabled = await user('disabled', 'disabled');
 
+    expect(await loginPageEnforcement(db)).toEqual({ enforced: false, breakGlass: false });
+    await writeSsoEnforcement(db, { enabled: true, breakGlassUserIds: [] });
+    expect(await loginPageEnforcement(db)).toEqual({ enforced: true, breakGlass: false });
+    await writeSsoEnforcement(db, { enabled: true, breakGlassUserIds: [disabled] });
+    expect(await loginPageEnforcement(db)).toEqual({ enforced: true, breakGlass: false });
+    await writeSsoEnforcement(db, { enabled: true, breakGlassUserIds: [disabled, glass] });
+    expect(await loginPageEnforcement(db)).toEqual({ enforced: true, breakGlass: true });
+    await db.update(schema.accounts).set({ password: null }).where(eq(schema.accounts.userId, glass));
+    expect(await loginPageEnforcement(db)).toEqual({ enforced: true, breakGlass: false });
+  });
+});
+
+describe('enforced SSO shipping', () => {
   it('puts the password form behind "Sign in with a password" on the login page when SSO is enforced', () => {
     const root = resolve(__dirname, '../..');
     const page = readFileSync(resolve(root, 'app/(auth)/login/page.tsx'), 'utf8');
     const client = readFileSync(resolve(root, 'app/(auth)/login/LoginClient.tsx'), 'utf8');
-    expect(page).toContain('ssoEnforced={await isSsoEnforced(appDb)}');
+    expect(page).toContain('ssoEnforced={enforcement.enforced}');
+    expect(page).toContain('breakGlassSignIn={enforcement.breakGlass}');
     expect(client).toContain('const ssoFirst = ssoEnforced && enabledProviders.length + samlProviders.length > 0;');
-    expect(client).toContain('useState(!ssoFirst)');
+    expect(client).toContain('useState(!ssoFirst && passwordSignIn)');
     expect(client).toContain('Sign in with a password');
     expect(client).toContain('Break-glass accounts only');
     expect(client).toContain('aria-expanded={showPasswordForm}');

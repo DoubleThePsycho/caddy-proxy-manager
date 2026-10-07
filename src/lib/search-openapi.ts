@@ -22,8 +22,7 @@ export const SEARCH_OPENAPI_PATHS = {
       description:
         "Any signed-in user or API token; no single permission. Each group of results is limited to what the caller's role " +
         "can read: proxy hosts need proxy_hosts:read, L4 hosts l4_proxy_hosts:read, certificates certificates:read and " +
-        "users users:read (hosts and certificates follow the role's tag scope; organisation users only get their " +
-        "organisation's rows); actions need the write permission of the page they open; pages the permission of their " +
+        "users users:read (hosts and certificates follow the role's tag scope); actions need the write permission of the page they open; pages the permission of their " +
         "page guard; settings sections settings:read plus the section's own permission. The query is matched literally " +
         `and case-insensitively, and cut to ${MAX_SEARCH_QUERY_LENGTH} characters. Up to ${SEARCH_LIMITS.proxyHosts} proxy hosts, ` +
         `${SEARCH_LIMITS.l4Hosts} L4 hosts and ${SEARCH_LIMITS.certificates} results of each other group. An empty query ` +

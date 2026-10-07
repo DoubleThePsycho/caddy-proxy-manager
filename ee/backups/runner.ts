@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Backup runs: build the passphrase-encrypted export file (the same file the
- * free export downloads), upload it, apply retention and record the run.
- * Also the connection test, the listing of stored backups and restore.
+ * configuration export downloads), upload it, apply retention and record the
+ * run. Also the connection test, the listing of stored backups and restore.
  *
- * Scheduled runs never check the license; "Back up now", the connection test
- * and restore need it. Error messages stored in runs and shown in the UI come
- * from S3Error (status and S3 error code) or from application errors; they
- * never contain credentials, signed requests or response bodies.
+ * Error messages stored in runs and shown in the UI come from S3Error (status
+ * and S3 error code) or from application errors; they never contain
+ * credentials, signed requests or response bodies.
  */
 import { randomBytes } from "node:crypto";
 import { and, count, eq, lt } from "drizzle-orm";
@@ -18,7 +17,6 @@ import { ApiClientError, ApiConflictError, ApiValidationError } from "@/src/lib/
 import { BRAND_NAME } from "@/src/lib/brand";
 import { assertConfigurationEditable, ConfigurationApplyError } from "@/src/lib/config-replace";
 import { buildConfigurationExport, importConfiguration, MAX_IMPORT_BYTES } from "@/src/lib/config-transfer";
-import { requireFeature } from "@/ee/licensing/store";
 import { beforeImportSnapshotHook } from "@/ee/config-history/snapshots";
 import {
   clientFor,
@@ -35,7 +33,6 @@ import { sha256Hex } from "./sigv4";
 import {
   BACKUP_FILE_PATTERN,
   BACKUP_FILE_PREFIX,
-  FEATURE,
   type BackupObjectsListing,
   type BackupRestoreResult,
   type BackupRunsPage,
@@ -180,7 +177,7 @@ async function recordOutcome(destinationId: number, status: "success" | "failed"
  * One backup to one destination. Throws a 409 when a backup to it is already
  * running (on any replica); every other failure is recorded in the run
  * (status "failed") and on the destination, which then retries with
- * backoff. No license check.
+ * backoff.
  */
 export async function runBackup(destinationId: number, trigger: BackupTrigger, deps: BackupDependencies = {}): Promise<BackupRunView> {
   const run = await tryRunBackup(destinationId, trigger, deps);
@@ -237,9 +234,8 @@ async function runBackupHoldingLock(destinationId: number, trigger: BackupTrigge
   return toRunView(finished ?? { ...run, ...outcome, finishedAt: finishedAt.toISOString() }, row.name);
 }
 
-/** "Back up now": needs the license; refused on a sync slave. */
+/** "Back up now"; refused on a sync slave. */
 export async function runBackupNow(destinationId: number, actorUserId: number, deps: BackupDependencies = {}): Promise<BackupRunView> {
-  await requireFeature(FEATURE);
   const row = await requireDestinationRow(destinationId);
   await assertConfigurationEditable();
   const run = await runBackup(destinationId, "manual", deps);
@@ -266,8 +262,7 @@ const tick = (store.__ingressiBackupTick ??= { running: false });
  * Runs every enabled destination whose next run is due, one after the other,
  * skipping those with a backup in progress (a "Back up now", or a run on
  * another replica), after marking the runs of stopped processes interrupted.
- * Returns null while the previous pass of this process is still running. No
- * license check: configured backups keep running.
+ * Returns null while the previous pass of this process is still running.
  */
 export async function runDueBackups(deps: BackupDependencies = {}): Promise<DueBackupsResult | null> {
   if (tick.running) return null;
@@ -335,13 +330,12 @@ export async function markInterruptedRuns(now: Date = new Date()): Promise<numbe
   return marked;
 }
 
-/** Writes, reads back and deletes a small object. Needs the license. */
+/** Writes, reads back and deletes a small object. */
 export async function testBackupDestination(
   destinationId: number,
   actorUserId: number,
   deps: BackupDependencies = {}
 ): Promise<BackupTestResult> {
-  await requireFeature(FEATURE);
   const row = await requireDestinationRow(destinationId);
   const started = Date.now();
   const key = `${objectPrefix(row)}ingressi-connection-test-${randomBytes(8).toString("hex")}.txt`;
@@ -381,7 +375,7 @@ export async function testBackupDestination(
   return result;
 }
 
-/** Backup files under the destination's prefix, newest first. Needs no license. */
+/** Backup files under the destination's prefix, newest first. */
 export async function listBackupObjects(destinationId: number, deps: BackupDependencies = {}): Promise<BackupObjectsListing> {
   const row = await requireDestinationRow(destinationId);
   const client = clientFor(row, { fetch: deps.fetch, now: deps.now });
@@ -422,7 +416,7 @@ function parseRestoreBody(body: unknown, row: BackupDestinationRow): { key: stri
  * Downloads a backup and imports it through the configuration import, which
  * validates it, checks the passphrase (the destination's, unless one is
  * given) and, when configuration history is on, saves the configuration it
- * replaces. Needs the license; refused on a sync slave.
+ * replaces. Refused on a sync slave.
  */
 export async function restoreBackup(
   destinationId: number,
@@ -430,7 +424,6 @@ export async function restoreBackup(
   actorUserId: number,
   deps: BackupDependencies = {}
 ): Promise<BackupRestoreResult> {
-  await requireFeature(FEATURE);
   const row = await requireDestinationRow(destinationId);
   const input = parseRestoreBody(body, row);
   await assertConfigurationEditable();

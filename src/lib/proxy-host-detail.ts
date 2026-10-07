@@ -6,11 +6,11 @@
  * changes with diffs (audit_log:read). The caller has already checked that
  * the reader may see the host.
  */
-import { can, tenantOf, type Access } from "./permissions";
+import { can, type Access } from "./permissions";
 import type { ProxyHost } from "./models/proxy-hosts";
 import { queryAuditEvents, countAuditEventsMatching } from "./models/audit";
 import { queryHostDetail, type HostDetailResult } from "./analytics/hosts";
-import { allProxyHostDomains, scopeFor } from "./analytics/service";
+import { allProxyHostDomains } from "./analytics/service";
 import { resolveRange } from "./analytics/range";
 import { normalizeDomain } from "./analytics/scope";
 import type { AnalyticsStatus } from "./analytics/run";
@@ -22,7 +22,6 @@ import type { HostListRow } from "./proxy-host-view";
 import { auditEventConfigDiff } from "@/ee/config-history/versions";
 import { listEnabledRules } from "@/ee/alerting/rules";
 import type { ErrorRateParams } from "@/ee/alerting/types";
-import type { OrganizationFilter } from "@/ee/multi-tenancy/scope";
 
 export type HostTrafficDetail = {
   status: AnalyticsStatus;
@@ -80,10 +79,11 @@ async function loadTraffic(access: Access, host: ProxyHost, now: number): Promis
       statusCodes: [],
     };
   }
-  const detail = await queryHostDetail(
-    { range, host: { id: host.id, domains: host.domains.map(normalizeDomain).filter(Boolean) }, allHosts: await allProxyHostDomains() },
-    await scopeFor(access)
-  );
+  const detail = await queryHostDetail({
+    range,
+    host: { id: host.id, domains: host.domains.map(normalizeDomain).filter(Boolean) },
+    allHosts: await allProxyHostDomains(),
+  });
   return {
     status: detail.status,
     range: { start: detail.range.start, end: detail.range.end, step: detail.range.step, buckets: detail.range.buckets },
@@ -94,9 +94,8 @@ async function loadTraffic(access: Access, host: ProxyHost, now: number): Promis
   };
 }
 
-/** Alert rules are the provider's; organisation users have none. */
 async function loadErrorRateAlert(access: Access, hostId: number): Promise<HostDetail["errorRateAlert"]> {
-  if (!can(access, "alerts:read") || tenantOf(access) !== null) return null;
+  if (!can(access, "alerts:read")) return null;
   try {
     let best: HostDetail["errorRateAlert"] = null;
     for (const rule of await listEnabledRules()) {
@@ -114,15 +113,14 @@ async function loadErrorRateAlert(access: Access, hostId: number): Promise<HostD
 
 function actorName(user: { name: string | null; email: string | null } | null, userId: number | null): string | null {
   if (user) return user.name || user.email || `User #${userId}`;
-  // An organisation's log does not name the provider's users.
-  return userId !== null ? "Provider" : null;
+  return userId !== null ? `Deleted user #${userId}` : null;
 }
 
-async function loadChanges(access: Access, hostId: number, organizationId: OrganizationFilter): Promise<HostDetail["changes"]> {
+async function loadChanges(access: Access, hostId: number): Promise<HostDetail["changes"]> {
   if (!can(access, "audit_log:read")) return null;
-  const filter = { entityType: "proxy_host", entityId: hostId, organizationId };
+  const filter = { entityType: "proxy_host", entityId: hostId };
   const [events, total] = await Promise.all([queryAuditEvents(filter, { limit: CHANGES_SHOWN, offset: 0 }), countAuditEventsMatching(filter)]);
-  const canRollBack = can(access, "config_history:restore") && tenantOf(access) === null;
+  const canRollBack = can(access, "config_history:restore");
   const entries = await Promise.all(
     events.map(async (event, index): Promise<HostChangeEntry> => {
       let fields: HostChangeField[] | null = null;
@@ -171,15 +169,15 @@ async function loadChanges(access: Access, hostId: number, organizationId: Organ
 export async function loadHostDetail(
   access: Access,
   host: ProxyHost,
-  options: { organizationId: OrganizationFilter; accessListNames?: ReadonlyMap<number, string>; now?: number }
+  options: { accessListNames?: ReadonlyMap<number, string>; now?: number } = {}
 ): Promise<HostDetail> {
   const now = options.now ?? Date.now();
   const [insights, traffic, errorRateAlert, health, changes] = await Promise.all([
-    loadHostInsights(access, [host], { organizationId: options.organizationId, accessListNames: options.accessListNames, now }),
+    loadHostInsights(access, [host], { accessListNames: options.accessListNames, now }),
     loadTraffic(access, host, now).catch((): HostTrafficDetail | null => null),
     loadErrorRateAlert(access, host.id),
     getProxyHostHealth(host),
-    loadChanges(access, host.id, options.organizationId).catch(() => ({ total: 0, entries: [] })),
+    loadChanges(access, host.id).catch(() => ({ total: 0, entries: [] })),
   ]);
   const row = insights.rows[0];
   const input = insights.inputs.get(host.id)!;

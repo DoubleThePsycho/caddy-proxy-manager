@@ -32,8 +32,6 @@ import { sanitizeInstanceSyncError } from "@/src/lib/instance-sync-error";
 import { parseUpstreamTarget } from "@/src/lib/caddy-utils";
 import { isDomainCoveredByCert } from "@/src/lib/cert-domain-match";
 import { getManagedCertificates, type ManagedCertificateReport, type ManagedCertificateStatus } from "@/src/lib/managed-certificates";
-import { getLicenseState } from "@/ee/licensing/store";
-import { EDITION_LABELS } from "@/ee/licensing/features";
 import { fetchCaddyUpstreams } from "@/src/lib/caddy-upstreams";
 import { queryErrorBreakdown, queryHostErrorCounts, queryWafBlockedByHost } from "./traffic";
 import type { StoredRule } from "./rules";
@@ -41,7 +39,6 @@ import type {
   BackupFailedParams,
   CertExpiringParams,
   ErrorRateParams,
-  LicenseExpiringParams,
   RuleScope,
   RuleType,
   Severity,
@@ -640,37 +637,6 @@ export async function evaluateCaddyApplyFailed(): Promise<Evaluation> {
   };
 }
 
-// ── license_expiring ───────────────────────────────────────────────────
-
-export async function evaluateLicenseExpiring(params: LicenseExpiringParams, now: Date): Promise<Evaluation> {
-  const state = await getLicenseState(now);
-  const license = state.license;
-  if (!license) return { status: "ok", findings: [] };
-  const expiresAt = new Date(license.exp);
-  if (expiresAt.getTime() - now.getTime() > params.days * DAY_MS) return { status: "ok", findings: [] };
-  const phrase = expiryPhrase(expiresAt, now);
-  const edition = EDITION_LABELS[license.edition];
-  return {
-    status: "ok",
-    findings: [
-      {
-        subjectKey: `license:${license.id}`,
-        label: `${edition} license expiring`,
-        title: `The ${edition} license ${phrase.text}`,
-        message:
-          `The ${edition} license ${license.id} ${phrase.text}. ` +
-          (state.status === "expired"
-            ? "Paid features keep working but can no longer be changed until it is renewed."
-            : state.status === "grace"
-              ? `Paid features stay editable until ${state.graceEndsAt?.slice(0, 10)}; renew it before then.`
-              : "Renew it to keep changing paid features after it expires."),
-        severity: state.status === "active" ? "warning" : "critical",
-        facts: { edition, expiresAt: license.exp, daysLeft: phrase.daysLeft, status: state.status, trial: license.trial === true },
-      },
-    ],
-  };
-}
-
 // ── backup_failed ──────────────────────────────────────────────────────
 
 export async function evaluateBackupFailed(params: BackupFailedParams): Promise<Evaluation> {
@@ -935,8 +901,6 @@ export async function evaluateRule(rule: StoredRule, now: Date): Promise<Evaluat
       return evaluateInstanceSyncFailed();
     case "caddy_apply_failed":
       return evaluateCaddyApplyFailed();
-    case "license_expiring":
-      return evaluateLicenseExpiring(rule.params as LicenseExpiringParams, now);
     case "backup_failed":
       return evaluateBackupFailed(rule.params as BackupFailedParams);
     case "approval_pending":

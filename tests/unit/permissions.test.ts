@@ -45,12 +45,12 @@ describe('permission catalogue', () => {
     expect(isPermission(42)).toBe(false);
   });
 
-  it('includes the areas the guards protect, the paid ones too', () => {
+  it('includes the areas the guards protect, the ee/ ones too', () => {
     for (const permission of [
       'proxy_hosts:read', 'proxy_hosts:write', 'l4_proxy_hosts:write', 'access_lists:write', 'certificates:write',
       'waf:write', 'analytics:read', 'groups:write', 'users:write', 'audit_log:read', 'settings:write',
       'instances:write', 'api_docs:read', 'alerts:write', 'audit_streaming:write', 'config_history:read',
-      'config_history:restore', 'backups:restore', 'sso:write', 'ai:write', 'license:write', 'mfa_policy:write',
+      'config_history:restore', 'backups:restore', 'sso:write', 'ai:write', 'mfa_policy:write',
       'config:export', 'config:import',
     ]) {
       expect(PERMISSIONS).toContain(permission);
@@ -70,14 +70,14 @@ describe('permission catalogue', () => {
     expect(() => normalizePermissions([{}])).toThrow(/Unknown permission/);
   });
 
-  it('marks sso, MFA policy, license and instance writes, and users plus settings writes, as administrator-level', () => {
-    for (const permission of ['sso:write', 'mfa_policy:write', 'license:write', 'instances:write'] as Permission[]) {
+  it('marks sso, MFA policy and instance writes, and users plus settings writes, as administrator-level', () => {
+    for (const permission of ['sso:write', 'mfa_policy:write', 'instances:write'] as Permission[]) {
       expect(isAdminLevel([permission])).toBe(true);
     }
     expect(isAdminLevel(['users:write'])).toBe(false);
     expect(isAdminLevel(['settings:write'])).toBe(false);
     expect(isAdminLevel(['users:write', 'settings:write'])).toBe(true);
-    expect(isAdminLevel(['sso:read', 'license:read', 'proxy_hosts:write'])).toBe(false);
+    expect(isAdminLevel(['sso:read', 'proxy_hosts:write'])).toBe(false);
   });
 
   it('keeps whole-configuration permissions out of scoped roles', () => {

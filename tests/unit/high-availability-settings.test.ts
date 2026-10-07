@@ -2,7 +2,7 @@
  * Certificate storage settings (ee/high-availability/settings.ts): input
  * validation, the secret rules (stored encrypted, kept, removed, read from a
  * CADDY_STORAGE_* variable, re-entered when the destination changes), parsing
- * of stored values and the comparison the license gate uses.
+ * of stored values and comparing two settings.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { createSelfSignedServerCertificate } from '../helpers/certs';
@@ -17,7 +17,6 @@ import {
   parseStorageAddress,
   parseStoredCertificateStorage,
   sameCertificateStorage,
-  storageChangeNeedsLicense,
   storageSecretChanged,
   toRedisStorageView,
 } from '@/ee/high-availability/settings';
@@ -204,27 +203,20 @@ describe('parseStoredCertificateStorage', () => {
   });
 });
 
-describe('the license comparison', () => {
+describe('comparing two settings', () => {
   const redis = stored({ password: encryptSecret(PASSWORD) });
   const enabled: StoredCertificateStorage = { backend: 'redis', redis };
 
-  it('needs the license to set up, enable or change shared storage', () => {
-    expect(storageChangeNeedsLicense(null, enabled)).toBe(true);
-    expect(storageChangeNeedsLicense({ backend: 'local', redis }, enabled)).toBe(true);
-    expect(storageChangeNeedsLicense(enabled, { backend: 'redis', redis: { ...redis, keyPrefix: 'other' } })).toBe(true);
-    // Saving Redis settings without enabling them is setting them up.
-    expect(storageChangeNeedsLicense(null, { backend: 'local', redis })).toBe(true);
-    expect(storageChangeNeedsLicense({ backend: 'local', redis }, { backend: 'local', redis: { ...redis, db: 1 } })).toBe(true);
-  });
-
-  it('never needs it to keep things as they are or go back to local storage', () => {
-    expect(storageChangeNeedsLicense(enabled, enabled)).toBe(false);
+  it('tells a change from the same setting', () => {
+    expect(sameCertificateStorage(enabled, enabled)).toBe(true);
     // The same secret encrypted again is the same secret.
-    expect(storageChangeNeedsLicense(enabled, { backend: 'redis', redis: { ...redis, password: encryptSecret(PASSWORD) } })).toBe(false);
-    expect(storageChangeNeedsLicense(enabled, { backend: 'local', redis })).toBe(false);
-    expect(storageChangeNeedsLicense(enabled, local)).toBe(false);
-    expect(storageChangeNeedsLicense(enabled, null)).toBe(false);
-    expect(storageChangeNeedsLicense(null, local)).toBe(false);
+    expect(sameCertificateStorage(enabled, { backend: 'redis', redis: { ...redis, password: encryptSecret(PASSWORD) } })).toBe(true);
+    // Never set and local without Redis settings are the same.
+    expect(sameCertificateStorage(null, local)).toBe(true);
+    expect(sameCertificateStorage(null, enabled)).toBe(false);
+    expect(sameCertificateStorage(enabled, { backend: 'local', redis })).toBe(false);
+    expect(sameCertificateStorage(enabled, { backend: 'redis', redis: { ...redis, keyPrefix: 'other' } })).toBe(false);
+    expect(sameCertificateStorage({ backend: 'local', redis }, { backend: 'local', redis: { ...redis, db: 1 } })).toBe(false);
   });
 
   it('tells secrets apart without showing them', () => {

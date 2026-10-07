@@ -3,7 +3,6 @@
  * (GET /api/v1/users/overview, /api/v1/groups/overview and
  * /api/v1/sign-in/overview), spread into app/api/v1/openapi.json/route.ts.
  */
-import { ORGANIZATION_FILTER_PARAMETER } from "@/ee/multi-tenancy/openapi";
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
 const nullable = (schema: Record<string, unknown>) => ({ anyOf: [schema, { type: "null" }] });
@@ -25,7 +24,6 @@ export const IDENTITY_OVERVIEW_OPENAPI_PATHS = {
         "whether it is a break-glass account, its last sign-in and when one of its API tokens was last used. " +
         "mfaPolicy is null without mfa_policy:read. No password hash or secret.",
       operationId: "getUsersOverview",
-      parameters: [ORGANIZATION_FILTER_PARAMETER],
       responses: { "200": { description: "The overview", content: { "application/json": { schema: ref("UsersOverview") } } }, ...errors },
     },
   },
@@ -38,7 +36,6 @@ export const IDENTITY_OVERVIEW_OPENAPI_PATHS = {
         "it. roleMappings (the SCIM group-to-role mappings) is null without scim:read; hosts (the proxy hosts whose " +
         "forward auth lets the group in) is null without proxy_hosts:read and lists only hosts in the caller's tag scope.",
       operationId: "getGroupsOverview",
-      parameters: [ORGANIZATION_FILTER_PARAMETER],
       responses: { "200": { description: "The overview", content: { "application/json": { schema: ref("GroupsOverview") } } }, ...errors },
     },
   },
@@ -92,9 +89,8 @@ export const IDENTITY_OVERVIEW_OPENAPI_SCHEMAS = {
       email: string,
       name: nullable(string),
       username: nullable(string),
-      role: { type: "string", enum: ["admin", "user", "viewer", "org_admin"] },
+      role: { type: "string", enum: ["admin", "user", "viewer"] },
       customRoleId: nullable({ type: "integer" }),
-      organizationId: nullable({ type: "integer" }),
       status: string,
       lastSignInAt: nullable(dateTime),
       lastSignInMethod: nullable({ type: "string", enum: ["password", "sso", "saml", "ldap", "passkey"] }),
@@ -134,7 +130,6 @@ export const IDENTITY_OVERVIEW_OPENAPI_SCHEMAS = {
       id: { type: "integer" },
       name: string,
       description: nullable(string),
-      organizationId: nullable({ type: "integer" }),
       createdAt: dateTime,
       updatedAt: dateTime,
       members: {
@@ -172,7 +167,6 @@ export const IDENTITY_OVERVIEW_OPENAPI_SCHEMAS = {
         type: "object",
         properties: {
           enabled: { type: "boolean" },
-          configurable: { type: "boolean" },
           warnings: { type: "array", items: string },
           changedAt: nullable(dateTime),
           changedBy: nullable(string),
@@ -297,7 +291,6 @@ export const IDENTITY_OVERVIEW_OPENAPI_SCHEMAS = {
         type: "object",
         properties: {
           enabled: { type: "boolean" },
-          configurable: { type: "boolean" },
           endpointUrl: string,
           signInProvider: nullable(string),
           deleteMode: { type: "string", enum: ["disable", "delete"] },

@@ -29,9 +29,8 @@ function TabLink({ href, current, label, count }: { href: string; current: boole
 }
 
 /**
- * The header of the Access lists pages: the hosts' own lists, and (for
- * provider-level users) the global Blocked sources list, as two tabs with
- * their own addresses.
+ * The header of the Access lists pages: the hosts' own lists and the global
+ * Blocked sources list, as two tabs with their own addresses.
  */
 export function AccessListsHeader({
   tab,
@@ -41,24 +40,15 @@ export function AccessListsHeader({
 }: {
   tab: Tab;
   listCount: number;
-  /** Null hides the Blocked sources tab (organisation users). */
-  blockedCount: number | null;
+  blockedCount: number;
   actions?: ReactNode;
 }) {
   return (
-    <PageHeader
-      className="mb-0"
-      breadcrumb={["Traffic", "Access lists"]}
-      title="Access lists"
-      count={blockedCount === null ? listCount : undefined}
-      actions={actions}
-    >
-      {blockedCount !== null && (
-        <nav aria-label="Access list sections" className="flex items-end gap-1 overflow-x-auto shadow-[inset_0_-1px_0_var(--line)] scrollbar-none">
-          <TabLink href={ACCESS_LISTS_HREF} current={tab === "lists"} label="Lists" count={listCount} />
-          <TabLink href={BLOCKED_SOURCES_HREF} current={tab === "blocked"} label="Blocked sources" count={blockedCount} />
-        </nav>
-      )}
+    <PageHeader className="mb-0" breadcrumb={["Traffic", "Access lists"]} title="Access lists" actions={actions}>
+      <nav aria-label="Access list sections" className="flex items-end gap-1 overflow-x-auto shadow-[inset_0_-1px_0_var(--line)] scrollbar-none">
+        <TabLink href={ACCESS_LISTS_HREF} current={tab === "lists"} label="Lists" count={listCount} />
+        <TabLink href={BLOCKED_SOURCES_HREF} current={tab === "blocked"} label="Blocked sources" count={blockedCount} />
+      </nav>
     </PageHeader>
   );
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * The permission catalogue as the REST API and the role editor describe it.
- * Pure data from src/lib/permissions.ts; no database, no license.
+ * Pure data from src/lib/permissions.ts; no database.
  */
 import {
   ADMIN_LEVEL_COMBINATIONS,
@@ -19,7 +19,6 @@ export type PermissionCatalogueArea = {
   permissions: string[];
   scopable: boolean;
   instanceWide: boolean;
-  paid: boolean;
 };
 
 export type PermissionCatalogue = {
@@ -39,7 +38,6 @@ export function describePermissionCatalogue(): PermissionCatalogue {
         permissions: info.actions.map((action) => `${area}:${action}`),
         scopable: info.scopable === true,
         instanceWide: info.instanceWide === true,
-        paid: info.paid === true,
       };
     }),
     adminLevel: {

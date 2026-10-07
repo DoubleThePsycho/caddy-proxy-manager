@@ -17,7 +17,7 @@
 import { COUNTRY_SQL, MITIGATED_SQL, OUTCOME_SQL, PATH_SQL } from './dimensions';
 import { isOutcome, type Outcome } from './outcome';
 import { num, ratio, selectRows, withAnalytics, type AnalyticsStatus } from './run';
-import { proxyHostForName, scopeSql, type HostScope, type ProxyHostDomains } from './scope';
+import { proxyHostForName, type ProxyHostDomains } from './scope';
 
 export const BURST_MIN_ERRORS = 10;
 export const BURST_MIN_SHARE = 0.1;
@@ -114,26 +114,24 @@ export function findBursts(rows: MinuteRow[]): { host: string; start: number; en
 }
 
 /**
- * The signals for the hosts in `scope`. `proxyHosts` (id and domains of every
- * proxy host) links each stored host name to its proxy host.
+ * The signals for every host. `proxyHosts` (id and domains of every proxy
+ * host) links each stored host name to its proxy host.
  */
 export async function getTrafficSignals(
-  scope: HostScope,
   proxyHosts: readonly ProxyHostDomains[] = [],
   now = Math.floor(Date.now() / 1000)
 ): Promise<TrafficSignals> {
   const empty = { generatedAt: now, errorBursts: [], mitigationSpikes: [], blockedConcentrations: [] };
   return withAnalytics('traffic signals', empty, async () => {
-    const scoped = scopeSql(scope);
     const day = now - DAY;
-    const params = { ...scoped.params, p_day: day, p_week: day - 7 * DAY, p_now: now + 60 };
+    const params = { p_day: day, p_week: day - 7 * DAY, p_now: now + 60 };
     const owner = (host: string) => proxyHostForName(host, proxyHosts);
 
     const [minutes, spikes, concentrations] = await Promise.all([
       selectRows<MinuteRow>(
         `SELECT host, toUInt32(toStartOfMinute(ts)) AS m, count() AS total, countIf(status >= 500) AS e5
          FROM traffic_events
-         WHERE ts >= toDateTime({p_day:UInt32}) AND ts < toDateTime({p_now:UInt32}) AND ${scoped.sql}
+         WHERE ts >= toDateTime({p_day:UInt32}) AND ts < toDateTime({p_now:UInt32})
          GROUP BY host, m HAVING e5 > 0`,
         params
       ),
@@ -141,7 +139,7 @@ export async function getTrafficSignals(
         `SELECT host, countIf(ts >= toDateTime({p_day:UInt32})) AS cur, countIf(ts < toDateTime({p_day:UInt32})) AS before,
                 topKIf(1)(${OUTCOME_SQL}, ts >= toDateTime({p_day:UInt32})) AS top
          FROM traffic_events
-         WHERE ts >= toDateTime({p_week:UInt32}) AND ts < toDateTime({p_now:UInt32}) AND ${scoped.sql} AND ${MITIGATED_SQL}
+         WHERE ts >= toDateTime({p_week:UInt32}) AND ts < toDateTime({p_now:UInt32}) AND ${MITIGATED_SQL}
          GROUP BY host HAVING cur >= {p_spike_min:UInt32}`,
         { ...params, p_spike_min: SPIKE_MIN_MITIGATED }
       ),
@@ -150,7 +148,7 @@ export async function getTrafficSignals(
                 sumMap([${COUNTRY_SQL}], [toUInt64(1)]) AS by_country, topKIf(1)(waf_rule_id, waf_rule_id != 0) AS rule,
                 sum(count()) OVER (PARTITION BY host) AS host_total
          FROM traffic_events
-         WHERE ts >= toDateTime({p_day:UInt32}) AND ts < toDateTime({p_now:UInt32}) AND ${scoped.sql} AND ${MITIGATED_SQL}
+         WHERE ts >= toDateTime({p_day:UInt32}) AND ts < toDateTime({p_now:UInt32}) AND ${MITIGATED_SQL}
          GROUP BY host, path, o
          ORDER BY c DESC LIMIT {p_max:UInt32}`,
         { ...params, p_max: 50 }

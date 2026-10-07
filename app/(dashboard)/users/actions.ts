@@ -20,9 +20,6 @@ import {
   auditUserCreated,
   parseRoleChoice,
 } from "@/ee/custom-roles/service";
-import { tenantOf } from "@/src/lib/permissions";
-import { organizationForNewRow } from "@/ee/multi-tenancy/scope";
-import { dashboardCreateOrganization } from "@/ee/multi-tenancy/view";
 import { isUniqueViolation } from "@/src/lib/db/ops";
 
 const VALID_STATUSES = new Set(["active", "disabled"]);
@@ -72,17 +69,9 @@ export async function createUserAction(formData: FormData): Promise<UserActionRe
     return failure(policyError);
   }
 
-  // The new user's organisation (ee/multi-tenancy): an organisation user's
-  // own, or the one a provider-level user is looking at.
-  let organizationId: number | null;
   try {
-    const requested = tenantOf(session.access) === null ? await dashboardCreateOrganization(session.access) : undefined;
-    organizationId =
-      tenantOf(session.access) === null && requested === undefined
-        ? null
-        : await organizationForNewRow(Number(session.user.id), requested);
-    // Only roles the actor may grant and that fit the organisation; a custom role needs the license.
-    await assertCanAssignOnCreate(session.access, assignment, organizationId);
+    // Only roles the actor may grant.
+    await assertCanAssignOnCreate(session.access, assignment);
   } catch (error) {
     return storageFailure(error, "create user");
   }
@@ -97,7 +86,6 @@ export async function createUserAction(formData: FormData): Promise<UserActionRe
       name,
       role: assignment.role,
       customRoleId: assignment.customRoleId,
-      organizationId,
       provider: "credentials",
       subject: email,
       passwordHash,
@@ -114,8 +102,8 @@ export async function createUserAction(formData: FormData): Promise<UserActionRe
 
 /**
  * Changes a user's role: "admin", "user", "viewer" or "custom:<id>" (the role
- * picker's values). assignRole applies the escalation guards and the license
- * check for custom roles and records the change in the audit log.
+ * picker's values). assignRole applies the escalation guards and records the
+ * change in the audit log.
  */
 export async function updateUserRoleAction(userId: number, role: string): Promise<UserActionResult> {
   const session = await requirePermission("users:write");

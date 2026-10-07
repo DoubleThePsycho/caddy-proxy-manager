@@ -13,12 +13,11 @@
  * Nothing calls Stripe for real.
  */
 import { createHmac } from 'node:crypto';
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { eq, sql } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import { insertConsumer, insertKey, insertMonetizedHost, insertPlan, insertProxyHost } from '../helpers/monetization';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -30,7 +29,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 });
 
 import { encryptSecret } from '../../src/lib/secret';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { decideGate, flushUsage, reloadMonetization, resetMonetizationEngineForTests, type GateDecision } from '../../ee/monetization/engine';
 import { gateResponse } from '../../ee/monetization/gate-response';
 import { ensureGateSecret, PAYMENTS_SETTING_KEY } from '../../ee/monetization/settings';
@@ -199,8 +197,6 @@ beforeEach(async () => {
   stripe.sessions = [];
   vi.stubGlobal('fetch', vi.fn(fakeStripe));
   vi.spyOn(Date, 'now').mockReturnValue(T0);
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.db, 'enterprise');
   await savePayments();
 });
 
@@ -208,8 +204,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('the gate', () => {
   it('admits a postpaid consumer only with a usable card, up to the cap, and says what is owed', async () => {
@@ -467,7 +461,7 @@ describe('refunds and disputes', () => {
     expect((await ledger(world.consumerId)).map((row) => row.type).sort()).toEqual(['refund', 'topup']);
   });
 
-  it('takes a disputed amount off once and suspends until resumed, which needs the license', async () => {
+  it('takes a disputed amount off once and suspends until resumed', async () => {
     const world = await seed();
     const payment = await paidCharge(world);
     const dispute = { type: 'charge.dispute.created', data: { object: { id: 'dp_1', charge: 'ch_1', payment_intent: payment.paymentIntentId, amount: 2100, currency: 'usd' } } };
@@ -476,9 +470,6 @@ describe('refunds and disputes', () => {
     expect(await consumerRow(world.consumerId)).toMatchObject({ balanceMicros: -21 * USD, suspendedReason: 'dispute' });
     expect(call(world)).toMatchObject({ error: 'payment_overdue', reason: 'dispute' });
     // A payment does not end a dispute's suspension.
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-    expect((await resumeRoute.POST(req('POST', '/x'), params(world.consumerId))).status).toBe(403);
-    await installLicense(ctx.db, 'enterprise');
     const resumed = await resumeRoute.POST(req('POST', '/x'), params(world.consumerId));
     expect(resumed.status).toBe(200);
     expect((await resumed.json()).postpaid).toMatchObject({ state: 'active', suspendedReason: null });
@@ -587,12 +578,11 @@ describe('administration', () => {
     expect(chargesSent()).toHaveLength(0);
   });
 
-  it('charges now and removes a card without a license; shows the card and the open amount', async () => {
+  it('charges now and removes a card; shows the card and the open amount', async () => {
     const world = await seed();
     stripe.paymentIntent = succeeded();
     calls(world, 5);
     await flushUsage(T0);
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
     const views = await listConsumers();
     expect(views.find((view) => view.id === world.consumerId)).toMatchObject({
       billing: 'postpaid',

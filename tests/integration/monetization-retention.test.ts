@@ -1,17 +1,14 @@
 /**
  * API monetization options (ee/monetization/options.ts) and history
- * retention (retention.ts): the REST endpoint, the license on changes
- * (turning replica serving off needs none), validation, the audit record,
+ * retention (retention.ts): the REST endpoint, validation, the audit record,
  * and the leader's pruning of hourly usage and credit history older than
  * the retention while money moved (top-ups, payments, adjustments) stays.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import { insertConsumer } from '../helpers/monetization';
-import { eq } from 'drizzle-orm';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
@@ -23,7 +20,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 });
 
 import { logAuditEvent } from '../../src/lib/audit';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { pruneMonetizationHistory } from '../../ee/monetization/retention';
 import { resetMonetizationEngineForTests } from '../../ee/monetization/engine';
 import * as settingsRoute from '../../app/api/v1/monetization/settings/route';
@@ -55,11 +51,7 @@ beforeEach(async () => {
   ctx.db = createTestDb();
   resetMonetizationEngineForTests();
   vi.mocked(logAuditEvent).mockClear();
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.db, 'enterprise');
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('options', () => {
   it('default to 13 months and no replica serving', async () => {
@@ -68,7 +60,7 @@ describe('options', () => {
     expect(await response.json()).toMatchObject({ usageRetentionMonths: 13, replicas: { mode: 'off', gateUrl: null, problem: null } });
   });
 
-  it('change with the license, are audited, and are validated', async () => {
+  it('change, are audited, and are validated', async () => {
     const saved = await settingsRoute.PUT(req('PUT', { usageRetentionMonths: 6, replicas: { mode: 'allowance', gateUrl: 'https://dash.example.com/' } }));
     expect(saved.status).toBe(200);
     expect(await saved.json()).toMatchObject({ usageRetentionMonths: 6, replicas: { mode: 'allowance', gateUrl: 'https://dash.example.com' } });
@@ -86,14 +78,12 @@ describe('options', () => {
     }
   });
 
-  it('need the license to change, except turning replica serving off', async () => {
+  it('turn replica serving off and keep the other options', async () => {
     await settingsRoute.PUT(req('PUT', { replicas: { mode: 'allowance' } }));
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-    expect((await settingsRoute.PUT(req('PUT', { usageRetentionMonths: 24 }))).status).toBe(403);
-    expect((await settingsRoute.PUT(req('PUT', { replicas: { mode: 'allowance', gateUrl: 'https://other.example.com' } }))).status).toBe(403);
+    expect((await settingsRoute.PUT(req('PUT', { usageRetentionMonths: 24 }))).status).toBe(200);
     const off = await settingsRoute.PUT(req('PUT', { replicas: { mode: 'off' } }));
     expect(off.status).toBe(200);
-    expect((await off.json()).replicas.mode).toBe('off');
+    expect(await off.json()).toMatchObject({ usageRetentionMonths: 24, replicas: { mode: 'off' } });
   });
 });
 

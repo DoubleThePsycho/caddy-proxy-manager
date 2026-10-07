@@ -3,8 +3,6 @@ import { requirePermission } from "@/src/lib/auth";
 import { can } from "@/src/lib/permissions";
 import { getInstanceMode } from "@/src/lib/instance-sync";
 import { DEFAULT_PAGE_SIZE, parsePageParam } from "@/src/lib/pagination";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { listConsumers } from "@/ee/monetization/consumers";
 import { listHostMonetization } from "@/ee/monetization/hosts";
 import { listLedger } from "@/ee/monetization/ledger";
@@ -14,7 +12,7 @@ import { listPlans } from "@/ee/monetization/plans";
 import { getMonetizationOptionsView } from "@/ee/monetization/options";
 import { getX402SettingsView } from "@/ee/monetization/x402/settings";
 import { listX402Payments } from "@/ee/monetization/x402/payments";
-import { FEATURE, LEDGER_TYPES, MONETIZATION_TABS, type LedgerType } from "@/ee/monetization/types";
+import { LEDGER_TYPES, MONETIZATION_TABS, type LedgerType } from "@/ee/monetization/types";
 import MonetizationClient from "@/ee/monetization/ui/MonetizationClient";
 
 export const metadata = { title: "API monetization" };
@@ -36,12 +34,11 @@ export default async function ApiMonetizationPage({ searchParams }: { searchPara
   const ledgerPage = parsePageParam(search.ledger);
   const paymentsPage = parsePageParam(search.payments);
   // Every view below is free of secrets (the Stripe keys show as hasSecretKey / hasWebhookSecret).
-  const [plans, consumers, hosts, ledgerRead, configurable, mode, options, x402, x402Read, x402Latest] = await Promise.all([
+  const [plans, consumers, hosts, ledgerRead, mode, options, x402, x402Read, x402Latest] = await Promise.all([
     listPlans(),
     listConsumers(),
     listHostMonetization(),
     listLedger({ ...filter, page: ledgerPage, perPage: DEFAULT_PAGE_SIZE }),
-    isFeatureConfigurable(FEATURE),
     getInstanceMode(),
     getMonetizationOptionsView(),
     getX402SettingsView(),
@@ -65,7 +62,6 @@ export default async function ApiMonetizationPage({ searchParams }: { searchPara
       stripe={await getStripeSettingsView()}
       ledger={ledger}
       ledgerFilter={{ consumer: filter.consumerId === null ? "all" : String(filter.consumerId), type: filter.type ?? "all" }}
-      configurable={configurable}
       canWrite={can(access, "monetization:write")}
       canManagePayments={can(access, "monetization:payments")}
       canManageReplicas={can(access, "instances:write")}
@@ -75,7 +71,6 @@ export default async function ApiMonetizationPage({ searchParams }: { searchPara
       x402={x402}
       x402Payments={x402Payments}
       x402Latest={x402Latest}
-      editionLabel={EDITION_LABELS[FEATURE_INFO[FEATURE].edition]}
     />
   );
 }

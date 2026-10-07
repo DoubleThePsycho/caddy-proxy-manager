@@ -2,7 +2,7 @@
 /**
  * Attention providers for access reviews: the reader's own items to decide
  * (any signed-in reviewer), and for access_reviews:read the campaigns that
- * are overdue or due soon and schedules that failed. Never checks the license.
+ * are overdue or due soon and schedules that failed.
  */
 import { eq } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

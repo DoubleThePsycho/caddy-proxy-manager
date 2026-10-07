@@ -15,7 +15,7 @@
  * more, each handler also gets health checks and retries:
  * - active: GET /api/health on every replica when Caddy loads the
  *   configuration and every 10 seconds after; a replica that does not answer
- *   200 within 5 seconds (one that is down, or refused for its license) gets
+ *   200 within 5 seconds (one that is down, or not admitted) gets
  *   nothing until it does;
  * - passive: three failed requests within 10 seconds (no connection, a
  *   broken response) take a replica out for those 10 seconds, for every

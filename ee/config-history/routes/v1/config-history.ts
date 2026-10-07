@@ -2,9 +2,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import { listSnapshots } from "@/ee/config-history/snapshots";
-import { createManualSnapshot, deleteAllSnapshots, FEATURE } from "@/ee/config-history/service";
+import { createManualSnapshot, deleteAllSnapshots } from "@/ee/config-history/service";
 
 function intParam(value: string | null, fallback: number): number {
   if (value === null || value === "") return fallback;
@@ -28,7 +27,6 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "config_history:write");
-    await requireFeature(FEATURE);
     let body: unknown = {};
     const raw = await request.text();
     if (raw.trim().length > 0) {
@@ -45,7 +43,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/** Deletes every snapshot. Needs no license: winding the feature down never does. */
+/** Deletes every snapshot. */
 export async function DELETE(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "config_history:write");

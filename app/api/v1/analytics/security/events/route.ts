@@ -4,11 +4,10 @@ import { analyticsParams } from "@/src/lib/analytics/http";
 import { resolveRange } from "@/src/lib/analytics/range";
 import { parsePaging } from "@/src/lib/analytics/requests";
 import { parseEventKinds, parseSecurityEventFilters, querySecurityEvents } from "@/src/lib/analytics/security";
-import { scopeFor } from "@/src/lib/analytics/service";
 
 export async function GET(request: NextRequest) {
   try {
-    const { access } = await requireApiPermission(request, "analytics:read");
+    await requireApiPermission(request, "analytics:read");
     const params = analyticsParams(request.nextUrl.searchParams);
     const input = {
       range: resolveRange(params, undefined, "7d"),
@@ -17,7 +16,7 @@ export async function GET(request: NextRequest) {
       ...parsePaging(params),
     };
     // The raw Coraza audit records stay with the WAF events (GET /api/waf-events, waf:read).
-    return NextResponse.json(await querySecurityEvents(input, await scopeFor(access)));
+    return NextResponse.json(await querySecurityEvents(input));
   } catch (error) {
     return apiErrorResponse(error);
   }

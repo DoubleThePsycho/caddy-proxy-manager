@@ -97,7 +97,7 @@ function data(overrides: Partial<SecurityPageData> = {}): SecurityPageData {
     eventHostIds: { 'app.example.com': 4 },
     rateLimitInUse: false,
     permissions: { canWriteWaf: true, blockDisabledReason: null, canReadAnalytics: true, canReadSettings: true },
-    tuning: { suggestions: [], canConfigure: false, analyticsEnabled: true, aiConfigured: false },
+    tuning: { suggestions: [], analyticsEnabled: true, aiConfigured: false },
     ...overrides,
   };
 }

@@ -19,7 +19,7 @@ import { formatDateTimeUtc } from "@/src/lib/date-format";
 import { decimalToMicros } from "../money";
 import type { X402SettingsView } from "../x402/settings";
 import type { X402PaymentPage, X402PaymentView } from "../x402/payments";
-import { callApi, Field, LOCKED_HINT } from "./shared";
+import { callApi, Field } from "./shared";
 
 const STATUS: Record<X402PaymentView["status"], { label: string; variant: "success" | "warning" | "destructive" | "muted" }> = {
   verifying: { label: "verifying", variant: "muted" },
@@ -92,13 +92,11 @@ export default function X402Tab({
   settings,
   payments,
   canWrite,
-  configurable,
 }: {
   settings: X402SettingsView;
   payments: X402PaymentPage;
   /** May change where payments go (monetization:payments). */
   canWrite: boolean;
-  configurable: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -109,7 +107,6 @@ export default function X402Tab({
     cdpKeyId: settings.cdpKeyId ?? "",
     cdpKeySecret: "",
   });
-  const canChange = canWrite && configurable;
   const { hrefFor } = useUrlPage("payments");
 
   function save() {
@@ -175,12 +172,12 @@ export default function X402Tab({
             <p className="m-0 text-[13px] text-muted-foreground">x402 is not offered: the Stripe key is not the live key the deposit address was created with.</p>
           )}
           <label className="flex items-center gap-2 text-sm">
-            <Switch checked={form.enabled} disabled={!canChange} onCheckedChange={(checked) => setForm({ ...form, enabled: checked })} aria-label="Accept x402 payments" />
+            <Switch checked={form.enabled} disabled={!canWrite} onCheckedChange={(checked) => setForm({ ...form, enabled: checked })} aria-label="Accept x402 payments" />
             Accept x402 payments
           </label>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Price per request (USD)" htmlFor="x402-price" hint="Paid in USDC; at least 0.01. A host can set its own.">
-              <Input id="x402-price" inputMode="decimal" className="num" value={form.price} disabled={!canChange} onChange={(event) => setForm({ ...form, price: event.target.value })} />
+              <Input id="x402-price" inputMode="decimal" className="num" value={form.price} disabled={!canWrite} onChange={(event) => setForm({ ...form, price: event.target.value })} />
             </Field>
             <Field label="Network">
               <Input value={settings.networks.find((network) => network.id === settings.network)?.label ?? settings.network} disabled readOnly />
@@ -198,7 +195,7 @@ export default function X402Tab({
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="CDP API key id" htmlFor="x402-cdp-key" hint="Coinbase Developer Platform: the facilitator's credentials">
-              <Input id="x402-cdp-key" className="num" value={form.cdpKeyId} disabled={!canChange} onChange={(event) => setForm({ ...form, cdpKeyId: event.target.value })} />
+              <Input id="x402-cdp-key" className="num" value={form.cdpKeyId} disabled={!canWrite} onChange={(event) => setForm({ ...form, cdpKeyId: event.target.value })} />
             </Field>
             <Field label="CDP API key secret" htmlFor="x402-cdp-secret" hint={settings.hasCdpKeySecret ? "Stored; leave empty to keep it" : "Stored encrypted; never shown again"}>
               <Input
@@ -206,14 +203,14 @@ export default function X402Tab({
                 type="password"
                 autoComplete="off"
                 value={form.cdpKeySecret}
-                disabled={!canChange}
+                disabled={!canWrite}
                 onChange={(event) => setForm({ ...form, cdpKeySecret: event.target.value })}
               />
             </Field>
           </div>
           {canWrite && (
             <div className="flex flex-wrap gap-2">
-              <Button onClick={save} disabled={pending || !canChange} title={configurable ? undefined : LOCKED_HINT}>
+              <Button onClick={save} disabled={pending}>
                 Save
               </Button>
               {(settings.enabled || settings.hasCdpKeySecret) && (

@@ -10,7 +10,7 @@ import {
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
-/** Enforced SSO for dashboard sign-in. Readable without a license. */
+/** Enforced SSO for dashboard sign-in. */
 export async function GET(request: NextRequest) {
   try {
     await requireApiPermission(request, "sso:read");

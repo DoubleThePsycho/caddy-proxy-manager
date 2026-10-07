@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
-import { removeAccessListRule, updateAccessListRule } from "@/src/lib/models/access-lists";
-import { findAccessListInScope } from "@/src/lib/access-scope";
+import { getAccessList, removeAccessListRule, updateAccessListRule } from "@/src/lib/models/access-lists";
 import { readJsonBody } from "@/src/lib/access-list-http";
 import { parseRowId, routeRowId } from "@/src/lib/row-ids";
 
@@ -9,9 +8,9 @@ type Params = { params: Promise<{ id: string; ruleId: string }> };
 
 export async function GET(request: NextRequest, { params }: Params) {
   try {
-    const { access } = await requireApiPermission(request, "access_lists:read");
+    await requireApiPermission(request, "access_lists:read");
     const { id, ruleId } = await params;
-    const list = await findAccessListInScope(access, routeRowId(id, "Not found"));
+    const list = await getAccessList(routeRowId(id, "Not found"));
     const rule = list?.rules.find((item) => item.id === parseRowId(ruleId));
     if (!rule) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -28,7 +27,6 @@ export async function PUT(request: NextRequest, { params }: Params) {
     const { userId } = await requireApiPermission(request, "access_lists:write");
     const { id, ruleId } = await params;
     const body = await readJsonBody(request);
-    // The model answers 404 for a list of another organisation and for a rule of another list.
     const rule = await updateAccessListRule(routeRowId(id), routeRowId(ruleId), body, userId);
     return NextResponse.json(rule);
   } catch (error) {

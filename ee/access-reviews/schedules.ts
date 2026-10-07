@@ -3,17 +3,12 @@
  * Recurring access reviews: a schedule starts a campaign every
  * `intervalMonths`, due `durationDays` after it starts, with the schedule's
  * scope and reviewers.
- *
- * License: creating a schedule, enabling it or changing it needs
- * "access_reviews"; disabling or deleting it never does. Scheduled runs never
- * check the license: a schedule that was set up keeps starting campaigns.
  */
 import { and, eq } from "drizzle-orm";
 import { appDb, nowIso, toIso } from "@/src/lib/db";
 import { accessReviewSchedules } from "@/src/lib/db/schema";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import { assertReviewable, auditCampaignStarted, insertCampaign } from "./campaigns";
 import {
   describeReviewers,
@@ -26,7 +21,7 @@ import {
   rejectUnknownKeys,
   requireRecord,
 } from "./scope";
-import { FEATURE, type ReviewScope, type ScheduleView } from "./types";
+import type { ReviewScope, ScheduleView } from "./types";
 import { asc, first } from "@/src/lib/db/ops";
 
 type ScheduleRow = typeof accessReviewSchedules.$inferSelect;
@@ -178,7 +173,7 @@ async function runSchedule(due: ScheduleRow, now: Date): Promise<{ campaignId: n
   }
 }
 
-/** Starts the campaigns of every enabled schedule that is due. Never checks the license. */
+/** Starts the campaigns of every enabled schedule that is due. */
 export async function runDueSchedules(now: Date = new Date()): Promise<{ started: number; failed: number }> {
   const due = (await appDb
     .select()
@@ -199,7 +194,6 @@ export async function runDueSchedules(now: Date = new Date()): Promise<{ started
 
 /** Creates a schedule; when firstRunAt is now or earlier (the default), the first campaign starts right away. */
 export async function createSchedule(input: unknown, actorUserId: number): Promise<ScheduleView> {
-  await requireFeature(FEATURE);
   const { fields, firstRunAt } = await readFields(input, null);
   const now = new Date();
   const start = firstRunAt ?? now;
@@ -225,17 +219,9 @@ export async function createSchedule(input: unknown, actorUserId: number): Promi
   return await getSchedule(row.id);
 }
 
-/** Only {"enabled": false}: the change that never needs a license. */
-function isDisableOnly(input: unknown): boolean {
-  return typeof input === "object" && input !== null && !Array.isArray(input) &&
-    Object.keys(input).length > 0 &&
-    Object.entries(input).every(([key, value]) => key === "enabled" && value === false);
-}
-
 export async function updateSchedule(id: number, input: unknown, actorUserId: number): Promise<ScheduleView> {
   const row = await first(appDb.select().from(accessReviewSchedules).where(eq(accessReviewSchedules.id, id)).limit(1));
   if (!row) throw new ApiClientError("Access review schedule not found", 404);
-  if (!isDisableOnly(input)) await requireFeature(FEATURE);
   const current: ScheduleFields = {
     name: row.name,
     enabled: row.enabled,
@@ -263,7 +249,7 @@ export async function updateSchedule(id: number, input: unknown, actorUserId: nu
   return await getSchedule(id);
 }
 
-/** Deletes a schedule; campaigns it started stay. Never needs a license. */
+/** Deletes a schedule; campaigns it started stay. */
 export async function deleteSchedule(id: number, actorUserId: number): Promise<void> {
   const row = await first(appDb.select().from(accessReviewSchedules).where(eq(accessReviewSchedules.id, id)).limit(1));
   if (!row) throw new ApiClientError("Access review schedule not found", 404);

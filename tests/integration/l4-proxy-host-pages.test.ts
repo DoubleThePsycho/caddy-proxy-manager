@@ -3,13 +3,12 @@
  * actions, with a real database, the real permission guards (mocked session)
  * and Caddy's admin API mocked.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
 import { insertRole, insertUser, nowIso } from '../helpers/custom-roles';
 import { insertPolicy } from '../helpers/approvals';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 
 const ctx = vi.hoisted(() => {
   const { mkdirSync } = require('node:fs');
@@ -40,7 +39,6 @@ import L4ProxyHostsPage from '@/app/(dashboard)/l4-proxy-hosts/page';
 import { bulkL4ProxyHostsAction } from '@/app/(dashboard)/l4-proxy-hosts/bulk-actions';
 import { applyCaddyConfig } from '@/src/lib/caddy';
 import { logAuditEvent } from '@/src/lib/audit';
-import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
 import { deferCaddyApplyToBatch, inChangeBatch } from '@/src/lib/change-batch';
 import { first } from '@/src/lib/db/ops';
 
@@ -105,7 +103,6 @@ beforeEach(async () => {
   ctx.sessionUserId = ADMIN;
 });
 
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('L4 hosts list', () => {
   it('shows every host with the counts of each filter', async () => {
@@ -220,8 +217,6 @@ describe('L4 bulk actions', () => {
   });
 
   it('submits changes to protected hosts for approval instead', async () => {
-    setTrustedLicenseKeysForTests(licenseSigner.keys);
-    await installLicense(ctx.db, 'enterprise');
     await insertPolicy(ctx.db, { name: 'Production' });
     const result = await bulkL4ProxyHostsAction([hosts.a, hosts.b], { type: 'delete' });
     expect(result).toMatchObject({ ok: true, changed: 1, submitted: 1 });

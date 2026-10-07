@@ -15,7 +15,7 @@
  *    yet recorded again (same idempotency key).
  *
  * Each pass takes its own cluster lock, so a second leader does no harm.
- * They run whatever the license state. Returns the function that stops them.
+ * Returns the function that stops them.
  */
 import { clearStaleSwitchSuspensions, reconcilePendingCharges, runPostpaidBilling } from "./postpaid";
 import { pruneMonetizationHistory } from "./retention";

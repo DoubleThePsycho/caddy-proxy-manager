@@ -2,8 +2,7 @@
  * API token scopes (src/lib/api-token-scopes.ts): what a token with scopes
  * may do is its owner's access intersected with the scopes, never more, for
  * every kind of owner (administrator, custom role with and without a tag
- * scope, organisation user, built-in user and viewer) and every subset of
- * scopes.
+ * scope, built-in user and viewer) and every subset of scopes.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -18,7 +17,6 @@ import {
   builtInAccess,
   can,
   isAdminLevel,
-  organizationAccess,
   permissionDeniedMessage,
   PERMISSIONS,
   scopeTagsFor,
@@ -35,7 +33,6 @@ function customRole(permissions: Permission[], scopeTags: string[] = []): Access
     customRole: { id: 3, name: 'Operators' },
     permissions: new Set(permissions),
     scopeTags,
-    organizationId: null,
   };
 }
 
@@ -43,7 +40,6 @@ const OWNERS: Array<[string, Access]> = [
   ['administrator', adminAccess(1)],
   ['custom role', customRole(['proxy_hosts:read', 'proxy_hosts:write', 'certificates:read', 'users:read', 'sso:write'])],
   ['custom role with a tag scope', customRole(['proxy_hosts:read', 'proxy_hosts:write', 'l4_proxy_hosts:read'], ['team-a'])],
-  ['organisation administrator', organizationAccess(5, 9, 'org_admin')],
   ['built-in user', builtInAccess(2, 'user')],
   ['built-in viewer', builtInAccess(3, 'viewer')],
 ];
@@ -95,8 +91,7 @@ describe('applyTokenScopes', () => {
       for (const permission of allowed) {
         expect(can(access, permission)).toBe(can(owner, permission));
       }
-      // Organisation and host scoping stay the owner's.
-      expect(access.organizationId ?? null).toBe(owner.organizationId ?? null);
+      // Host scoping stays the owner's.
       for (const area of ['proxy_hosts', 'l4_proxy_hosts', 'certificates'] as const) {
         expect(scopeTagsFor(access, area)).toEqual(scopeTagsFor(owner, area));
       }

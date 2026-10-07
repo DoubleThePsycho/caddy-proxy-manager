@@ -29,7 +29,7 @@ const MAX_REASON = 500;
  * Confirms blocking an address: it becomes a deny entry of the global
  * Blocked sources access list, which every host checks first. Optional
  * expiry; the entry is removed when it passes. blockSourceAction checks
- * access_lists:write and that the user is provider-level.
+ * access_lists:write.
  */
 export function BlockSourceDialog({ target, onClose, onBlocked }: { target: BlockTarget | null; onClose: () => void; onBlocked?: (ip: string) => void }) {
   const [reason, setReason] = useState("");

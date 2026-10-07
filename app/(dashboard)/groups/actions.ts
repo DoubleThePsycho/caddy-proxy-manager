@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/src/lib/auth";
 import { ApiClientError } from "@/src/lib/api-errors";
-import { dashboardCreateOrganization } from "@/ee/multi-tenancy/view";
 import {
   createGroup,
   updateGroup,
@@ -11,8 +10,6 @@ import {
   addGroupMember,
   removeGroupMember
 } from "@/src/lib/models/groups";
-
-// The models answer "not found" for a group of another organisation (ee/multi-tenancy).
 
 export type GroupActionResult = { ok: true } | { ok: false; error: string };
 
@@ -42,17 +39,7 @@ function textField(formData: FormData, name: string): string | null {
 export async function createGroupAction(formData: FormData): Promise<GroupActionResult> {
   const session = await requirePermission("groups:write");
   const userId = Number(session.user.id);
-  return run(async () =>
-    createGroup(
-      {
-        name: textField(formData, "name") ?? "",
-        description: textField(formData, "description"),
-        // A provider-level user looking at one organisation creates it there.
-        organizationId: await dashboardCreateOrganization(session.access),
-      },
-      userId
-    )
-  );
+  return run(() => createGroup({ name: textField(formData, "name") ?? "", description: textField(formData, "description") }, userId));
 }
 
 export async function updateGroupAction(id: number, formData: FormData): Promise<GroupActionResult> {

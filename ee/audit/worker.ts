@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Background jobs of audit streaming: delivery to sinks every few seconds and
- * the daily retention run. Both keep running whatever the license state: the
- * license only gates changing the configuration.
+ * the daily retention run.
  *
  * Delivery is at-least-once: a sink's cursor advances only after the receiver
  * accepted a batch, and a failed batch is retried, with exponential backoff

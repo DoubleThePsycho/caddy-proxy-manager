@@ -1,8 +1,8 @@
 # Alerting
 
-Notifications when something needs attention: certificates about to expire or failing renewal, failing upstreams, WAF block spikes, 5xx error rates, failed instance syncs, failed Caddy config applies, an expiring license, failing scheduled backups, drifted fleet instances and failed fleet rollouts. Configure it on **Alerts** in the dashboard or through `/api/v1/alert-*`.
+Notifications when something needs attention: certificates about to expire or failing renewal, failing upstreams, WAF block spikes, 5xx error rates, failed instance syncs, failed Caddy config applies, failing scheduled backups, drifted fleet instances and failed fleet rollouts. Configure it on **Alerts** in the dashboard or through `/api/v1/alert-*`.
 
-Feature id: `alerting` (Homelab edition and up). Code: `ee/alerting/`.
+Code: `ee/alerting/` (Elastic License 2.0).
 
 ## How it works
 
@@ -16,18 +16,29 @@ Feature id: `alerting` (Homelab edition and up). Code: `ee/alerting/`.
   - When a rule cannot be evaluated (Caddy admin API unreachable, ClickHouse not configured or failing) nothing changes: firing alerts are not resolved by mistake. When it can tell about some subjects only (Caddy's HTTPS port unreachable while imported certificates can still be read), the others keep their state.
   - At most 20 new subjects per rule are handled per run; the rest follow on the next run, so a burst cannot flood a channel.
 - History (`alert_events`) is kept for 90 days. Disabling or deleting a rule forgets what was firing without sending resolve notices (so a PagerDuty incident it opened stays open until resolved in PagerDuty); a deleted rule's history is kept.
+- A firing alert can be dismissed and a rule muted for a while; see [Dismissing and muting](#dismissing-and-muting).
 - Alerts are not synced to slave instances. A slave keeps no rules unless someone configures them on it directly.
 
 ## The Alerts page
 
 **Alerts** (Observe group, `/alerts`) has four tabs:
 
-- **Firing**: every subject firing now, with its severity, since when, which channels were told and what happens when it clears, and the subjects waiting out a "for" duration. Under it, the alerts of the last 7 days: select one for what happened (with the AI explanation, labelled as such), who was told when it fired and when it resolved, and links to look closer (the host, certificate or security events it is about, and the audit log around that time). **Full history** (`/alerts?tab=history`, `&page=` for later pages) pages through the 90 days kept, 25 alerts at a time.
-- **Rules**: each rule's condition, scope, "for" duration, usual severity, channels (a channel whose last delivery failed is marked), when it last fired and whether it is on, searchable by name, condition, scope and channel and paged 25 at a time. **New rule** opens the editor: the condition and its parameters, the hosts it watches (all hosts or chosen ones, for the rule types that accept a scope), the "for" duration, the channels, the cooldown, the resolve notice and the AI explanation.
+- **Firing**: every subject firing now, with its severity, since when, which channels were told and what happens when it clears, and the subjects waiting out a "for" duration. **Dismiss** on an alert dismisses it or mutes its rule; dismissed alerts and alerts of muted rules are listed after the others, marked, with **Undo**. Under it, the alerts of the last 7 days: select one for what happened (with the AI explanation, labelled as such), who was told when it fired and when it resolved, and links to look closer (the host, certificate or security events it is about, and the audit log around that time). **Full history** (`/alerts?tab=history`, `&page=` for later pages) pages through the 90 days kept, 25 alerts at a time.
+- **Rules**: each rule's condition, scope, "for" duration, usual severity, channels (a channel whose last delivery failed is marked), when it last fired and whether it is on, searchable by name, condition, scope and channel and paged 25 at a time. **Mute…** mutes a rule for a while (the rule then shows "Muted until …" and **Unmute**). **New rule** opens the editor: the condition and its parameters, the hosts it watches (all hosts or chosen ones, for the rule types that accept a scope), the "for" duration, the channels, the cooldown, the resolve notice and the AI explanation.
 - **Channels**: where each channel delivers (the host only, never a credential), how many rules use it, its last delivery and **Send test**, searchable by name, type and destination and paged 25 at a time. A channel whose last delivery failed is also shown in a banner above the table.
 - **AI**: the AI provider for explanations and the daily security digest (permission `ai:read`).
 
-Without `alerts:write` the page is read-only. Without a license with Alerting, paid channels and rules are shown read-only and can still be turned off and deleted.
+Without `alerts:write` the page is read-only.
+
+## Dismissing and muting
+
+- **Dismiss** a firing alert (one rule and subject) **until it resolves**: it leaves the overview's "Needs attention" and the sidebar count, and stays on the Firing tab marked "Dismissed" with who did it and the note. When it resolves, the dismissal ends: if it fires again later, it notifies and shows as usual.
+- Or dismiss it **for 1 hour, 8 hours, 1 day or 1 week** (the API takes any duration up to 30 days): the same, and if it resolves and fires again before then, no firing notification is sent and it stays out of "Needs attention". The dismissal ends by itself.
+- **Mute** a rule for 1 hour, 8 hours, 1 day or 1 week (up to 30 days through the API), from the Rules tab or with "Mute the whole rule instead" in the dismiss dialog: no firing notifications and nothing in "Needs attention" for any of its alerts until then. To stop a rule for good, disable it.
+- What fires while muted or dismissed is still recorded in the history, as not sent because of the mute or dismissal (`silenced`). Notifications already sent are not taken back: an alert dismissed after its firing notification went out still gets its resolve notice; one whose firing notification a mute or dismissal held back gets none.
+- A note is optional (up to 500 characters). Dismissing an alert again, or muting a rule again, replaces the previous dismissal or mute. **Undo** (or **Unmute**) ends either at any time.
+- The evaluator removes dismissals and mutes that ended on each run; deleting a rule deletes them, and disabling one ends its dismissals "until it resolves". They are not exported or synced to slaves.
+- Dismissing, muting and undoing need `alerts:write`. They are audited (`alert_silence_created`, `alert_silence_deleted`).
 
 ## Rule types
 
@@ -39,7 +50,6 @@ Without `alerts:write` the page is read-only. Without a license with Alerting, p
 | `error_rate` | `thresholdPercent` (0.1-100, one decimal, default 5), `windowMinutes` (1-1440, default 5), `minRequests` (default 20), `perHost` (default true) | The share of 5xx responses in ClickHouse's traffic over the window: one alert per proxy host (`perHost`), or one for the hosts in scope together. Counts only when there were at least `minRequests` requests; fires when the share is above the threshold. Skipped when ClickHouse analytics is not configured or cannot be queried. |
 | `instance_sync_failed` | none | Enabled instances whose last sync failed (`lastSyncError`), in master mode. |
 | `caddy_apply_failed` | none | The last attempt to push the configuration to Caddy failed; resolves after the next successful apply. |
-| `license_expiring` | `days` (default 30) | The installed license expires within the window (also fires during the grace period and after expiry). |
 | `backup_failed` | `minFailures` (1-100, default 1) | Enabled scheduled-backup destinations whose backups failed that many times in a row (see [scheduled-backups.md](scheduled-backups.md)); resolves after the next successful backup. Failed backups are retried after 5 minutes, then with growing delays. |
 | `approval_pending` | none | Each change request waiting for approval (see [change-approvals.md](change-approvals.md)), so approvers hear about it once; resolves when it is approved, rejected, cancelled or expires. |
 | `access_review_started` | none | An access review campaign is open (started by hand or by a schedule, see [access-reviews.md](access-reviews.md)); severity info; resolves when it is completed or cancelled. |
@@ -58,7 +68,7 @@ Without `alerts:write` the page is read-only. Without a license with Alerting, p
 
 Every other type answers 400 for a host list. Each rule's view has a `scopeLabel` that says what it watches in words ("Each proxy host", "Upstreams of 3 proxy hosts", "This node"). It also has `lastFiredAt`: when the rule last fired, from its newest firing event in the 90-day history (null when it has not).
 
-`forMinutes` (0 to 1440, default 0: fire at once) is accepted by `cert_expiring`, `upstream_down`, `waf_spike`, `error_rate`, `instance_sync_failed`, `caddy_apply_failed`, `backup_failed` and `fleet_drift`. Rules about one-off events (a change waiting for approval, a review that started or is overdue, a failed rollout, an expiring license) fire at once and answer 400 for any other value.
+`forMinutes` (0 to 1440, default 0: fire at once) is accepted by `cert_expiring`, `upstream_down`, `waf_spike`, `error_rate`, `instance_sync_failed`, `caddy_apply_failed`, `backup_failed` and `fleet_drift`. Rules about one-off events (a change waiting for approval, a review that started or is overdue, a failed rollout) fire at once and answer 400 for any other value.
 
 ### Certificates Caddy manages
 
@@ -67,7 +77,7 @@ Caddy keeps the certificates it obtains in its own storage, which the dashboard 
 - Checked names: the domains of enabled proxy hosts without an imported certificate, or with a "managed" certificate entry (DNS-01). A wildcard domain is checked as `tls-check.<domain>`; IP addresses are skipped.
 - Caddy renews a certificate when a third of its lifetime is left. A certificate past that point plus one day is reported as **renewal overdue**: the renewal is failing. A name Caddy has no certificate for (Caddy answers with a TLS "internal error" alert) is reported as **missing**, a certificate that does not cover the name as a **mismatch**. Any other TLS error (for example a host that demands a client certificate) is not taken as a missing certificate.
 - The rule fires for managed certificates that expire within `days`, whose renewal is overdue, that are missing or that do not cover the name. A missing certificate of a host saved in the last 15 minutes is left alone while Caddy obtains it. When Caddy's HTTPS port cannot be reached, alerts about managed certificates keep their state.
-- `GET /api/v1/certificates/managed` (permission `certificates:read`, limited to the caller's tag scope and organisation) lists them; `?refresh=true` checks names older than a minute again.
+- `GET /api/v1/certificates/managed` (permission `certificates:read`, limited to the caller's tag scope) lists them; `?refresh=true` checks names older than a minute again.
 
 What is not covered, and why:
 
@@ -130,7 +140,9 @@ All endpoints are admin-only (API token or session) and audited; see `/api/v1/op
 | `GET /api/v1/alert-rules`, `POST /api/v1/alert-rules` | List (with the subjects currently firing), create |
 | `GET`, `PUT`, `DELETE /api/v1/alert-rules/{id}` | Read, update (partial; params are merged), delete |
 | `GET /api/v1/alert-events?page=&per_page=&rule_id=` | History, newest first. A firing event carries `resolvedAt`, when that episode ended (null while it fires). |
-| `GET /api/v1/alert-events/firing` | Every subject firing now, most severe first, with the event that started it and the channels told |
+| `GET /api/v1/alert-events/firing` | Every subject firing now, with the event that started it, the channels told and its `dismissal` and `mute` (or null): those neither dismissed nor muted first, then most severe first |
+| `GET /api/v1/alert-silences`, `POST /api/v1/alert-silences` | List the dismissals and mutes in effect; dismiss or mute: `{"ruleId": 3, "subjectKey": "certificate:7", "durationMinutes": 480, "note": "…"}`. Without `subjectKey` the whole rule is muted (it then needs `durationMinutes` or `until`); without a duration, the dismissal lasts until the alert resolves (409 if it is not firing). |
+| `DELETE /api/v1/alert-silences/{id}` | Undo a dismissal or mute |
 
 ```bash
 curl -X POST https://ingressi.example.com/api/v1/alert-channels \
@@ -144,17 +156,6 @@ curl -X POST https://ingressi.example.com/api/v1/alert-rules \
 
 The type of a channel or rule cannot be changed after creation.
 
-## Licensing
-
-A license only controls **setting up and changing** alerting; nothing that runs is ever checked:
-
-- **Community (no license):** e-mail channels, and `cert_expiring` rules that only notify e-mail channels, can be created and changed. Their test notifications work too.
-- **With `alerting`:** every other channel type and rule type (`error_rate` included), and certificate rules that notify a non-e-mail channel. Scopes and `forMinutes` follow the rule's own license rule.
-- **With `ai_analyst`:** turning `explain` on for a rule, and setting up the AI provider.
-- **Winding down never needs a license:** deleting any channel or rule, an update whose body only disables (`{"enabled": false}` for channels; `{"enabled": false}` and/or `{"explain": false}` for rules) and removing the AI provider always work, so an install whose license lapsed can switch everything off.
-- Without the license, paid channels and rules stay visible (read-only), keep being evaluated and keep delivering. Changing them (renaming, editing, re-enabling, sending a test) answers 403 until a license is installed again. An expired license keeps everything editable for its 30-day grace period.
-- Reading (`GET`) never needs a license.
-
 ## Data
 
-Tables (migration `drizzle/0028_alerting.sql`; `scope`, `forMinutes` and `pendingSince` from `0046_governance.sql`): `alert_channels`, `alert_rules`, `alert_rule_states` (per rule and subject: firing, pending or not, last notification, whether the firing notice was sent) and `alert_events` (history; no foreign key, survives rule deletion). Who created or changed what is in the audit log (`alert_channel_*`, `alert_rule_*`).
+Tables (migration `drizzle/0028_alerting.sql`; `scope`, `forMinutes` and `pendingSince` from `0046_governance.sql`; `alert_silences` and `alert_events.silenced` from `0058_alert_silences.sql`): `alert_channels`, `alert_rules`, `alert_rule_states` (per rule and subject: firing, pending or not, last notification, whether the firing notice was sent), `alert_events` (history; no foreign key, survives rule deletion) and `alert_silences` (dismissals and mutes in effect: rule, subject or none for a mute, until when or until it resolves, note, who). Who created or changed what is in the audit log (`alert_channel_*`, `alert_rule_*`, `alert_silence_*`).

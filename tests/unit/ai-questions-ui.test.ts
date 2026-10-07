@@ -19,7 +19,6 @@ import { AnswerView } from '@/ee/ai/questions/ui/AnswerView';
 import type { QuestionAnswer, QuestionAvailability, QuestionResult } from '@/ee/ai/questions/types';
 
 const READY: QuestionAvailability = {
-  licensed: true,
   providerConfigured: true,
   enabled: true,
   analyticsEnabled: true,
@@ -74,12 +73,11 @@ describe('Ask box', () => {
   });
 
   it('explains why it is read-only', () => {
-    expect(panel({ licensed: false })).toContain('Read-only without a license.');
     expect(panel({ providerConfigured: false, provider: null })).toContain('No AI provider is set up.');
     expect(panel({ providerConfigured: false })).toContain('href="/alerts?tab=ai"');
     expect(panel({ enabled: false })).toContain('Questions are turned off.');
     expect(panel({ analyticsEnabled: false })).toContain('Traffic analytics is off.');
-    expect(panel({ licensed: false })).toMatch(/aria-label="Your question"[^>]*disabled=""|disabled=""[^>]*aria-label="Your question"/);
+    expect(panel({ enabled: false })).toMatch(/aria-label="Your question"[^>]*disabled=""|disabled=""[^>]*aria-label="Your question"/);
   });
 });
 

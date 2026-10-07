@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Reading stored directories, for sign-in and for the administration code.
- * Nothing here looks at the license: sign-in through a directory that is
- * already set up keeps working without one.
  */
 import { eq } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

@@ -5,16 +5,12 @@
  * Built from aggregated facts only (digest-data.ts). When asked for and a
  * provider is configured, the model adds a short narrative written from those
  * facts, which travel as JSON inside a delimited data block it is told never
- * to take instructions from; it gets no tools and 15 seconds. Without AI, or
+ * to take instructions from; it gets no tools and the provider's timeout. Without AI, or
  * when the call fails, times out or is refused, the plain digest goes out.
- *
- * The scheduled digest never checks the license; previewing, sending on
- * demand and configuring it need the ai_analyst feature.
  */
 import { BRAND_NAME } from "@/src/lib/brand";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import { ChannelSecretsUnavailableError, getChannelRows, recordChannelDelivery, resolveChannel, type ResolvedChannel } from "@/ee/alerting/channels";
 import { describeFetchError, describeSmtpError, DeliveryError, postJson, sendEmailMessage, type DeliveryResult } from "@/ee/alerting/deliver";
 import { signWebhook } from "@/ee/alerting/format";
@@ -186,7 +182,7 @@ async function deliverDigest(rows: ChannelRow[], content: DigestContent, deps: D
   );
 }
 
-// ── Admin actions (ai_analyst) ─────────────────────────────────────────
+// ── Admin actions ──────────────────────────────────────────────────────
 
 function readPreviewOptions(body: unknown, fallbackAi: boolean): { ai: boolean } {
   if (body === undefined || body === null) return { ai: fallbackAi };
@@ -195,9 +191,8 @@ function readPreviewOptions(body: unknown, fallbackAi: boolean): { ai: boolean }
   return { ai: readBoolean(body.ai, "ai", fallbackAi) };
 }
 
-/** Renders the digest as it would be sent now, without sending it. Needs the ai_analyst feature. */
+/** Renders the digest as it would be sent now, without sending it. */
 export async function previewDigest(body: unknown, actorUserId: number, overrides: Partial<DigestDependencies> = {}): Promise<DigestPreview> {
-  await requireFeature("ai_analyst");
   const settings = await readDigestSettings();
   const options = readPreviewOptions(body, settings.ai);
   const { content, narrative } = await buildDigest({ ai: options.ai, timeZone: settings.timeZone }, dependencies(overrides));
@@ -218,9 +213,8 @@ export async function previewDigest(body: unknown, actorUserId: number, override
   };
 }
 
-/** Sends the digest to its channels now. Needs the ai_analyst feature. */
+/** Sends the digest to its channels now. */
 export async function sendDigestNow(actorUserId: number, overrides: Partial<DigestDependencies> = {}): Promise<DigestSendResult> {
-  await requireFeature("ai_analyst");
   const settings = await readDigestSettings();
   if (settings.channelIds.length === 0) throw new ApiValidationError("Choose at least one alert channel for the digest first");
   const channels = await digestChannels(settings.channelIds);
@@ -243,14 +237,11 @@ export async function sendDigestNow(actorUserId: number, overrides: Partial<Dige
   return { narrative: { status: narrative.status, error: narrative.error }, deliveries };
 }
 
-// ── Scheduled run (never license-checked) ──────────────────────────────
+// ── Scheduled run ──────────────────────────────────────────────────────
 
 export type ScheduledDigestOutcome = "disabled" | "not_due" | "no_channels" | "sent";
 
-/**
- * Sends the digest when it is due (once per local day). Runs whatever the
- * license state: a digest that was set up keeps arriving.
- */
+/** Sends the digest when it is due (once per local day). */
 export async function runScheduledDigest(now: Date = new Date(), overrides: Partial<DigestDependencies> = {}): Promise<ScheduledDigestOutcome> {
   const settings = await readDigestSettings();
   if (!settings.enabled) return "disabled";

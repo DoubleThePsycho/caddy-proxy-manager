@@ -5,10 +5,8 @@
  * REST API looks tokens up in api_tokens only and SCIM in scim_tokens only,
  * so neither kind works on the other's endpoints.
  *
- * A token is shown once; only its SHA-256 is stored. Creating one needs the
- * "scim" license and scim:write (administrator-level: a token can create
- * users). Revoking one never needs a license. Authenticating a request never
- * checks the license.
+ * A token is shown once; only its SHA-256 is stored. Creating one needs
+ * scim:write (administrator-level: a token can create users).
  */
 import { createHash, randomBytes } from "node:crypto";
 import { count, eq } from "drizzle-orm";
@@ -16,8 +14,7 @@ import { appDb, nowIso, toIso } from "@/src/lib/db";
 import { scimTokens } from "@/src/lib/db/schema";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
-import { FEATURE, type ScimTokenView } from "./types";
+import type { ScimTokenView } from "./types";
 import { asc, first } from "@/src/lib/db/ops";
 
 export const SCIM_TOKEN_PREFIX = "scim_";
@@ -83,12 +80,11 @@ function readTokenInput(input: unknown): { name: string; expiresAt: string | nul
   return { name, expiresAt };
 }
 
-/** Creates a token and returns it once, with its view. Needs the license. */
+/** Creates a token and returns it once, with its view. */
 export async function createScimToken(
   input: unknown,
   actorUserId: number
 ): Promise<{ token: ScimTokenView; rawToken: string }> {
-  await requireFeature(FEATURE);
   const { name, expiresAt } = readTokenInput(input);
   const rawToken = `${SCIM_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
   const tokenHash = hashToken(rawToken);
@@ -121,7 +117,7 @@ export async function createScimToken(
   return { token: toView(row), rawToken };
 }
 
-/** Revokes (deletes) a token. Never needs a license. */
+/** Revokes (deletes) a token. */
 export async function deleteScimToken(id: number, actorUserId: number): Promise<void> {
   const row = await first(appDb.select().from(scimTokens).where(eq(scimTokens.id, id)).limit(1));
   if (!row) throw new ApiClientError("SCIM token not found", 404);

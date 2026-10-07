@@ -4,6 +4,7 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ExternalLink } from "lucide-react";
 import { Banner } from "@/components/ui/Banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,9 +16,12 @@ import { SectionCard } from "@/components/ui/SectionCard";
 import { Switch } from "@/components/ui/switch";
 import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import type { BreakGlassCandidate, SsoEnforcementView } from "@/ee/sso/enforcement";
+import { documentationUrl } from "@/src/lib/brand";
 
 /** More break-glass candidates than this get a search box. */
 const CANDIDATE_SEARCH_FROM = 10;
+
+const RECOVERY_DOCS_HREF = documentationUrl("ee/docs/sso-enforcement.md#recovery");
 
 type SaveResult = { ok: true; view: SsoEnforcementView } | { ok: false; error: string };
 
@@ -47,11 +51,15 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
   const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState("");
-  const readOnly = !view.configurable;
   const needle = query.trim().toLowerCase();
   const shownCandidates = needle
     ? candidates.filter((candidate) => `${candidate.username} ${candidate.name ?? ""}`.toLowerCase().includes(needle))
     : candidates;
+
+  // Break-glass accounts are optional; with an administrator among them, the login page is the way back in.
+  const breakGlassAdmin = candidates.some(
+    (candidate) => selected.has(candidate.username) && candidate.role === "admin" && candidate.status === "active"
+  );
 
   const dirty = useMemo(() => {
     const current = selectableUsernames(view);
@@ -89,17 +97,10 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
     <div className="flex w-full min-w-0 flex-col gap-5">
       <PageHeader
         className="mb-0"
-        breadcrumb={["Identity", { label: "Sign-in and directories", href: "/sign-in" }, "Single sign-on"]}
+        breadcrumb={["Users and sign-in", { label: "Sign-in and directories", href: "/sign-in" }, "Single sign-on"]}
         title="Single sign-on"
         description={`Require sign-in to ${productName} through your identity provider. The forward-auth portal is not affected.`}
       />
-
-      {readOnly && (
-        <Banner tone="info" title="Read-only without a license.">
-          Changing enforced SSO needs a Business license or higher. You can still turn it off.{" "}
-          <Link href="/license" className="text-brand underline-offset-4 hover:underline">Manage the license</Link>
-        </Banner>
-      )}
 
       <div className="grid gap-5 lg:grid-cols-3">
         <SectionCard
@@ -121,27 +122,25 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
               </ul>
             </Banner>
           )}
-
           <div className="flex items-center justify-between gap-4">
             <Label htmlFor="sso-enforce" className="flex flex-col items-start gap-1">
               <span>Require single sign-on for dashboard sign-in</span>
               <span className="text-xs font-normal text-muted-foreground">
-                Turning it on needs an enabled OAuth/OIDC or SAML provider and at least one break-glass administrator.
+                Turning it on needs an enabled OAuth/OIDC or SAML provider.
               </span>
             </Label>
             <Switch
               id="sso-enforce"
               checked={enabled}
               onCheckedChange={(checked) => { setEnabled(checked); setSaved(false); }}
-              disabled={(readOnly && !(view.enabled && enabled)) || pending}
+              disabled={pending}
             />
           </div>
 
           <div className="flex flex-col gap-2">
-            <p className="m-0 text-sm font-medium">Break-glass accounts</p>
+            <p className="m-0 text-sm font-medium">Break-glass accounts (optional)</p>
             <p className="m-0 text-xs text-muted-foreground">
-              These accounts can still sign in with their username and password, for example while the identity provider is down.
-              Keep at least one active administrator here and store its password safely.
+              These accounts can still sign in with their password, for example while the identity provider is down.
             </p>
             {candidates.length > CANDIDATE_SEARCH_FROM && (
               <SearchField
@@ -166,7 +165,7 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
                         id={id}
                         checked={selected.has(candidate.username)}
                         onCheckedChange={(checked) => toggle(candidate.username, checked === true)}
-                        disabled={readOnly || pending}
+                        disabled={pending}
                       />
                       <Label htmlFor={id} className="flex flex-1 flex-wrap items-center gap-2 font-normal">
                         <span className="num font-medium">{candidate.username}</span>
@@ -184,13 +183,11 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
           {error && <Banner tone="bad" live>{error}</Banner>}
           {saved && !error && <Banner tone="ok" live>Saved.</Banner>}
 
-          {(!readOnly || (view.enabled && !enabled)) && (
-            <div>
-              <Button onClick={save} disabled={pending || !dirty}>
-                {pending ? "Saving…" : readOnly ? "Turn off" : "Save"}
-              </Button>
-            </div>
-          )}
+          <div>
+            <Button onClick={save} disabled={pending || !dirty}>
+              {pending ? "Saving…" : "Save"}
+            </Button>
+          </div>
         </SectionCard>
 
         <div className="flex min-w-0 flex-col gap-5">
@@ -224,14 +221,21 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
           </SectionCard>
 
           <SectionCard title="If the identity provider is down" padded contentClassName="flex flex-col gap-2 text-sm text-muted-foreground">
-            <p className="m-0">
-              Open the login page, choose <span className="font-medium text-foreground">Sign in with a password</span> and sign in
-              with a break-glass account.
-            </p>
-            <p className="m-0">
-              Without a working break-glass password, an operator with shell access can turn enforcement off as described in the
-              enforced SSO documentation.
-            </p>
+            {breakGlassAdmin && (
+              <p className="m-0">
+                On the login page, choose <span className="font-medium text-foreground">Sign in with a password</span> and sign in
+                with a break-glass account.
+              </p>
+            )}
+            <a
+              href={RECOVERY_DOCS_HREF}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 self-start text-[13px] text-brand underline-offset-4 hover:text-foreground hover:underline"
+            >
+              Recovery steps
+              <ExternalLink aria-hidden="true" className="h-3 w-3" />
+            </a>
           </SectionCard>
         </div>
       </div>

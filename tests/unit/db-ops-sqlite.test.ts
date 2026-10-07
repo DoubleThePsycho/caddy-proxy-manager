@@ -8,7 +8,7 @@ import { eq, sql, type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb, type TestDb } from '../helpers/db';
-import { settings, users } from '../../src/lib/db/schema';
+import { forwardAuthAccess, settings, users } from '../../src/lib/db/schema';
 import {
   asc,
   containsText,
@@ -145,11 +145,9 @@ describe('driver errors', () => {
     expect(isUniqueViolation(notNull)).toBe(false);
     expect(isConstraintViolation(notNull)).toBe(true);
 
-    // The organisation role trigger (drizzle/0041) refuses an organisation administrator.
-    const trigger = await failure(db.insert(users).values({
-      email: 'org@example.com', role: 'admin', organizationId: 1, createdAt: NOW, updatedAt: NOW,
-    }));
-    expect(isConstraintViolation(trigger)).toBe(true);
+    // The CHECK of drizzle/0017 refuses a grant naming neither a user nor a group.
+    const check = await failure(db.insert(forwardAuthAccess).values({ proxyHostId: 1, userId: null, groupId: null, createdAt: NOW }));
+    expect(isConstraintViolation(check)).toBe(true);
 
     let readOnly: unknown;
     await db.transaction(async (tx) => {

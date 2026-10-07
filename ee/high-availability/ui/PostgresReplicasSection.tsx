@@ -47,15 +47,7 @@ function replicaState(replica: ReplicaReport): ReactNode {
  * database, which one leads the background jobs, their heartbeats and
  * versions. Read-only: a replica joins by starting with the same database.
  */
-export default function PostgresReplicasSection({
-  view,
-  configurable,
-  editionLabel,
-}: {
-  view: PostgresReplicasView;
-  configurable: boolean;
-  editionLabel: string;
-}) {
+export default function PostgresReplicasSection({ view }: { view: PostgresReplicasView }) {
   const router = useRouter();
   const [refreshing, startRefresh] = useTransition();
   const versions = new Set(view.nodes.filter((node) => node.status === "live").map((node) => node.version));
@@ -70,7 +62,6 @@ export default function PostgresReplicasSection({
       actions={
         <>
           <Badge variant="outline">PostgreSQL mode</Badge>
-          <Badge variant="outline">{editionLabel}</Badge>
           <Button variant="outline" size="sm" disabled={refreshing} onClick={() => startRefresh(() => router.refresh())}>
             <RefreshCw className={refreshing ? "animate-spin" : undefined} />
             Refresh
@@ -100,11 +91,6 @@ export default function PostgresReplicasSection({
       {versions.size > 1 && (
         <Banner tone="warn" title="The replicas run different versions.">
           Run one version on every replica. To upgrade, stop every replica, then start the new version.
-        </Banner>
-      )}
-      {view.liveReplicas > 1 && !configurable && (
-        <Banner tone="info" title={`Adding a replica needs an active ${editionLabel} license.`}>
-          Replicas that already joined keep running.
         </Banner>
       )}
 
@@ -139,10 +125,6 @@ export default function PostgresReplicasSection({
         <Row label="Heartbeat">
           Every {view.heartbeatSeconds} s. A replica silent for {view.goneAfterSeconds} s is gone, and removed after{" "}
           {view.pruneAfterDays} days.
-        </Row>
-        <Row label="License">
-          One replica is free. Each new one needs an active {editionLabel} license, checked once, when it joins
-          {configurable ? ": this install has one." : "."}
         </Row>
       </div>
 

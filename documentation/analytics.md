@@ -1,10 +1,10 @@
 # Traffic analytics
 
-With access logging on and ClickHouse enabled (see [Enabling analytics](#enabling-analytics-recommended)), every request Caddy handles is stored for the retention window: 30 days by default, `CLICKHOUSE_RETENTION_DAYS` changes it. Nothing is sampled. Analytics is part of the Community edition.
+With access logging on and ClickHouse enabled (see [Enabling analytics](#enabling-analytics-recommended)), every request Caddy handles is stored for the retention window: 30 days by default, `CLICKHOUSE_RETENTION_DAYS` changes it. Nothing is sampled.
 
 ## Storage and retention
 
-Analytics uses a bundled ClickHouse instance for storing and querying traffic events and WAF events. Data is retained for **30 days** by default via ClickHouse's TTL. Change the window with the `CLICKHOUSE_RETENTION_DAYS` environment variable — on the next startup the existing tables' TTL is migrated to the new value and expired data is purged.
+Analytics uses a bundled ClickHouse instance for storing and querying traffic events and WAF events. Data is retained for **30 days** by default via ClickHouse's TTL. Change the window with the `CLICKHOUSE_RETENTION_DAYS` environment variable: at the next start, the existing tables move to the new TTL and expired data is deleted.
 
 ### Enabling analytics (recommended)
 
@@ -136,15 +136,15 @@ The overview lists, at most five of each:
 
 ## Saved views
 
-A saved view is a name for a range, filters, metric and grouping. On the Analytics page, **Save view** stores the current settings and **Views** opens a saved view or manages them: rename, share, save the current settings to it, copy its link, or delete it (ten a page, with a search by name or owner once there are more). It belongs to the user who saved it. Shared, it is listed for everyone of the same organisation (or of the provider level) who can read analytics. Only the owner changes a view; the owner, or an administrator for a shared view, deletes it. A user can save up to 100 views. Saving, changing and deleting a view is recorded in the audit log (`analytics_view`). Views are not synced to slave instances and are deleted with their owner.
+A saved view is a name for a range, filters, metric and grouping. On the Analytics page, **Save view** stores the current settings and **Views** opens a saved view or manages them: rename, share, save the current settings to it, copy its link, or delete it (ten a page, with a search by name or owner once there are more). It belongs to the user who saved it. Shared, it is listed for everyone who can read analytics. Only the owner changes a view; the owner, or an administrator for a shared view, deletes it. A user can save up to 100 views. Saving, changing and deleting a view is recorded in the audit log (`analytics_view`). Views are not synced to slave instances and are deleted with their owner.
 
 ## Asking in plain language
 
-With the AI analyst (a paid feature) and an AI provider set up, **Ask about your traffic** at the top of the page takes a question such as "Which countries were blocked most last week on the shop hosts?". Your model turns it into a query over the same metrics, dimensions and filters as this page; the query is checked and runs here, and the answer links to this page with the same settings. See [Analytics questions](../ee/docs/analytics-questions.md) for what the model sees and the limits.
+With the AI analyst and an AI provider set up, **Ask about your traffic** at the top of the page takes a question such as "Which countries were blocked most last week on the shop hosts?". Your model turns it into a query over the same metrics, dimensions and filters as this page; the query is checked and runs here, and the answer links to this page with the same settings. See [Analytics questions](../ee/docs/analytics-questions.md) for what the model sees and the limits.
 
 ## Who can see what
 
-Everything here needs the `analytics:read` permission. The raw Coraza audit record of a WAF event is WAF event detail: it stays on the Security events page and `GET /api/waf-events`, which need `waf:read`. Organisation users, and a provider looking at one organisation, only see that organisation's hosts. Per-host summaries also follow the role's tag scope: a host outside it answers 404, as a missing one does.
+Everything here needs the `analytics:read` permission. The raw Coraza audit record of a WAF event is WAF event detail: it stays on the Security events page and `GET /api/waf-events`, which need `waf:read`. Per-host summaries follow the role's tag scope: a host outside it answers 404, as a missing one does.
 
 When analytics is off or ClickHouse does not answer, pages and the API show no data instead of an error, with `status` set to `disabled` or `unavailable`.
 
@@ -162,7 +162,7 @@ All under `/api/v1/analytics`, with permission `analytics:read`. The reference i
 | `GET /security/series`, `/security/rules`, `/security/sources`, `/security/hosts`, `/security/events` | Security events: mitigated requests by source with the peak explained, top rules, sources and hosts, and the event list (`kind`, `filters` on host, path, country, ip, method and waf_rule). |
 | `GET /signals` | The "Needs attention" signals. |
 | `GET, POST /views`, `GET, PATCH, DELETE /views/{id}` | Saved views. |
-| `POST /questions`, `/questions/saved...` | Plain-language questions and saved questions (paid, see [Analytics questions](../ee/docs/analytics-questions.md)). |
+| `POST /questions`, `/questions/saved...` | Plain-language questions and saved questions (see [Analytics questions](../ee/docs/analytics-questions.md)). |
 
 ```bash
 curl -G https://dash.example.com/api/v1/analytics/query \

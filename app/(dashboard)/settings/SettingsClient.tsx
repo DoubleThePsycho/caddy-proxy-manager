@@ -6,18 +6,15 @@ import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionCard } from "@/components/ui/SectionCard";
 import type { GeneralSettings } from "@/lib/settings";
-import type { UsagePingView } from "@/src/lib/usage-ping/store";
 import { settingsSectionHref } from "@/src/lib/settings-sections";
 import { OverrideRow, SettingRow, SettingRows, SettingsForm, SettingsGroupForms } from "@/src/components/settings/settings-form";
 import { updateGeneralSettingsAction } from "./actions";
-import UsagePingSection from "./UsagePingSection";
 import { useUnsavedWarning } from "./use-unsaved-warning";
 
 export type SettingsClientProps = {
   general: GeneralSettings | null;
   /** BASE_URL, read-only. */
   baseUrl: string;
-  usagePing: UsagePingView;
   isSlave: boolean;
   /** On a replica: whether it overrides the master's general settings. */
   overrideGeneral: boolean;
@@ -38,8 +35,8 @@ function useMovedSectionRedirect() {
   }, [router]);
 }
 
-/** The settings of the install itself: the primary domain, the dashboard address and the usage ping. */
-export default function SettingsClient({ general, baseUrl, usagePing, isSlave, overrideGeneral, canWriteSettings }: SettingsClientProps) {
+/** The settings of the install itself: the primary domain and the dashboard address. */
+export default function SettingsClient({ general, baseUrl, isSlave, overrideGeneral, canWriteSettings }: SettingsClientProps) {
   useMovedSectionRedirect();
   const onDirtyChange = useUnsavedWarning();
   return (
@@ -48,12 +45,6 @@ export default function SettingsClient({ general, baseUrl, usagePing, isSlave, o
       <SettingsGroupForms name="General" canSave={canWriteSettings} onDirtyChange={onDirtyChange}>
         <GeneralCard general={general} baseUrl={baseUrl} isSlave={isSlave} override={overrideGeneral} />
       </SettingsGroupForms>
-      <section id="usage-ping" aria-labelledby="usage-ping-heading" className="flex scroll-mt-20 md:scroll-mt-4 flex-col gap-3">
-        <h2 id="usage-ping-heading" className="m-0 text-lg leading-[26px] font-semibold">
-          Usage ping
-        </h2>
-        <UsagePingSection initial={usagePing} canWrite={canWriteSettings} />
-      </section>
     </div>
   );
 }

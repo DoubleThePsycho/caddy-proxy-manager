@@ -273,6 +273,23 @@ export async function setSetting<T>(key: string, value: T): Promise<void> {
   rememberWrite(key, payload);
 }
 
+/**
+ * Writes `value` only if the setting does not exist yet, and returns what is
+ * stored either way: when two writers race, the first one wins for both.
+ */
+export async function setSettingIfAbsent<T>(key: string, value: T): Promise<SettingValue<T>> {
+  const payload = JSON.stringify(value);
+  await appDb.insert(settings).values({ key, value: payload, updatedAt: nowIso() }).onConflictDoNothing({ target: settings.key });
+  const row = await appDb.query.settings.findFirst({ where: (table, { eq }) => eq(table.key, key) });
+  const stored = row?.value ?? payload;
+  rememberWrite(key, stored);
+  try {
+    return JSON.parse(stored) as T;
+  } catch {
+    return null;
+  }
+}
+
 /** When a setting was last written (ISO time), or null when it is not set. */
 export async function getSettingUpdatedAt(key: string): Promise<string | null> {
   const row = await appDb.query.settings.findFirst({ where: (table, { eq }) => eq(table.key, key) });
@@ -491,7 +508,7 @@ export async function saveDefaultResponseSettings(value: DefaultResponseSettings
   await setSetting("default_response", normalizeDefaultResponseSettings(value));
 }
 
-// Rate limiting defaults (Community): rules that hosts inherit, merge or
+// Rate limiting defaults: rules that hosts inherit, merge or
 // override, and the client ranges no rule limits. See caddy-rate-limit.ts.
 export async function getRateLimitSettings(): Promise<RateLimitSettings | null> {
   return readStoredRateLimitSettings(await getEffectiveSetting<unknown>("rate_limit"));

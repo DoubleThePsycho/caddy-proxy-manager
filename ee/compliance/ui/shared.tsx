@@ -7,7 +7,6 @@ import { Label } from "@/components/ui/label";
 import type { DeadlineStatus, FindingCounts, FindingSeverity } from "../types";
 
 export const API_BASE = "/api/v1/compliance";
-export const LOCKED_HINT = "Needs a license with compliance reports";
 
 async function readError(response: Response): Promise<string> {
   try {

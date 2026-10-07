@@ -40,7 +40,7 @@ const stamp = '2026-10-02T10:00:00.000Z';
 
 function user(overrides: Partial<UserOverviewEntry>): UserOverviewEntry {
   return {
-    id: 2, email: 'user@example.com', username: 'user@example.com', name: 'User', role: 'user', customRoleId: null, organizationId: null,
+    id: 2, email: 'user@example.com', username: 'user@example.com', name: 'User', role: 'user', customRoleId: null,
     status: 'active', lastSignInAt: stamp, lastSignInMethod: 'password', disabledAt: null, invited: false, createdAt: stamp,
     sources: [{ kind: 'local', label: 'Password' }], passwordSignIn: true,
     secondFactor: { state: 'authenticator_app', authenticatorApp: true, passkeys: 0, required: false, gate: 'none', deadline: null },
@@ -69,9 +69,8 @@ function usersTab(overrides: Partial<Parameters<typeof UsersTab>[0]> = {}) {
     mfaPolicy: { scope: 'admins', graceDays: 7, deadline: '2026-10-01T00:00:00.000Z', required: 2, enrolled: 1 },
     canWrite: true,
     canWriteMfaPolicy: true,
-    roleOptions: { customRoles: [], canAssignAdmin: true, customRolesLicensed: true },
+    roleOptions: { customRoles: [], canAssignAdmin: true },
     totalPermissions: 68,
-    organizationNames: {},
     ...overrides,
   }));
 }
@@ -125,7 +124,7 @@ describe('Users tab', () => {
 });
 
 const group = (overrides: Partial<GroupOverviewEntry>): GroupOverviewEntry => ({
-  id: 1, name: 'ops', description: 'Operations dashboards', organizationId: null, createdAt: stamp, updatedAt: stamp,
+  id: 1, name: 'ops', description: 'Operations dashboards', createdAt: stamp, updatedAt: stamp,
   members: [{ userId: 1, email: 'admin@example.com', name: 'admin' }], scim: null, roleMappings: [], hosts: [{ id: 1, name: 'Grafana', domain: 'grafana.example.com' }],
   ...overrides,
 });
@@ -170,7 +169,7 @@ function overview(): SignInOverview {
   return {
     generatedAt: stamp,
     enforcement: {
-      enabled: true, configurable: true, warnings: [], changedAt: stamp, changedBy: 'admin', refusedLastWeek: 3,
+      enabled: true, warnings: [], changedAt: stamp, changedBy: 'admin', refusedLastWeek: 3,
       breakGlass: [{ id: 2, username: 'breakglass', name: 'Break glass', email: 'ops@example.com', role: 'admin', status: 'active', passwordSignIn: true, validAdmin: true, authenticatorApp: true, passkeys: 1, lastSignInAt: stamp, lastSignInMethod: 'password' }],
     },
     loginPage: [
@@ -207,6 +206,18 @@ describe('Sign-in and directories', () => {
     expect(html).toContain('unavailable');
     expect(html).toContain('Break-glass sign-in');
     expect(html).toContain('2 sources · 1 failing');
+  });
+
+  it('shows no warning or host command while enforced without a break-glass administrator', () => {
+    const data = overview();
+    data.enforcement.breakGlass = [];
+    data.loginPage = data.loginPage.filter((option) => option.kind !== 'password');
+    const html = renderToStaticMarkup(createElement(SignInClient, { overview: data, can, turnOffEnforcement: vi.fn() }));
+    expect(html).toContain('Password sign-in is refused for everyone, and nobody can register with a password.');
+    expect(html).not.toContain('No break-glass administrator');
+    expect(html).not.toContain('docker compose');
+    expect(html).not.toContain('Check enforced single sign-on');
+    expect(html).not.toContain('Break-glass sign-in');
   });
 
   it('shows a failing directory with its last error and the connection test for ldap:write only', () => {

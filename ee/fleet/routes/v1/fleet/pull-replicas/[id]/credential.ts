@@ -6,7 +6,7 @@ import { NO_STORE, parseRouteId } from "@/ee/fleet/http";
 
 type Params = { params: Promise<{ id: string }> };
 
-/** Issue a new credential (the old one stops working); shown in this reply only. Needs the license. */
+/** Issue a new credential (the old one stops working); shown in this reply only. */
 export async function POST(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "fleet:replicas");
@@ -17,7 +17,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   }
 }
 
-/** Revoke the credential: the replica is refused until a new one is issued. No license needed. */
+/** Revoke the credential: the replica is refused until a new one is issued. */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "fleet:replicas");

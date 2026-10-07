@@ -52,11 +52,16 @@ type SamlProvider = { id: number; name: string; host?: string | null };
 
 interface LoginClientProps {
   enabledProviders: Provider[];
-  /** Enforced SSO (paid feature): only break-glass accounts may use a password. */
+  /** Enforced SSO: only break-glass accounts may use a password. */
   ssoEnforced?: boolean;
-  /** LDAP / Active Directory directories open for sign-in (paid feature). */
+  /**
+   * With SSO enforced: some break-glass account can sign in with a password.
+   * Without one, no password or passkey sign-in is offered for local accounts.
+   */
+  breakGlassSignIn?: boolean;
+  /** LDAP / Active Directory directories open for sign-in. */
   directories?: Array<{ id: number; name: string }>;
-  /** Enabled SAML identity providers (paid feature). */
+  /** Enabled SAML identity providers. */
   samlProviders?: SamlProvider[];
   /** Some account has a passkey, so passkey sign-in is offered. */
   passkeysAvailable?: boolean;
@@ -101,6 +106,7 @@ function useWebAuthn(): boolean {
 export default function LoginClient({
   enabledProviders = [],
   ssoEnforced = false,
+  breakGlassSignIn = true,
   directories = [],
   samlProviders = [],
   passkeysAvailable = false,
@@ -111,18 +117,23 @@ export default function LoginClient({
   const [oauthPending, setOauthPending] = useState<string | null>(null);
   // With SSO enforced, the password form is only for break-glass accounts (and
   // directories open under enforcement) and stays collapsed behind "Sign in
-  // with a password", unless no provider is enabled to sign in with.
+  // with a password", unless no provider is enabled to sign in with. Without a
+  // break-glass account, local accounts get no password or passkey sign-in.
   const ssoFirst = ssoEnforced && enabledProviders.length + samlProviders.length > 0;
-  const [showPasswordForm, setShowPasswordForm] = useState(!ssoFirst);
+  const localSignIn = !ssoEnforced || breakGlassSignIn;
+  const passwordSignIn = localSignIn || directories.length > 0;
+  const [showPasswordForm, setShowPasswordForm] = useState(!ssoFirst && passwordSignIn);
   // A directory is the default when there is one; the local account stays one click away.
-  const [method, setMethod] = useState<SignInMethod>(!ssoFirst && directories.length > 0 ? directories[0].id : "local");
+  const [method, setMethod] = useState<SignInMethod>(
+    directories.length > 0 && (!ssoFirst || !localSignIn) ? directories[0].id : "local"
+  );
   const directoryName = method === "local" ? null : directories.find((directory) => directory.id === method)?.name ?? null;
   // Second sign-in step for accounts with multi-factor authentication.
   const [challenge, setChallenge] = useState<Challenge>(null);
   const [useBackupCode, setUseBackupCode] = useState(false);
   const branding = useBranding();
   const webAuthn = useWebAuthn();
-  const offerPasskey = passkeysAvailable && webAuthn;
+  const offerPasskey = passkeysAvailable && webAuthn && localSignIn;
 
   const handleSignIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -439,7 +450,13 @@ export default function LoginClient({
             </div>
           )}
 
-          {!challenge && ssoFirst && (
+          {!challenge && !hasSso && !offerPasskey && !passwordSignIn && (
+            <p className="text-sm text-muted-foreground" data-testid="no-sign-in-method">
+              Single sign-on is required, but no identity provider is enabled. Ask your administrator.
+            </p>
+          )}
+
+          {!challenge && ssoFirst && passwordSignIn && (
             <div className="flex flex-col border-t pt-3.5">
               <button
                 type="button"
@@ -454,10 +471,18 @@ export default function LoginClient({
               >
                 <Lock className="h-[18px] w-[18px] flex-none text-muted-foreground" aria-hidden="true" />
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-sm font-medium">Sign in with a password</span>
-                  <span className="text-xs text-muted-foreground">
-                    {directories.length > 0 ? "Break-glass accounts and directories that stay open" : "Break-glass accounts only"}
-                  </span>
+                  {localSignIn ? (
+                    <>
+                      <span className="text-sm font-medium">Sign in with a password</span>
+                      <span className="text-xs text-muted-foreground">
+                        {directories.length > 0 ? "Break-glass accounts and directories that stay open" : "Break-glass accounts only"}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-sm font-medium">
+                      {directories.length === 1 ? `Sign in with ${directories[0].name}` : "Sign in with a directory"}
+                    </span>
+                  )}
                 </span>
                 {showPasswordForm
                   ? <ChevronUp className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
@@ -477,7 +502,7 @@ export default function LoginClient({
                   </span>
                 </div>
               )}
-              {directories.length > 0 && (
+              {directories.length + (localSignIn ? 1 : 0) > 1 && (
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="sign-in-method">Sign in with</Label>
                   <select
@@ -496,7 +521,9 @@ export default function LoginClient({
                         {directory.name}
                       </option>
                     ))}
-                    <option value="local">{ssoEnforced ? "Break-glass account" : `${branding.productName} account`}</option>
+                    {localSignIn && (
+                      <option value="local">{ssoEnforced ? "Break-glass account" : `${branding.productName} account`}</option>
+                    )}
                   </select>
                 </div>
               )}

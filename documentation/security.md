@@ -29,7 +29,7 @@ docker compose up -d
 
 ## Limitations
 
-- Rate limit counters (forward-auth portal, directory and dashboard sign-in, password confirmations, instance sync and the other request limits) are kept in memory on SQLite, where one process serves everything, and in the database on PostgreSQL, so the limits count across replicas sharing it ([PostgreSQL](postgresql.md)). The x402 limit on refused payments (Enterprise) stays in each process's memory.
+- Rate limit counters (forward-auth portal, directory and dashboard sign-in, password confirmations, instance sync and the other request limits) are kept in memory on SQLite, where one process serves everything, and in the database on PostgreSQL, so the limits count across replicas sharing it ([PostgreSQL](postgresql.md)). The x402 limit on refused payments (API monetization) stays in each process's memory.
 - Proxy host rate limits are counted by each Caddy instance on its own, not across instances ([Rate limiting](rate-limiting.md#several-caddy-instances)).
 
 ## Rotating SESSION_SECRET

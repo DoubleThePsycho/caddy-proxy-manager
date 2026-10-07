@@ -2,9 +2,6 @@
 /**
  * Generating, storing, reading and exporting compliance reports.
  *
- * Licensing: generating a report needs "compliance_reports"; reading,
- * downloading and deleting stored reports never do.
- *
  * Integrity: a report is stored as its canonical JSON (canonical.ts) with
  * the SHA-256 of that text, and generation records the SHA-256 in the
  * hash-chained audit log, so a stored or downloaded report can later be
@@ -19,7 +16,6 @@ import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
 import { APP_VERSION } from "@/src/lib/app-version";
 import { BRAND_NAME } from "@/src/lib/brand";
 import { getInstanceMode } from "@/src/lib/instance-sync";
-import { requireFeature } from "@/ee/licensing/store";
 import { csvCell } from "@/ee/audit/export";
 import { CANONICALIZATION, canonicalJson, sha256Hex } from "./canonical";
 import { COMPLIANCE_STATEMENT, controlsFor } from "./controls";
@@ -31,7 +27,6 @@ import { buildProtectionCoverage } from "./reports/protection-coverage";
 import { buildTrafficQuestions } from "./reports/traffic-questions";
 import { countFindings, defaultAnalytics, type AnalyticsDependencies, type ReportBuilder } from "./reports/shared";
 import {
-  FEATURE,
   FINDING_SEVERITIES,
   REPORT_TYPE_LABELS,
   SELECTABLE_REPORT_TYPES,
@@ -141,7 +136,7 @@ async function requireRow(id: number): Promise<ReportRow> {
 /** Who generated a report: a user, or a schedule (userId null, name "Schedule ..."). */
 export type ReportGenerator = { userId: number | null; name: string | null; email: string | null };
 
-/** Builds the report document for the period (no license check, nothing stored). */
+/** Builds the report document for the period (nothing stored). */
 export async function buildReportDocument(
   input: { type: ReportType; from: Date; to: Date; questions?: readonly ScheduleQuestion[] },
   generator: ReportGenerator,
@@ -179,7 +174,7 @@ async function generatorOf(userId: number): Promise<{ userId: number; name: stri
 
 /**
  * Stores a built report and records its SHA-256 in the audit log (by the
- * user, or by no user for a schedule). No license check.
+ * user, or by no user for a schedule).
  */
 export async function storeReportDocument(
   document: ComplianceReportDocument,
@@ -225,13 +220,12 @@ export async function storeReportDocument(
   return { ...toSummary(row), document, integrity: await integrityOf(row) };
 }
 
-/** Generates, stores and audits a report. Needs the compliance_reports feature. */
+/** Generates, stores and audits a report. */
 export async function generateReport(
   body: unknown,
   actorUserId: number,
   overrides: Partial<ReportDependencies> = {}
 ): Promise<{ detail: StoredReportDetail; format: ReportFormat }> {
-  await requireFeature(FEATURE);
   const deps = dependencies(overrides);
   const input = parseGenerateInput(body, deps.now());
   const document = await buildReportDocument(input, await generatorOf(actorUserId), deps);
@@ -311,7 +305,6 @@ export async function getReport(id: number): Promise<StoredReportDetail> {
   return { ...toSummary(row), document: parseDocument(row), integrity: await integrityOf(row) };
 }
 
-/** Never needs a license. */
 export async function deleteReport(id: number, actorUserId: number): Promise<void> {
   const row = await requireRow(id);
   await appDb.delete(complianceReports).where(eq(complianceReports.id, id));

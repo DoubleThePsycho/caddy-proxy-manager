@@ -1,6 +1,6 @@
 /**
  * "The configuration": everything stored in the database that decides what
- * Caddy serves. Configuration export/import (Community) and configuration
+ * Caddy serves. Configuration export/import and configuration
  * history (ee/config-history) read and replace exactly this set.
  *
  * Included: proxy hosts, L4 proxy hosts, access lists with their entries and rules,
@@ -14,7 +14,7 @@
  * anybody out of the dashboard or sign anybody in: users, group memberships,
  * dashboard sessions, sign-in accounts and OAuth state, OAuth providers, API
  * tokens, audit events, instances and sync tokens/keys, forward-auth sessions,
- * the license, the instance mode and every other settings key.
+ * the instance mode and every other settings key.
  *
  * Rows are kept as stored: secret columns stay encrypted with this instance's
  * key (see secret.ts) and nothing here decrypts them.
@@ -39,7 +39,6 @@ import {
   mtlsAccessRules,
   mtlsCertificateRoles,
   mtlsRoles,
-  organizations,
   proxyHosts,
   settings,
   users,
@@ -437,11 +436,14 @@ export function configTableColumns(name: ConfigTableName): string[] {
 
 const MAX_ROWS_PER_TABLE = 100_000;
 
+/** Fields of withdrawn features that content written by an older release still has; they are dropped. */
+const WITHDRAWN_FIELDS: ReadonlySet<string> = new Set(["organizationId"]);
+
 function validateRow(name: ConfigTableName, raw: unknown, where: string): ConfigRow {
   if (!isRecord(raw)) throw new ConfigContentError(`${where} must be an object`);
   const columns = columnsOf(name);
   for (const key of Object.keys(raw)) {
-    if (!columns.has(key)) throw new ConfigContentError(`${where} has an unknown field "${key}"`);
+    if (!columns.has(key) && !WITHDRAWN_FIELDS.has(key)) throw new ConfigContentError(`${where} has an unknown field "${key}"`);
   }
   const row: ConfigRow = {};
   for (const [key, column] of columns) {
@@ -705,11 +707,6 @@ export async function writeConfigContent(
 
   const userIds = new Set((await tx.select({ id: users.id }).from(users)).map((row) => row.id));
   const kept = new Map<ConfigTableName | "users", Set<number>>([["users", userIds]]);
-  // Owning organisations (ee/multi-tenancy) are kept only by a restore, and
-  // only while the organisation exists (ids are never reused); an import's ids
-  // may name another installation's organisations, so its rows become
-  // provider-level. Never the other way round: no row joins an organisation.
-  const organizationIds = new Set((await tx.select({ id: organizations.id }).from(organizations)).map((row) => row.id));
 
   for (const name of CONFIG_TABLE_NAMES) {
     const spec = CONFIG_TABLES[name];
@@ -718,9 +715,6 @@ export async function writeConfigContent(
       const row = { ...source };
       for (const column of spec.attributionColumns) {
         if (typeof row[column] === "number" && !userIds.has(row[column] as number)) row[column] = null;
-      }
-      if (typeof row.organizationId === "number" && (mode !== "restore" || !organizationIds.has(row.organizationId))) {
-        row.organizationId = null;
       }
       let keep = true;
       for (const reference of spec.references) {

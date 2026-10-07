@@ -2,15 +2,7 @@ import { appDb, nowIso, toIso } from "../db";
 import { logAuditEvent } from "../audit";
 import { ApiClientError, ApiConflictError, ApiValidationError } from "../api-errors";
 import { forwardAuthAccess, groups, groupMembers, users, scimGroups, scimGroupMembers, scimRoleMappings } from "../db/schema";
-import { and, eq, inArray, count, sql } from "drizzle-orm";
-import {
-  actorOrganizationId,
-  assertActorReaches,
-  organizationCondition,
-  organizationForNewRow,
-  type OrganizationFilter,
-} from "@/ee/multi-tenancy/scope";
-import { assertMemberInTenant } from "@/ee/multi-tenancy/guard";
+import { and, eq, inArray, count } from "drizzle-orm";
 import { revokeForwardAuthSessionsWithoutAccess } from "./forward-auth";
 import { asc, first } from "@/src/lib/db/ops";
 
@@ -21,8 +13,6 @@ export type Group = {
   members: GroupMember[];
   createdAt: string;
   updatedAt: string;
-  /** The owning organisation (ee/multi-tenancy), or null for the provider level. */
-  organizationId: number | null;
 };
 
 export type GroupMember = {
@@ -35,8 +25,6 @@ export type GroupMember = {
 export type GroupInput = {
   name: string;
   description?: string | null;
-  /** Create only: the organisation (ee/multi-tenancy); see ProxyHostInput.organizationId. */
-  organizationId?: number | null;
 };
 
 const NOT_FOUND = "Group not found";
@@ -50,15 +38,12 @@ function toGroup(row: GroupRow, members: GroupMember[]): Group {
     description: row.description,
     members,
     createdAt: toIso(row.createdAt)!,
-    updatedAt: toIso(row.updatedAt)!,
-    organizationId: row.organizationId ?? null
+    updatedAt: toIso(row.updatedAt)!
   };
 }
 
-/** `organizationId` limits the list to one organisation's groups (see listProxyHosts). */
-export async function listGroups(organizationId?: OrganizationFilter): Promise<Group[]> {
+export async function listGroups(): Promise<Group[]> {
   const allGroups = await appDb.query.groups.findMany({
-    where: organizationCondition(groups.organizationId, organizationId),
     orderBy: (table) => [asc(table.name), asc(table.id)]
   });
 
@@ -93,8 +78,8 @@ export async function listGroups(organizationId?: OrganizationFilter): Promise<G
   return allGroups.map((g) => toGroup(g, membersByGroup.get(g.id) ?? []));
 }
 
-export async function countGroups(organizationId?: OrganizationFilter): Promise<number> {
-  const [row] = await appDb.select({ value: count() }).from(groups).where(organizationCondition(groups.organizationId, organizationId));
+export async function countGroups(): Promise<number> {
+  const [row] = await appDb.select({ value: count() }).from(groups);
   return row?.value ?? 0;
 }
 
@@ -149,15 +134,12 @@ function groupDescription(value: unknown): string | null {
   return description || null;
 }
 
-/**
- * Refuses (409) a name another group of the same organisation (or of the
- * provider level) has. Names are unique per organisation only.
- */
-async function assertNameFree(name: string, organizationId: number | null, exceptId: number | null): Promise<void> {
+/** Refuses (409) a name another group has. */
+async function assertNameFree(name: string, exceptId: number | null): Promise<void> {
   const clash = await first(appDb
     .select({ id: groups.id })
     .from(groups)
-    .where(and(eq(groups.name, name), sql`coalesce(${groups.organizationId}, 0) = ${organizationId ?? 0}`))
+    .where(eq(groups.name, name))
     .limit(1));
   if (clash && clash.id !== exceptId) throw new ApiConflictError("A group with this name already exists");
 }
@@ -165,20 +147,17 @@ async function assertNameFree(name: string, organizationId: number | null, excep
 export async function createGroup(input: GroupInput, actorUserId: number): Promise<Group> {
   const name = groupName(input.name);
   const description = groupDescription(input.description);
-  // Multi-tenancy (ee): an organisation user's groups go to their organisation.
-  const organizationId = await organizationForNewRow(actorUserId, input.organizationId);
   const now = nowIso();
 
   // The name check and the insert in one transaction, so no other group can take the name in between.
   const row = await appDb.transaction(async (tx) => {
-    await assertNameFree(name, organizationId, null);
+    await assertNameFree(name, null);
     return await first(tx
       .insert(groups)
       .values({
         name,
         description,
         createdBy: actorUserId,
-        organizationId,
         createdAt: now,
         updatedAt: now
       })
@@ -208,10 +187,9 @@ export async function updateGroup(
       where: (table, operators) => operators.eq(table.id, id)
     });
     if (!existing) throw new Error(NOT_FOUND);
-    await assertActorReaches(actorUserId, existing.organizationId, NOT_FOUND);
     const name = input.name !== undefined ? groupName(input.name) : existing.name;
     const description = input.description !== undefined ? groupDescription(input.description) : existing.description;
-    if (name !== existing.name) await assertNameFree(name, existing.organizationId ?? null, id);
+    if (name !== existing.name) await assertNameFree(name, id);
 
     await tx
       .update(groups)
@@ -248,7 +226,6 @@ export async function deleteGroup(id: number, actorUserId: number): Promise<void
       where: (table, operators) => operators.eq(table.id, id)
     });
     if (!existing) throw new Error(NOT_FOUND);
-    await assertActorReaches(actorUserId, existing.organizationId, NOT_FOUND);
     const memberIds = (await tx
       .select({ userId: groupMembers.userId })
       .from(groupMembers)
@@ -270,8 +247,7 @@ export async function deleteGroup(id: number, actorUserId: number): Promise<void
     action: "delete",
     entityType: "group",
     entityId: id,
-    summary: `Deleted group ${existing.name}`,
-    organizationId: existing.organizationId ?? null
+    summary: `Deleted group ${existing.name}`
   });
   // Forward-auth sessions the group's grants allowed end on every node (shared state).
   await revokeForwardAuthSessionsWithoutAccess({ userIds: memberIds });
@@ -289,9 +265,6 @@ export async function addGroupMember(
       where: (table, operators) => operators.eq(table.id, groupId)
     });
     if (!group) throw new Error(NOT_FOUND);
-    await assertActorReaches(actorUserId, group.organizationId, NOT_FOUND);
-    // A group only has members of its own organisation.
-    await assertMemberInTenant(tx, group.organizationId ?? null, userId, await actorOrganizationId(actorUserId));
     // Foreign keys are not enforced: a membership of a user id that does not
     // exist yet would make whoever gets that id a member.
     const user = await first(tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).limit(1));
@@ -332,7 +305,6 @@ export async function removeGroupMember(
       where: (table, operators) => operators.eq(table.id, groupId)
     });
     if (!group) throw new Error(NOT_FOUND);
-    await assertActorReaches(actorUserId, group.organizationId, NOT_FOUND);
 
     const member = await tx.query.groupMembers.findFirst({
       where: (table, operators) =>
@@ -360,18 +332,13 @@ export async function removeGroupMember(
   return (await getGroup(groupId))!;
 }
 
-/**
- * The groups user `userId` is a member of, for forward-auth headers: only
- * groups of the user's own organisation (or the provider level's), whatever
- * memberships exist.
- */
+/** The groups user `userId` is a member of, for forward-auth headers. */
 export async function getGroupsForUser(userId: number): Promise<{ id: number; name: string }[]> {
-  const organizationId = await actorOrganizationId(userId);
   const rows = await appDb
     .select({ id: groups.id, name: groups.name })
     .from(groupMembers)
     .innerJoin(groups, eq(groupMembers.groupId, groups.id))
-    .where(and(eq(groupMembers.userId, userId), organizationCondition(groups.organizationId, organizationId)))
+    .where(eq(groupMembers.userId, userId))
     // Membership order, as the forward-auth groups header lists them.
     .orderBy(asc(groupMembers.id));
 

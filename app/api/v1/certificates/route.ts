@@ -3,7 +3,6 @@ import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { listCertificates, createCertificate } from "@/src/lib/models/certificates";
 import { toCertificateApiResponse } from "@/src/lib/certificate-api";
 import { assertCanCreateCertificate, certificateIdsInScope } from "@/src/lib/access-scope";
-import { readOrganizationFilterParam } from "@/ee/multi-tenancy/scope";
 
 const PRIVATE_RESPONSE_INIT = { headers: { "Cache-Control": "no-store" } };
 
@@ -11,8 +10,7 @@ export async function GET(request: NextRequest) {
   try {
     const { access } = await requireApiPermission(request, "certificates:read");
     const inScope = await certificateIdsInScope(access);
-    const organizationId = readOrganizationFilterParam(access, request.nextUrl.searchParams.get("organizationId"));
-    const certs = (await listCertificates(organizationId)).filter((cert) => inScope === null || inScope.has(cert.id));
+    const certs = (await listCertificates()).filter((cert) => inScope === null || inScope.has(cert.id));
     return NextResponse.json(certs.map(toCertificateApiResponse), PRIVATE_RESPONSE_INIT);
   } catch (error) {
     return apiErrorResponse(error);

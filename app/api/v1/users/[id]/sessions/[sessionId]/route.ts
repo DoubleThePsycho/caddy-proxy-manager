@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { ApiClientError } from "@/src/lib/api-errors";
-import { findUserInScope } from "@/src/lib/access-scope";
+import { getUserById } from "@/src/lib/models/user";
 import { signOutSession } from "@/src/lib/models/sessions";
 import { assertCanManageUserId } from "@/ee/custom-roles/service";
 import { routeRowId } from "@/src/lib/row-ids";
@@ -20,7 +20,7 @@ export async function DELETE(
     const { id, sessionId: rawSessionId } = await params;
     const targetId = parseId(id, "User");
     const sessionId = parseId(rawSessionId, "Session");
-    if (!(await findUserInScope(access, targetId))) throw new ApiClientError("User not found", 404);
+    if (!(await getUserById(targetId))) throw new ApiClientError("User not found", 404);
     await assertCanManageUserId(access, targetId);
     if (!(await signOutSession({ actorUserId: userId, userId: targetId }, sessionId))) {
       throw new ApiClientError("Session not found", 404);

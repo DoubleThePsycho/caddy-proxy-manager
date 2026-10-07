@@ -1,7 +1,7 @@
 /**
  * Server-side render of the Fleet page: the pipeline of environments with
- * their revision, instances and drift, the running rollout, what an
- * unlicensed install still offers, and what a read-only role sees.
+ * their revision, instances and drift, the running rollout, and what a
+ * read-only role sees.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -59,7 +59,7 @@ const overview: FleetOverview = {
 };
 
 function render(props: Partial<Parameters<typeof FleetClient>[0]> = {}) {
-  return renderToStaticMarkup(createElement(FleetClient, { overview, now: stamp, configurable: true, editionLabel: 'Enterprise', ...props }));
+  return renderToStaticMarkup(createElement(FleetClient, { overview, now: stamp, ...props }));
 }
 
 /** The page's text: every tag read as a space, spaces collapsed. */
@@ -136,12 +136,10 @@ describe('Fleet page', () => {
     expect(html).not.toContain('Abort rollout');
   });
 
-  it('explains what an unlicensed install can still do', () => {
-    const html = render({ configurable: false });
-    expect(html).toContain('Fleet management needs an active Ingressi Enterprise license or higher');
-    expect(html).toContain('turn promotion-only off, take instances out, abort rollouts and re-sync instances');
-    expect(html).toContain('href="/license"');
-    expect(html).not.toContain('New environment');
+  it('offers a new environment to a role that may write', () => {
+    const html = render();
+    expect(html).toContain('New environment');
+    expect(html).not.toMatch(/license/i);
   });
 
   it('shows a read-only role no controls', () => {
@@ -254,8 +252,5 @@ describe('Fleet page', () => {
     expect(readOnly).not.toContain('Add pull replica');
     expect(readOnly).not.toContain('Rotate');
     expect(readOnly).not.toContain('Revoke</button>');
-
-    const unlicensed = render({ overview: withPull, configurable: false });
-    expect(unlicensed).toContain('Adding pull replicas and issuing credentials needs an active Ingressi Enterprise license or higher');
   });
 });

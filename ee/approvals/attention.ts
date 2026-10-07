@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Attention provider: change requests waiting for approval or for their
- * change window, among those the reader may see. Never checks the license.
+ * change window, among those the reader may see.
  */
 import type { AttentionProvider } from "@/src/lib/attention/types";
 import { listChangeRequests } from "./requests";

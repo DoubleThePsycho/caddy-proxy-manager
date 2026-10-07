@@ -6,20 +6,16 @@
  * provider.
  *
  * - enabled (default true): users who can read analytics may ask, when an AI
- *   provider is configured and the license includes the AI analyst.
+ *   provider is configured.
  * - aiSummaries (default true): the model writes a short summary from the
  *   aggregated result; off, the dashboard writes it and the result never
  *   reaches the model.
  * - shareRequestDetails (default false): client addresses, user agents and
  *   paths reach the model when a question ranks or filters by them;
  *   otherwise they are placeholders.
- *
- * Changing them needs the ai_analyst feature, except turning them off.
  */
 import { getSetting, setSetting } from "@/src/lib/settings";
 import { logAuditEvent } from "@/src/lib/audit";
-import { requireFeature } from "@/ee/licensing/store";
-import { isWindDownOnly } from "@/ee/alerting/gate";
 import { isPlainObject, readBoolean, rejectUnknownKeys, requireObject } from "@/ee/alerting/validation";
 import type { QuestionSettingsView } from "./types";
 
@@ -43,11 +39,10 @@ export async function getQuestionSettings(): Promise<QuestionSettingsView> {
   };
 }
 
-/** Partial update. Needs the ai_analyst feature unless it only turns things off. */
+/** Partial update. */
 export async function saveQuestionSettings(body: unknown, actorUserId: number): Promise<QuestionSettingsView> {
   const record = requireObject(body, "Request body");
   rejectUnknownKeys(record, FIELDS, "the question settings");
-  if (!isWindDownOnly(record, { enabled: false, aiSummaries: false, shareRequestDetails: false })) await requireFeature("ai_analyst");
   const previous = await getQuestionSettings();
   const next: QuestionSettingsView = {
     enabled: readBoolean(record.enabled, "enabled", previous.enabled),

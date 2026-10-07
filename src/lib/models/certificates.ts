@@ -3,8 +3,6 @@ import { logAuditEvent } from "../audit";
 import { applyCaddyConfig } from "../caddy";
 import { certificates, proxyHosts } from "../db/schema";
 import { eq } from "drizzle-orm";
-import { checkCertificateCreate, checkCertificateReach, checkCertificateUpdate } from "@/ee/multi-tenancy/certificates";
-import { organizationCondition, type OrganizationFilter } from "@/ee/multi-tenancy/scope";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "../secret";
 import { ApiValidationError } from "../api-errors";
 import { getDnsProviderSettings } from "../settings";
@@ -28,8 +26,6 @@ export type Certificate = {
   privateKeyPem: string | null;
   createdAt: string;
   updatedAt: string;
-  /** The owning organisation (ee/multi-tenancy), or null for the provider level; always set when read. */
-  organizationId?: number | null;
 };
 
 export type CertificateInput = {
@@ -40,8 +36,6 @@ export type CertificateInput = {
   providerOptions?: Record<string, unknown> | null;
   certificatePem?: string | null;
   privateKeyPem?: string | null;
-  /** Create only: the organisation (ee/multi-tenancy); see ProxyHostInput.organizationId. */
-  organizationId?: number | null;
 };
 
 type CertificateRow = typeof certificates.$inferSelect;
@@ -57,17 +51,14 @@ function parseCertificate(row: CertificateRow): Certificate {
     certificatePem: row.certificatePem,
     privateKeyPem: row.privateKeyPem ? decryptSecret(row.privateKeyPem) : null,
     createdAt: toIso(row.createdAt)!,
-    updatedAt: toIso(row.updatedAt)!,
-    organizationId: row.organizationId ?? null
+    updatedAt: toIso(row.updatedAt)!
   };
 }
 
-/** `organizationId` limits the list to one organisation's certificates (see listProxyHosts). */
-export async function listCertificates(organizationId?: OrganizationFilter): Promise<Certificate[]> {
+export async function listCertificates(): Promise<Certificate[]> {
   const rows = await appDb
     .select()
     .from(certificates)
-    .where(organizationCondition(certificates.organizationId, organizationId))
     .orderBy(desc(certificates.createdAt), desc(certificates.id));
   return rows.map(parseCertificate);
 }
@@ -92,8 +83,6 @@ function validateCertificateInput(input: CertificateInput) {
 
 export async function createCertificate(input: CertificateInput, actorUserId: number) {
   validateCertificateInput(input);
-  // Multi-tenancy (ee): the certificate's organisation; its names must be free in every other one.
-  const organizationId = await checkCertificateCreate(actorUserId, input.organizationId, input);
   const now = nowIso();
   const providerOptions = normalizeCertificateProviderOptions(input.providerOptions);
   const [record] = await appDb
@@ -110,8 +99,7 @@ export async function createCertificate(input: CertificateInput, actorUserId: nu
       privateKeyPem: input.privateKeyPem ? encryptSecret(input.privateKeyPem) : null,
       createdAt: now,
       updatedAt: now,
-      createdBy: actorUserId,
-      organizationId
+      createdBy: actorUserId
     })
     .returning();
 
@@ -135,8 +123,6 @@ export async function updateCertificate(id: number, input: Partial<CertificateIn
   if (!existing) {
     throw new Error("Certificate not found");
   }
-  // An organisation user reaches only their organisation's certificates (404 otherwise).
-  await checkCertificateReach(actorUserId, existing.organizationId ?? null);
 
   const merged: CertificateInput = {
     name: input.name ?? existing.name,
@@ -149,7 +135,6 @@ export async function updateCertificate(id: number, input: Partial<CertificateIn
   };
 
   validateCertificateInput(merged);
-  await checkCertificateUpdate(actorUserId, id, existing.organizationId ?? null, merged);
 
   const now = nowIso();
   const providerOptions = normalizeCertificateProviderOptions(merged.providerOptions);
@@ -203,7 +188,6 @@ export async function deleteCertificate(id: number, actorUserId: number) {
   if (!existing) {
     throw new Error("Certificate not found");
   }
-  await checkCertificateReach(actorUserId, existing.organizationId ?? null);
 
   const users = await appDb
     .select({ name: proxyHosts.name, domains: proxyHosts.domains })
@@ -223,7 +207,7 @@ export async function deleteCertificate(id: number, actorUserId: number) {
   const now = nowIso();
   const detached = await appDb.transaction(async (tx) => {
     const hosts = await tx
-      .select({ id: proxyHosts.id, name: proxyHosts.name, organizationId: proxyHosts.organizationId })
+      .select({ id: proxyHosts.id, name: proxyHosts.name })
       .from(proxyHosts)
       .where(eq(proxyHosts.certificateId, id));
     if (hosts.length > 0) {
@@ -242,8 +226,7 @@ export async function deleteCertificate(id: number, actorUserId: number) {
       detached.length > 0
         ? `Deleted certificate ${existing.name}; ${detached.length === 1 ? "1 proxy host uses" : `${detached.length} proxy hosts use`} automatic TLS instead`
         : `Deleted certificate ${existing.name}`,
-    data: detached.length > 0 ? { proxyHosts: detached.map((host) => ({ id: host.id, name: host.name })) } : undefined,
-    organizationId: existing.organizationId ?? null
+    data: detached.length > 0 ? { proxyHosts: detached.map((host) => ({ id: host.id, name: host.name })) } : undefined
   });
   for (const host of detached) {
     await logAuditEvent({
@@ -252,8 +235,7 @@ export async function deleteCertificate(id: number, actorUserId: number) {
       entityType: "proxy_host",
       entityId: host.id,
       summary: `Proxy host ${host.name} uses automatic TLS: its certificate ${existing.name} was deleted`,
-      data: { certificateId: { before: id, after: null } },
-      organizationId: host.organizationId ?? null
+      data: { certificateId: { before: id, after: null } }
     });
   }
   await applyCaddyConfig();

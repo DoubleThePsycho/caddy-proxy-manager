@@ -63,7 +63,7 @@ export type SavedViewsApi = {
   remove: (id: number) => Promise<void>;
 };
 
-/** The caller's saved views and the shared ones of their organisation. */
+/** The caller's saved views and the shared ones. */
 export function useSavedViews(enabled: boolean): SavedViewsApi {
   const [views, setViews] = useState<AnalyticsSavedView[]>([]);
   const [loading, setLoading] = useState(enabled);
@@ -262,7 +262,7 @@ export function SaveViewDialog({
             <Switch checked={shared} onCheckedChange={setShared} className="mt-0.5" />
             <span className="flex flex-col gap-0.5">
               <span className="font-medium">Share with other users</span>
-              <span className="text-muted-foreground">Everyone in your organisation who can read analytics can open it. Only you can change it.</span>
+              <span className="text-muted-foreground">Everyone who can read analytics can open it. Only you can change it.</span>
             </span>
           </label>
           {error && (

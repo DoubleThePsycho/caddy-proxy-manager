@@ -1,6 +1,6 @@
 # Forward auth portal
 
-Ingressi includes a built-in forward auth identity provider — no external IdP (Authentik, Authelia, etc.) required. The portal signs people in with a password or OAuth, and a host's excluded paths bypass authentication.
+Ingressi can put a sign-in page in front of a proxy host: visitors sign in with their Ingressi account (a password or OAuth) before the request reaches the app, and a host's excluded paths skip it. Someone who signed in to the dashboard through an identity provider (OIDC, SAML or an LDAP directory) is signed in without being asked again, so single sign-on across the apps they are granted comes from that provider. A dashboard session from a password or a passkey is not reused: the visitor signs in at the portal. The portal passes the user's identity to the app in [identity headers](#identity-headers). It is off on every host until you turn it on for that host. An external forward-auth server such as Authentik or Authelia can be used instead.
 
 ## How it works
 
@@ -15,16 +15,16 @@ Create groups on the **Groups** page to organise users ([users-and-groups.md](us
 
 ## Per-host access control
 
-Each forward-auth-protected host has its own access list of allowed users and/or groups. Access is separate from the user's role — even admins must be explicitly granted access.
+Each forward-auth-protected host has its own access list of allowed users and/or groups. Access is separate from the user's role: administrators need to be granted it too.
 
 ## Identity headers
 
 On each request it lets through, the portal passes the user to the upstream in these headers, and client-sent copies of them are removed:
 
-- `X-Ingressi-User-Id` — the account's id. It does not change, so it is the one to key users on.
-- `X-Ingressi-User` — the sign-in username, or the email address for an account without one. Ingressi keeps it from belonging to two accounts, but an administrator can change it.
-- `X-Ingressi-Email` — the email address.
-- `X-Ingressi-Groups` — the user's group names, comma-separated.
+- `X-Ingressi-User-Id`: the account's id. It does not change, so it is the one to key users on.
+- `X-Ingressi-User`: the sign-in username, or the email address for an account without one. Ingressi keeps it from belonging to two accounts, but an administrator can change it.
+- `X-Ingressi-Email`: the email address.
+- `X-Ingressi-Groups`: the user's group names, comma-separated.
 
 The same values are also sent as `X-CPM-User-Id`, `X-CPM-User`, `X-CPM-Email` and `X-CPM-Groups`, the names from before the rename. They are deprecated.
 

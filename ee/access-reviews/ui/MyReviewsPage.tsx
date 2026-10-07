@@ -10,7 +10,7 @@ export const metadata = { title: "My reviews" };
 /**
  * The access reviews the signed-in user was named a reviewer of, with the
  * evidence for each item. Being named is the authorization (no permission
- * needed); every other user sees an empty page. Never checks the license.
+ * needed); every other user sees an empty page.
  */
 export default async function MyReviewsPage() {
   const session = await requireUser();

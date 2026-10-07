@@ -10,10 +10,8 @@ export const MONETIZATION_OPENAPI_TAG = {
   name: TAG,
   description:
     "Per-request billing of the consumers of APIs behind monetized proxy hosts, prepaid (topped up) or postpaid (a saved card " +
-    "charged afterwards, up to a hard cap), through your Stripe account, and x402 pay-per-request (Enterprise edition). Amounts " +
-    "are integer micro-units of the install's currency (1 USD = 1,000,000). Creating and changing plans, consumers, keys, " +
-    "balances, host monetization, Stripe, x402 and replica settings need the api_monetization feature; deleting, disabling and " +
-    "revoking never do, and nothing at request time (gate, payments, webhooks, consumer API, billing) checks the license.",
+    "charged afterwards, up to a hard cap), through your Stripe account, and x402 pay-per-request. Amounts " +
+    "are integer micro-units of the install's currency (1 USD = 1,000,000).",
 };
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
@@ -35,14 +33,14 @@ export const MONETIZATION_OPENAPI_PATHS = {
     get: {
       tags: [TAG],
       summary: "List plans",
-      description: "Permission monetization:read. Available without a license.",
+      description: "Permission monetization:read.",
       operationId: "listMonetizationPlans",
       responses: { "200": { description: "Plans", content: json({ type: "array", items: ref("MonetizationPlan") }) }, ...errors("401", "403") },
     },
     post: {
       tags: [TAG],
       summary: "Create a plan",
-      description: "Permission monetization:write; needs the api_monetization feature (403 otherwise). 409 for a duplicate name.",
+      description: "Permission monetization:write. 409 for a duplicate name.",
       operationId: "createMonetizationPlan",
       requestBody: { required: true, content: json(ref("MonetizationPlanInput")) },
       responses: { "201": { description: "Created", content: json(ref("MonetizationPlan")) }, ...errors("400", "401", "403", "409") },
@@ -59,7 +57,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
     put: {
       tags: [TAG],
       summary: "Update a plan",
-      description: "Fields left out keep their values. Needs the api_monetization feature. Takes effect on the next request.",
+      description: "Fields left out keep their values. Takes effect on the next request.",
       operationId: "updateMonetizationPlan",
       parameters: [idParam],
       requestBody: { required: true, content: json(ref("MonetizationPlanUpdate")) },
@@ -68,7 +66,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Delete a plan",
-      description: "Works without a license. 409 while consumers are on the plan or a monetized host lists it.",
+      description: "409 while consumers are on the plan or a monetized host lists it.",
       operationId: "deleteMonetizationPlan",
       parameters: [idParam],
       responses: { "204": { description: "Deleted" }, ...errors("401", "403", "404", "409") },
@@ -85,7 +83,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
     post: {
       tags: [TAG],
       summary: "Create a consumer",
-      description: "Needs the api_monetization feature. The balance starts at 0: top it up through Stripe or adjust it.",
+      description: "The balance starts at 0: top it up through Stripe or adjust it.",
       operationId: "createMonetizationConsumer",
       requestBody: { required: true, content: json(ref("MonetizationConsumerInput")) },
       responses: { "201": { description: "Created", content: json(ref("MonetizationConsumerDetail")) }, ...errors("400", "401", "403") },
@@ -103,8 +101,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Update a consumer",
       description:
-        "Fields left out keep their values. Needs the api_monetization feature, except a body that only disables the consumer " +
-        "({\"status\": \"disabled\"}), which works without a license. A disabled consumer's requests get 403 at once.",
+        "Fields left out keep their values. A disabled consumer's requests get 403 at once.",
       operationId: "updateMonetizationConsumer",
       parameters: [idParam],
       requestBody: { required: true, content: json(ref("MonetizationConsumerUpdate")) },
@@ -113,7 +110,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Delete a consumer",
-      description: "Deletes the consumer and its keys after writing its pending usage; its ledger entries are kept. Works without a license.",
+      description: "Deletes the consumer and its keys after writing its pending usage; its ledger entries are kept.",
       operationId: "deleteMonetizationConsumer",
       parameters: [idParam],
       responses: { "204": { description: "Deleted" }, ...errors("401", "403", "404") },
@@ -132,8 +129,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Create an API key",
       description:
-        "Returns the key once (rawKey); only its SHA-256 and public prefix are stored. At most 20 active keys per consumer (409). " +
-        "Needs the api_monetization feature.",
+        "Returns the key once (rawKey); only its SHA-256 and public prefix are stored. At most 20 active keys per consumer (409).",
       operationId: "createMonetizationConsumerKey",
       parameters: [idParam],
       requestBody: { required: false, content: json(ref("MonetizationConsumerKeyInput")) },
@@ -144,7 +140,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Revoke an API key",
-      description: "The key stops working at once. Works without a license; revoking a revoked key is a no-op.",
+      description: "The key stops working at once. Revoking a revoked key is a no-op.",
       operationId: "revokeMonetizationConsumerKey",
       parameters: [idParam, { name: "keyId", in: "path", required: true, schema: { type: "integer" } }],
       responses: { "204": { description: "Revoked" }, ...errors("401", "403", "404") },
@@ -156,7 +152,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
       summary: "Adjust a consumer's balance",
       description:
         "Adds amountMicros (negative to take money off) with a reason, as an adjustment ledger entry. A reference makes the call safe " +
-        "to retry: the same reference again answers 409. Needs the api_monetization feature.",
+        "to retry: the same reference again answers 409.",
       operationId: "adjustMonetizationConsumerBalance",
       parameters: [idParam],
       requestBody: { required: true, content: json(ref("MonetizationAdjustmentInput")) },
@@ -171,7 +167,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
         "Charges the saved card off-session for the open amount (less charges on their way), rounded down to the currency's " +
         "smallest unit. status: succeeded, pending (Stripe has not answered; reconciled later), failed (the consumer is suspended " +
         "until it pays) or skipped (with the reason: not postpaid, no card, suspended, nothing to charge, below Stripe's minimum). " +
-        "Collects what is owed: works without a license. 502 when Stripe cannot be reached.",
+        "502 when Stripe cannot be reached.",
       operationId: "chargeMonetizationConsumer",
       parameters: [idParam],
       responses: { "200": { description: "Outcome", content: json(ref("MonetizationChargeOutcome")) }, ...errors("401", "403", "404") },
@@ -182,8 +178,8 @@ export const MONETIZATION_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Resume a suspended postpaid consumer",
       description:
-        "Ends a suspension (a failed charge, or a disputed payment, which only an administrator ends). Needs the api_monetization " +
-        "feature. A suspension for a failed charge also ends by itself when the open amount is paid.",
+        "Ends a suspension (a failed charge, or a disputed payment, which only an administrator ends). A suspension for a failed " +
+        "charge also ends by itself when the open amount is paid.",
       operationId: "resumeMonetizationConsumer",
       parameters: [idParam],
       responses: { "200": { description: "Consumer", content: json(ref("MonetizationConsumerDetail")) }, ...errors("401", "403", "404") },
@@ -193,7 +189,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Remove a postpaid consumer's saved card",
-      description: "Forgets the card and detaches it in Stripe; the consumer's requests get 402 until it saves a new one. Works without a license.",
+      description: "Forgets the card and detaches it in Stripe; the consumer's requests get 402 until it saves a new one.",
       operationId: "removeMonetizationConsumerCard",
       parameters: [idParam],
       responses: { "204": { description: "Removed" }, ...errors("401", "403", "404") },
@@ -224,8 +220,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Change the monetization options",
       description:
-        "Fields left out keep their values. Needs the api_monetization feature, except turning replica serving off. Changing replicas " +
-        "also needs instances:write (it decides what replicas receive and where they send their allowance credential). replicas.mode " +
+        "Fields left out keep their values. Changing replicas also needs instances:write (it decides what replicas receive and where they send their allowance credential). replicas.mode " +
         "\"shared\" needs high availability shared state on this instance, \"allowance\" an https gate URL (gateUrl, or BASE_URL; " +
         "http only with INSTANCE_SYNC_ALLOW_HTTP=true): 400 otherwise. Changing the mode sends the configuration to the replicas again.",
       operationId: "saveMonetizationOptions",
@@ -250,7 +245,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
         "Stripe crypto deposit address (POST /v1/crypto/deposit_addresses, network base) when there is none for the current key yet; it needs a live Stripe key (409 with a test key). 409 when Stripe " +
         "has not enabled Stablecoins and Crypto on the account (request it in the Stripe Dashboard; outside the US, email " +
         "machine-payments@stripe.com), when Stripe is not set up or cannot be reached, or refuses. A cdpKeySecret that cannot sign " +
-        "the facilitator's tokens is refused (400); nothing is sent to the facilitator. Needs the api_monetization feature.",
+        "the facilitator's tokens is refused (400); nothing is sent to the facilitator.",
       operationId: "saveMonetizationX402Settings",
       requestBody: { required: true, content: json(ref("MonetizationX402SettingsInput")) },
       responses: { "200": { description: "Saved", content: json(ref("MonetizationX402Settings")) }, ...errors("400", "401", "403", "409") },
@@ -258,7 +253,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Turn x402 off",
-      description: "Turns x402 off and removes the CDP key secret (the deposit address is kept). Works without a license.",
+      description: "Turns x402 off and removes the CDP key secret (the deposit address is kept).",
       operationId: "removeMonetizationX402Settings",
       responses: { "200": { description: "Turned off", content: json(ref("MonetizationX402Settings")) }, ...errors("401", "403") },
     },
@@ -284,7 +279,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
       summary: "Issue a new portal link",
       description:
         "Creates the consumer's self-service portal link (balance, recent usage, top-ups); the previous link stops working. The link " +
-        "is in this response only (its token is stored hashed). Needs the api_monetization feature.",
+        "is in this response only (its token is stored hashed).",
       operationId: "rotateMonetizationPortalLink",
       parameters: [idParam],
       responses: { "201": { description: "Issued", content: json(ref("MonetizationPortalLink")) }, ...errors("401", "403", "404") },
@@ -292,7 +287,6 @@ export const MONETIZATION_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Turn the portal link off",
-      description: "Works without a license.",
       operationId: "revokeMonetizationPortalLink",
       parameters: [idParam],
       responses: { "204": { description: "Turned off" }, ...errors("401", "403", "404") },
@@ -319,10 +313,9 @@ export const MONETIZATION_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Turn monetization on, change or turn it off",
       description:
-        "Turning it on or changing it needs the api_monetization feature (403), an instance that is not a sync replica and not " +
+        "Turning it on or changing it needs an instance that is not a sync replica and not " +
         "one of several replicas on one PostgreSQL database without shared state (409), and a host without forward auth (built-in, " +
-        "Authentik or generic) or a basic-auth access list (400). {\"enabled\": false} works without a license. Re-applies the " +
-        "Caddy configuration.",
+        "Authentik or generic) or a basic-auth access list (400). Re-applies the Caddy configuration.",
       operationId: "setMonetizationHost",
       parameters: [idParam],
       requestBody: { required: true, content: json(ref("MonetizationHostInput")) },
@@ -331,7 +324,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Turn monetization off and forget the host's settings",
-      description: "Works without a license. Re-applies the Caddy configuration.",
+      description: "Re-applies the Caddy configuration.",
       operationId: "deleteMonetizationHost",
       parameters: [idParam],
       responses: { "204": { description: "Removed" }, ...errors("401", "403", "404") },
@@ -351,7 +344,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
       description:
         "Omitted or empty secrets keep the stored ones; secrets are stored encrypted. The currency cannot change while a consumer " +
         "has a non-zero balance (409). A secret key other than the stored one turns x402 off and clears its deposit address (it " +
-        "belonged to the old key's account and mode); the answer then has x402TurnedOff. Needs the api_monetization feature.",
+        "belonged to the old key's account and mode); the answer then has x402TurnedOff.",
       operationId: "saveMonetizationStripeSettings",
       requestBody: { required: true, content: json(ref("MonetizationStripeSettingsInput")) },
       responses: { "200": { description: "Saved", content: json(ref("MonetizationStripeSettings")) }, ...errors("400", "401", "403", "409") },
@@ -360,8 +353,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Remove the Stripe keys",
       description:
-        "Top-ups stop; balances, metering and the currency stay. x402 is turned off and its deposit address cleared (x402TurnedOff). " +
-        "Works without a license.",
+        "Top-ups stop; balances, metering and the currency stay. x402 is turned off and its deposit address cleared (x402TurnedOff).",
       operationId: "removeMonetizationStripeSettings",
       responses: { "200": { description: "Removed", content: json(ref("MonetizationStripeSettings")) }, ...errors("401", "403") },
     },
@@ -371,7 +363,7 @@ export const MONETIZATION_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Get the overview",
       description:
-        "Permission monetization:read. Available without a license. Computed from the ledger: this and last calendar month's totals " +
+        "Permission monetization:read. Computed from the ledger: this and last calendar month's totals " +
         "(UTC), the last 30 UTC days (today up to now), this month's top consumers by metered requests and each consumer's usage this " +
         "month, plus the balances held (including usage the gate counted but has not written to the ledger yet). Amounts are positive " +
         "micro-units: what was charged, not ledger signs.",
@@ -708,7 +700,7 @@ export const MONETIZATION_OPENAPI_SCHEMAS = {
       x402: {
         type: "object",
         additionalProperties: false,
-        description: "x402 on the host. Turning it off alone ({\"x402\": {\"enabled\": false}}) works without a license.",
+        description: "x402 on the host.",
         properties: {
           enabled: { type: "boolean" },
           priceCents: { type: ["integer", "null"], minimum: 1, maximum: 100000, description: "This host's price per request in US cents (paid in USDC); null for the x402 settings' price" },

@@ -24,7 +24,7 @@
  *   WAF in blocking mode. The product cannot tell which hosts are reachable
  *   from the internet, so every enabled proxy host counts.
  *
- * Read-only; never checks the license (it reads only this installation).
+ * Read-only; it reads only this installation.
  */
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { X509Certificate } from "node:crypto";

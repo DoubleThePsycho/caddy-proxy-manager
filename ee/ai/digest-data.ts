@@ -9,9 +9,6 @@
 import { and, count, eq, gte, isNotNull, lte, notInArray } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";
 import { alertEvents, auditEvents, proxyHosts, users } from "@/src/lib/db/schema";
-import { getLicenseState } from "@/ee/licensing/store";
-import { EDITION_LABELS } from "@/ee/licensing/features";
-import type { LicenseStatus } from "@/ee/licensing/license";
 import { evaluateCertExpiring } from "@/ee/alerting/evaluators";
 import { openAsnLookup, type AsnLookup } from "./asn";
 import {
@@ -113,7 +110,6 @@ export type DigestFacts = {
   };
   configChanges: { total: number; recent: { at: string; actor: string; summary: string }[] };
   alerts: { fired: number; resolved: number; recent: { at: string; severity: string; title: string }[] };
-  license: { status: LicenseStatus; edition: string | null; expiresAt: string | null; trial: boolean };
   notes: string[];
 };
 
@@ -440,16 +436,6 @@ async function collectAlerts(from: Date, to: Date): Promise<DigestFacts["alerts"
   };
 }
 
-async function collectLicense(now: Date): Promise<DigestFacts["license"]> {
-  const state = await getLicenseState(now);
-  return {
-    status: state.status,
-    edition: state.license ? EDITION_LABELS[state.license.edition] : null,
-    expiresAt: state.license?.exp ?? null,
-    trial: state.license?.trial === true,
-  };
-}
-
 /** Collects every section of the digest for the 24 hours up to `now`. */
 export async function collectDigestFacts(
   now: Date = new Date(),
@@ -479,11 +465,10 @@ export async function collectDigestFacts(
     }
   }
 
-  const [certificates, configChanges, alerts, license] = await Promise.all([
+  const [certificates, configChanges, alerts] = await Promise.all([
     collectCertificates(now),
     collectConfigChanges(from, to),
     collectAlerts(from, to),
-    collectLicense(now),
   ]);
 
   return {
@@ -493,7 +478,6 @@ export async function collectDigestFacts(
     certificates,
     configChanges,
     alerts,
-    license,
     notes,
   };
 }

@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     const { access } = await requireApiPermission(request, "analytics:read");
     const params = analyticsParams(request.nextUrl.searchParams);
-    // Only proxy hosts the caller's role and organisation reach (tag scope included).
+    // Only proxy hosts the caller's role reaches (tag scope included).
     return NextResponse.json(await hostSummariesFor(access, resolveRange(params), parseIdList(params.ids, "ids")));
   } catch (error) {
     return apiErrorResponse(error);

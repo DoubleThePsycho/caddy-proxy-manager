@@ -5,7 +5,7 @@
  * the limits on every non-administrator (raw Caddy JSON, the admin API port,
  * references the caller cannot read).
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
@@ -47,8 +47,6 @@ import { deleteCertificateAction } from '@/app/(dashboard)/certificates/actions'
 import { createUserAction, deleteUserAction, updateUserRoleAction, updateUserStatusAction } from '@/app/(dashboard)/users/actions';
 import { deleteRoleAction, saveRoleAction } from '@/ee/custom-roles/ui/actions';
 import UsersPage from '@/app/(dashboard)/users/page';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
-import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
 import { first } from '@/src/lib/db/ops';
 
 const ADMIN = 1;
@@ -283,32 +281,25 @@ describe('dashboard pages and actions', () => {
   });
 });
 
-afterAll(() => setTrustedLicenseKeysForTests(null));
-
 describe('role management from the dashboard', () => {
   const MANAGER = 7;
   const MEMBER = 8;
 
   beforeEach(async () => {
-    setTrustedLicenseKeysForTests(licenseSigner.keys);
     await insertRole(ctx.db, 3, ['users:read', 'users:write', 'proxy_hosts:read'], [], 'Managers');
     await insertUser(ctx.db, MANAGER, 'viewer', 3);
     await insertUser(ctx.db, MEMBER, 'user');
   });
 
-  it('assigns a custom role with the license, takes it away without one', async () => {
+  it('assigns a custom role and takes it away', async () => {
     ctx.sessionUserId = ADMIN;
-    expect(await updateUserRoleAction(MEMBER, 'custom:2')).toMatchObject({ ok: false, error: expect.stringMatching(/Custom roles needs/) });
-    await installLicense(ctx.db, 'business');
     expect(await updateUserRoleAction(MEMBER, 'custom:2')).toEqual({ ok: true });
     expect(await first(ctx.db.select().from(schema.users).where(eq(schema.users.id, MEMBER)).limit(1))).toMatchObject({ role: 'viewer', customRoleId: 2 });
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
     expect(await updateUserRoleAction(MEMBER, 'user')).toEqual({ ok: true });
     expect(await updateUserRoleAction(MEMBER, 'custom:abc')).toEqual({ ok: false, error: 'Invalid role' });
   });
 
   it('keeps a manager to the roles and users they cover', async () => {
-    await installLicense(ctx.db, 'business');
     ctx.sessionUserId = MANAGER;
     expect(await updateUserRoleAction(MEMBER, 'admin')).toMatchObject({ ok: false });
     expect(await updateUserRoleAction(MEMBER, 'custom:1')).toMatchObject({ ok: false, error: expect.stringMatching(/only grant/) });
@@ -325,23 +316,19 @@ describe('role management from the dashboard', () => {
     expect(await first(ctx.db.select().from(schema.users).where(eq(schema.users.id, ADMIN)).limit(1))).toMatchObject({ role: 'admin', status: 'active' });
   });
 
-  it('saves roles with the license and deletes them without one', async () => {
+  it('saves and deletes roles', async () => {
     ctx.sessionUserId = ADMIN;
-    expect(await saveRoleAction(null, { name: 'Auditors', permissions: ['audit_log:read'] })).toMatchObject({ ok: false });
-    await installLicense(ctx.db, 'business');
     expect(await saveRoleAction(null, { name: 'Auditors', permissions: ['audit_log:read'] })).toEqual({ ok: true });
     const role = (await first(ctx.db.select().from(schema.customRoles).where(eq(schema.customRoles.name, 'Auditors')).limit(1)))!;
     expect(await saveRoleAction(role.id, { description: 'Read the log' })).toEqual({ ok: true });
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
     expect(await deleteRoleAction(role.id)).toEqual({ ok: true });
     expect(await first(ctx.db.select().from(schema.customRoles).where(eq(schema.customRoles.id, role.id)).limit(1))).toBeUndefined();
   });
 
   it('gives the Users page the roles and the picker', async () => {
-    await installLicense(ctx.db, 'business');
     ctx.sessionUserId = MANAGER;
-    const page = await UsersPage() as { props: { customRoles: Array<{ name: string }>; canWrite: boolean; canAssignAdmin: boolean; mfaPolicy: unknown; customRolesLicensed: boolean } };
+    const page = await UsersPage() as { props: { customRoles: Array<{ name: string }>; canWrite: boolean; canAssignAdmin: boolean; mfaPolicy: unknown } };
     expect(page.props.customRoles.map((role) => role.name).sort()).toEqual(['Managers', 'Operators', 'Team A']);
-    expect(page.props).toMatchObject({ canWrite: true, canAssignAdmin: false, mfaPolicy: null, customRolesLicensed: true });
+    expect(page.props).toMatchObject({ canWrite: true, canAssignAdmin: false, mfaPolicy: null });
   });
 });

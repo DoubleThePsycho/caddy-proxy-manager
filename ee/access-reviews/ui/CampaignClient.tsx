@@ -118,7 +118,7 @@ export default function CampaignClient({
     <div className="flex w-full min-w-0 flex-col gap-5">
       <PageHeader
         className="mb-0"
-        breadcrumb={["Identity", { label: "Access reviews", href: "/access-reviews" }, campaign.name]}
+        breadcrumb={["Users and sign-in", { label: "Access reviews", href: "/access-reviews" }, campaign.name]}
         title={
           <>
             {campaign.name}

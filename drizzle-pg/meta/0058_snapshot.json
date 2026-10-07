@@ -1,5 +1,5 @@
 {
-  "id": "b74d9fd2-8ea8-4b8a-ae9a-f669f5b53d12",
+  "id": "a15131c3-700c-4975-badc-d16607426433",
   "prevId": "6e04e192-1ecf-4c3d-af42-be894ddc1700",
   "version": "7",
   "dialect": "postgresql",
@@ -1062,6 +1062,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "silenced": {
+          "name": "silenced",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1319,6 +1325,94 @@
         }
       },
       "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.alert_silences": {
+      "name": "alert_silences",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "byDefault",
+            "name": "alert_silences_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "2147483647",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "ruleId": {
+          "name": "ruleId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subjectKey": {
+          "name": "subjectKey",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "until": {
+          "name": "until",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdBy": {
+          "name": "createdBy",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "alert_silences_rule_idx": {
+          "name": "alert_silences_rule_idx",
+          "columns": [
+            {
+              "expression": "ruleId",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subjectKey",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -9466,27 +9560,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'en-US'"
-        },
-        "proxyHostsSort": {
-          "name": "proxyHostsSort",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'default'"
-        },
-        "l4ProxyHostsSort": {
-          "name": "l4ProxyHostsSort",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'default'"
-        },
-        "clientCertificatesSort": {
-          "name": "clientCertificatesSort",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'default'"
         },
         "updatedAt": {
           "name": "updatedAt",

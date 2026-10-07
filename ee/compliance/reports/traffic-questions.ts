@@ -15,9 +15,8 @@ import { proxyHosts } from "@/src/lib/db/schema";
 import { parseStoredTags } from "@/src/lib/host-tags";
 import { getRetentionDays } from "@/src/lib/clickhouse/client";
 import { parseDomains } from "@/src/lib/analytics/scope";
-import { seenHosts } from "@/ee/multi-tenancy/analytics";
 import { computedSummary, describeQuery, formatPeriod } from "@/ee/ai/questions/describe";
-import { runQuestionQuery, type QuestionScope } from "@/ee/ai/questions/run";
+import { runQuestionQuery, seenHosts, type QuestionScope } from "@/ee/ai/questions/run";
 import { parseQuestionQuery } from "@/ee/ai/questions/schema";
 import { QUESTION_DIMENSION_LABELS, QUESTION_METRIC_LABELS, type QuestionDimension, type QuestionQuery, type QuestionResult } from "@/ee/ai/questions/types";
 import { clean, columns, finding, section, summaryItem, type ReportBuilder } from "./shared";
@@ -32,7 +31,6 @@ async function reportScope(): Promise<QuestionScope> {
     .from(proxyHosts))
     .map((row) => ({ id: row.id, domains: parseDomains(row.domains), tags: parseStoredTags(row.tags) }));
   return {
-    hostScope: null,
     taggableHosts: hosts,
     allHosts: hosts.map(({ id, domains }) => ({ id, domains })),
     seenHosts,

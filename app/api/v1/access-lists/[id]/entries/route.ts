@@ -12,7 +12,6 @@ export async function POST(
     const { userId } = await requireApiPermission(request, "access_lists:write");
     const { id } = await params;
     const body = await readJsonBody(request);
-    // The model answers 404 for a list of another organisation (ee/multi-tenancy).
     const list = await addAccessListEntry(routeRowId(id), body as { username: string; password: string }, userId);
     return NextResponse.json(list, { status: 201 });
   } catch (error) {

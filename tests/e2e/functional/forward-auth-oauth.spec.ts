@@ -378,6 +378,28 @@ test.describe.serial('Forward Auth with OAuth (Dex)', () => {
     expect(res.status()).toBe(200);
   });
 
+  test('a dashboard password session is not reused: the admin signs in at the portal', async ({ page }) => {
+    // The admin's storage state is a password sign-in. Only a session an identity
+    // provider created signs a visitor in to the app without asking again.
+    let sessionLoginCalls = 0;
+    await page.route('**/api/forward-auth/session-login', async (route) => {
+      sessionLoginCalls += 1;
+      await route.continue();
+    });
+    await page.goto(`${BASE_URL}/portal?rd=http://${DOMAIN}/`);
+    await expect(page.getByLabel('Username')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByLabel('Password')).toBeVisible();
+    expect(sessionLoginCalls).toBe(0);
+
+    // Asked directly, the route refuses the password session.
+    const res = await page.request.post(`${BASE_URL}/api/forward-auth/session-login`, {
+      headers: { origin: BASE_URL, 'content-type': 'application/json' },
+      data: { rid: 'x'.repeat(32) },
+    });
+    expect(res.status()).toBe(401);
+    expect(await res.json()).toEqual({ error: 'Sign in to continue.' });
+  });
+
   test('admin can log in via credential form on portal', async ({ page }) => {
     const ctx = await freshContext(page);
     const p = await ctx.newPage();

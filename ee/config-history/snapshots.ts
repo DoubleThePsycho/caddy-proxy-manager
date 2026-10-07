@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * Configuration snapshots: storage, retention and automatic recording.
- *
- * Nothing here checks the license: recording keeps running once history is
- * enabled, whatever happens to the key (see ee/README.md). The operations an
- * administrator starts are gated in service.ts.
+ * Configuration snapshots: storage, retention and automatic recording. The
+ * operations an administrator starts are in service.ts.
  */
 import { count, eq, lt } from "drizzle-orm";
 import { appDb, nowIso } from "@/src/lib/db";

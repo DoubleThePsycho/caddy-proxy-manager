@@ -29,7 +29,7 @@
  * provider sent through SCIM and through sign-in. An account an
  * administrator handed to SCIM ("adopted") is linkable the same way; handing
  * it to SCIM is the administrator's explicit permission. Reads only;
- * synchronous; never checks the license.
+ * synchronous.
  */
 import { and, eq, isNull } from "drizzle-orm";
 import { appDb, nowIso } from "@/src/lib/db";

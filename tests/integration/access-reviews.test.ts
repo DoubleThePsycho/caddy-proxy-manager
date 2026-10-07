@@ -1,10 +1,7 @@
 /**
  * Access reviews: campaigns, reviewers' decisions, revocations through the
- * model functions, records, schedules, overdue alerts and the license gate.
+ * model functions, records, schedules and overdue alerts.
  *
- *  - starting a campaign or setting up a schedule needs "access_reviews";
- *    completing, cancelling, deleting, disabling schedules and reviewers'
- *    decisions never do;
  *  - a campaign snapshots every access (account, role, groups, API tokens)
  *    of the active users in scope;
  *  - reviewers need no permission, only to be named; a reviewer never
@@ -13,12 +10,11 @@
  *    and records what happened; the last confirmation completes the campaign;
  *  - the record downloads as CSV (formula-safe) or JSON.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import { idParams, insertApiToken, insertLocalUser, now } from '../helpers/scim';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -32,7 +28,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 
 import { requireApiAdmin } from '../../src/lib/api-auth';
 import { logAuditEvent } from '../../src/lib/audit';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { isAdminLevel, PERMISSION_AREAS } from '../../src/lib/permissions';
 import { addMonths, runDueSchedules } from '../../ee/access-reviews/schedules';
 import { pendingReviewSummary } from '../../ee/access-reviews/decisions';
@@ -50,7 +45,6 @@ import * as assignmentRoute from '../../app/api/v1/access-review-assignments/[id
 import * as confirmRoute from '../../app/api/v1/access-review-assignments/confirm/route';
 import { first as dbFirst } from '@/src/lib/db/ops';
 
-const LICENSE_ERROR = 'Access reviews needs an active Ingressi Enterprise license or higher';
 const ADMIN_ID = 1;
 
 type Fixture = {
@@ -70,10 +64,6 @@ function req(method: string, path: string, payload?: unknown, bearer?: string): 
 
 function dueIn(days: number): string {
   return new Date(Date.now() + days * 86_400_000).toISOString();
-}
-
-async function removeLicense() {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
 }
 
 async function start(payload: Record<string, unknown> = {}) {
@@ -106,8 +96,6 @@ async function campaignDetail(id: number) {
 beforeEach(async () => {
   ctx.db = createTestDb();
   vi.clearAllMocks();
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.db, 'enterprise');
   await insertLocalUser(ctx.db, { id: ADMIN_ID, email: 'admin@localhost', role: 'admin' });
   vi.mocked(requireApiAdmin).mockResolvedValue({ userId: ADMIN_ID, role: 'admin', authMethod: 'bearer' });
 
@@ -128,42 +116,27 @@ beforeEach(async () => {
   };
 });
 
-afterAll(() => setTrustedLicenseKeysForTests(null));
-
-describe('license gate', () => {
-  it('refuses starting and scheduling without a license', async () => {
-    await removeLicense();
-    const started = await start();
-    expect(started.response.status).toBe(403);
-    expect(started.json.error).toBe(LICENSE_ERROR);
-    const scheduled = await schedulesRoute.POST(req('POST', '/x', { name: 'Quarterly', reviewerIds: [fx.reviewerA, fx.reviewerB] }));
-    expect(scheduled.status).toBe(403);
-    expect(await ctx.db.select().from(schema.accessReviewCampaigns)).toEqual([]);
-  });
-
-  it('refuses changing or re-enabling a schedule without a license, but disabling and deleting work', async () => {
+describe('closing campaigns and changing schedules', () => {
+  it('changes, disables, re-enables and deletes a schedule', async () => {
     const created = await (await schedulesRoute.POST(req('POST', '/x', { name: 'Quarterly', reviewerIds: [fx.reviewerA, fx.reviewerB] }))).json();
-    await removeLicense();
-    expect((await scheduleRoute.PUT(req('PUT', '/x', { name: 'Renamed' }), idParams(created.id))).status).toBe(403);
+    expect((await scheduleRoute.PUT(req('PUT', '/x', { name: 'Renamed' }), idParams(created.id))).status).toBe(200);
     expect((await scheduleRoute.PUT(req('PUT', '/x', { enabled: false }), idParams(created.id))).status).toBe(200);
-    expect((await scheduleRoute.PUT(req('PUT', '/x', { enabled: true }), idParams(created.id))).status).toBe(403);
+    expect((await scheduleRoute.PUT(req('PUT', '/x', { enabled: true }), idParams(created.id))).status).toBe(200);
     expect((await scheduleRoute.DELETE(req('DELETE', '/x'), idParams(created.id))).status).toBe(204);
   });
 
-  it('lets reviewers decide and admins complete, cancel and delete without a license', async () => {
+  it('lets reviewers decide and admins complete, cancel and delete; due schedules start campaigns', async () => {
     const { json: a } = await start();
     const { json: b } = await start({ name: 'Second' });
     const { json: c } = await start({ name: 'Third' });
-    await removeLicense();
     const target = item(a, fx.plainSubject, 'account');
     expect((await decide(fx.tokens.reviewerA, target.id, 'keep')).status).toBe(200);
     expect((await confirm(fx.tokens.reviewerA, a.id)).status).toBe(200);
     expect((await completeRoute.POST(req('POST', '/x'), idParams(a.id))).status).toBe(200);
     expect((await cancelRoute.POST(req('POST', '/x'), idParams(b.id))).status).toBe(200);
     expect((await campaignRoute.DELETE(req('DELETE', '/x'), idParams(c.id))).status).toBe(204);
-    // Scheduled runs never check the license either.
     const schedule = (await dbFirst(ctx.db.insert(schema.accessReviewSchedules).values({
-      name: 'Lapsed', scope: '{"type":"all"}', reviewerIds: JSON.stringify([fx.reviewerA, fx.reviewerB]),
+      name: 'Due', scope: '{"type":"all"}', reviewerIds: JSON.stringify([fx.reviewerA, fx.reviewerB]),
       nextRunAt: new Date(Date.now() - 1000).toISOString(), createdAt: now(), updatedAt: now(),
     }).returning()))!;
     expect(await runDueSchedules()).toEqual({ started: 1, failed: 0 });
@@ -414,8 +387,8 @@ describe('schedules', () => {
 });
 
 describe('permissions', () => {
-  it('has a paid access_reviews area whose write is administrator-level', () => {
-    expect(PERMISSION_AREAS.access_reviews).toMatchObject({ actions: ['read', 'write'], paid: true });
+  it('has an access_reviews area whose write is administrator-level', () => {
+    expect(PERMISSION_AREAS.access_reviews).toMatchObject({ actions: ['read', 'write'] });
     expect(isAdminLevel(['access_reviews:write'])).toBe(true);
     expect(isAdminLevel(['access_reviews:read'])).toBe(false);
   });

@@ -1,14 +1,12 @@
 /**
  * Custom roles end to end through the REST API, with real API tokens and the
- * real guards: the roles and permissions endpoints, the license gate, the
- * escalation guards, role assignment on the user endpoints, deleting a role,
- * and that roles keep working when the license lapses.
+ * real guards: the roles and permissions endpoints, the escalation guards,
+ * role assignment on the user endpoints and deleting a role.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import { apiRequest, idParams, insertRole, insertToken, insertUser, json } from '../helpers/custom-roles';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -23,7 +21,6 @@ import * as userRoute from '@/app/api/v1/users/[id]/route';
 import * as userMfaRoute from '@/app/api/v1/users/[id]/mfa/route';
 import * as proxyHostsRoute from '@/app/api/v1/proxy-hosts/route';
 import { logAuditEvent } from '@/src/lib/audit';
-import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
 import { assertActiveAdminRemains, LAST_ADMIN_MESSAGE } from '@/ee/custom-roles/escalation';
 import { accessForUser } from '@/ee/custom-roles/access';
 import { PERMISSIONS } from '@/src/lib/permissions';
@@ -44,14 +41,6 @@ const READERS = 4; // proxy_hosts:read only
 
 let tokens: Record<'admin' | 'manager' | 'member' | 'scoped' | 'sso', string>;
 
-async function license() {
-  await installLicense(ctx.db, 'business');
-}
-
-async function unlicense() {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-}
-
 async function user(id: number) {
   return (await first(ctx.db.select().from(schema.users).where(eq(schema.users.id, id)).limit(1)))!;
 }
@@ -59,7 +48,6 @@ async function user(id: number) {
 beforeEach(async () => {
   ctx.db = createTestDb();
   vi.mocked(logAuditEvent).mockClear();
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
   await insertRole(ctx.db, MANAGERS, ['users:read', 'users:write', 'proxy_hosts:read', 'proxy_hosts:write'], [], 'Managers');
   await insertRole(ctx.db, SCOPED, ['users:read', 'users:write', 'proxy_hosts:read', 'proxy_hosts:write'], ['team-a'], 'Team A leads');
   await insertRole(ctx.db, SSO_MANAGERS, ['users:read', 'users:write', 'sso:read', 'sso:write'], [], 'SSO managers');
@@ -77,10 +65,7 @@ beforeEach(async () => {
     scoped: await insertToken(ctx.db, SCOPED_MANAGER),
     sso: await insertToken(ctx.db, SSO_MANAGER),
   };
-  await license();
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 async function createRole(token: string, body: unknown) {
   return rolesRoute.POST(apiRequest('POST', '/api/v1/roles', token, body));
@@ -180,34 +165,14 @@ describe('a role saved by another release', () => {
   });
 });
 
-describe('license', () => {
-  it('needs custom_roles to create or change a role', async () => {
-    await unlicense();
-    const created = await createRole(tokens.admin, { name: 'Operators', permissions: [] });
-    expect(created.status).toBe(403);
-    expect((await json(created)).error).toMatch(/Custom roles needs an active/);
-    const changed = await roleRoute.PUT(apiRequest('PUT', `/api/v1/roles/${READERS}`, tokens.admin, { name: 'Renamed' }), idParams(READERS));
-    expect(changed.status).toBe(403);
-  });
-
-  it('needs custom_roles to assign a custom role, not to take one away', async () => {
-    await unlicense();
-    const assigned = await setUser(tokens.admin, MEMBER, { customRoleId: READERS });
-    expect(assigned.status).toBe(403);
-    expect(await user(MEMBER)).toMatchObject({ role: 'user', customRoleId: null });
-
-    const created = await usersRoute.POST(apiRequest('POST', '/api/v1/users', tokens.admin, {
-      email: 'new@example.com', password: 'Correct-Horse-9!', customRoleId: READERS,
-    }));
-    expect(created.status).toBe(403);
-
+describe('taking a custom role away', () => {
+  it('assigns a built-in role in its place', async () => {
     const removed = await setUser(tokens.admin, MANAGER, { role: 'user' });
     expect(removed.status).toBe(200);
     expect(await user(MANAGER)).toMatchObject({ role: 'user', customRoleId: null });
   });
 
-  it('deletes a role without a license; its users fall back to viewer, each recorded', async () => {
-    await unlicense();
+  it('deletes a role; its users fall back to viewer, each recorded', async () => {
     await insertUser(ctx.db, 20, 'viewer', READERS);
     await insertUser(ctx.db, 21, 'viewer', READERS);
     const response = await roleRoute.DELETE(apiRequest('DELETE', `/api/v1/roles/${READERS}`, tokens.admin), idParams(READERS));
@@ -219,13 +184,6 @@ describe('license', () => {
     for (const id of [20, 21]) {
       expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ entityType: 'user', entityId: id, summary: expect.stringMatching(/fell back to role viewer/) }));
     }
-  });
-
-  it('keeps existing roles working when the license lapses (API tokens included)', async () => {
-    await unlicense();
-    expect((await usersRoute.GET(apiRequest('GET', '/api/v1/users', tokens.manager))).status).toBe(200);
-    expect((await proxyHostsRoute.GET(apiRequest('GET', '/api/v1/proxy-hosts', tokens.manager))).status).toBe(200);
-    expect((await accessForUser({ id: MANAGER, role: 'viewer', customRoleId: MANAGERS }, ctx.db)).permissions.has('users:write')).toBe(true);
   });
 });
 

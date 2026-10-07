@@ -8,8 +8,7 @@ type Params = { params: Promise<{ asset: string }> };
 
 /**
  * White-label logos and favicon (ee/white-label). Public: the sign-in pages
- * and the forward-auth portal show them before anyone signs in. Never checks
- * the license.
+ * and the forward-auth portal show them before anyone signs in.
  */
 export async function GET(request: NextRequest, { params }: Params) {
   const kind = assetKindFromSlug((await params).asset);

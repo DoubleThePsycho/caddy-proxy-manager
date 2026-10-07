@@ -5,8 +5,8 @@ import { getProviderMetadata } from "@/ee/saml/providers";
 import { parseProviderId } from "@/ee/saml/http";
 
 /**
- * The SP metadata XML of a provider, for the identity provider. Readable
- * without a license. The same document is public at
+ * The SP metadata XML of a provider, for the identity provider. The same
+ * document is public at
  * /api/auth/saml/metadata/{id} (it holds no secret).
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

@@ -11,9 +11,8 @@ const TAG = "SAML Providers";
 export const SAML_OPENAPI_TAG = {
   name: TAG,
   description:
-    "SAML 2.0 identity providers for dashboard sign-in, with group-to-role mapping (Business edition). Creating, enabling and " +
-    "changing a provider need the sso_saml feature; reading, disabling and deleting never do, and sign-in through an enabled " +
-    "provider never checks the license. The SP signing key is never returned. Providers are per instance and not synced to " +
+    "SAML 2.0 identity providers for dashboard sign-in, with group-to-role mapping. " +
+    "The SP signing key is never returned. Providers are per instance and not synced to " +
     "slaves. This API is the only way to manage providers: no /api/auth route registers or changes one. Sign-in is " +
     "SP-initiated only: POST /api/auth/sign-in/saml {providerId}, then the identity provider posts to the provider's ACS URL.",
 };
@@ -37,7 +36,7 @@ export const SAML_OPENAPI_PATHS = {
     get: {
       tags: [TAG],
       summary: "List SAML providers",
-      description: "Permission sso:read. Available without a license. The SP signing key is never returned (see hasSpPrivateKey).",
+      description: "Permission sso:read. The SP signing key is never returned (see hasSpPrivateKey).",
       operationId: "listSamlProviders",
       responses: { "200": { description: "Providers", content: json({ type: "array", items: ref("SamlProvider") }) }, ...errors("401", "403") },
     },
@@ -45,7 +44,7 @@ export const SAML_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Create a SAML provider",
       description:
-        "Permission sso:write (administrator-level). Needs the sso_saml feature (403 otherwise). Give idpMetadataXml (parsed once, " +
+        "Permission sso:write (administrator-level). Give idpMetadataXml (parsed once, " +
         "never fetched), or idpEntityId, idpSsoUrl and idpCertificates. 409 when the name is taken.",
       operationId: "createSamlProvider",
       requestBody: { required: true, content: json(ref("SamlProviderInput")) },
@@ -56,7 +55,7 @@ export const SAML_OPENAPI_PATHS = {
     get: {
       tags: [TAG],
       summary: "Get a SAML provider",
-      description: "Permission sso:read. Available without a license.",
+      description: "Permission sso:read.",
       operationId: "getSamlProvider",
       parameters: [idParam],
       responses: { "200": { description: "Provider", content: json(ref("SamlProvider")) }, ...errors("401", "403", "404") },
@@ -66,8 +65,8 @@ export const SAML_OPENAPI_PATHS = {
       summary: "Update a SAML provider",
       description:
         "Permission sso:write. Fields left out keep their values; the SP signing key is kept unless generateSpKey, spPrivateKey " +
-        "with spCertificate, or spPrivateKey: null (remove) is sent. Needs the sso_saml feature, except a body that only " +
-        "disables the provider ({\"enabled\": false}), which works without a license.",
+        "with spCertificate, or spPrivateKey: null (remove) is sent. A body that only disables the provider " +
+        "({\"enabled\": false}) is applied without validating the stored settings again.",
       operationId: "updateSamlProvider",
       parameters: [idParam],
       requestBody: { required: true, content: json(ref("SamlProviderUpdate")) },
@@ -77,7 +76,7 @@ export const SAML_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Delete a SAML provider",
       description:
-        "Permission sso:write. Never needs a license. The accounts linked through the provider, its group mappings, its sign-ins " +
+        "Permission sso:write. The accounts linked through the provider, its group mappings, its sign-ins " +
         "in progress and its replay records are deleted; the users are kept.",
       operationId: "deleteSamlProvider",
       parameters: [idParam],
@@ -89,7 +88,7 @@ export const SAML_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Get the SP metadata XML",
       description:
-        "Permission sso:read. Available without a license. The service provider metadata to give the identity provider: entity " +
+        "Permission sso:read. The service provider metadata to give the identity provider: entity " +
         "ID, ACS URL (HTTP-POST) and, when AuthnRequests are signed, the signing certificate. The same document is public at " +
         "/api/auth/saml/metadata/{id}.",
       operationId: "getSamlProviderMetadata",

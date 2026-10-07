@@ -1,5 +1,5 @@
 /**
- * Configuration export/import (Community): passphrase-encrypted secrets,
+ * Configuration export/import: passphrase-encrypted secrets,
  * strict validation, round trips (also to another installation), wrong
  * passphrases, the before-import snapshot and slave refusal.
  */
@@ -209,7 +209,7 @@ describe('import', () => {
     ['a newer version', (f: ConfigExportFile) => ({ ...f, version: 2 }), /version 2/],
     ['an unknown field', (f: ConfigExportFile) => ({ ...f, extra: true }), /unknown field "extra"/],
     ['an unknown table', (f: ConfigExportFile) => ({ ...f, content: { ...f.content, tables: { ...f.content.tables, users: [] } } }), /unknown table "users"/],
-    ['an unknown setting', (f: ConfigExportFile) => ({ ...f, content: { ...f.content, settings: { ...f.content.settings, license: {} } } }), /unknown setting "license"/],
+    ['an unknown setting', (f: ConfigExportFile) => ({ ...f, content: { ...f.content, settings: { ...f.content.settings, not_a_setting: {} } } }), /unknown setting "not_a_setting"/],
     ['a wrongly typed column', (f: ConfigExportFile) => {
       const copy = structuredClone(f);
       copy.content.tables.proxyHosts[0].enabled = 'yes';
@@ -248,7 +248,7 @@ describe('import', () => {
     expect(decryptSecret(value)).toBe('HAND-WRITTEN-KEY');
   });
 
-  it('saves the configuration it replaces when history is enabled, without a license', async () => {
+  it('saves the configuration it replaces when history is enabled', async () => {
     const file = await exportFile();
     await ctx.db.update(schema.proxyHosts).set({ name: 'Before import' });
     const before = await readCurrentConfigContent();

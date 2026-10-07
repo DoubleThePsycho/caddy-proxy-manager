@@ -8,7 +8,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import { fakeLdap, person } from '../helpers/fake-ldap';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -29,7 +28,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 
 import { requireApiAdmin } from '../../src/lib/api-auth';
 import { logAuditEvent } from '../../src/lib/audit';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { checkDirectoryHealth, readDirectoryHealth, runDirectoryHealthChecks } from '../../ee/ldap/health';
 import { getIdentityHealth } from '../../src/lib/identity-health';
 import * as listRoute from '../../app/api/v1/ldap-directories/route';
@@ -75,8 +73,6 @@ beforeEach(async () => {
   fakeLdap.reset();
   fakeLdap.servicePassword = SERVICE_PASSWORD;
   fakeLdap.entries.push(person('alice'));
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.db, 'enterprise');
   adminId = (await first(ctx.db.insert(schema.users).values({
     email: 'admin@example.com', role: 'admin', status: 'active', createdAt: now(), updatedAt: now(),
   }).returning()))!.id;

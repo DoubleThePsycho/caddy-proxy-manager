@@ -4,7 +4,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Copy, FileText, Lock, Printer, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
+import { Copy, FileText, Printer, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
 import { Banner } from "@/components/ui/Banner";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/badge";
@@ -64,16 +64,12 @@ export default function IncidentEditor({
   initial,
   proxyHosts,
   canWrite,
-  configurable,
   aiConfigured,
-  editionLabel,
 }: {
   initial: IncidentView;
   proxyHosts: { id: number; name: string }[];
   canWrite: boolean;
-  configurable: boolean;
   aiConfigured: boolean;
-  editionLabel: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -82,10 +78,7 @@ export default function IncidentEditor({
   const [saved, setSaved] = useState<Form>(() => formOf(initial));
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [now] = useState(() => Date.now());
-  // Editing a draft and recording submissions needs no license, so an
-  // incident under way is never held up; collecting facts and drafting do.
   const editable = canWrite;
-  const draftable = canWrite && configurable;
   const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(saved), [form, saved]);
 
   function load(next: IncidentView) {
@@ -217,12 +210,6 @@ export default function IncidentEditor({
         }
       />
 
-      {!configurable && (
-        <Banner tone="info" icon={Lock}>
-          {`Collecting facts and drafting stages need a license with compliance reports (${editionLabel} edition). This draft stays editable, printable and deletable, and you can still record its submissions.`}
-        </Banner>
-      )}
-
       <Banner tone="warn" title="Nothing is sent from here.">
         This is a draft for you to complete: submit each stage through your CSIRT&apos;s or authority&apos;s channel (in Italy, CSIRT Italia at ACN),
         then record when you submitted it and the reference you received.
@@ -306,7 +293,7 @@ export default function IncidentEditor({
               Aggregated figures (no log lines or client addresses){incident.factsCollectedAt ? `, collected ${formatDateTimeUtc(incident.factsCollectedAt)} UTC` : ""}.
             </CardDescription>
           </div>
-          {draftable && (
+          {editable && (
             <Button variant="outline" size="sm" onClick={refreshFacts} disabled={pending}>
               <RefreshCw className="h-4 w-4" /> Collect again
             </Button>
@@ -332,7 +319,7 @@ export default function IncidentEditor({
                     {view.status !== "submitted" ? ` (${relativeDeadline(view.deadline, now)})` : ""}: {definition.deadlineRule.toLowerCase()}.
                   </CardDescription>
                 </div>
-                {draftable && (
+                {editable && (
                   <div className="flex flex-wrap gap-2">
                     <Button variant="outline" size="sm" onClick={() => draft(definition.key, "template")} disabled={pending}>
                       <FileText className="h-4 w-4" /> Fill from template

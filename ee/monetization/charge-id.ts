@@ -12,7 +12,7 @@
  * mac is the first 16 bytes of HMAC-SHA256 over everything before it, keyed
  * with a key derived from the per-install gate token, base64url. Only the gate
  * can issue a valid id; the random part makes each id unique, which is what
- * the credit is made idempotent on. No database access; no license check.
+ * the credit is made idempotent on. No database access.
  */
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 

@@ -21,7 +21,7 @@ import { ASSESSMENT_QUESTIONS, CLASSIFICATION_LABELS, NOTIFICATION_STATUS_LABELS
 import type { IncidentSummaryView, IncidentView } from "../types";
 import { CLASSIFICATION_BADGE, NOTIFICATION_TONE, durationText, untilText } from "./format";
 import { AssessDialog, ConfirmIncidentDelete, RecordIncidentDialog, TimelineEntryDialog } from "./IncidentDialogs";
-import { callApi, LOCKED_HINT } from "./shared";
+import { callApi } from "./shared";
 
 export type DraftSources = {
   alertEvents: { id: number; at: string; severity: string; status: string; title: string }[];
@@ -264,7 +264,6 @@ export default function IncidentRegister({
   page,
   sources,
   canWrite,
-  configurable,
   initialOpenId,
   now,
 }: {
@@ -272,7 +271,6 @@ export default function IncidentRegister({
   page: { incidents: IncidentSummaryView[]; total: number; page: number; perPage: number };
   sources: DraftSources;
   canWrite: boolean;
-  configurable: boolean;
   initialOpenId: number | null;
   now: number;
 }) {
@@ -300,7 +298,7 @@ export default function IncidentRegister({
       }
       actions={
         canWrite && (
-          <Button variant="secondary" size="sm" onClick={() => setRecording(true)} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
+          <Button variant="secondary" size="sm" onClick={() => setRecording(true)}>
             <Plus />
             Record an incident
           </Button>

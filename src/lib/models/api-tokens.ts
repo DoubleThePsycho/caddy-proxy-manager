@@ -6,7 +6,6 @@ import { NotFoundError } from "../api-auth";
 import { ApiValidationError } from "../api-errors";
 import { parseStoredTokenScopes, parseTokenScopesInput } from "../api-token-scopes";
 import type { Permission } from "../permissions";
-import { isOrganizationEnabled } from "@/ee/multi-tenancy/store";
 import { accessForUser } from "@/ee/custom-roles/access";
 import { first } from "@/src/lib/db/ops";
 
@@ -96,12 +95,12 @@ export async function createApiToken(
   let scopes: Permission[] | null = null;
   if (options.scopes !== undefined && options.scopes !== null) {
     const owner = await first(appDb
-      .select({ id: users.id, role: users.role, customRoleId: users.customRoleId, organizationId: users.organizationId })
+      .select({ id: users.id, role: users.role, customRoleId: users.customRoleId })
       .from(users)
       .where(eq(users.id, createdBy))
       .limit(1));
     if (!owner) throw new NotFoundError("User not found");
-    scopes = parseTokenScopesInput(options.scopes, await accessForUser({ ...owner, organizationId: owner.organizationId ?? null }));
+    scopes = parseTokenScopesInput(options.scopes, await accessForUser(owner));
   }
 
   const rawToken = randomBytes(32).toString("hex");
@@ -186,21 +185,9 @@ export async function deleteApiToken(
 
 const LAST_USED_DEBOUNCE_MS = 60_000; // 60 seconds
 
-/**
- * The scopes of the token `rawToken`, or null when it has none or is unknown
- * (src/lib/api-token-scopes.ts, currentRequestTokenScopes).
- */
-export async function readTokenScopes(rawToken: string): Promise<Permission[] | null> {
-  const row = await appDb.query.apiTokens.findFirst({
-    columns: { scopes: true },
-    where: (table, { eq }) => eq(table.tokenHash, hashToken(rawToken)),
-  });
-  return row ? parseStoredTokenScopes(row.scopes) : null;
-}
-
 export async function validateToken(
   rawToken: string
-): Promise<{ token: ApiToken; user: { id: number; role: string; customRoleId?: number | null; organizationId?: number | null } } | null> {
+): Promise<{ token: ApiToken; user: { id: number; role: string; customRoleId?: number | null } } | null> {
   const tokenHash = hashToken(rawToken);
 
   const row = await appDb.query.apiTokens.findFirst({
@@ -227,10 +214,6 @@ export async function validateToken(
   if (!user || user.status !== "active") {
     return null;
   }
-  // A disabled organisation's users (ee/multi-tenancy) cannot use their tokens.
-  if (user.organizationId != null && !await isOrganizationEnabled(appDb, user.organizationId)) {
-    return null;
-  }
 
   // Debounced lastUsedAt update
   const now = new Date();
@@ -245,6 +228,6 @@ export async function validateToken(
   return {
     token: toApiToken(row),
     // The token acts with its owner's current role, custom role included.
-    user: { id: user.id, role: user.role, customRoleId: user.customRoleId ?? null, organizationId: user.organizationId ?? null },
+    user: { id: user.id, role: user.role, customRoleId: user.customRoleId ?? null },
   };
 }

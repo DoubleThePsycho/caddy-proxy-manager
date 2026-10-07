@@ -52,9 +52,9 @@ const R3_FILES =
 /**
  * The area of the semantic review a file belongs to, so the review list can
  * be split between reviewers: R1 models; R2 identity and sign-in; R3 configuration, sync and jobs;
- * R4 SCIM and access reviews; R5 tenancy, roles, SSO, approvals, white-label;
+ * R4 SCIM and access reviews; R5 roles, SSO, approvals, white-label;
  * R6 monetization, high availability, fleet; R7 compliance,
- * history, audit, backups, AI, SAML, LDAP, licensing;
+ * history, audit, backups, AI, SAML, LDAP;
  * app / src-other / ee-other / tests for the rest.
  */
 export function areaOf(rel: string): string {
@@ -63,9 +63,9 @@ export function areaOf(rel: string): string {
   if (R2_FILES.test(rel) || rel.startsWith("src/lib/services/") || rel === "proxy.ts") return "R2";
   if (R3_FILES.test(rel) || /^src\/lib\/(attention|analytics)\//.test(rel) || rel === "src/instrumentation.ts") return "R3";
   if (/^ee\/(scim|access-reviews)\//.test(rel)) return "R4";
-  if (/^ee\/(multi-tenancy|custom-roles|sso|approvals|white-label)\//.test(rel)) return "R5";
+  if (/^ee\/(custom-roles|sso|approvals|white-label)\//.test(rel)) return "R5";
   if (/^ee\/(monetization|high-availability|fleet)\//.test(rel)) return "R6";
-  if (/^ee\/(compliance|config-history|audit|backups|ai|saml|ldap|licensing)\//.test(rel)) return "R7";
+  if (/^ee\/(compliance|config-history|audit|backups|ai|saml|ldap)\//.test(rel)) return "R7";
   if (rel.startsWith("app/")) return "app";
   if (rel.startsWith("src/")) return "src-other";
   if (rel.startsWith("ee/")) return "ee-other";

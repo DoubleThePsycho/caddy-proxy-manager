@@ -12,10 +12,9 @@ const TAG = "High availability";
 export const HIGH_AVAILABILITY_OPENAPI_TAG = {
   name: TAG,
   description:
-    "Shared certificate storage for the Caddy nodes (Enterprise edition, feature high_availability): Redis or Valkey instead of " +
+    "Shared certificate storage for the Caddy nodes: Redis or Valkey instead of " +
     "each Caddy's own /data, so every node serves the same certificates, each is ordered once, and any node answers ACME " +
-    "challenges. Enabling or changing shared storage needs the license; switching back to local storage, removing the setting, " +
-    "reading and testing never do, and configured storage keeps working when the license lapses. Secrets are never returned. " +
+    "challenges. Secrets are never returned. " +
     "A sync slave uses the master's setting (409 on changes there). The dashboard cluster (one leader, warm standbys, " +
     "SQLite replicated with Litestream) is configured with environment variables only; its endpoint reads its state. " +
     "On PostgreSQL several web replicas share one database and one of them leads the background jobs: " +
@@ -56,7 +55,7 @@ export const HIGH_AVAILABILITY_OPENAPI_PATHS = {
     get: {
       tags: [TAG],
       summary: "Get the certificate storage",
-      description: "Permission high_availability:read. Available without a license. Secrets are reported as hasPassword/hasEncryptionKey or the variable they are read from.",
+      description: "Permission high_availability:read. Secrets are reported as hasPassword/hasEncryptionKey or the variable they are read from.",
       operationId: "getCertificateStorage",
       responses: { "200": { description: "Certificate storage", content: json(ref("CertificateStorage")) }, ...errors("401", "403") },
     },
@@ -65,8 +64,7 @@ export const HIGH_AVAILABILITY_OPENAPI_PATHS = {
       summary: "Set the certificate storage",
       description:
         "Permission high_availability:write (administrator-level). backend redis turns shared storage on; backend local turns it off and keeps " +
-        "the redis settings for later unless redis is null. Leaving redis out keeps the stored redis settings. Enabling or changing shared " +
-        "storage needs the high_availability feature (403 otherwise); going back to local storage does not. A stored password must be " +
+        "the redis settings for later unless redis is null. Leaving redis out keeps the stored redis settings. A stored password must be " +
         "entered again when the addresses, mode or TLS settings change. The configuration is applied at once: when Caddy cannot use the " +
         "storage the previous setting is put back (502). Switching storage makes Caddy look for certificates in the new storage; import " +
         "the existing ones first (see migration) or they are ordered again, which counts against the CA's rate limits.",
@@ -81,7 +79,7 @@ export const HIGH_AVAILABILITY_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Remove the certificate storage setting",
       description:
-        "Permission high_availability:write. Back to local storage, and the redis settings are forgotten. Never needs a license. On a sync " +
+        "Permission high_availability:write. Back to local storage, and the redis settings are forgotten. On a sync " +
         "slave it removes a setting of the slave's own, if any, so the master's applies.",
       operationId: "removeCertificateStorage",
       responses: { "200": { description: "Removed", content: json(ref("CertificateStorage")) }, ...errors("401", "403", "502") },
@@ -94,8 +92,8 @@ export const HIGH_AVAILABILITY_OPENAPI_PATHS = {
       description:
         "Permission high_availability:write. Connects from this instance's web container (through the Sentinels in sentinel mode), signs in, " +
         "selects the database, then writes, reads back and deletes a key under the key prefix. Without a body it tests the storage in " +
-        "effect; with {redis} it tests those settings, using the stored secrets for the ones left out. Changes nothing and needs no " +
-        "license. A secret read from an environment variable on the Caddy nodes cannot be used here: the result is then complete: false.",
+        "effect; with {redis} it tests those settings, using the stored secrets for the ones left out. Changes nothing. " +
+        "A secret read from an environment variable on the Caddy nodes cannot be used here: the result is then complete: false.",
       operationId: "testCertificateStorage",
       requestBody: { required: false, content: json(ref("CertificateStorageTestInput")) },
       responses: { "200": { description: "Test result", content: json(ref("CertificateStorageTestResult")) }, ...errors("400", "401", "403") },
@@ -106,7 +104,7 @@ export const HIGH_AVAILABILITY_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Get the dashboard cluster",
       description:
-        "Permission high_availability:read. Available without a license. The dashboard cluster as the node answering sees it (only the " +
+        "Permission high_availability:read. The dashboard cluster as the node answering sees it (only the " +
         "leader serves the API; a standby answers 503): this node's role, the lease holder and its fencing epoch, when Litestream last " +
         "confirmed the replica up to date, the last restore, the nodes' own reports and the configuration from the environment. " +
         "Secrets are never returned (hasPassword only). enabled is false when HA_ENABLED is not set.",
@@ -119,7 +117,7 @@ export const HIGH_AVAILABILITY_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "List the PostgreSQL replicas",
       description:
-        "Permission high_availability:read. Available without a license. The web replicas sharing one PostgreSQL database, as " +
+        "Permission high_availability:read. The web replicas sharing one PostgreSQL database, as " +
         "the replica answering sees them: which one it is, which one leads the background jobs (elected with an advisory lock), " +
         "every replica's last heartbeat, version and schema, and the replica's own leader election state. A replica silent for " +
         "goneAfterSeconds is gone; it is removed after pruneAfterDays. Every replica serves the API, so any of them answers. " +
@@ -175,15 +173,11 @@ export const HIGH_AVAILABILITY_OPENAPI_SCHEMAS = {
     type: "object",
     properties: {
       enabled: { type: "boolean", description: "The dashboard runs on PostgreSQL (replicas are possible)." },
-      configurable: {
-        type: "boolean",
-        description: "The license includes high availability: a new replica may join next to a running one (checked once, when it joins).",
-      },
       nodeId: { type: ["string", "null"], description: "The replica answering; null before it registered and on SQLite." },
       role: {
         type: ["string", "null"],
         enum: ["leader", "follower", "refused", "joining", null],
-        description: "The replica answering. refused: it was not admitted (another replica runs and the license lacks high availability).",
+        description: "The replica answering. refused: it was not admitted (another process runs with its node id).",
       },
       refusal: { type: ["string", "null"], description: "Why the replica answering was not admitted." },
       leaderNodeId: { type: ["string", "null"], description: "The live replica that leads the background jobs, as the replicas last reported." },
@@ -230,7 +224,6 @@ export const HIGH_AVAILABILITY_OPENAPI_SCHEMAS = {
     type: "object",
     properties: {
       enabled: { type: "boolean", description: "HA_ENABLED is set on the node answering." },
-      configurable: { type: "boolean", description: "The license includes high availability (setting a cluster up needs it; a running one never checks)." },
       error: { type: ["string", "null"], description: "The configuration or the supervisor's status cannot be read." },
       node: {
         type: ["object", "null"],
@@ -307,7 +300,7 @@ export const HIGH_AVAILABILITY_OPENAPI_SCHEMAS = {
       },
       postgres: {
         type: ["object", "null"],
-        description: "On PostgreSQL (where HA_ENABLED is refused): the replicas sharing the database, as GET /api/v1/cluster/nodes returns them without enabled and configurable. null on SQLite.",
+        description: "On PostgreSQL (where HA_ENABLED is refused): the replicas sharing the database, as GET /api/v1/cluster/nodes returns them without enabled. null on SQLite.",
       },
     },
   },
@@ -380,7 +373,6 @@ export const HIGH_AVAILABILITY_OPENAPI_SCHEMAS = {
       redis: { oneOf: [ref("RedisStorage"), { type: "null" }], description: "Kept while backend is local, until removed." },
       source: { type: "string", enum: ["default", "local", "master"], description: "default: never set; local: set here; master: synced from the master." },
       updatedAt: { type: ["string", "null"], format: "date-time" },
-      configurable: { type: "boolean", description: "The license lets this instance enable or change shared storage." },
       editable: { type: "boolean", description: "False on a sync slave." },
       error: { type: ["string", "null"], description: "The stored value is not valid; Caddy keeps its previous configuration until it is saved again." },
       migration: {

@@ -1,13 +1,8 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Approval policies: validation, storage and the administrator actions on
- * them.
- *
- * Licensing: creating a policy, and any change that leaves it enabled or
- * changes its rules, needs "approvals". Disabling and deleting a policy never
- * do, and neither does reading. Enforcement never checks the license
- * (guard.ts, requests.ts): a policy keeps protecting its hosts after the
- * license lapses, until an administrator disables or deletes it.
+ * them. Enforcement lives in guard.ts and requests.ts: an enabled policy
+ * protects its hosts until an administrator disables or deletes it.
  *
  * Policies are master-only and not part of instance sync or configuration
  * export: a replica receives the configuration the master applied.
@@ -18,13 +13,11 @@ import { approvalPolicies } from "@/src/lib/db/schema";
 import { ApiClientError, ApiConflictError, ApiValidationError } from "@/src/lib/api-errors";
 import { logAuditEvent } from "@/src/lib/audit";
 import { normalizeTags } from "@/src/lib/host-tags";
-import { requireFeature } from "@/ee/licensing/store";
 import { parsePolicyRow, POLICY_NOT_FOUND, type PolicyRow } from "./store";
 import { parseTimeZone, parseWindows } from "./windows";
 import {
   DEFAULT_REQUEST_TTL_HOURS,
   DEFAULT_REQUIRED_APPROVALS,
-  FEATURE,
   MAX_REQUEST_TTL_HOURS,
   MAX_REQUIRED_APPROVALS,
   OPERATIONS,
@@ -204,9 +197,8 @@ function auditData(values: PolicyValues | ApprovalPolicyView) {
 
 // ── Actions ─────────────────────────────────────────────────────────
 
-/** Creates a policy. Needs the license. */
+/** Creates a policy. */
 export async function createApprovalPolicy(input: unknown, userId: number): Promise<ApprovalPolicyView> {
-  await requireFeature(FEATURE);
   const values = parsePolicyInput(input, null);
   const now = nowIso();
   // The name check and the insert in one transaction: two policies never share a name.
@@ -228,18 +220,9 @@ export async function createApprovalPolicy(input: unknown, userId: number): Prom
   return parsePolicyRow(row);
 }
 
-/** True when the body only turns the policy off ({"enabled": false}). */
-function isDisableOnly(input: unknown): boolean {
-  return isRecord(input) && Object.keys(input).length === 1 && input.enabled === false;
-}
-
-/**
- * Updates a policy; fields left out keep their values. Disabling it
- * ({"enabled": false}) never needs the license; any other change does.
- */
+/** Updates a policy; fields left out keep their values. */
 export async function updateApprovalPolicy(id: number, input: unknown, userId: number): Promise<ApprovalPolicyView> {
   const current = parsePolicyRow(await getRow(id));
-  if (!isDisableOnly(input)) await requireFeature(FEATURE);
   const values = parsePolicyInput(input, current);
   const row = await appDb.transaction(async (tx) => {
     if (values.name.toLowerCase() !== current.name.toLowerCase()) await assertNameFree(values.name, id);
@@ -260,7 +243,7 @@ export async function updateApprovalPolicy(id: number, input: unknown, userId: n
   return parsePolicyRow(row);
 }
 
-/** Deletes a policy. Never needs the license. Requests made under it stay as they are. */
+/** Deletes a policy. Requests made under it stay as they are. */
 export async function deleteApprovalPolicy(id: number, userId: number): Promise<void> {
   const current = parsePolicyRow(await getRow(id));
   await appDb.delete(approvalPolicies).where(eq(approvalPolicies.id, id));

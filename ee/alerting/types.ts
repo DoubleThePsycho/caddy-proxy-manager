@@ -14,7 +14,6 @@ export const RULE_TYPES = [
   "error_rate",
   "instance_sync_failed",
   "caddy_apply_failed",
-  "license_expiring",
   "backup_failed",
   "approval_pending",
   "access_review_started",
@@ -23,10 +22,6 @@ export const RULE_TYPES = [
   "fleet_rollout_failed",
 ] as const;
 export type RuleType = (typeof RULE_TYPES)[number];
-
-/** Community carve-out: these can be set up and changed without a license. */
-export const FREE_CHANNEL_TYPES: readonly ChannelType[] = ["email"];
-export const FREE_RULE_TYPES: readonly RuleType[] = ["cert_expiring"];
 
 export const CHANNEL_TYPE_LABELS: Record<ChannelType, string> = {
   email: "E-mail (SMTP)",
@@ -44,7 +39,6 @@ export const RULE_TYPE_LABELS: Record<RuleType, string> = {
   error_rate: "Error rate",
   instance_sync_failed: "Instance sync failed",
   caddy_apply_failed: "Caddy config apply failed",
-  license_expiring: "License expiring",
   backup_failed: "Backup failed",
   approval_pending: "Change awaiting approval",
   access_review_started: "Access review started",
@@ -63,7 +57,6 @@ export const RULE_TYPE_DESCRIPTIONS: Record<RuleType, string> = {
     "The share of 5xx responses of a proxy host, or of the chosen hosts together, is above the threshold in the time window, counting only when there were at least the minimum number of requests (needs ClickHouse analytics).",
   instance_sync_failed: "A slave instance whose last configuration sync failed (master mode).",
   caddy_apply_failed: "The last attempt to push the configuration to Caddy failed.",
-  license_expiring: "The installed license expires within the given number of days.",
   backup_failed:
     "Scheduled configuration backups to an enabled destination failed the given number of times in a row (Scheduled backups, on the History page).",
   approval_pending:
@@ -85,7 +78,6 @@ export type UpstreamDownParams = { minFails: number };
 export type WafSpikeParams = { threshold: number; windowMinutes: number };
 /** thresholdPercent: 0.1 to 100 in steps of 0.1. perHost: one alert per proxy host, or one for all hosts in scope together. */
 export type ErrorRateParams = { thresholdPercent: number; windowMinutes: number; minRequests: number; perHost: boolean };
-export type LicenseExpiringParams = { days: number };
 export type BackupFailedParams = { minFailures: number };
 export type EmptyParams = Record<string, never>;
 
@@ -96,7 +88,6 @@ export type RuleParams = {
   error_rate: ErrorRateParams;
   instance_sync_failed: EmptyParams;
   caddy_apply_failed: EmptyParams;
-  license_expiring: LicenseExpiringParams;
   backup_failed: BackupFailedParams;
   approval_pending: EmptyParams;
   access_review_started: EmptyParams;
@@ -112,7 +103,6 @@ export const DEFAULT_RULE_PARAMS: { [T in RuleType]: RuleParams[T] } = {
   error_rate: { thresholdPercent: 5, windowMinutes: 5, minRequests: 20, perHost: true },
   instance_sync_failed: {},
   caddy_apply_failed: {},
-  license_expiring: { days: 30 },
   backup_failed: { minFailures: 1 },
   approval_pending: {},
   access_review_started: {},
@@ -147,6 +137,34 @@ export const FOR_DURATION_RULE_TYPES: readonly RuleType[] = [
 
 export const MAX_FOR_MINUTES = 24 * 60;
 export const MAX_SCOPE_HOSTS = 200;
+
+/** Durations offered for dismissing an alert or muting a rule (minutes): 1 hour, 8 hours, 1 day, 1 week. */
+export const SILENCE_DURATIONS = [60, 8 * 60, 24 * 60, 7 * 24 * 60] as const;
+/** The longest dismissal or mute (minutes). */
+export const MAX_SILENCE_MINUTES = 30 * 24 * 60;
+export const MAX_SILENCE_NOTE_LENGTH = 500;
+
+/**
+ * A mute (every alert of a rule, until a time) or a dismissal (one alert,
+ * until a time or until it resolves), in effect now.
+ */
+export type AlertSilenceView = {
+  id: number;
+  kind: "mute" | "dismissal";
+  ruleId: number;
+  ruleName: string;
+  /** The dismissed alert; null for a mute. */
+  subjectKey: string | null;
+  /** What the dismissed alert is about, while it fires; null otherwise. */
+  subjectTitle: string | null;
+  /** When it ends; null for a dismissal that ends when the alert resolves. */
+  until: string | null;
+  note: string | null;
+  createdBy: number | null;
+  /** The name (or e-mail) of who created it; null when unknown or deleted. */
+  createdByName: string | null;
+  createdAt: string;
+};
 
 /** Non-secret channel settings as returned by the API, with `has*` flags in place of secrets. */
 export type EmailChannelView = {
@@ -203,6 +221,8 @@ export type AlertRuleView = {
   pending: { subjectKey: string; title: string | null; since: string | null }[];
   /** When the rule last fired (its newest firing event in the 90-day history); null when it has not. */
   lastFiredAt: string | null;
+  /** The rule's mute in effect, if any. */
+  mute: AlertSilenceView | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -223,6 +243,8 @@ export type AlertEventView = {
   createdAt: string;
   /** For a firing event: when that episode resolved (null while it still fires or when unknown). */
   resolvedAt: string | null;
+  /** Not notified because the rule was muted or the alert dismissed; null otherwise. */
+  silenced: "muted" | "dismissed" | null;
 };
 
 /** One subject firing now, with the event that started it. */
@@ -237,8 +259,14 @@ export type FiringAlertView = {
   firedAt: string | null;
   /** Channels told when it fired. */
   deliveries: AlertEventView["deliveries"];
+  /** Nothing was sent when it fired because the rule was muted or the alert dismissed. */
+  silenced: AlertEventView["silenced"];
   eventId: number | null;
   notifyOnResolve: boolean;
+  /** This alert's dismissal in effect, if any. */
+  dismissal: AlertSilenceView | null;
+  /** Its rule's mute in effect, if any. */
+  mute: AlertSilenceView | null;
 };
 
 export function isChannelType(value: unknown): value is ChannelType {

@@ -1,7 +1,7 @@
 /**
- * Server-side render of the Branding page (ee/white-label/ui): read-only
- * without a license (removal and reset stay available), the live preview,
- * and the dashboard shell showing the product name and logo it is given.
+ * Server-side render of the Branding page (ee/white-label/ui): editable with
+ * branding:write and read-only without it, the live preview, and the
+ * dashboard shell showing the product name and logo it is given.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -28,7 +28,6 @@ function view(overrides: Partial<BrandingView> = {}): BrandingView {
     updatedAt: null,
     defaultProductName: 'Ingressi',
     limits: { maxBytes: MAX_ASSET_BYTES, assets: ASSET_LIMITS },
-    configurable: false,
     ...overrides,
   };
 }
@@ -43,32 +42,39 @@ function buttonAttributes(html: string, label: string): string {
 function render(v: BrandingView, canWrite = true) {
   const action = vi.fn();
   return renderToStaticMarkup(
-    createElement(BrandingClient, { view: v, canWrite, isSlave: false, editionLabel: 'MSP', save: action, upload: action, removeAsset: action, reset: action })
+    createElement(BrandingClient, { view: v, canWrite, isSlave: false, save: action, upload: action, removeAsset: action, reset: action })
   );
 }
 
 describe('Branding page', () => {
-  it('is read-only without a license and says why', () => {
-    const html = render(view());
-    expect(html).toContain('Changing the branding needs an active MSP license');
-    expect(html).toMatch(/<fieldset disabled=""/);
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Save<\/button>/);
-  });
-
-  it('keeps removing images and resetting available without a license', () => {
+  it('lets a user with branding:write change, upload, remove and reset', () => {
     const html = render(view({
       source: 'local',
       settings: { ...DEFAULT_BRANDING_SETTINGS, productName: 'Example Edge' },
       assets: { logoLight: { type: 'image/png', width: 10, height: 10, bytes: 100, url: '/api/branding/logo-light?v=0123456789abcdef' }, logoDark: null, favicon: null },
     }));
+    expect(html).not.toMatch(/<fieldset disabled=""/);
+    expect(buttonAttributes(html, 'Save')).not.toContain('disabled=""');
+    expect(buttonAttributes(html, 'Replace')).not.toContain('disabled=""');
     expect(buttonAttributes(html, 'Remove')).not.toContain('disabled=""');
     expect(buttonAttributes(html, 'Reset to defaults')).not.toContain('disabled=""');
+  });
+
+  it('is read-only without branding:write', () => {
+    const html = render(view({
+      source: 'local',
+      assets: { logoLight: { type: 'image/png', width: 10, height: 10, bytes: 100, url: '/api/branding/logo-light?v=0123456789abcdef' }, logoDark: null, favicon: null },
+    }), false);
+    expect(html).toContain('Read-only');
+    expect(html).toMatch(/<fieldset disabled=""/);
+    expect(buttonAttributes(html, 'Save')).toContain('disabled=""');
     expect(buttonAttributes(html, 'Replace')).toContain('disabled=""');
+    expect(buttonAttributes(html, 'Remove')).toContain('disabled=""');
+    expect(buttonAttributes(html, 'Reset to defaults')).toContain('disabled=""');
   });
 
   it('previews the sign-in page in both themes with the values in the form', () => {
     const html = render(view({
-      configurable: true,
       source: 'local',
       settings: { ...DEFAULT_BRANDING_SETTINGS, productName: 'Example Edge', accentColor: '#1d4ed8', loginFooter: 'Managed by Example IT.' },
     }));
@@ -81,7 +87,7 @@ describe('Branding page', () => {
   });
 
   it('flags an accent colour without enough contrast', () => {
-    const html = render(view({ configurable: true, settings: { ...DEFAULT_BRANDING_SETTINGS, accentColor: '#fde047' } }));
+    const html = render(view({ settings: { ...DEFAULT_BRANDING_SETTINGS, accentColor: '#fde047' } }));
     expect(html).toMatch(/#fde047 has a contrast of 1\.\d:1 against the light theme/);
   });
 });

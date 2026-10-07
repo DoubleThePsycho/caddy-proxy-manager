@@ -18,7 +18,7 @@ type Props = {
   enforcement: SignInOverview["enforcement"];
   canWriteSso: boolean;
   canReadAuditLog: boolean;
-  /** saveSsoEnforcementAction (./actions.ts); turning enforcement off never needs a license. */
+  /** saveSsoEnforcementAction (./actions.ts). */
   turnOffEnforcement: (input: { enabled: boolean }) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** What the login page offers now, shown beside the break-glass accounts. */
   loginOptions: ReactNode;
@@ -88,9 +88,11 @@ export function EnforcementSection({ enforcement, canWriteSso, canReadAuditLog, 
             </span>
             <span className="text-[13px] text-muted-foreground">
               {changed}
-              {enforcement.enabled
-                ? `Password sign-in is refused for everyone except ${plural(breakGlassCount, "break-glass account")}, and nobody can register with a password.`
-                : "Anyone with a password can sign in on the login page."}
+              {!enforcement.enabled
+                ? "Anyone with a password can sign in on the login page."
+                : breakGlassCount > 0
+                  ? `Password sign-in is refused for everyone except ${plural(breakGlassCount, "break-glass account")}, and nobody can register with a password.`
+                  : "Password sign-in is refused for everyone, and nobody can register with a password."}
             </span>
           </span>
           <span className="flex flex-wrap gap-2">
@@ -120,9 +122,7 @@ export function EnforcementSection({ enforcement, canWriteSso, canReadAuditLog, 
             <div className="flex flex-col gap-2">
               <span className="text-xs text-soft">{breakGlassCount === 1 ? "Break-glass account" : "Break-glass accounts"}</span>
               {breakGlassCount === 0 ? (
-                <p className="m-0 rounded-xl border border-line bg-panel2 px-3.5 py-3 text-[13px] text-muted-foreground">
-                  None chosen. Choose at least one administrator who can sign in with a password when the identity provider is down.
-                </p>
+                <p className="m-0 rounded-xl border border-line bg-panel2 px-3.5 py-3 text-[13px] text-muted-foreground">None</p>
               ) : (
                 <ul className="m-0 flex list-none flex-col gap-2 p-0">
                   {enforcement.breakGlass.map((account) => {

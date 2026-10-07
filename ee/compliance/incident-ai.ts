@@ -9,7 +9,7 @@
  *    messages, alert titles and change summaries can come from users, logs
  *    or requests): they travel as JSON inside a delimited data block the
  *    model is told never to take instructions from;
- *  - the model gets no tools, one call and 15 seconds;
+ *  - the model gets no tools, one call and the provider's timeout;
  *  - its text is labelled as AI-generated and only fills the draft: a person
  *    edits it and submits it. Nothing is ever sent to a CSIRT or authority.
  *

@@ -1,10 +1,9 @@
 /**
- * Change approvals (ee/approvals) in the test stack, which has no license:
- * the Approvals page loads read-only with the licensing notice, policies
- * cannot be created, and host changes are applied directly while no policy
- * exists. The approval flow itself (four-eyes, windows, emergency changes,
- * every bypass path) is covered by tests/integration/approvals-*.test.ts,
- * which can sign test licenses.
+ * Change approvals (ee/approvals) in the test stack: the Approvals page
+ * loads, a policy can be created and deleted over the REST API, and host
+ * changes are applied directly while no policy is on. The approval flow
+ * itself (four-eyes, windows, emergency changes, every bypass path) is
+ * covered by tests/integration/approvals-*.test.ts.
  */
 import { test, expect } from '@playwright/test';
 
@@ -12,10 +11,9 @@ const BASE = 'http://localhost:3000';
 const HEADERS = { 'Content-Type': 'application/json', Origin: BASE };
 
 test.describe('Approvals', () => {
-  test('page loads with the licensing notice and no requests', async ({ page }) => {
+  test('page loads with no requests', async ({ page }) => {
     await page.goto('/approvals');
     await expect(page.getByRole('heading', { name: 'Approvals' })).toBeVisible();
-    await expect(page.getByText(/Creating and changing approval policies needs an Enterprise license/)).toBeVisible();
     await expect(page.getByText('No change is waiting for approval.')).toBeVisible();
     await expect(page.getByText('No policy on: every host change is applied directly')).toBeVisible();
 
@@ -24,7 +22,7 @@ test.describe('Approvals', () => {
 
     await page.getByRole('tab', { name: /Policies/ }).click();
     await expect(page.getByText(/No policies yet/)).toBeVisible();
-    await expect(page.getByRole('button', { name: /New policy/ })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /New policy/ })).toBeEnabled();
   });
 
   test('Manage policies opens the policies tab', async ({ page }) => {
@@ -40,7 +38,7 @@ test.describe('Approvals', () => {
     await expect(page).toHaveURL(/\/approvals/);
   });
 
-  test('REST API: reading works, creating a policy needs the license', async ({ page }) => {
+  test('REST API: reads, creates and deletes a policy', async ({ page }) => {
     const policies = await page.request.get(`${BASE}/api/v1/approval-policies`);
     expect(policies.status()).toBe(200);
     expect(await policies.json()).toEqual([]);
@@ -49,12 +47,16 @@ test.describe('Approvals', () => {
     expect(requests.status()).toBe(200);
     expect(await requests.json()).toMatchObject({ requests: [], total: 0 });
 
-    const create = await page.request.post(`${BASE}/api/v1/approval-policies`, { headers: HEADERS, data: { name: 'E2E production' } });
-    expect(create.status()).toBe(403);
-    expect((await create.json()).error).toMatch(/needs an active .* Enterprise license/);
+    // Created off, so host changes in other specs are never held for approval.
+    const create = await page.request.post(`${BASE}/api/v1/approval-policies`, { headers: HEADERS, data: { name: 'E2E production', enabled: false } });
+    expect(create.status()).toBe(201);
+    const policy = await create.json();
+    expect(policy).toMatchObject({ name: 'E2E production', enabled: false });
+    const deleted = await page.request.delete(`${BASE}/api/v1/approval-policies/${policy.id}`, { headers: { Origin: BASE } });
+    expect(deleted.status()).toBe(204);
   });
 
-  test('host changes are applied directly while no policy exists', async ({ page }) => {
+  test('host changes are applied directly while no policy is on', async ({ page }) => {
     const created = await page.request.post(`${BASE}/api/v1/proxy-hosts`, {
       headers: HEADERS,
       data: { name: 'E2E approvals host', domains: ['approvals-e2e.example.com'], upstreams: ['localhost:9998'], tags: ['prod'] },

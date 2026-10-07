@@ -1,9 +1,8 @@
 /**
  * Server-side render of the Shared state card of the High availability page
  * (ee/high-availability/ui/SharedStateSection.tsx): turning on needs the
- * license and the certificate storage connection, read-only on a slave,
- * turning off stays possible without a license, and the error when shared
- * state is on but not usable.
+ * certificate storage connection, read-only on a slave, turning off and
+ * changing the prefix, and the error when shared state is on but not usable.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -26,7 +25,6 @@ function view(overrides: Partial<SharedStateView> = {}): SharedStateView {
     namespace: null,
     connection: { source: 'certificate_storage', configured: true, mode: 'Single server', addresses: ['valkey.example.com:6379'], tls: true },
     updatedAt: null,
-    configurable: true,
     editable: true,
     error: null,
     ...overrides,
@@ -36,7 +34,7 @@ function view(overrides: Partial<SharedStateView> = {}): SharedStateView {
 function render(v: SharedStateView, canWrite = true) {
   const action = vi.fn();
   return renderToStaticMarkup(
-    createElement(SharedStateSection, { view: v, canWrite, editionLabel: 'Enterprise', save: action, remove: action, loadStatus: vi.fn(async () => ({ ok: false as const, error: 'x' })) })
+    createElement(SharedStateSection, { view: v, canWrite, save: action, remove: action, loadStatus: vi.fn(async () => ({ ok: false as const, error: 'x' })) })
   );
 }
 
@@ -46,7 +44,7 @@ function button(html: string, label: string): string | null {
 }
 
 describe('Shared state section', () => {
-  it('offers to turn on with the license and a connection, and shows the connection', () => {
+  it('offers to turn on with a connection, and shows the connection', () => {
     const html = render(view());
     expect(button(html, 'Turn on')).not.toBeNull();
     expect(button(html, 'Turn on')).not.toMatch(/\sdisabled=""/);
@@ -54,21 +52,22 @@ describe('Shared state section', () => {
     expect(html).toContain('Off');
   });
 
-  it('cannot be turned on without a license or without the certificate storage connection', () => {
-    const unlicensed = render(view({ configurable: false }));
-    expect(unlicensed).toContain('Shared state needs an active Enterprise license');
-    expect(button(unlicensed, 'Turn on')).toMatch(/\sdisabled=""/);
+  it('cannot be turned on without the certificate storage connection', () => {
+    expect(render(view())).not.toMatch(/license/i);
     const unconfigured = render(view({ connection: { source: 'certificate_storage', configured: false, mode: null, addresses: [], tls: false } }));
     expect(unconfigured).toContain('save Redis or Valkey settings for the certificate storage first');
     expect(button(unconfigured, 'Turn on')).toMatch(/\sdisabled=""/);
   });
 
-  it('keeps turning off and removing available without a license', () => {
-    const html = render(view({ enabled: true, backend: 'redis', configurable: false, namespace: 'ingressi:0123abcdef01:', updatedAt: '2026-10-01T00:00:00.000Z' }));
+  it('offers turning off and removing while on, and the prefix stays editable', () => {
+    const html = render(view({ enabled: true, backend: 'redis', namespace: 'ingressi:0123abcdef01:', updatedAt: '2026-10-01T00:00:00.000Z' }));
     expect(button(html, 'Turn off')).not.toBeNull();
     expect(button(html, 'Turn off')).not.toMatch(/\sdisabled=""/);
     expect(button(html, 'Remove setting')).not.toBeNull();
     expect(html).toContain('ingressi:0123abcdef01:');
+    const prefix = /<input[^>]*aria-label="Shared state key prefix"[^>]*>/.exec(html)?.[0];
+    expect(prefix).toBeDefined();
+    expect(prefix).not.toMatch(/\sdisabled=""/);
   });
 
   it('is read-only on a slave and for read-only roles', () => {

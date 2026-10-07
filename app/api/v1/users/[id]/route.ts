@@ -6,12 +6,11 @@ import {
   updateUserStatus,
   deleteUser,
 } from "@/src/lib/models/user";
-import { findUserInScope } from "@/src/lib/access-scope";
 import { logAuditEvent } from "@/src/lib/audit";
 import { SIGN_IN_USERNAME_RULES_MESSAGE } from "@/src/lib/login-username";
 import { appDb } from "@/src/lib/db";
 import { assertBreakGlassAdminRemains } from "@/ee/sso/enforcement-store";
-import { can, isBuiltInRole, ORGANIZATION_ADMIN_ROLE } from "@/src/lib/permissions";
+import { can, isBuiltInRole } from "@/src/lib/permissions";
 import {
   assertActiveAdminRemainsFor,
   assertCanAssignRole,
@@ -44,8 +43,7 @@ export async function GET(
       throw new ApiAuthError("Forbidden", 403);
     }
 
-    // A user of another organisation (ee/multi-tenancy) is not found, as a missing one.
-    const user = targetId === null ? null : await findUserInScope(access, targetId);
+    const user = targetId === null ? null : await getUserById(targetId);
     if (!user) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -73,10 +71,9 @@ export async function PUT(
     if (body.email != null && typeof body.email !== "string") {
       return NextResponse.json({ error: "Email must be a string" }, { status: 400 });
     }
-    // A role that is not a built-in role is ignored, as before custom roles;
-    // org_admin is the built-in role of organisation administrators (ee/multi-tenancy).
+    // A role that is not a built-in role is ignored, as before custom roles.
     const assignment = readRoleAssignment({
-      role: isBuiltInRole(body.role) || body.role === ORGANIZATION_ADMIN_ROLE ? body.role : undefined,
+      role: isBuiltInRole(body.role) ? body.role : undefined,
       customRoleId: body.customRoleId,
     });
     const status = body.status && ["active", "disabled"].includes(body.status) ? body.status as string : null;
@@ -86,14 +83,13 @@ export async function PUT(
     if (status && auth.userId === targetId) {
       return NextResponse.json({ error: "Cannot change your own status" }, { status: 400 });
     }
-    // A non-administrator only edits users whose access they hold themselves;
-    // a user of another organisation (ee/multi-tenancy) is not found.
-    if (!(await findUserInScope(auth.access, targetId))) {
+    // A non-administrator only edits users whose access they hold themselves.
+    if (!(await getUserById(targetId))) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     await assertCanManageUserId(auth.access, targetId);
-    // Role and status guards (escalation, license for a custom role, the last
-    // administrator, enforced SSO lockout) before anything is written.
+    // Role and status guards (escalation, the last administrator, enforced SSO
+    // lockout) before anything is written.
     // assignRole and updateUserStatus check again in their own transactions.
     if (assignment) {
       await assertCanAssignRole(auth.access, targetId, assignment);
@@ -164,7 +160,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Cannot delete your own account" }, { status: 400 });
     }
 
-    const user = await findUserInScope(auth.access, targetId);
+    const user = await getUserById(targetId);
     if (!user) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

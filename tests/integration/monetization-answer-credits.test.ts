@@ -6,14 +6,13 @@
  * shared state. The option needs ClickHouse analytics; without it the gate
  * issues no ids and the plan option cannot be turned on.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RedisMock from 'ioredis-mock';
 import type Redis from 'ioredis';
 import { NextRequest } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import { insertConsumer, insertKey, insertMonetizedHost, insertPlan, insertProxyHost } from '../helpers/monetization';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb, analytics: true }));
@@ -28,7 +27,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
   return { ...actual, requireApiPermission: vi.fn().mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer' }) };
 });
 
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { decideGate, reloadMonetization, resetMonetizationEngineForTests, type GateDecision } from '../../ee/monetization/engine';
 import { gateResponse } from '../../ee/monetization/gate-response';
 import { ensureGateSecret } from '../../ee/monetization/settings';
@@ -94,16 +92,12 @@ beforeEach(async () => {
   resetMonetizationEngineForTests();
   resetAnswerCreditsForTests();
   vi.spyOn(Date, 'now').mockReturnValue(T0);
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.db, 'enterprise');
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
   setSharedStateForTests(undefined);
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('charge ids at the gate', () => {
   it('are issued on plans that credit failed answers and answered in X-Ingressi-Charge', async () => {

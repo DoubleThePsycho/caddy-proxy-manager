@@ -24,10 +24,6 @@
  * Caddy took it), or failed when it reports it could not apply it or has
  * not confirmed it by the pull timeout. Their canary checks read the
  * replica's reports instead of asking it.
- *
- * Licensing: starting a promotion or a rollback needs a license with fleet;
- * aborting a rollout and re-syncing an instance do not, and a running
- * rollout never checks it.
  */
 import { and, eq, inArray } from "drizzle-orm";
 import { appDb, nowIso } from "@/src/lib/db";
@@ -46,7 +42,6 @@ import {
   type InstanceSyncOutcome,
   type SyncPayload,
 } from "@/src/lib/instance-sync";
-import { requireFeature } from "@/ee/licensing/store";
 import { configFingerprint } from "@/ee/config-history/fingerprint";
 import { diffConfigContent, type ConfigDiff } from "@/ee/config-history/diff";
 import { readBoolean, readInteger, rejectUnknownKeys, requireObject } from "@/ee/alerting/validation";
@@ -75,7 +70,6 @@ import {
   requestPullResync,
 } from "./pull-replicas";
 import {
-  FEATURE,
   MAX_CANARY_WAIT_SECONDS,
   ROLLOUT_PHASES,
   ROLLOUT_STATUSES,
@@ -447,12 +441,11 @@ export async function previewPromotion(environmentId: number): Promise<Promotion
 /**
  * Start a promotion into a promotion-only environment (`environmentId`),
  * from the environment before it (see resolvePromotionSource), with the
- * environment's canary settings unless `canary` overrides them. Needs the
- * license and master mode. Refused while another rollout runs there and when
- * the environment and all its instances already run that configuration.
+ * environment's canary settings unless `canary` overrides them. Needs
+ * master mode. Refused while another rollout runs there and when the
+ * environment and all its instances already run that configuration.
  */
 export async function startPromotion(input: unknown, userId: number): Promise<RolloutView> {
-  await requireFeature(FEATURE);
   await assertMaster();
   const body = requireObject(input, "Body");
   rejectUnknownKeys(body, ["environmentId", "canary"], "the promotion");
@@ -502,10 +495,9 @@ export async function startPromotion(input: unknown, userId: number): Promise<Ro
 /**
  * Roll back rollout `id`: promote the revision its environment ran before
  * it, without a canary unless `canary` asks for one. Only for the latest
- * rollout of an environment once it has stopped. Needs the license.
+ * rollout of an environment once it has stopped.
  */
 export async function rollbackRollout(id: number, input: unknown, userId: number): Promise<RolloutView> {
-  await requireFeature(FEATURE);
   await assertMaster();
   const body = input === undefined || input === null ? {} : requireObject(input, "Body");
   rejectUnknownKeys(body, ["canary"], "the rollback");
@@ -553,9 +545,9 @@ export async function rollbackRollout(id: number, input: unknown, userId: number
 }
 
 /**
- * Stop a running rollout. Never needs the license. Instances already pushed
- * keep the new revision; the others and the environment stay where they
- * are. A push in progress completes.
+ * Stop a running rollout. Instances already pushed keep the new revision;
+ * the others and the environment stay where they are. A push in progress
+ * completes.
  */
 export async function abortRollout(id: number, userId: number): Promise<RolloutView> {
   const rollout = await getRolloutRow(id);
@@ -596,8 +588,8 @@ export type ResyncResult = {
  * Push to one instance what it should run: its promotion-only environment's
  * revision, or the master's configuration. The manual repair for a drifted
  * instance. A pull replica is asked to take it with its next poll, even when
- * it reports it runs it (which overwrites changes made on it). Never needs
- * the license; refused while a rollout runs in the instance's environment.
+ * it reports it runs it (which overwrites changes made on it). Refused
+ * while a rollout runs in the instance's environment.
  */
 export async function resyncInstance(instanceId: number, userId: number): Promise<ResyncResult> {
   await assertMaster();
@@ -988,8 +980,7 @@ async function advanceRollout(id: number, context: TickContext): Promise<void> {
 /**
  * One pass of the engine over every running rollout, oldest first. Skipped
  * while another pass is running anywhere in the deployment
- * (FLEET_ROLLOUT_LOCK) and when this instance is not a master. Never checks
- * the license.
+ * (FLEET_ROLLOUT_LOCK) and when this instance is not a master.
  */
 export async function runRolloutTick(options: { now?: Date } = {}): Promise<{ rollouts: number }> {
   const pass = await tryWithClusterLock(FLEET_ROLLOUT_LOCK, () => runRolloutPass(options));

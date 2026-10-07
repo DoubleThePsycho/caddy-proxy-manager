@@ -6,8 +6,6 @@ import DashboardLayoutClient from "./DashboardLayoutClient";
 import MfaPromptBanner from "./MfaPromptBanner";
 import AccessReviewBanner from "@/ee/access-reviews/ui/AccessReviewBanner";
 import { pendingReviewSummary } from "@/ee/access-reviews/decisions";
-import { organizationNavigation } from "@/ee/multi-tenancy/view";
-import { setOrganizationViewAction } from "@/ee/multi-tenancy/ui/actions";
 import { getNavSummary } from "@/src/lib/nav-summary";
 import { getUserPreferences, hasSavedPreferences } from "@/src/lib/preferences";
 import { PreferencesProvider } from "@/src/components/preferences/PreferencesProvider";
@@ -24,9 +22,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   } catch {
     // A reminder only; never break the dashboard over it.
   }
-  // The organisation switcher, or the user's own organisation (ee/multi-tenancy).
-  const organizations = await organizationNavigation(access);
-  // Sidebar counters, edition and environment, each guarded by its read permission.
+  // Sidebar counters and environment, each guarded by its read permission.
   const summary = await getNavSummary(access, reviews);
   // Interface preferences, including formatting and default list ordering (src/lib/preferences.ts).
   const userId = Number(session.user.id);
@@ -36,8 +32,6 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       <DashboardLayoutClient
         user={{ ...session.user, permissions: listHeldPermissions(access), isAdmin: access.isAdmin }}
         summary={summary}
-        organizationName={organizations.organizationName}
-        organizationSwitcher={organizations.switcher ? { ...organizations.switcher, onChange: setOrganizationViewAction } : null}
       >
         {mfa.gate === "prompt" && <MfaPromptBanner deadline={mfa.deadline} />}
         {reviews.pending > 0 && <AccessReviewBanner {...reviews} />}

@@ -23,7 +23,7 @@ const DAY = 86_400_000;
 const NONE = { pending: 0, dueAt: null, overdue: false };
 const stamp = () => new Date().toISOString();
 
-function role(permissions: Permission[], scopeTags: string[] = [], organizationId: number | null = null): Access {
+function role(permissions: Permission[], scopeTags: string[] = []): Access {
   return {
     userId: 7,
     role: 'viewer',
@@ -31,7 +31,6 @@ function role(permissions: Permission[], scopeTags: string[] = [], organizationI
     customRole: { id: 1, name: 'Custom' },
     permissions: new Set(permissions),
     scopeTags,
-    organizationId,
   };
 }
 
@@ -49,10 +48,10 @@ beforeEach(async () => {
   }
 });
 
-async function addCertificate(name: string, pem: string, organizationId: number | null = null) {
+async function addCertificate(name: string, pem: string) {
   const [row] = await ctx.db
     .insert(schema.certificates)
-    .values({ name, type: 'imported', domainNames: JSON.stringify([`${name}.example.com`]), certificatePem: pem, privateKeyPem: 'x', createdAt: stamp(), updatedAt: stamp(), organizationId })
+    .values({ name, type: 'imported', domainNames: JSON.stringify([`${name}.example.com`]), certificatePem: pem, privateKeyPem: 'x', createdAt: stamp(), updatedAt: stamp() })
     .returning();
   return row.id;
 }
@@ -107,7 +106,6 @@ describe('nav summary', () => {
       expect(summary.badges.alertsFiring ?? null).toBeNull();
       expect(summary.badges.certificatesExpiring ?? null).toBeNull();
       expect(summary.environment).toBeNull();
-      expect(summary.badges.licenseNodes ?? null).toBeNull();
     }
     // proxy_hosts:read without approvals:read: still no approvals counter.
     expect((await getNavSummary(role(['proxy_hosts:read']), NONE)).badges.approvalsPending ?? null).toBeNull();
@@ -122,15 +120,6 @@ describe('nav summary', () => {
     const own = { ...role(['approvals:read']), userId: 99 };
     expect((await getNavSummary(own, NONE)).badges.approvalsPending?.text).toBe('2');
     expect((await getNavSummary(role(['approvals:read']), NONE)).badges.approvalsPending ?? null).toBeNull();
-  });
-
-  it('counts an organisation user only their organisation\'s certificates', async () => {
-    await addCertificate('mine', expiringPem, 5);
-    await addCertificate('theirs', expiringPem, 6);
-    await addCertificate('provider', expiringPem, null);
-    const member = role(['certificates:read'], [], 5);
-    expect((await getNavSummary(member, NONE)).badges.certificatesExpiring?.text).toBe('1');
-    expect((await getNavSummary(adminAccess(1), NONE)).badges.certificatesExpiring?.text).toBe('3');
   });
 
   it('describes the reviewer\'s own open reviews', () => {
@@ -149,11 +138,5 @@ describe('nav summary', () => {
   it('shows instance readers where this instance stands', async () => {
     const summary = await getNavSummary(role(['instances:read', 'settings:read']), NONE);
     expect(summary.environment).toMatchObject({ mode: 'standalone', name: 'This server', tone: 'ok', environments: [], links: { fleet: false, sync: true } });
-  });
-
-  it('has no edition without a valid license', async () => {
-    const summary = await getNavSummary(adminAccess(1), NONE);
-    expect(summary.edition).toBeNull();
-    expect(summary.badges.licenseNodes ?? null).toBeNull();
   });
 });

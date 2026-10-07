@@ -3,13 +3,10 @@
 Dashboard screenshots for the public website (ingres.si, its own repository) and for this repository's README, taken on the end-to-end Docker stack with synthetic data.
 
 ```bash
-# Optional, for the paid screens: a development license key (never commit it).
-cp ~/.config/ingressi/dev-license-enterprise.txt tests/.auth/license.txt
-
 bun run screenshots:site
 ```
 
-`tests/playwright.shots.config.ts` runs the same global setup and teardown as the e2e suite: it builds and starts the stack, `seed.setup.ts` fills it, `screenshots.spec.ts` takes the pictures, and the teardown removes the stack and `tests/.auth` (the key with it). Like the e2e suite it needs a test-only `.env` for Docker Compose and the stack's ports free.
+`tests/playwright.shots.config.ts` runs the same global setup and teardown as the e2e suite: it builds and starts the stack, `seed.setup.ts` fills it, `screenshots.spec.ts` takes the pictures, and the teardown removes the stack and `tests/.auth`. Like the e2e suite it needs a test-only `.env` for Docker Compose and the stack's ports free.
 
 ## What it seeds
 
@@ -26,7 +23,7 @@ Written to `SHOTS_OUTPUT_DIR` (default `test-results/site-screenshots/`), at 144
 | `dashboard.png` | this repository's `.github/assets/dashboard.png` (README) |
 | `review/*.png` | full-page captures and other states, for checking only |
 
-Look at every image before copying it: synthetic data only, nothing half-loaded, no error banners. The License page is never captured (it shows the licensee).
+Look at every image before copying it: synthetic data only, nothing half-loaded, no error banners.
 
 ## Iterating
 

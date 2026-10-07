@@ -1,15 +1,14 @@
 /**
  * The shared state switch (ee/high-availability/shared-state/settings.ts):
  * input validation, the generation that changes each time shared state is
- * turned on, the license rule, stored values that are not valid, and the
- * Lua scripts' portability rules.
+ * turned on, stored values that are not valid, and the Lua scripts'
+ * portability rules.
  */
 import { describe, expect, it } from 'vitest';
 import {
   newGeneration,
   parseSharedStateInput,
   parseStoredSharedState,
-  sharedStateChangeNeedsLicense,
   sharedStateNamespace,
 } from '@/ee/high-availability/shared-state/settings';
 import * as scripts from '@/ee/high-availability/shared-state/scripts';
@@ -53,17 +52,6 @@ describe('stored values', () => {
 
   it('builds the namespace every key starts with', () => {
     expect(sharedStateNamespace({ keyPrefix: 'ingressi', generation: '0123abcd' })).toBe('ingressi:0123abcd:');
-  });
-});
-
-describe('license', () => {
-  const on = { enabled: true, keyPrefix: 'ingressi', generation: '0123abcd' };
-  it('is needed to turn on or move, never to turn off', () => {
-    expect(sharedStateChangeNeedsLicense(null, on)).toBe(true);
-    expect(sharedStateChangeNeedsLicense({ ...on, enabled: false }, on)).toBe(true);
-    expect(sharedStateChangeNeedsLicense(on, { ...on, keyPrefix: 'other' })).toBe(true);
-    expect(sharedStateChangeNeedsLicense(on, { ...on, enabled: false })).toBe(false);
-    expect(sharedStateChangeNeedsLicense(on, on)).toBe(false);
   });
 });
 

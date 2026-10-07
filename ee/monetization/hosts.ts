@@ -17,9 +17,6 @@
  * hosts only when the master sends them with what they need to gate them
  * (replica-sync.ts), never ungated. A slave refuses (409): its configuration
  * comes from the master.
- *
- * Licensing: turning monetization on or changing it needs "api_monetization";
- * turning it off never does.
  */
 import { eq } from "drizzle-orm";
 import { appDb, nowIso } from "@/src/lib/db";
@@ -32,12 +29,11 @@ import { getInstanceMode } from "@/src/lib/instance-sync";
 import { isSharedStateOn } from "@/ee/high-availability/shared-state/connection";
 import { countReplicas } from "@/src/lib/db/events";
 import { getProxyHost, listProxyHosts, type ProxyHost } from "@/src/lib/models/proxy-hosts";
-import { requireFeature } from "@/ee/licensing/store";
 import { reloadMonetization } from "./engine";
 import { getHostRow, hostAuthConflicts, readAllowedPlanIds } from "./host-guard";
-import { isRecord, parseBoolean, parseIdList, parseInteger, rejectUnknownKeys, requireRecord } from "./http";
+import { parseBoolean, parseIdList, parseInteger, rejectUnknownKeys, requireRecord } from "./http";
 import { ensureGateSecret } from "./settings";
-import { DEFAULT_KEY_HEADER, FEATURE, type HostMonetizationView } from "./types";
+import { DEFAULT_KEY_HEADER, type HostMonetizationView } from "./types";
 import { MAX_X402_PRICE_CENTS, MIN_X402_PRICE_CENTS } from "./x402/settings";
 
 export const HOST_NOT_FOUND = "Proxy host not found";
@@ -146,19 +142,10 @@ function parseHostX402(value: unknown, existing: HostRow | null): HostX402Input 
   return { enabled, priceCents };
 }
 
-/** True when the body only turns x402 off on the host (no license needed). */
-function onlyTurnsX402Off(record: Record<string, unknown>, existing: HostRow | null): boolean {
-  if (!existing?.enabled || !isRecord(record.x402)) return false;
-  const others = Object.keys(record).filter((key) => key !== "x402");
-  if (others.some((key) => !(key === "enabled" && record.enabled === true))) return false;
-  return Object.keys(record.x402).every((key) => key === "enabled") && record.x402.enabled === false;
-}
-
 /**
  * {enabled?, keyHeader?, allowedPlanIds?, x402?}. Turning monetization on (or
- * changing it while on) needs the license, an instance that is not a sync
- * replica and a host without another authentication mode; turning it (or
- * x402 alone) off needs none of them.
+ * changing it while on) needs an instance that is not a sync replica and a
+ * host without another authentication mode; turning it off needs neither.
  */
 export async function setHostMonetization(proxyHostId: number, body: unknown, actorUserId: number): Promise<HostMonetizationView> {
   const host = await requireHost(proxyHostId);
@@ -166,9 +153,6 @@ export async function setHostMonetization(proxyHostId: number, body: unknown, ac
   rejectUnknownKeys(record, ["enabled", "keyHeader", "allowedPlanIds", "x402"]);
   const existing = await getHostRow(proxyHostId);
   const enabled = record.enabled === undefined ? true : parseBoolean(record.enabled, "enabled");
-  if (enabled && !onlyTurnsX402Off(record, existing)) {
-    await requireFeature(FEATURE);
-  }
   const x402 = record.x402 === undefined ? null : parseHostX402(record.x402, existing);
   const keyHeader = record.keyHeader === undefined ? existing?.keyHeader ?? DEFAULT_KEY_HEADER : parseKeyHeader(record.keyHeader);
   const allowedPlanIds =
@@ -214,7 +198,7 @@ export async function setHostMonetization(proxyHostId: number, body: unknown, ac
   return toView(host, await getHostRow(proxyHostId));
 }
 
-/** Turns monetization off and forgets the host's settings. Never needs a license. */
+/** Turns monetization off and forgets the host's settings. */
 export async function removeHostMonetization(proxyHostId: number, actorUserId: number): Promise<void> {
   const existing = await getHostRow(proxyHostId);
   const host = await getProxyHost(proxyHostId);

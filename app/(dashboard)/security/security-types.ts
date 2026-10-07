@@ -87,7 +87,6 @@ export type SecurityPageData = {
   };
   tuning: {
     suggestions: WafTuningSuggestionView[];
-    canConfigure: boolean;
     analyticsEnabled: boolean;
     aiConfigured: boolean;
   };

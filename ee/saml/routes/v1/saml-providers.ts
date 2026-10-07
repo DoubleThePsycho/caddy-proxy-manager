@@ -4,7 +4,7 @@ import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { createProvider, listProviders } from "@/ee/saml/providers";
 import { NO_STORE, readJsonBody } from "@/ee/saml/http";
 
-/** SAML identity providers. Readable without a license; the SP private key is never returned. */
+/** SAML identity providers. The SP private key is never returned. */
 export async function GET(request: NextRequest) {
   try {
     await requireApiPermission(request, "sso:read");

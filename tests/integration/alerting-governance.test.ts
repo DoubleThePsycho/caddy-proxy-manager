@@ -1,10 +1,10 @@
 /**
  * Alerting additions: the error rate rule (ClickHouse traffic read through an
  * injected reader), certificates Caddy manages in the certificate expiry rule,
- * rule scopes and "for" durations (validation, license, engine), firing
+ * rule scopes and "for" durations (validation, engine), firing
  * alerts and episode ends.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TestDb } from '../helpers/db';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -20,9 +20,6 @@ import { evaluateCertExpiring, evaluateErrorRate, matchRequestHost, type Evaluat
 import { createAlertRule, describeRuleScope, getAlertRule, listAlertRules, updateAlertRule } from '../../ee/alerting/rules';
 import { runAlertEvaluation, type EngineDependencies } from '../../ee/alerting/engine';
 import { lastFiredAtByRule, listAlertEvents, listFiringAlerts } from '../../ee/alerting/events';
-import { LicenseRequiredError } from '../../ee/licensing/store';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import type { ManagedCertificateReport, ManagedCertificateStatus } from '../../src/lib/managed-certificates';
 
 const T0 = new Date('2026-10-03T09:05:00.000Z');
@@ -33,10 +30,7 @@ beforeEach(async () => {
   for (const table of [schema.alertEvents, schema.alertRuleStates, schema.alertRules, schema.alertChannels, schema.proxyHosts, schema.settings]) {
     await ctx.db.delete(table);
   }
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 async function addHost(name: string, domains: string[], values: Partial<typeof schema.proxyHosts.$inferInsert> = {}): Promise<number> {
   const [row] = await ctx.db
@@ -202,9 +196,7 @@ describe('cert_expiring with certificates Caddy manages', () => {
 });
 
 describe('rules: scope and "for" duration', () => {
-  it('needs the alerting feature for error rate rules', async () => {
-    await expect(createAlertRule({ name: '5xx', type: 'error_rate' }, 1)).rejects.toBeInstanceOf(LicenseRequiredError);
-    await installLicense(ctx.db);
+  it('creates error rate rules', async () => {
     const rule = await createAlertRule({ name: '5xx', type: 'error_rate', forMinutes: 2 }, 1);
     expect(rule).toMatchObject({
       type: 'error_rate',
@@ -217,7 +209,6 @@ describe('rules: scope and "for" duration', () => {
   });
 
   it('validates scopes and durations', async () => {
-    await installLicense(ctx.db);
     const host = await addHost('App', ['app.example.com']);
     const scoped = await createAlertRule({ name: 'Upstreams', type: 'upstream_down', scope: { type: 'hosts', proxyHostIds: [host, host] } }, 1);
     expect(scoped).toMatchObject({ scope: { type: 'hosts', proxyHostIds: [host] }, scopeLabel: 'Upstreams of 1 proxy host' });

@@ -14,20 +14,17 @@ import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { StatusDot, type StatusTone } from "@/components/ui/StatusDot";
 import { Textarea } from "@/components/ui/textarea";
+import { formatVersion } from "@/src/lib/app-version";
 import { formatDateTimeUtc } from "@/src/lib/date-format";
 import { paginate } from "@/src/lib/pagination";
-import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import type { IssuedPullCredential, PullCheckIn, PullReplicaView } from "@/ee/fleet/types";
 
 type Props = {
   replicas: PullReplicaView[];
   /** The role holds fleet:replicas. */
   canManage: boolean;
-  /** The license allows adding pull replicas and rotating credentials. */
-  configurable: boolean;
   /** This instance is a master; pull replicas poll masters only. */
   isMaster: boolean;
-  editionLabel: string;
   /** Called after a change, to refresh what the page around the panel shows (the panel updates itself). */
   onChanged?: () => void;
   /** Shows the panel's own "Add pull replica" button. Off where the page has one (Fleet). Default true. */
@@ -121,16 +118,13 @@ function IssuedCredentialDialog({ issued, onClose }: { issued: IssuedPullCredent
 export default function PullReplicasPanel({
   replicas,
   canManage,
-  configurable,
   isMaster,
-  editionLabel,
   onChanged,
   showAddButton = true,
   adding: controlledAdding,
   onAddingChange,
   className,
 }: Props) {
-  const { productName } = useBranding();
   // The replicas as changed here, until the page passes new ones.
   const [local, setLocal] = useState({ source: replicas, items: replicas });
   if (local.source !== replicas) setLocal({ source: replicas, items: replicas });
@@ -226,7 +220,7 @@ export default function PullReplicasPanel({
 
   const addButton =
     canManage && showAddButton ? (
-      <Button size="sm" variant="outline" disabled={pending || !configurable || !isMaster} onClick={() => openAdd()}>
+      <Button size="sm" variant="outline" disabled={pending || !isMaster} onClick={() => openAdd()}>
         <Plus className="h-4 w-4" /> Add pull replica
       </Button>
     ) : null;
@@ -239,14 +233,8 @@ export default function PullReplicasPanel({
       className={className}
     >
       <div className="flex flex-col">
-        {(!configurable && canManage) || !isMaster || message ? (
+        {!isMaster || message ? (
           <div className="flex flex-col gap-2 px-[18px] pt-3.5">
-            {!configurable && canManage && (
-              <Banner tone="info">
-                Adding pull replicas and issuing credentials needs an active {productName} {editionLabel} license or higher. Replicas that
-                exist keep working; you can still revoke their credentials and delete them.
-              </Banner>
-            )}
             {!isMaster && <Banner tone="info">Pull replicas poll a master; this instance is not one.</Banner>}
             {message && (
               <Banner tone={message.ok ? "ok" : "bad"} live onDismiss={() => setMessage(null)}>
@@ -294,7 +282,7 @@ export default function PullReplicasPanel({
                     </dd>
                     <dt className="text-soft">Reports</dt>
                     <dd className="m-0">
-                      {replica.reportedVersion ? <span className="num">v{replica.reportedVersion}</span> : <span className="text-soft">Nothing yet</span>}
+                      {replica.reportedVersion ? <span className="num">{formatVersion(replica.reportedVersion)}</span> : <span className="text-soft">Nothing yet</span>}
                       {replica.caddy && (
                         <span className={replica.caddy.ok ? undefined : "text-bad"}>
                           {replica.caddy.ok
@@ -335,7 +323,7 @@ export default function PullReplicasPanel({
                       <Button
                         variant="secondary"
                         size="sm"
-                        disabled={pending || !configurable}
+                        disabled={pending}
                         onClick={() => { setConfirmError(null); setConfirm({ kind: "rotate", replica }); }}
                       >
                         <KeyRound className="h-4 w-4" /> {replica.hasCredential ? "Rotate credential" : "Issue credential"}
