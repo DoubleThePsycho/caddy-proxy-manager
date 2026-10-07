@@ -18,7 +18,7 @@ type Props = {
   enforcement: SignInOverview["enforcement"];
   canWriteSso: boolean;
   canReadAuditLog: boolean;
-  /** saveSsoEnforcementAction (./actions.ts); turning enforcement off never needs a license. */
+  /** saveSsoEnforcementAction (./actions.ts). */
   turnOffEnforcement: (input: { enabled: boolean }) => Promise<{ ok: true } | { ok: false; error: string }>;
   /** What the login page offers now, shown beside the break-glass accounts. */
   loginOptions: ReactNode;

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Elastic-2.0
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
@@ -34,8 +33,6 @@ type Props = {
   /** The request named by ?request=, when it is not an open one. */
   selected?: ChangeRequestView | null;
   policies: ApprovalPolicyView[];
-  configurable: boolean;
-  editionLabel: string;
   canManage: boolean;
   /** Channels that enabled "change waiting for approval" alert rules notify; null when the user cannot read alerts. */
   alertChannels?: string[] | null;
@@ -65,8 +62,6 @@ export default function ApprovalsClient({
   decided,
   selected = null,
   policies,
-  configurable,
-  editionLabel,
   canManage,
   alertChannels = null,
   now,
@@ -137,16 +132,6 @@ export default function ApprovalsClient({
             </TabsTrigger>
           </TabsList>
         </PageHeader>
-
-        {!configurable && (
-          <Banner tone="info">
-            Creating and changing approval policies needs an {editionLabel} license with Change approvals. Policies already set up keep
-            protecting their hosts and can still be disabled or deleted.{" "}
-            <Link href="/license" className="text-brand underline underline-offset-2">
-              Licensing
-            </Link>
-          </Banner>
-        )}
 
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-line bg-panel px-3.5 py-2.5 text-[13px] text-muted-foreground">
           {enabledPolicies.length === 0 ? (
@@ -244,7 +229,7 @@ export default function ApprovalsClient({
         </TabsContent>
 
         <TabsContent value="policies" className="mt-0">
-          <PoliciesTab policies={policies} configurable={configurable} canManage={canManage} />
+          <PoliciesTab policies={policies} canManage={canManage} />
         </TabsContent>
       </Tabs>
     </div>

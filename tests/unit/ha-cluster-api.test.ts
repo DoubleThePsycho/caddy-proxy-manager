@@ -1,7 +1,6 @@
 /**
  * GET /api/v1/high-availability/cluster: guarded by high_availability:read,
- * readable without a license, the supervisor's status and the configuration
- * without a single secret, and a clear error when the status is missing or
+ * the supervisor's status and the configuration without a single secret, and a clear error when the status is missing or
  * stale. Plus its OpenAPI entry.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,7 +11,6 @@ import { NextRequest } from 'next/server';
 import { ApiClientError } from '@/src/lib/api-errors';
 
 const auth = vi.hoisted(() => ({ deny: false, permissions: [] as string[] }));
-const license = vi.hoisted(() => ({ configurable: false }));
 
 vi.mock('@/src/lib/api-auth', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/src/lib/api-auth')>()),
@@ -22,7 +20,6 @@ vi.mock('@/src/lib/api-auth', async (importOriginal) => ({
     return { userId: 1, role: 'admin', authMethod: 'bearer' };
   }),
 }));
-vi.mock('@/ee/licensing/store', () => ({ isFeatureConfigurable: vi.fn(async () => license.configurable) }));
 
 import { GET } from '@/app/api/v1/high-availability/cluster/route';
 import { HIGH_AVAILABILITY_OPENAPI_PATHS, HIGH_AVAILABILITY_OPENAPI_SCHEMAS } from '@/ee/high-availability/openapi';
@@ -77,7 +74,6 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'ha-api-'));
   auth.deny = false;
   auth.permissions = [];
-  license.configurable = false;
 });
 
 afterEach(() => {
@@ -96,17 +92,17 @@ describe('GET /api/v1/high-availability/cluster', () => {
   it('says high availability is off when HA_ENABLED is not set', async () => {
     const { status, data } = await get();
     expect(status).toBe(200);
-    expect(data).toMatchObject({ enabled: false, configurable: false, node: null, nodes: [], config: null });
+    expect(data).toMatchObject({ enabled: false, node: null, nodes: [], config: null });
+    expect(data).not.toHaveProperty('configurable');
   });
 
-  it('shows the cluster without any secret, and without a license', async () => {
+  it('shows the cluster without any secret', async () => {
     for (const [name, value] of Object.entries(ENV)) vi.stubEnv(name, value);
     useStatus(status());
     const { status: code, text, data } = await get();
     expect(code).toBe(200);
     expect(data).toMatchObject({
       enabled: true,
-      configurable: false,
       error: null,
       node: { id: 'web-1', role: 'leader' },
       lease: { holder: 'web-1', epoch: 7, ttlSeconds: 15 },

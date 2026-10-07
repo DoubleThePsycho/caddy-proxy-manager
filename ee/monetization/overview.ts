@@ -5,8 +5,6 @@
  * ledger, and the prepaid balances held. Months and days are UTC, as the
  * plans' free requests are. Every amount stays an integer number of
  * micro-units: SQLite sums integers exactly, and nothing here divides money.
- *
- * Reading only; no license check (reads never need one).
  */
 import { and, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

@@ -374,8 +374,8 @@ describe('a replica serving a monetized host with allowances', () => {
       expect((await response.json()).error).toContain('instances:write');
     }
     expect(await onMaster(async () => (await getMonetizationOptions()).replicaGateUrl)).toBe(GATE_URL);
-    // Retention alone stays monetization:write (here refused only for the license, which this test has none of).
-    expect(JSON.stringify(await (await put({ usageRetentionMonths: 12 })).json())).not.toContain('instances:write');
+    // Retention alone needs only monetization:write.
+    expect((await put({ usageRetentionMonths: 12 })).status).toBe(200);
     vi.mocked(requireApiPermission).mockResolvedValue({ userId: 1, role: 'admin', authMethod: 'bearer', access: adminAccess(1) } as never);
     expect((await put({ replicas: { mode: 'off' } })).status).toBe(200);
   });

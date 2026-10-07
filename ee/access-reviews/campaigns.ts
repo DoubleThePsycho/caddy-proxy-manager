@@ -2,18 +2,12 @@
 /**
  * Access review campaigns: starting one (a snapshot of every access of the
  * users in scope), reading them, and closing, cancelling or deleting them.
- *
- * License (feature "access_reviews"): starting a campaign needs it (and so
- * does setting up a schedule, schedules.ts). Completing, cancelling and
- * deleting never do, and neither do reviewers' decisions nor scheduled runs
- * of a schedule that is already set up.
  */
 import { and, eq, inArray } from "drizzle-orm";
 import { appDb, nowIso, toIso } from "@/src/lib/db";
 import { accessReviewCampaigns, accessReviewItems } from "@/src/lib/db/schema";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import {
   accessOf,
   describeReviewers,
@@ -29,7 +23,6 @@ import {
   type ReviewWriter,
 } from "./scope";
 import {
-  FEATURE,
   type CampaignCounts,
   type CampaignDetail,
   type CampaignStatus,
@@ -248,9 +241,8 @@ export async function auditCampaignStarted(
   });
 }
 
-/** Starts a campaign now. Needs the license. */
+/** Starts a campaign now. */
 export async function startCampaign(input: unknown, actorUserId: number): Promise<CampaignDetail> {
-  await requireFeature(FEATURE);
   const parsed = await readCampaignInput(input);
   const created = await appDb.transaction(async (tx) => await insertCampaign(tx, parsed, { createdBy: actorUserId, scheduleId: null }));
   await auditCampaignStarted(actorUserId, { ...created, name: parsed.name, dueAt: parsed.dueAt, scheduleId: null });
@@ -292,7 +284,7 @@ export async function closeCampaign(tx: ReviewWriter, id: number): Promise<{ row
   return { row, items: await tx.select().from(accessReviewItems).where(eq(accessReviewItems.campaignId, id)).orderBy(accessReviewItems.id) };
 }
 
-/** Closes an open campaign early (see closeCampaign). Never needs a license. */
+/** Closes an open campaign early (see closeCampaign). */
 export async function completeCampaign(id: number, actorUserId: number): Promise<CampaignDetail> {
   const result = await appDb.transaction(async (tx) => {
     const row = await first(tx.select({ status: accessReviewCampaigns.status }).from(accessReviewCampaigns).where(eq(accessReviewCampaigns.id, id)).limit(1));
@@ -317,7 +309,7 @@ export async function auditCampaignCompleted(actorUserId: number | null, row: Pi
   });
 }
 
-/** Stops an open campaign; nothing is revoked any more. Never needs a license. */
+/** Stops an open campaign; nothing is revoked any more. */
 export async function cancelCampaign(id: number, actorUserId: number): Promise<CampaignDetail> {
   const row = await first(appDb.select().from(accessReviewCampaigns).where(eq(accessReviewCampaigns.id, id)).limit(1));
   if (!row) throw new ApiClientError("Access review not found", 404);
@@ -342,7 +334,7 @@ export async function cancelCampaign(id: number, actorUserId: number): Promise<C
   return await getCampaign(id);
 }
 
-/** Deletes a campaign and its items (and with them its record). Never needs a license. */
+/** Deletes a campaign and its items (and with them its record). */
 export async function deleteCampaign(id: number, actorUserId: number): Promise<void> {
   const row = await first(appDb.select().from(accessReviewCampaigns).where(eq(accessReviewCampaigns.id, id)).limit(1));
   if (!row) throw new ApiClientError("Access review not found", 404);

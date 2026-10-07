@@ -1,10 +1,8 @@
 /**
- * White-label (ee/white-label): the REST API and dashboard actions, the
- * license gate (set-up and changes need it; defaults, removal and reset do
- * not; configured branding outlives a lapsed license), uploads, the public
- * image route, the cache, instance sync, and where the branding shows up
- * (page metadata, sign-in pages, e-mails) and where it must not (the
- * license page and identifiers).
+ * White-label (ee/white-label): the REST API and dashboard actions, uploads,
+ * the public image route, the cache, instance sync, and where the branding
+ * shows up (page metadata, sign-in pages, e-mails) and where it must not
+ * (identifiers).
  */
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -12,7 +10,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 import { createTestDb, disableForeignKeys, type TestDb } from '../helpers/db';
-import { createTestSigner, licensePayload, signLicense } from '../helpers/license';
 import { makeIco, makeJpeg, makePng, textChunk } from '../helpers/images';
 import * as schema from '../../src/lib/db/schema';
 
@@ -53,7 +50,6 @@ import { deleteBrandingAssetAction, resetBrandingAction, saveBrandingAction, upl
 import { generateMetadata } from '@/app/layout';
 import LoginClient from '@/app/(auth)/login/LoginClient';
 import PortalLoginForm from '@/app/(auth)/portal/PortalLoginForm';
-import LicenseClient from '@/ee/licensing/ui/LicenseClient';
 import middleware from '@/proxy';
 import { revalidatePath } from 'next/cache';
 import { ApiAuthError, requireApiAdmin } from '@/src/lib/api-auth';
@@ -62,10 +58,6 @@ import { isAdminLevel, PERMISSION_AREAS } from '@/src/lib/permissions';
 import { applySyncPayload, buildSyncPayload, buildSyncPayloadFromContent, type SyncPayload } from '@/src/lib/instance-sync';
 import { emptyConfigContent } from '@/src/lib/config-content';
 import { authenticatorIssuer } from '@/src/lib/mfa-auth';
-import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
-import { LICENSE_SETTING_KEY, LicenseRequiredError, getLicenseState } from '@/ee/licensing/store';
-import { toLicenseView } from '@/ee/licensing/view';
-import { FEATURE_INFO } from '@/ee/licensing/features';
 import { brandingThemeCss, DEFAULT_BRANDING, getBranding, loadBranding, refreshBranding, resetBrandingCache, toPublicBranding } from '@/ee/white-label/store';
 import { cachedValuesSettled } from '@/src/lib/db/cached-value';
 import { BrandingProvider } from '@/ee/white-label/ui/BrandingProvider';
@@ -74,19 +66,6 @@ import { WHITE_LABEL_SETTING_KEY, type BrandingView } from '@/ee/white-label/typ
 import { buildEmail, buildWebhookBody, pagerDutyDedupKey, testNotification } from '@/ee/alerting/format';
 import { sendEmailMessage } from '@/ee/alerting/deliver';
 import { first as dbFirst } from '@/src/lib/db/ops';
-
-const signer = createTestSigner();
-
-async function installLicense(overrides: Record<string, unknown> = {}) {
-  const key = signLicense(signer, licensePayload(signer, {
-    edition: 'enterprise', iat: '2026-01-01T00:00:00.000Z', exp: '2099-01-01T00:00:00.000Z', ...overrides,
-  }));
-  await setRow(LICENSE_SETTING_KEY, key);
-}
-
-async function removeLicense() {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, LICENSE_SETTING_KEY));
-}
 
 async function setRow(key: string, value: unknown, updatedAt = new Date().toISOString()) {
   const json = JSON.stringify(value);
@@ -182,23 +161,20 @@ beforeEach(async () => {
   vi.mocked(revalidatePath).mockClear();
   mail.sendMail.mockReset();
   delete process.env.INSTANCE_MODE;
-  setTrustedLicenseKeysForTests(signer.keys);
 });
 
 afterAll(() => {
-  setTrustedLicenseKeysForTests(null);
   resetBrandingCache();
 });
 
 describe('GET /api/v1/branding', () => {
-  it('shows the defaults read-only without a license', async () => {
+  it('shows the defaults', async () => {
     const response = await GET(jsonRequest('GET'));
     const data = (await response.json()) as BrandingView;
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(data).toMatchObject({
       source: 'default',
-      configurable: false,
       defaultProductName: 'Ingressi',
       effective: { productName: 'Ingressi', loginHeading: 'Ingressi', accent: null, poweredByShown: false },
       assets: { logoLight: null, logoDark: null, favicon: null },
@@ -213,14 +189,13 @@ describe('GET /api/v1/branding', () => {
 });
 
 describe('permissions', () => {
-  it('has a paid, instance-wide branding area whose write permission is administrator-level', () => {
-    expect(PERMISSION_AREAS.branding).toMatchObject({ actions: ['read', 'write'], paid: true, instanceWide: true });
+  it('has an instance-wide branding area whose write permission is administrator-level', () => {
+    expect(PERMISSION_AREAS.branding).toMatchObject({ actions: ['read', 'write'], instanceWide: true });
     expect(isAdminLevel(['branding:write'])).toBe(true);
     expect(isAdminLevel(['branding:read'])).toBe(false);
   });
 
   it('refuses changes without branding:write', async () => {
-    await installLicense();
     vi.mocked(requireApiAdmin).mockRejectedValue(new ApiAuthError('Permission required: branding:write', 403));
     try {
       expect((await put({ productName: 'Example Edge' })).status).toBe(403);
@@ -233,35 +208,13 @@ describe('permissions', () => {
     }
     expect(await row(WHITE_LABEL_SETTING_KEY)).toBeUndefined();
   });
-
-  it('is available in the Enterprise edition', () => {
-    expect(FEATURE_INFO.white_label).toMatchObject({ edition: 'enterprise' });
-  });
 });
 
-describe('license gate', () => {
-  it.each([
-    ['no license', async () => {}],
-    ['a Business license', async () => await installLicense({ edition: 'business' })],
-    ['a license past its grace period', async () => await installLicense({ iat: '2020-01-01T00:00:00.000Z', exp: '2021-01-01T00:00:00.000Z' })],
-  ])('refuses setting branding up with %s', async (_name, setup) => {
-    await setup();
-    const response = await put({ productName: 'Example Edge' });
-    expect(response.status).toBe(403);
-    expect(response.data.error).toBe(new LicenseRequiredError('white_label').message);
-    expect(response.data.error).toMatch(/needs an active Ingressi Enterprise license/);
-    expect((await upload('logo-light', multipart('logo-light', makePng()))).status).toBe(403);
-    expect((await put({ showPoweredBy: false })).status).toBe(403);
-    expect(await row(WHITE_LABEL_SETTING_KEY)).toBeUndefined();
-    expect(logAuditEvent).not.toHaveBeenCalled();
-  });
-
-  it('sets branding up with an Enterprise license and audits it', async () => {
-    await installLicense();
+describe('changes', () => {
+  it('sets branding up and audits it', async () => {
     const { status, data } = await put(BRANDED);
     expect(status).toBe(200);
     expect(data).toMatchObject({
-      configurable: true,
       source: 'local',
       settings: BRANDED,
       effective: { productName: 'Example Edge', emailSenderName: 'Example Alerts', poweredByShown: true },
@@ -281,16 +234,11 @@ describe('license gate', () => {
     }));
   });
 
-  it('restores defaults, removes images and resets without a license', async () => {
-    await installLicense();
+  it('restores defaults, removes images and resets', async () => {
     expect((await put({ ...BRANDED, showPoweredBy: false })).status).toBe(200);
     expect((await upload('logo-light', multipart('logo-light', makePng()))).status).toBe(200);
-    await removeLicense();
-
-    // Still showing, read-only.
     expect(getBranding().productName).toBe('Example Edge');
-    expect((await put({ productName: 'Other' })).status).toBe(403);
-    // Re-sending the current values with a field restored is fine.
+
     const restored = await put({ ...BRANDED, showPoweredBy: true, supportUrl: null });
     expect(restored.status).toBe(200);
     expect(restored.data.settings).toMatchObject({ showPoweredBy: true, supportUrl: null, productName: 'Example Edge' });
@@ -307,26 +255,10 @@ describe('license gate', () => {
     expect(getBranding()).toBe(DEFAULT_BRANDING);
     expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'branding_reset' }));
   });
-
-  it('keeps showing configured branding after the license lapses', async () => {
-    await installLicense();
-    await put(BRANDED);
-    const logo = await upload('logo-light', multipart('logo-light', makePng(8, 8)));
-    await removeLicense();
-    await refreshBranding();
-
-    const branding = getBranding();
-    expect(branding.productName).toBe('Example Edge');
-    expect(brandingThemeCss(branding)).toContain('--brand-fill:#1d4ed8');
-    const served = await image('logo-light', { v: versionOf(logo.data.assets.logoLight.url) });
-    expect(served.status).toBe(200);
-    expect((await generateMetadata()).title).toEqual({ default: 'Example Edge', template: '%s · Example Edge' });
-  });
 });
 
 describe('validation', () => {
   it('refuses invalid input with 400 and stores nothing', async () => {
-    await installLicense();
     for (const body of [
       { accentColor: '#fff' },
       { accentColor: 'red;}body{display:none' },
@@ -344,8 +276,6 @@ describe('validation', () => {
 });
 
 describe('uploads', () => {
-  beforeEach(async () => await installLicense());
-
   it('stores a PNG without its metadata and serves it with safe headers', async () => {
     const png = makePng(40, 20, [textChunk('Author', 'someone')]);
     const { status, data } = await upload('logo-light', multipart('logo-light', png));
@@ -434,7 +364,6 @@ describe('public image route', () => {
 
 describe('dashboard actions', () => {
   it('save, upload, remove and reset, revalidating every page', async () => {
-    await installLicense();
     const saved = await saveBrandingAction({ productName: 'Example Edge' });
     expect(saved).toMatchObject({ ok: true, view: { effective: { productName: 'Example Edge' } } });
     expect(revalidatePath).toHaveBeenCalledWith('/', 'layout');
@@ -449,15 +378,12 @@ describe('dashboard actions', () => {
     expect(await uploadBrandingAssetAction('logo-dark', svg)).toMatchObject({ ok: false, error: expect.stringMatching(/SVG/) });
 
     expect(await deleteBrandingAssetAction('logo-light')).toMatchObject({ ok: true, view: { assets: { logoLight: null } } });
-    await removeLicense();
-    expect(await saveBrandingAction({ productName: 'Other' })).toMatchObject({ ok: false, error: expect.stringMatching(/Enterprise license/) });
     expect(await resetBrandingAction()).toMatchObject({ ok: true, view: { source: 'default' } });
   });
 });
 
 describe('cache', () => {
   it('reuses the parsed branding until it changes', async () => {
-    await installLicense();
     await put({ productName: 'Example Edge' });
     const first = getBranding();
     expect(getBranding()).toBe(first);
@@ -467,7 +393,6 @@ describe('cache', () => {
   });
 
   it('picks up a change written by something else when it is read again', async () => {
-    await installLicense();
     await put({ productName: 'Example Edge' });
     expect(getBranding().productName).toBe('Example Edge');
     await setRow(WHITE_LABEL_SETTING_KEY, { productName: 'Restored Name', showPoweredBy: true }, '2099-01-01T00:00:00.000Z');
@@ -543,7 +468,6 @@ describe('cache', () => {
 
 describe('instance sync', () => {
   it('sends the branding with its images to slaves', async () => {
-    await installLicense();
     await put({ productName: 'Example Edge' });
     await upload('logo-light', multipart('logo-light', makePng(6, 6)));
     const payload = await buildSyncPayload();
@@ -551,7 +475,6 @@ describe('instance sync', () => {
   });
 
   it('sends the current branding with a promoted fleet revision, which does not hold it', async () => {
-    await installLicense();
     await put({ productName: 'Example Edge' });
     const payload = await buildSyncPayloadFromContent(emptyConfigContent());
     expect(payload.settings.white_label).toMatchObject({ productName: 'Example Edge' });
@@ -572,7 +495,6 @@ describe('instance sync', () => {
     expect(branding.assets.logoLight).toMatchObject({ width: 4, height: 4 });
     expect(toPublicBranding(branding).logoDarkUrl).toBe(toPublicBranding(branding).logoLightUrl);
 
-    await installLicense();
     await put({ productName: 'Replica Brand' });
     branding = getBranding();
     expect(branding).toMatchObject({ productName: 'Replica Brand', source: 'local' });
@@ -604,7 +526,6 @@ describe('instance sync', () => {
 
 describe('where the branding shows', () => {
   beforeEach(async () => {
-    await installLicense();
     await put({ ...BRANDED, accentColorDark: '#60a5fa' });
     await upload('logo-light', multipart('logo-light', makePng(12, 12)));
   });
@@ -679,17 +600,7 @@ describe('where the branding shows', () => {
     expect(spec.info.title).toBe('Example Edge API');
     expect(spec.paths['/api/v1/branding'].put.operationId).toBe('updateBranding');
     expect(spec.paths['/api/v1/branding/assets/{asset}'].put.requestBody.content['multipart/form-data']).toBeDefined();
-    expect(spec.components.schemas.Branding.required).toContain('configurable');
+    expect(spec.components.schemas.Branding.required).toEqual(['settings', 'effective', 'assets', 'source', 'updatedAt', 'defaultProductName', 'limits']);
     expect(spec.tags.map((tag: { name: string }) => tag.name)).toContain('White-label');
-  });
-
-  it('not the license page or license texts', async () => {
-    const license = toLicenseView(await getLicenseState(), 1);
-    const html = renderToStaticMarkup(
-      branded(createElement(LicenseClient, { license }))
-    );
-    expect(html).toContain('This install runs Ingressi');
-    expect(html).not.toContain('Example Edge');
-    expect(new LicenseRequiredError('white_label').message).toBe('White-label needs an active Ingressi Enterprise license or higher');
   });
 });

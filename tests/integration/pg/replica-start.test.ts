@@ -4,9 +4,8 @@
  * connection; when it leads at once, the jobs have started when start-up
  * returns; stopping stops them, releases the lock and records the stop; a
  * critical start-up failure is thrown on as on SQLite and leaves nothing
- * running; a replica refused under the license rule competes for nothing,
- * starts no job and answers 503; a follower starts its jobs once the lead
- * is free; a second process with this node id: the newer one hands the lead
+ * running; a new replica next to a live one joins and leads when the lead
+ * is free; a follower starts its jobs once the lead is free; a second process with this node id: the newer one hands the lead
  * back, stops its jobs, answers 503 and runs again once the other stopped;
  * a process restarted after a crash leads after one heartbeat. Membership
  * runs with short intervals here (heartbeat 50 ms, retries 100 ms).
@@ -157,7 +156,7 @@ describe.skipIf(!testDbIsPostgres())('a PostgreSQL replica starting', () => {
     await waitFor(async () => !(await leaderLockHeld()));
   });
 
-  it('refuses a new replica next to a live one without the license: no lead, no job, 503', async () => {
+  it('joins next to a live replica, and leads and starts its jobs while the lead is free', async () => {
     const now = new Date().toISOString();
     await ctx.db.insert(schema.clusterNodes).values({
       nodeId: 'web-1',
@@ -169,14 +168,14 @@ describe.skipIf(!testDbIsPostgres())('a PostgreSQL replica starting', () => {
       lastHeartbeatAt: now,
     });
     const start = vi.fn();
-    expect(await startBackgroundJobs([{ name: 'scheduler', start }])).toEqual([]);
-    expect(start).not.toHaveBeenCalled();
-    expect(replicaRefusal()).toMatch(/not admitted/);
-    expect(isLeader()).toBe(false);
-    expect(await leaderLockHeld()).toBe(false);
-    expect(await row()).toBeNull();
+    expect(await startBackgroundJobs([{ name: 'scheduler', start }])).toEqual(['scheduler']);
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(replicaRefusal()).toBeNull();
+    expect(isLeader()).toBe(true);
+    expect(await leaderLockHeld()).toBe(true);
+    expect(await row()).toMatchObject({ nodeId: 'replica-test-1', stoppedAt: null });
     const response = await health(new NextRequest('http://localhost:3000/api/health'));
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(200);
     // The replica already running is untouched.
     expect(await row('web-1')).toMatchObject({ lastHeartbeatAt: now, stoppedAt: null });
   });

@@ -5,7 +5,7 @@
  * person, the API or a report schedule), how many events were recorded since,
  * and the chain's anchor and head as they are now.
  *
- * Read-only; never checks the license (verifying again does, in verify.ts).
+ * Read-only; verifying again is in verify.ts.
  */
 import { and, count, eq, gt, isNotNull, lt } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

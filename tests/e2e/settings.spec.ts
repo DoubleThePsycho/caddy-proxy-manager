@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 
 /**
- * The settings pages: Settings itself (general and the usage ping), and the
+ * The settings pages: Settings itself (the general settings), and the
  * pages next to what they configure (Certificate settings, Host defaults,
  * Geo blocking, Rate limiting, Analytics settings, OAuth providers, Instance
  * sync, High availability, Backups). Old /settings links lead to them.
@@ -68,7 +68,6 @@ test.describe('Settings pages — load and navigation', () => {
   test('Settings is one page, without the old group list', async ({ page }) => {
     await page.goto('/settings');
     await expect(main(page).getByRole('heading', { level: 2, name: 'General' })).toBeVisible();
-    await expect(main(page).getByRole('heading', { level: 2, name: 'Usage ping' })).toBeVisible();
     await expect(page.locator('aside[aria-label="Settings navigation"]')).toHaveCount(0);
     await expect(page.getByRole('searchbox', { name: 'Search settings' })).toHaveCount(0);
   });
@@ -97,10 +96,6 @@ test.describe('Settings — old links', () => {
       await page.goto(`/settings?section=${id}`);
       await expect(page, id).toHaveURL(new RegExp(`${path.replace(/\//g, '\\/')}$`));
     }
-
-    await page.goto('/settings?section=usage-ping');
-    await expect(page).toHaveURL(/\/settings#usage-ping$/);
-    await expect(page.getByTestId('usage-ping-section')).toBeVisible();
   });
 
   test('#section and ?group= links open the page that holds the section', async ({ page }) => {

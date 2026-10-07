@@ -2,8 +2,8 @@
 /**
  * Certificate storage settings: validation of REST and dashboard input,
  * parsing of stored values (saved here, synced from a master, imported or
- * restored), and the comparisons the license gate needs. No database access,
- * so instance sync and the configuration code can use it.
+ * restored), and comparing two settings. No database access, so instance
+ * sync and the configuration code can use it.
  *
  * Secrets (the password, the Sentinel password and the encryption key) are
  * stored with encryptSecret, or named as an environment variable that every
@@ -417,19 +417,6 @@ function backendOf(storage: StoredCertificateStorage | null): StorageBackend {
 
 export function sameCertificateStorage(a: StoredCertificateStorage | null, b: StoredCertificateStorage | null): boolean {
   return backendOf(a) === backendOf(b) && sameRedisStorage(a?.redis ?? null, b?.redis ?? null);
-}
-
-/**
- * Whether going from `previous` to `next` sets up, enables or changes shared
- * storage (license needed). Switching back to local storage, keeping or
- * removing the Redis settings, never does.
- */
-export function storageChangeNeedsLicense(previous: StoredCertificateStorage | null, next: StoredCertificateStorage | null): boolean {
-  if (sameCertificateStorage(previous, next)) return false;
-  if (backendOf(next) === "local") {
-    return next?.redis != null && !sameRedisStorage(previous?.redis ?? null, next.redis);
-  }
-  return true;
 }
 
 export function toRedisStorageView(redis: StoredRedisStorage): RedisStorageView {

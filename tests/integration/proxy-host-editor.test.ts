@@ -5,12 +5,11 @@
  * and the edit and new pages' data. Saves go through the same scope checks
  * and change approval gate as the REST API; previews store nothing.
  */
-import { beforeEach, afterAll, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
 import { apiRequest, idParams, json } from '../helpers/custom-roles';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import { ADMIN, ALICE, BOB, DAVE, hostRow, insertPolicy, requestRow, seedApprovals, type Hosts, type Tokens } from '../helpers/approvals';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb, sessionUserId: 0 }));
@@ -30,7 +29,6 @@ vi.mock('next/navigation', () => ({
 }));
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { previewProxyHostEditorAction, saveProxyHostEditorAction } from '../../app/(dashboard)/proxy-hosts/editor-actions';
 import { toEditorCertificate } from '../../app/(dashboard)/proxy-hosts/editor-data';
 import EditProxyHostPage from '../../app/(dashboard)/proxy-hosts/[id]/edit/page';
@@ -46,13 +44,10 @@ let hosts: Hosts;
 beforeEach(async () => {
   ctx.db = createTestDb();
   vi.clearAllMocks();
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.db, 'enterprise');
   ({ tokens, hosts } = await seedApprovals(ctx.db));
   await insertPolicy(ctx.db, { name: 'Production' });
 });
 
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 async function changeRequests() {
   return await ctx.db.select().from(schema.changeRequests);

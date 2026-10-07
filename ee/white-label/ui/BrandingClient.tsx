@@ -2,10 +2,9 @@
 "use client";
 
 import { useMemo, useRef, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ImageUp, Lock, RotateCcw, Trash2 } from "lucide-react";
+import { ImageUp, RotateCcw, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SectionCard } from "@/components/ui/SectionCard";
 import { Banner } from "@/components/ui/Banner";
@@ -37,7 +36,6 @@ type Props = {
   view: BrandingView;
   canWrite: boolean;
   isSlave: boolean;
-  editionLabel: string;
   save: (input: Record<string, unknown>) => Promise<Result>;
   upload: (asset: string, form: FormData) => Promise<Result>;
   removeAsset: (asset: string) => Promise<Result>;
@@ -160,7 +158,7 @@ function formatBytes(bytes: number): string {
   return bytes < 1024 ? `${bytes} B` : `${Math.round(bytes / 1024)} KB`;
 }
 
-export default function BrandingClient({ view: initialView, canWrite, isSlave, editionLabel, save, upload, removeAsset, reset }: Props) {
+export default function BrandingClient({ view: initialView, canWrite, isSlave, save, upload, removeAsset, reset }: Props) {
   const router = useRouter();
   const [view, setView] = useState(initialView);
   const [form, setForm] = useState<Form>(() => formFrom(initialView));
@@ -168,8 +166,7 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
   const [confirmReset, setConfirmReset] = useState(false);
   const [pending, startTransition] = useTransition();
   const fileInputs = useRef<Partial<Record<AssetKind, HTMLInputElement | null>>>({});
-  // Without the license only defaults can be restored: the form is read-only, removing and resetting still work.
-  const editable = canWrite && view.configurable;
+  const editable = canWrite;
 
   const light = checkColor(form.accentColor, "light");
   const dark = checkColor(form.accentColorDark, "dark");
@@ -263,20 +260,6 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
         title="Branding"
       />
 
-      {!view.configurable && (
-        <Banner
-          tone="neutral"
-          icon={Lock}
-          actions={
-            <Button asChild variant="outline" size="sm">
-              <Link href="/license">Manage the license</Link>
-            </Button>
-          }
-        >
-          Changing the branding needs an active {editionLabel} license. The current branding keeps showing; you can still remove images and
-          reset everything to the defaults.
-        </Banner>
-      )}
       {isSlave && (
         <Banner tone="info">
           {view.source === "master"
@@ -297,7 +280,7 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
           <SectionCard
             title="Name and sign-in pages"
             descriptionPlacement="below"
-            description={<>The license page and legal notices keep the name {view.defaultProductName}.</>}
+            description={<>Legal notices keep the name {view.defaultProductName}.</>}
             actions={view.source !== "default" ? <Badge variant="success">Custom</Badge> : <Badge variant="muted">Default</Badge>}
             padded
           >
@@ -426,7 +409,6 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
                         <ImageUp aria-hidden="true" /> {asset ? "Replace" : "Upload"}
                       </Button>
                       {asset && (
-                        // Removing an image always works, with or without a license.
                         <Button variant="danger" size="sm" disabled={!canWrite || pending} onClick={() => onRemove(kind)}>
                           <Trash2 aria-hidden="true" /> Remove
                         </Button>
@@ -473,7 +455,6 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
               {!editable ? "Read-only" : dirty ? "Unsaved changes" : "No unsaved changes"}
             </span>
             {hasCustomBranding && (
-              // Resetting always works, with or without a license.
               <Button variant="ghost" onClick={() => setConfirmReset(true)} disabled={!canWrite || pending}>
                 <RotateCcw aria-hidden="true" /> Reset to defaults
               </Button>
@@ -516,7 +497,7 @@ export default function BrandingClient({ view: initialView, canWrite, isSlave, e
       >
         <p className="text-sm text-muted-foreground">
           The product name, texts, colours, logos and favicon go back to the defaults on this instance
-          {isSlave ? ", and the master's branding applies again" : ""}. This does not need a license.
+          {isSlave ? ", and the master's branding applies again" : ""}.
         </p>
       </AppDialog>
     </div>

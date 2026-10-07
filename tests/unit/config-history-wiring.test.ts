@@ -1,14 +1,13 @@
 /**
  * Wiring of configuration history and export/import into shared code:
- * the apply hook, the settings groups the configuration covers, the feature
- * flag, the migration and the API documentation.
+ * the apply hook, the settings groups the configuration covers, the
+ * migration, the navigation and the API documentation.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { CONFIG_SETTING_KEYS } from '@/src/lib/config-content';
-import { FEATURE_INFO } from '@/ee/licensing/features';
 
 vi.mock('@/src/lib/api-auth', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/src/lib/api-auth')>()),
@@ -47,11 +46,7 @@ describe('the configuration', () => {
   });
 });
 
-describe('feature flag, migration and navigation', () => {
-  it('ships config_history in the Homelab edition', () => {
-    expect(FEATURE_INFO.config_history).toMatchObject({ edition: 'homelab' });
-  });
-
+describe('migration and navigation', () => {
   it('has a migration for config_snapshots in the journal', () => {
     const journal = JSON.parse(source('drizzle/meta/_journal.json')) as { entries: { tag: string }[] };
     expect(journal.entries.map((entry) => entry.tag)).toContain('0027_config_history');

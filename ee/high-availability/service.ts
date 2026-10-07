@@ -1,15 +1,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * High availability (feature "high_availability", Enterprise), phase 1:
- * where the Caddy nodes keep certificates. Local storage (each Caddy in its
- * own /data) is the default; shared storage puts them in Redis or Valkey, so
- * every node uses the same certificates, orders each one once and can answer
- * any node's HTTP-01 and TLS-ALPN-01 challenges.
- *
- * Setting up, enabling and changing shared storage need a license that
- * includes the feature. Switching back to local storage, removing the
- * setting, reading and testing never do, and the generated Caddy
- * configuration (caddy-storage.ts) never checks it.
+ * High availability, phase 1: where the Caddy nodes keep certificates.
+ * Local storage (each Caddy in its own /data) is the default; shared storage
+ * puts them in Redis or Valkey, so every node uses the same certificates,
+ * orders each one once and can answer any node's HTTP-01 and TLS-ALPN-01
+ * challenges.
  *
  * The setting is a settings group of its own ("certificate_storage"), synced
  * to slave instances with its secrets sealed to each slave's key, captured in
@@ -26,7 +21,6 @@ import { getInstanceMode } from "@/src/lib/instance-sync";
 import { withSettingsUpdateLock } from "@/src/lib/settings-update-lock";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiConflictError, ApiValidationError } from "@/src/lib/api-errors";
-import { isFeatureConfigurable, requireFeature } from "@/ee/licensing/store";
 import { rejectUnknownKeys, requireObject } from "@/ee/alerting/validation";
 import { buildMigrationConfig } from "./caddy-storage";
 import { invalidateSharedState } from "./shared-state/connection";
@@ -37,14 +31,12 @@ import {
   parseRedisStorageInput,
   parseStoredCertificateStorage,
   sameCertificateStorage,
-  storageChangeNeedsLicense,
   storageSecretChanged,
   STORAGE_SECRET_ENV_FIELDS,
   toRedisStorageView,
 } from "./settings";
 import {
   CERTIFICATE_STORAGE_SETTING_KEY,
-  HIGH_AVAILABILITY_FEATURE,
   REDIS_MODE_LABELS,
   STORAGE_ENV_PREFIX,
   STORAGE_SECRET_FIELDS,
@@ -96,7 +88,6 @@ export async function getCertificateStorageView(): Promise<CertificateStorageVie
     redis: stored?.redis ? toRedisStorageView(stored.redis) : null,
     source: local ? "local" : synced ? "master" : "default",
     updatedAt: row?.updatedAt ?? null,
-    configurable: await isFeatureConfigurable(HIGH_AVAILABILITY_FEATURE),
     editable: mode !== "slave",
     error,
     migration: stored?.redis ? buildMigrationConfig(stored.redis) : null,
@@ -179,8 +170,7 @@ function summaryOf(previous: StoredCertificateStorage | null, next: StoredCertif
 
 /**
  * Validates and stores the certificate storage ({backend?, redis?}, see
- * parseCertificateStorageInput) and applies it. Needs the license unless the
- * result is local storage with the Redis settings unchanged or removed.
+ * parseCertificateStorageInput) and applies it.
  */
 export async function saveCertificateStorage(body: unknown, actorUserId: number): Promise<CertificateStorageView> {
   await assertEditable();
@@ -198,7 +188,6 @@ export async function saveCertificateStorage(body: unknown, actorUserId: number)
     if (previousValid && sameCertificateStorage(previous, next)) return;
     // Shared state (phase 3) keeps sessions and balances on this server.
     await assertSharedStateServerKept(previous?.redis ?? null, next.redis);
-    if (storageChangeNeedsLicense(previous, next)) await requireFeature(HIGH_AVAILABILITY_FEATURE);
 
     await setSetting(CERTIFICATE_STORAGE_SETTING_KEY, next);
     invalidateSharedState();
@@ -217,8 +206,8 @@ export async function saveCertificateStorage(body: unknown, actorUserId: number)
 
 /**
  * Removes this instance's setting: local storage, and the Redis settings are
- * forgotten. Never needs a license. On a slave this removes a setting of its
- * own, if it has one, so the master's applies again.
+ * forgotten. On a slave this removes a setting of its own, if it has one,
+ * so the master's applies again.
  */
 export async function removeCertificateStorage(actorUserId: number): Promise<CertificateStorageView> {
   await withSettingsUpdateLock(async () => {
@@ -252,7 +241,7 @@ export async function removeCertificateStorage(actorUserId: number): Promise<Cer
 /**
  * Tests the storage from this instance: the setting in effect, or the Redis
  * settings in the body ({redis: {...}}, read like a save, with the stored
- * secrets for the ones left out). Changes nothing and needs no license.
+ * secrets for the ones left out). Changes nothing.
  */
 export async function testCertificateStorage(body: unknown, actorUserId: number): Promise<StorageTestResult> {
   const record = body === undefined || body === null ? {} : requireObject(body, "Request body");

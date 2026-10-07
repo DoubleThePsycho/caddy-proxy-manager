@@ -7,7 +7,7 @@ import { parseBrandingInput } from "@/ee/white-label/validation";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
-/** White-label branding. Readable without a license. */
+/** White-label branding. */
 export async function GET(request: NextRequest) {
   try {
     await requireApiPermission(request, "branding:read");
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** Partial update; setting a value of your own needs the license, restoring a default does not. */
+/** Partial update; null or an empty string restores a default. */
 export async function PUT(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "branding:write");
@@ -33,7 +33,7 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-/** Resets everything, logos included, to the defaults. Never needs a license. */
+/** Resets everything, logos included, to the defaults. */
 export async function DELETE(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "branding:write");

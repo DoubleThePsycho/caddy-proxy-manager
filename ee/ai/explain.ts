@@ -14,7 +14,6 @@ import { BRAND_NAME } from "@/src/lib/brand";
 import { safeSystemErrorCode } from "@/src/lib/caddy-apply-error";
 import { ApiValidationError } from "@/src/lib/api-errors";
 import { logAuditEvent } from "@/src/lib/audit";
-import { requireFeature } from "@/ee/licensing/store";
 import { RULE_TYPE_DESCRIPTIONS, RULE_TYPE_LABELS, isRuleType, type Severity } from "@/ee/alerting/types";
 import { getAiProviderConfig, ANTHROPIC_API_URL, type ResolvedAiProvider } from "./settings";
 
@@ -222,8 +221,7 @@ export async function requestExplanation(provider: ResolvedAiProvider, input: Ex
 
 /**
  * Explanation for an alert notification, or null when no provider is
- * configured or the call fails. Not license-gated: rules configured with
- * explanations keep getting them.
+ * configured or the call fails.
  */
 export async function explainAlert(input: ExplainInput): Promise<string | null> {
   let provider: ResolvedAiProvider | null;
@@ -256,9 +254,8 @@ export const SAMPLE_ALERT: ExplainInput = {
   },
 };
 
-/** Sends a sample alert to the configured provider. Needs the ai_analyst feature. */
+/** Sends a sample alert to the configured provider. */
 export async function testAiProvider(actorUserId: number): Promise<{ ok: boolean; explanation: string | null; error: string | null }> {
-  await requireFeature("ai_analyst");
   const provider = await getAiProviderConfig();
   if (!provider) throw new ApiValidationError("Enable and configure an AI provider first");
   const result = await requestExplanation(provider, SAMPLE_ALERT);

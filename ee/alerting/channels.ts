@@ -14,7 +14,6 @@ import { alertChannels, alertRules } from "@/src/lib/db/schema";
 import { decryptSecret, encryptSecret } from "@/src/lib/secret";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiConflictError, ApiValidationError } from "@/src/lib/api-errors";
-import { isWindDownOnly, requireChannelLicense } from "./gate";
 import {
   CHANNEL_TYPE_LABELS,
   CHANNEL_TYPES,
@@ -346,13 +345,6 @@ export async function getChannelTypes(ids: readonly number[]): Promise<Map<numbe
   return types;
 }
 
-/** Types of the channels among `ids` that still exist (a deleted one does not count). */
-export async function existingChannelTypes(ids: readonly number[]): Promise<ChannelType[]> {
-  if (ids.length === 0) return [];
-  const rows = await appDb.select({ id: alertChannels.id, type: alertChannels.type }).from(alertChannels);
-  return rows.filter((row) => ids.includes(row.id)).map((row) => row.type).filter(isChannelType);
-}
-
 function readChannelType(value: unknown): ChannelType {
   if (!isChannelType(value)) throw new ApiValidationError(`type must be one of: ${CHANNEL_TYPES.join(", ")}`);
   return value;
@@ -361,7 +353,6 @@ function readChannelType(value: unknown): ChannelType {
 export async function createAlertChannel(body: unknown, actorUserId: number): Promise<AlertChannelView> {
   const record = requireObject(body, "Request body");
   const type = readChannelType(record.type);
-  await requireChannelLicense(type);
   rejectUnknownKeys(record, ["name", "type", "enabled", "config"], "the channel");
   const name = readName(record.name);
   const enabled = readBoolean(record.enabled, "enabled", true);
@@ -395,8 +386,6 @@ export async function updateAlertChannel(id: number, body: unknown, actorUserId:
   if (!row) throw notFound();
   const type = readChannelType(row.type);
   const record = requireObject(body, "Request body");
-  // Disabling is winding down and never needs a license.
-  if (!isWindDownOnly(record, { enabled: false })) await requireChannelLicense(type);
   rejectUnknownKeys(record, ["name", "type", "enabled", "config"], "the channel");
   if (record.type !== undefined && record.type !== type) {
     throw new ApiValidationError("The type of an alert channel cannot be changed; create a new channel instead");
@@ -449,7 +438,6 @@ export async function deleteAlertChannel(id: number, actorUserId: number): Promi
   const row = await getChannelRow(id);
   if (!row) throw notFound();
   const type = readChannelType(row.type);
-  // Deleting is winding down: no license check.
   const users = await rulesUsingChannel(id);
   if (users.length > 0) {
     throw new ApiConflictError(`The channel is used by ${users.length === 1 ? "rule" : "rules"} ${users.map((name) => `"${name}"`).join(", ")}; delete those rules or remove the channel from them first`);
@@ -512,7 +500,6 @@ export async function getChannelRows(ids: readonly number[]): Promise<ChannelRow
 export async function getChannelRowForTest(id: number): Promise<ChannelRow> {
   const row = await getChannelRow(id);
   if (!row) throw notFound();
-  await requireChannelLicense(readChannelType(row.type));
   return row;
 }
 

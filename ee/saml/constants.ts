@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * SAML 2.0 single sign-on (feature "sso_saml"): names, paths and limits
+ * SAML 2.0 single sign-on: names, paths and limits
  * shared by the sign-in path, Better Auth's hooks and the administration
- * code. Nothing here touches the database or the license, so src/lib and
- * client components can import it.
+ * code. Nothing here touches the database, so src/lib and client
+ * components can import it.
  */
-
-export const SAML_FEATURE = "sso_saml" as const;
 
 /** Better Auth endpoint (under /api/auth) that starts an SP-initiated sign-in. */
 export const SAML_SIGN_IN_PATH = "/sign-in/saml";

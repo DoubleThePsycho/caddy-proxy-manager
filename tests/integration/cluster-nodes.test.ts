@@ -1,15 +1,12 @@
 /**
- * Membership of PostgreSQL replicas (src/lib/cluster-nodes.ts) and the
- * license rule they join under (D6, ee/high-availability/replicas.ts):
- * - the first replica joins without a license; a new node id next to a live
- *   replica needs the Enterprise high_availability feature, read when it
- *   joins; a refused node is not added and changes nothing for the others;
- * - a node id that joined before always starts again, also after the license
- *   expired; stopped and silent replicas do not count as live; two new nodes
- *   joining at once without a license: one gets in;
- * - heartbeats (which re-create a pruned row without any check), the leader
- *   flag, statuses, pruning, the refused replica's state, log and audit, its
- *   retries, and the node id kept in the data volume;
+ * Membership of PostgreSQL replicas (src/lib/cluster-nodes.ts):
+ * - the first replica joins alone, a new node id joins next to live
+ *   replicas and changes nothing for them;
+ * - a node id that joined before starts again; stopped and silent replicas
+ *   do not count as live; two new nodes joining at once both get in;
+ * - heartbeats (which re-create a pruned row), the leader flag, statuses,
+ *   pruning, the joined replica's log and audit, and the node id kept in the
+ *   data volume;
  * - two processes with one node id (a shared data volume, a copied
  *   INGRESSI_NODE_ID): the newer refuses to run as a replica, the older runs
  *   on, and a process restarted after a crash is not taken for a duplicate;
@@ -24,7 +21,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTestDb, testDbIsPostgres, type TestDb } from '../helpers/db';
 import { createPgReplica } from '../helpers/pg-test-db';
-import { createTestSigner, licensePayload, signLicense } from '../helpers/license';
 import * as schema from '../../src/lib/db/schema';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -46,10 +42,8 @@ import {
   resolveNodeId,
   type NodeIdentity,
 } from '@/src/lib/cluster-nodes';
-import { getPostgresReplicasView, replicaJoinAllowed, replicaRefusedMessage } from '@/ee/high-availability/replicas';
+import { getPostgresReplicasView } from '@/ee/high-availability/replicas';
 import { replicaRefusal, setReplicaRefusal } from '@/ee/high-availability/replica-admission';
-import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
-import { LICENSE_SETTING_KEY } from '@/ee/licensing/store';
 import { logAuditEvent } from '@/src/lib/audit';
 import { countReplicas, EventBus } from '@/src/lib/db/events';
 import type { DbExecutor } from '@/src/lib/db/types';
@@ -57,11 +51,9 @@ import { first as firstRow } from '@/src/lib/db/ops';
 import { setLeaderElectorForTests, type LeaderElector } from '@/src/lib/db/leader';
 import { recordLeadership } from '@/ee/high-availability/cluster/audit';
 
-const signer = createTestSigner();
-/** While the test license is active. */
 const T0 = new Date('2026-11-01T12:00:00.000Z');
-/** Past the license's expiry and its 30-day grace period. */
-const EXPIRED = new Date('2028-01-01T12:00:00.000Z');
+/** Months later. */
+const LATER = new Date('2028-01-01T12:00:00.000Z');
 const seconds = (date: Date, s: number) => new Date(date.getTime() + s * 1000);
 
 function identity(nodeId: string, overrides: Partial<NodeIdentity> = {}): NodeIdentity {
@@ -77,15 +69,7 @@ function identity(nodeId: string, overrides: Partial<NodeIdentity> = {}): NodeId
   };
 }
 
-async function installLicense(edition: 'business' | 'enterprise') {
-  const value = JSON.stringify(
-    signLicense(signer, licensePayload(signer, { edition, iat: '2026-10-01T00:00:00.000Z', exp: '2027-10-01T00:00:00.000Z' }))
-  );
-  await ctx.db.insert(schema.settings).values({ key: LICENSE_SETTING_KEY, value, updatedAt: T0.toISOString() })
-    .onConflictDoUpdate({ target: schema.settings.key, set: { value } });
-}
-
-const join_ = (node: NodeIdentity, now: Date) => joinCluster(node, { now, mayAddReplica: replicaJoinAllowed });
+const join_ = (node: NodeIdentity, now: Date) => joinCluster(node, { now });
 
 async function ids(): Promise<string[]> {
   return (await ctx.db.select({ nodeId: schema.clusterNodes.nodeId }).from(schema.clusterNodes).orderBy(schema.clusterNodes.nodeId)).map(
@@ -96,20 +80,18 @@ async function ids(): Promise<string[]> {
 beforeEach(async () => {
   ctx.db = createTestDb();
   await ctx.db.$count(schema.settings);
-  setTrustedLicenseKeysForTests(signer.keys);
   setReplicaRefusal(null);
   vi.mocked(logAuditEvent).mockClear();
 });
 
 afterEach(() => {
-  setTrustedLicenseKeysForTests(null);
   setReplicaRefusal(null);
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });
 
-describe('joining (the license rule)', () => {
-  it('lets the first replica join without a license', async () => {
+describe('joining', () => {
+  it('lets the first replica join', async () => {
     expect(await join_(identity('web-1'), T0)).toEqual({ admitted: true, joined: 'first' });
     const [row] = await ctx.db.select().from(schema.clusterNodes);
     expect(row).toMatchObject({
@@ -124,61 +106,50 @@ describe('joining (the license rule)', () => {
     });
   });
 
-  it('refuses a new replica next to a live one without high availability, and changes nothing for the others', async () => {
+  it('adds a new replica next to a live one, and changes nothing for the others', async () => {
     await join_(identity('web-1'), T0);
     const before = await ctx.db.select().from(schema.clusterNodes);
-    expect(await join_(identity('web-2'), seconds(T0, 5))).toEqual({ admitted: false, reason: 'license' });
-    await installLicense('business');
-    expect(await join_(identity('web-2'), seconds(T0, 10))).toEqual({ admitted: false, reason: 'license' });
-    expect(await ids()).toEqual(['web-1']);
-    expect(await ctx.db.select().from(schema.clusterNodes)).toEqual(before);
-  });
-
-  it('admits a new replica next to a live one with an Enterprise license', async () => {
-    await join_(identity('web-1'), T0);
-    await installLicense('enterprise');
-    expect(await join_(identity('web-2'), seconds(T0, 5))).toEqual({ admitted: true, joined: 'licensed' });
+    expect(await join_(identity('web-2'), seconds(T0, 5))).toEqual({ admitted: true, joined: 'added' });
     expect(await ids()).toEqual(['web-1', 'web-2']);
+    expect((await ctx.db.select().from(schema.clusterNodes)).filter((row) => row.nodeId === 'web-1')).toEqual(before);
   });
 
-  it('always lets a replica that joined before start again, also after the license expired; a new one is refused then', async () => {
+  it('lets a replica that joined before start again', async () => {
     await join_(identity('web-1'), T0);
-    await installLicense('enterprise');
     await join_(identity('web-2'), seconds(T0, 5));
-    // Months later the license has expired; both replicas restart (web-1 keeps its heartbeat going).
-    await recordHeartbeat(identity('web-1'), { leader: true, leaderSince: EXPIRED.toISOString() }, { now: EXPIRED });
-    expect(await join_(identity('web-2', { version: '1.2.4', startedAt: EXPIRED.toISOString() }), seconds(EXPIRED, 1))).toEqual({
+    // Months later both replicas restart (web-1 keeps its heartbeat going).
+    await recordHeartbeat(identity('web-1'), { leader: true, leaderSince: LATER.toISOString() }, { now: LATER });
+    expect(await join_(identity('web-2', { version: '1.2.4', startedAt: LATER.toISOString() }), seconds(LATER, 1))).toEqual({
       admitted: true,
       joined: 'returning',
     });
-    expect(await join_(identity('web-1'), seconds(EXPIRED, 2))).toEqual({ admitted: true, joined: 'returning' });
-    expect(await join_(identity('web-3'), seconds(EXPIRED, 3))).toEqual({ admitted: false, reason: 'license' });
-    const web2 = (await listClusterNodes({ now: seconds(EXPIRED, 3) })).find((node) => node.nodeId === 'web-2');
+    expect(await join_(identity('web-1'), seconds(LATER, 2))).toEqual({ admitted: true, joined: 'returning' });
+    expect(await join_(identity('web-3'), seconds(LATER, 3))).toEqual({ admitted: true, joined: 'added' });
+    const web2 = (await listClusterNodes({ now: seconds(LATER, 3) })).find((node) => node.nodeId === 'web-2');
     expect(web2).toMatchObject({ version: '1.2.4', firstSeenAt: seconds(T0, 5).toISOString(), status: 'live' });
   });
 
   it('does not count a stopped or a silent replica as live', async () => {
     await join_(identity('web-1'), T0);
     await markNodeStopped(identity('web-1'), { now: seconds(T0, 1) });
-    // A clean restart with a new id (a container without its data volume) joins without a license.
+    // A clean restart with a new id (a container without its data volume) is the only live replica.
     expect(await join_(identity('web-2'), seconds(T0, 2))).toEqual({ admitted: true, joined: 'first' });
     // web-2 crashes; once it has been silent for NODE_GONE_AFTER_MS, a new replica is alone again.
     const later = new Date(seconds(T0, 2).getTime() + NODE_GONE_AFTER_MS + 1);
     expect(await join_(identity('web-3'), later)).toEqual({ admitted: true, joined: 'first' });
-    expect(await join_(identity('web-4'), seconds(later, 1))).toEqual({ admitted: false, reason: 'license' });
+    expect(await join_(identity('web-4'), seconds(later, 1))).toEqual({ admitted: true, joined: 'added' });
   });
 
-  it('lets only one of two new replicas that join at once in without a license', async () => {
+  it('admits two new replicas that join at once', async () => {
     const outcomes = await Promise.all([join_(identity('web-1'), T0), join_(identity('web-2'), T0)]);
-    expect(outcomes.filter((outcome) => outcome.admitted)).toHaveLength(1);
-    expect(await ids()).toHaveLength(1);
+    expect(outcomes.every((outcome) => outcome.admitted)).toBe(true);
+    expect(await ids()).toEqual(['web-1', 'web-2']);
   });
 });
 
 describe('heartbeats and the leader', () => {
   it('records heartbeats, moves the leader flag, and reports statuses', async () => {
     await join_(identity('web-1'), T0);
-    await installLicense('enterprise');
     await join_(identity('web-2'), seconds(T0, 1));
     await join_(identity('web-3'), seconds(T0, 2));
     await recordLeadershipTaken(identity('web-1'), T0.toISOString(), { now: seconds(T0, 3) });
@@ -195,7 +166,7 @@ describe('heartbeats and the leader', () => {
     expect(nodes.find((node) => node.nodeId === 'web-2')).toMatchObject({ status: 'gone', leader: false });
   });
 
-  it('writes a running replica back whatever happened to its row, without any license check', async () => {
+  it('writes a running replica back whatever happened to its row', async () => {
     await join_(identity('web-1'), T0);
     await ctx.db.delete(schema.clusterNodes).where(eq(schema.clusterNodes.nodeId, 'web-1'));
     await recordHeartbeat(identity('web-1'), { leader: false, leaderSince: null }, { now: seconds(T0, 10) });
@@ -214,30 +185,25 @@ describe('heartbeats and the leader', () => {
 });
 
 describe('this process as a replica', () => {
-  it('is refused with a reason, an audit event and a log line, tries again, and joins once the license allows it', async () => {
+  it('joins next to a running replica, with a log line and an audit event', async () => {
     await join_(identity('web-1'), new Date());
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const membership = new ReplicaMembership(identity('web-2'), { isLeader: () => false, joinRetryMs: 50 });
-    expect(await membership.join()).toBe('refused');
-    expect(replicaRefusal()).toBe(replicaRefusedMessage());
-    expect(replicaRefusal()).toContain('Enterprise license with high availability');
-    expect(String(error.mock.calls[0]?.[0])).toContain('This replica was not admitted');
-    expect(vi.mocked(logAuditEvent)).toHaveBeenCalledWith(expect.objectContaining({ action: 'ha_replica_refused', userId: null }));
-    expect(await ids()).toEqual(['web-1']);
-
-    // The administrator installs the license on the running replica.
-    await ctx.db.insert(schema.settings).values({
-      key: LICENSE_SETTING_KEY,
-      value: JSON.stringify(signLicense(signer, licensePayload(signer, { edition: 'enterprise', iat: '2026-01-01T00:00:00.000Z', exp: '2099-01-01T00:00:00.000Z' }))),
-      updatedAt: new Date().toISOString(),
-    });
-    const admitted = new Promise<void>((resolve) => membership.retryUntilAdmitted(resolve));
-    await admitted;
+    expect(await membership.join()).toBe('admitted');
+    expect(membership.isRunning()).toBe(true);
+    expect(membership.refusal()).toBeNull();
     expect(replicaRefusal()).toBeNull();
+    expect(String(log.mock.calls[0]?.[0])).toContain('joined next to running replicas');
+    expect(vi.mocked(logAuditEvent)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'ha_replica_joined',
+        userId: null,
+        summary: 'Replica web-2 joined the cluster next to running replicas',
+        data: expect.objectContaining({ nodeId: 'web-2', joined: 'added' }),
+      })
+    );
+    expect(vi.mocked(logAuditEvent).mock.calls.filter(([event]) => event.action === 'ha_replica_refused')).toHaveLength(0);
     expect(await ids()).toEqual(['web-1', 'web-2']);
-    expect(vi.mocked(logAuditEvent)).toHaveBeenCalledWith(expect.objectContaining({ action: 'ha_replica_joined' }));
-    expect(vi.mocked(logAuditEvent).mock.calls.filter(([event]) => event.action === 'ha_replica_refused')).toHaveLength(1);
 
     await membership.stop();
     expect((await listClusterNodes()).find((node) => node.nodeId === 'web-2')?.status).toBe('stopped');
@@ -370,13 +336,13 @@ describe('two processes with one node id', () => {
     expect((await listClusterNodes({ now: seconds(T0, 112) }))[0]).toMatchObject({ status: 'live', stoppedAt: null });
 
     // Refused, it does not take the row again while the older one is live...
-    expect(await joinCluster(newer, { now: seconds(T0, 130), mayAddReplica: replicaJoinAllowed, whenContested: 'refuse' })).toEqual({
+    expect(await joinCluster(newer, { now: seconds(T0, 130), whenContested: 'refuse' })).toEqual({
       admitted: false,
       reason: 'duplicate',
     });
     // ...and joins once it stopped.
     await markNodeStopped(older, { now: seconds(T0, 140) });
-    expect(await joinCluster(newer, { now: seconds(T0, 150), mayAddReplica: replicaJoinAllowed, whenContested: 'refuse' })).toEqual({
+    expect(await joinCluster(newer, { now: seconds(T0, 150), whenContested: 'refuse' })).toEqual({
       admitted: true,
       joined: 'returning',
     });
@@ -529,7 +495,6 @@ describe('counting the replicas', () => {
 
   it('counts the live ones, and this process while it is not one of them', async () => {
     expect(await countLiveReplicas({ now: T0 })).toBe(1);
-    await installLicense('enterprise');
     await join_(identity('web-1'), T0);
     await join_(identity('web-2'), seconds(T0, 1));
     await join_(identity('web-3'), seconds(T0, 2));

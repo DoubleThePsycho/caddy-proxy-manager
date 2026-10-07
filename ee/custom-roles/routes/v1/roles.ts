@@ -6,7 +6,7 @@ import { createRole, listRoles } from "@/ee/custom-roles/service";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
-/** Custom roles. Readable without a license. */
+/** Custom roles. */
 export async function GET(request: NextRequest) {
   try {
     await requireApiPermission(request, "users:read");
@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** Creates a custom role (needs the custom_roles license feature). */
+/** Creates a custom role. */
 export async function POST(request: NextRequest) {
   try {
     const { access } = await requireApiPermission(request, "users:write");

@@ -13,8 +13,7 @@
  * the two_factors row and the passkeys rows); it never returns a TOTP secret,
  * a backup code or a credential.
  *
- * MFA is a Community feature: nothing here looks at the license. The policy
- * is per dashboard and is not synchronized to sync slaves (users are not).
+ * The policy is per dashboard and is not synchronized to sync slaves (users are not).
  * The forward-auth portal is not affected.
  */
 import { and, count, eq, isNotNull, ne } from "drizzle-orm";

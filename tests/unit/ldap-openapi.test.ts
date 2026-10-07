@@ -8,7 +8,6 @@ vi.mock('@/src/lib/api-auth', () => ({
 
 import { GET } from '@/app/api/v1/openapi.json/route';
 import { ADMIN_LEVEL_PERMISSIONS, PERMISSION_AREAS } from '@/src/lib/permissions';
-import { FEATURE_INFO } from '@/ee/licensing/features';
 
 async function spec() {
   return (await GET({ headers: { get: () => null } } as never)).json();
@@ -54,8 +53,7 @@ describe('OpenAPI: LDAP directories', () => {
   });
 
   it('ships the feature with an administrator-level write permission', () => {
-    expect(FEATURE_INFO.ldap).toMatchObject({ edition: 'enterprise' });
-    expect(PERMISSION_AREAS.ldap).toMatchObject({ actions: ['read', 'write'], paid: true });
+    expect(PERMISSION_AREAS.ldap).toMatchObject({ actions: ['read', 'write'] });
     expect(ADMIN_LEVEL_PERMISSIONS).toContain('ldap:write');
   });
 });

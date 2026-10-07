@@ -13,7 +13,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** Needs a license with the AI analyst, except {"enabled": false} and/or {"ai": false}. */
 export async function PUT(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "ai:write");

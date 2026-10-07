@@ -3,12 +3,10 @@
  * OpenLDAP server (the openldap service in tests/docker-compose.test.yml,
  * seeded from tests/openldap/bootstrap.ldif).
  *
- * The E2E stack has no license, and directory sign-in never checks one, so
- * the directory is written straight into the database (as an administrator
- * would have set it up while licensed). It connects to openldap:389 with
- * StartTLS, trusting the CA the OpenLDAP image generated. Everything the spec
- * creates is removed afterwards, so the login page of later specs is the
- * usual one.
+ * The directory is written straight into the database. It connects to
+ * openldap:389 with StartTLS, trusting the CA the OpenLDAP image generated.
+ * Everything the spec creates is removed afterwards, so the login page of
+ * later specs is the usual one.
  */
 import { test, expect, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';

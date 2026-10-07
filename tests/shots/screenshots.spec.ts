@@ -12,8 +12,7 @@
  *   audit-log.png                           → the website's feature walkthrough
  * and full-page copies under review/ for checking what each page showed.
  * Look at every image before publishing it: synthetic data only, nothing
- * half-loaded, no error banners. The License page is never captured (it
- * shows the licensee).
+ * half-loaded, no error banners.
  */
 import { test, expect, type Page } from '@playwright/test';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';

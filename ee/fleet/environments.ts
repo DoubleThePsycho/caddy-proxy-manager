@@ -2,11 +2,6 @@
 /**
  * Fleet environments and instance assignments.
  *
- * Licensing: creating an environment, changing one and assigning an instance
- * to one need a license that includes fleet. Winding down never does:
- * deleting an environment, turning promotion-only off and taking an instance
- * out of its environment work with a lapsed or missing license.
- *
  * Permissions: fleet:write manages environments and assignments. Anything
  * that releases instances from promotion (turning promotion-only off, taking
  * an instance out of a promotion-only environment, deleting one that still
@@ -20,9 +15,7 @@ import { ApiClientError, ApiConflictError, ApiValidationError } from "@/src/lib/
 import { logAuditEvent } from "@/src/lib/audit";
 import { can, type Access } from "@/src/lib/permissions";
 import { sanitizeInstanceSyncError } from "@/src/lib/instance-sync-error";
-import { requireFeature } from "@/ee/licensing/store";
 import {
-  isPlainObject,
   readBoolean,
   readInteger,
   readName,
@@ -33,7 +26,6 @@ import { checkInState } from "./pull-replicas";
 import {
   DEFAULT_CANARY_WAIT_SECONDS,
   DRIFT_STATUSES,
-  FEATURE,
   MAX_CANARY_WAIT_SECONDS,
   type DriftStatus,
   type EnvironmentView,
@@ -264,9 +256,8 @@ async function assertNameFree(name: string, exceptId?: number): Promise<void> {
 
 // ── Changes ─────────────────────────────────────────────────────────────
 
-/** Create an environment. Needs the license. */
+/** Create an environment. */
 export async function createEnvironment(input: unknown, userId: number): Promise<EnvironmentView> {
-  await requireFeature(FEATURE);
   const changes = readEnvironmentChanges(input);
   if (changes.name === undefined) throw new ApiValidationError("name is required");
   const name = changes.name;
@@ -308,18 +299,15 @@ export async function createEnvironment(input: unknown, userId: number): Promise
 }
 
 /**
- * Change an environment; fields left out keep their values. Needs the
- * license unless the change only turns promotion-only off. Turning it off
- * releases the environment's instances: it needs fleet:promote when the
- * environment has instances, is refused while a rollout runs there, and
- * drops the pinned revision. The instances then get the master's
- * configuration with the next change or sync.
+ * Change an environment; fields left out keep their values. Turning
+ * promotion-only off releases the environment's instances: it needs
+ * fleet:promote when the environment has instances, is refused while a
+ * rollout runs there, and drops the pinned revision. The instances then get
+ * the master's configuration with the next change or sync.
  */
 export async function updateEnvironment(id: number, input: unknown, actor: { userId: number; access: Access }): Promise<EnvironmentView> {
   const existing = await requireEnvironmentRow(id);
   const changes = readEnvironmentChanges(input);
-  const windDownOnly = isPlainObject(input) && Object.keys(input).length === 1 && changes.promotionOnly === false;
-  if (!windDownOnly) await requireFeature(FEATURE);
   if (Object.keys(changes).length === 0) throw new ApiValidationError("Body must change at least one field");
   if (changes.name !== undefined) await assertNameFree(changes.name, id);
 
@@ -355,10 +343,9 @@ export async function updateEnvironment(id: number, input: unknown, actor: { use
 }
 
 /**
- * Delete an environment. Never needs the license. Its instances lose their
- * environment (and receive every change again: fleet:promote when it was
- * promotion-only); its rollouts are deleted with it. Refused while a rollout
- * runs there.
+ * Delete an environment. Its instances lose their environment (and receive
+ * every change again: fleet:promote when it was promotion-only); its
+ * rollouts are deleted with it. Refused while a rollout runs there.
  */
 export async function deleteEnvironment(id: number, actor: { userId: number; access: Access }): Promise<void> {
   const existing = await requireEnvironmentRow(id);
@@ -388,12 +375,12 @@ export async function deleteEnvironment(id: number, actor: { userId: number; acc
 
 /**
  * Put instance `instanceId` in environment `environmentId`, or take it out
- * (null). Assigning needs the license; taking an instance out does not.
- * Leaving a promotion-only environment for none or for one that receives
- * every change needs fleet:promote. Refused while a rollout runs in either
- * environment. Nothing is pushed: an instance that joins a promotion-only
- * environment keeps its configuration until the next promotion or re-sync,
- * and one that leaves it gets the master's with the next change or sync.
+ * (null). Leaving a promotion-only environment for none or for one that
+ * receives every change needs fleet:promote. Refused while a rollout runs in
+ * either environment. Nothing is pushed: an instance that joins a
+ * promotion-only environment keeps its configuration until the next
+ * promotion or re-sync, and one that leaves it gets the master's with the
+ * next change or sync.
  */
 export async function assignInstance(
   instanceId: number,
@@ -408,7 +395,6 @@ export async function assignInstance(
     throw new ApiValidationError("environmentId must be an environment id or null");
   }
   const targetId = raw as number | null;
-  if (targetId !== null) await requireFeature(FEATURE);
 
   const instance = await getInstanceRow(instanceId);
   if (!instance) throw new ApiClientError(INSTANCE_NOT_FOUND, 404);

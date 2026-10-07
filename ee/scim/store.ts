@@ -5,9 +5,7 @@
  *
  * Everything here takes a database reader or writer (the database or a
  * transaction on it), so a check and the write it guards share one
- * transaction. Nothing here looks at the license:
- * SCIM requests, linking at sign-in and role mappings keep working without
- * one.
+ * transaction.
  */
 import { eq } from "drizzle-orm";
 import { nowIso } from "@/src/lib/db";

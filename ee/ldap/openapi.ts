@@ -10,9 +10,8 @@ const TAG = "LDAP Directories";
 export const LDAP_OPENAPI_TAG = {
   name: TAG,
   description:
-    "LDAP and Active Directory directories for dashboard sign-in, with group-to-role mapping (Enterprise edition). Creating, " +
-    "enabling and changing a directory need the ldap feature; reading, testing, disabling and deleting never do, and sign-in " +
-    "through an enabled directory never checks the license. The service account password is never returned. Directories are " +
+    "LDAP and Active Directory directories for dashboard sign-in, with group-to-role mapping. " +
+    "The service account password is never returned. Directories are " +
     "per instance and not synced to slaves. People sign in with POST /api/auth/sign-in/ldap {directoryId, username, password}.",
 };
 
@@ -35,7 +34,7 @@ export const LDAP_OPENAPI_PATHS = {
     get: {
       tags: [TAG],
       summary: "List directories",
-      description: "Permission ldap:read. Available without a license. The service account password is never returned (see hasBindPassword).",
+      description: "Permission ldap:read. The service account password is never returned (see hasBindPassword).",
       operationId: "listLdapDirectories",
       responses: { "200": { description: "Directories", content: json({ type: "array", items: ref("LdapDirectory") }) }, ...errors("401", "403") },
     },
@@ -43,7 +42,7 @@ export const LDAP_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Create a directory",
       description:
-        "Permission ldap:write (administrator-level). Needs the ldap feature (403 otherwise). An ldap:// URL needs startTls, or " +
+        "Permission ldap:write (administrator-level). An ldap:// URL needs startTls, or " +
         "allowUnencrypted to send passwords in clear text; server certificates are always verified. 409 when the name is taken.",
       operationId: "createLdapDirectory",
       requestBody: { required: true, content: json(ref("LdapDirectoryInput")) },
@@ -54,7 +53,7 @@ export const LDAP_OPENAPI_PATHS = {
     get: {
       tags: [TAG],
       summary: "Get a directory",
-      description: "Permission ldap:read. Available without a license.",
+      description: "Permission ldap:read.",
       operationId: "getLdapDirectory",
       parameters: [idParam],
       responses: { "200": { description: "Directory", content: json(ref("LdapDirectory")) }, ...errors("401", "403", "404") },
@@ -64,8 +63,8 @@ export const LDAP_OPENAPI_PATHS = {
       summary: "Update a directory",
       description:
         "Permission ldap:write. Fields left out keep their values; an omitted or empty bindPassword keeps the stored one. Changing the " +
-        "URL requires entering bindPassword again. Needs the ldap feature, except a body that only disables the directory " +
-        "({\"enabled\": false}), which works without a license.",
+        "URL requires entering bindPassword again. A body that only disables the directory ({\"enabled\": false}) is applied " +
+        "without validating the stored settings again.",
       operationId: "updateLdapDirectory",
       parameters: [idParam],
       requestBody: { required: true, content: json(ref("LdapDirectoryUpdate")) },
@@ -75,7 +74,7 @@ export const LDAP_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Delete a directory",
       description:
-        "Permission ldap:write. Never needs a license. The accounts linked through the directory are unlinked; the users are kept.",
+        "Permission ldap:write. The accounts linked through the directory are unlinked; the users are kept.",
       operationId: "deleteLdapDirectory",
       parameters: [idParam],
       responses: { "204": { description: "Deleted" }, ...errors("401", "403", "404") },
@@ -87,7 +86,7 @@ export const LDAP_OPENAPI_PATHS = {
       summary: "Test the connection",
       description:
         "Permission ldap:write. Connects with the configured TLS, binds as the service account and reads the user search base. " +
-        "Works on a disabled directory and without a license. Recorded in the audit log. For an enabled directory the " +
+        "Works on a disabled directory. Recorded in the audit log. For an enabled directory the " +
         "result also becomes its health (the periodic check's status).",
       operationId: "testLdapDirectory",
       parameters: [idParam],

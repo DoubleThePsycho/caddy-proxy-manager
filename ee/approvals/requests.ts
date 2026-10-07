@@ -23,9 +23,7 @@
  *   at once with a mandatory reason, unless a covering policy forbids them;
  *   they are flagged on the request and in the audit log.
  *
- * Nothing here checks the license: configured policies keep being enforced,
- * and requests keep moving, when it lapses. Applies run one at a time on this
- * node.
+ * Applies run one at a time on this node.
  */
 import { createHash } from "node:crypto";
 import { and, count, eq, inArray, lt } from "drizzle-orm";
@@ -593,7 +591,7 @@ export type HostChangePreview = {
  * Previews a host change without storing anything: whether a change approval
  * policy covers it (and what it asks for), what changes field by field and
  * its impact. The caller has checked the permission and the scope, as for
- * gateHostChange. Reads only; never checks the license.
+ * gateHostChange. Reads only.
  */
 export async function previewHostChange(params: { access: Access; change: HostChange; now?: Date }): Promise<HostChangePreview> {
   const { access, change } = params;
@@ -977,7 +975,7 @@ async function applyRequest(id: number, actorId: number | null, via: ApplyVia, f
 
 // ── Decisions ─────────────────────────────────────────────────────────
 
-/** Marks pending requests past their expiry as expired. Never checks the license. */
+/** Marks pending requests past their expiry as expired. */
 export async function expireDueRequests(now: Date = new Date()): Promise<number> {
   const at = now.toISOString();
   const rows = await appDb
@@ -1185,7 +1183,7 @@ export async function emergencyApplyChangeRequest(access: Access, id: number, in
 
 /**
  * The scheduler's run: expires due requests and applies approved ones whose
- * change windows are open. Never checks the license.
+ * change windows are open.
  */
 export async function applyDueChangeRequests(now: Date = new Date()): Promise<{ expired: number; applied: number; failed: number }> {
   const expired = await expireDueRequests(now);

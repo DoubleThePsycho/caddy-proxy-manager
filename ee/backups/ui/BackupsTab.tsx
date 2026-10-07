@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Elastic-2.0
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -22,7 +21,6 @@ import { Pagination, useUrlPage } from "@/components/ui/Pagination";
 import { formatBytes } from "@/components/ui/chart-format";
 import { useFormat } from "@/components/preferences/PreferencesProvider";
 import { cn } from "@/lib/utils";
-import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import {
   DEFAULT_REGION,
   DEFAULT_RETENTION,
@@ -44,14 +42,10 @@ import {
 } from "@/ee/backups/types";
 import { jsonInit, readError, requestJson } from "@/src/lib/request-json";
 
-const LOCKED_HINT = "Needs a license with Scheduled backups";
-
 type Props = {
   destinations: BackupDestinationView[];
   runs: BackupRunsPage;
-  configurable: boolean;
   isSlave: boolean;
-  editionLabel: string;
   minPassphraseLength: number;
   /**
    * Page through the runs with ?page= (the Backups page). Without it the
@@ -186,11 +180,10 @@ function RunStatus({ run }: { run: BackupRunView }) {
   return <StatusDot tone={run.warning ? "warn" : "ok"} label="Uploaded" />;
 }
 
-export default function BackupsTab({ destinations, runs, configurable, isSlave, editionLabel, minPassphraseLength, paginateRuns = false }: Props) {
+export default function BackupsTab({ destinations, runs, isSlave, minPassphraseLength, paginateRuns = false }: Props) {
   const router = useRouter();
   const { hrefFor: runsHrefFor } = useUrlPage();
   const fmt = useFormat();
-  const { productName } = useBranding();
   const [pending, startTransition] = useTransition();
 
   const [editing, setEditing] = useState<BackupDestinationView | null>(null);
@@ -208,7 +201,7 @@ export default function BackupsTab({ destinations, runs, configurable, isSlave, 
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [restoreMessage, setRestoreMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const canChange = configurable && !isSlave;
+  const canChange = !isSlave;
   const timeZones = useMemo(() => {
     try {
       const zones = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
@@ -392,18 +385,6 @@ export default function BackupsTab({ destinations, runs, configurable, isSlave, 
 
   return (
     <div className="flex flex-col gap-5">
-      {!configurable && (
-        <Banner tone="info">
-          Scheduled backups need an active {productName} {editionLabel} license or higher.{" "}
-          {destinations.length > 0 ? "Enabled destinations keep backing up on schedule; you can still disable and delete them. " : ""}
-          Restoring from the dashboard needs the license too: without it, download a backup file from your bucket and load it with the
-          free import under Change history.{" "}
-          <Link href="/license" className="text-brand underline underline-offset-4">
-            Manage the license
-          </Link>
-          .
-        </Banner>
-      )}
       {restoreMessage && (
         <Banner tone={restoreMessage.ok ? "ok" : "bad"} live onDismiss={() => setRestoreMessage(null)} dismissLabel="Dismiss message">
           {restoreMessage.text}
@@ -414,7 +395,7 @@ export default function BackupsTab({ destinations, runs, configurable, isSlave, 
         title="Backup destinations"
         count={destinations.length}
         actions={
-          <Button size="sm" onClick={openCreate} disabled={!canChange || pending} title={configurable ? undefined : LOCKED_HINT}>
+          <Button size="sm" onClick={openCreate} disabled={!canChange || pending}>
             <Plus /> Add destination
           </Button>
         }
@@ -468,11 +449,9 @@ export default function BackupsTab({ destinations, runs, configurable, isSlave, 
                   <TableCell className="align-top">
                     <Switch
                       checked={destination.enabled}
-                      // Turning off always works; turning on needs the license.
                       disabled={pending || (!canChange && !destination.enabled)}
                       onCheckedChange={(checked) => setEnabled(destination, checked)}
                       aria-label={destination.enabled ? `Disable destination "${destination.name}"` : `Enable destination "${destination.name}"`}
-                      title={!configurable && !destination.enabled ? LOCKED_HINT : undefined}
                     />
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-right align-top">
@@ -480,7 +459,7 @@ export default function BackupsTab({ destinations, runs, configurable, isSlave, 
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        title={canChange ? "Back up now" : LOCKED_HINT}
+                        title="Back up now"
                         aria-label={`Back up to "${destination.name}" now`}
                         disabled={!canChange || pending || destination.running}
                         onClick={() => runNow(destination)}
@@ -490,9 +469,9 @@ export default function BackupsTab({ destinations, runs, configurable, isSlave, 
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        title={configurable ? "Test the connection" : LOCKED_HINT}
+                        title="Test the connection"
                         aria-label={`Test "${destination.name}"`}
-                        disabled={!configurable || pending}
+                        disabled={pending}
                         onClick={() => testConnection(destination)}
                       >
                         <Plug />
@@ -510,9 +489,9 @@ export default function BackupsTab({ destinations, runs, configurable, isSlave, 
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        title={configurable ? "Edit" : LOCKED_HINT}
+                        title="Edit"
                         aria-label={`Edit "${destination.name}"`}
-                        disabled={!configurable || pending}
+                        disabled={pending}
                         onClick={() => openEdit(destination)}
                       >
                         <Pencil />
@@ -803,13 +782,7 @@ export default function BackupsTab({ destinations, runs, configurable, isSlave, 
             The configuration is replaced with the selected backup and applied to Caddy, like an import. Users, group members,
             sign-in settings and API tokens are not changed.
           </p>
-          {!canChange && (
-            <Banner tone="info">
-              {isSlave
-                  ? "This instance is a sync slave: restore on the master."
-                : "Restoring needs the license. Download the file from your bucket and use the free import instead."}
-            </Banner>
-          )}
+          {isSlave && <Banner tone="info">This instance is a sync slave: restore on the master.</Banner>}
           {listingError && (
             <Banner tone="bad" live>
               {listingError}

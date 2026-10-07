@@ -8,7 +8,7 @@
  * on the slave itself); unreachable; older version (the slave runs a release
  * that cannot report, so its configuration is unknown rather than an error);
  * unknown (nothing to compare yet). Checking never changes a slave: putting
- * a drifted instance back is a manual re-sync. Never checks the license.
+ * a drifted instance back is a manual re-sync.
  *
  * A pull replica is not asked: its last report (sent with every poll, see
  * pull-server.ts) stands in for the status reply, and "unreachable" means it

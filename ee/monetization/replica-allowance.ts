@@ -363,7 +363,7 @@ async function settleReports(store: MonetizationBalanceStore, instanceId: number
 
 const UNAVAILABLE: GateDenial = { allow: false, status: 503, error: "unavailable" };
 
-/** One allowance request on the master. Never checks the license (a runtime path). */
+/** One allowance request on the master. */
 export async function grantAllowance(instanceId: number, request: AllowanceRequest, now: number = Date.now()): Promise<AllowanceReply> {
   await ensureMonetizationLoaded();
   const { monetizationBalanceStore } = await import("./balance-store");

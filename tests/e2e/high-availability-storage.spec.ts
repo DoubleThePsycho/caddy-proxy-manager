@@ -10,11 +10,10 @@
  * obtains the certificate, then started and synced; the test then checks the
  * slave serves the very same certificate and never tried to obtain one.
  *
- * The stack has no license, and Caddy never checks one, so the storage is
- * written straight into the master's database (as an administrator would have
- * set it up while licensed); everything after that goes through the normal
- * apply and sync paths. Switching back to local storage needs no license and
- * is done through the API at the end. Each run uses its own key prefix.
+ * The storage is written straight into the master's database; everything
+ * after that goes through the normal apply and sync paths. Switching back to
+ * local storage is done through the API at the end. Each run uses its own
+ * key prefix.
  */
 import { test, expect, type Browser, type BrowserContext } from '@playwright/test';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -149,7 +148,7 @@ function obtainLogLines(container: string, since: string): { obtaining: number; 
   };
 }
 
-/** Writes the storage setting into the master's database, as a licensed administrator would have saved it. */
+/** Writes the storage setting into the master's database, as the dashboard would have saved it. */
 function seedMasterStorage() {
   writeSettingRow('certificate_storage', {
     backend: 'redis',
@@ -206,7 +205,7 @@ test.describe.serial('High availability: shared certificate storage (master + sl
     if (hostId !== undefined) {
       await master.request.delete(`${MASTER}/api/v1/proxy-hosts/${hostId}`, { headers: { Origin: MASTER } });
     }
-    // Back to local storage: never needs a license.
+    // Back to local storage.
     await master.request.delete(`${MASTER}/api/v1/high-availability/storage`, { headers: { Origin: MASTER } });
     await master.request.put(`${MASTER}/api/v1/settings/acme`, { data: { caUrl: '', caRootPem: '' }, headers: json });
     await master.request.post(`${MASTER}/api/v1/instances/sync`, { headers: { Origin: MASTER } });

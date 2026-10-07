@@ -3,9 +3,8 @@
  * keycloak service in tests/docker-compose.test.yml, realm imported from
  * tests/keycloak/realm.json).
  *
- * The E2E stack has no license, and SAML sign-in never checks one, so the
- * provider is written straight into the database (as an administrator would
- * have set it up while licensed), from the realm's IdP metadata. The spec
+ * The provider is written straight into the database from the realm's IdP
+ * metadata. The spec
  * then registers the matching SAML client in Keycloak through its admin API:
  * persistent NameID, signed responses and assertions (RSA-SHA256), and
  * "email" and "groups" attributes. Everything it creates is removed

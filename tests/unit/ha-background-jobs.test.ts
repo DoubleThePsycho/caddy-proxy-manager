@@ -41,7 +41,6 @@ const starters = vi.hoisted(() => ({
   startDirectoryHealthChecks: vi.fn(),
   startReportScheduler: vi.fn(),
   startDigestScheduler: vi.fn(),
-  startUsagePingScheduler: vi.fn(() => false),
   startSharedStateDrain: vi.fn(),
   setSharedStateLeaderCheck: vi.fn(),
   startSharedStateNodeWorker: vi.fn(),
@@ -107,8 +106,6 @@ vi.mock('../../ee/fleet/scheduler', () => ({ startFleetScheduler: starters.start
 vi.mock('../../ee/ldap/health', () => ({ startDirectoryHealthChecks: starters.startDirectoryHealthChecks }));
 vi.mock('../../ee/compliance/scheduler', () => ({ startReportScheduler: starters.startReportScheduler }));
 vi.mock('../../ee/ai/digest-scheduler', () => ({ startDigestScheduler: starters.startDigestScheduler }));
-vi.mock('../../src/lib/usage-ping/scheduler', () => ({ startUsagePingScheduler: starters.startUsagePingScheduler }));
-vi.mock('../../src/lib/usage-ping/store', () => ({ applyUsagePingEnvironmentAnswer: async () => false }));
 vi.mock('../../ee/high-availability/shared-state/workers', () => ({
   startSharedStateDrain: starters.startSharedStateDrain,
   startSharedStateNodeWorker: starters.startSharedStateNodeWorker,
@@ -380,7 +377,7 @@ describe('the job list', () => {
       'startMonetizationEngine', 'startCaddyMonitoring', 'initLogParser', 'initWafLogParser', 'startAuditBackgroundJobs',
       'runPeriodicInstanceSync', 'startPullAgent', 'startAlertEvaluator', 'startBackupScheduler', 'startApprovalScheduler',
       'startAccessListExpiry', 'startAccessReviewScheduler', 'startFleetScheduler', 'startDirectoryHealthChecks',
-      'startReportScheduler', 'startDigestScheduler', 'startUsagePingScheduler', 'startSharedStateDrain', 'startSharedStateNodeWorker',
+      'startReportScheduler', 'startDigestScheduler', 'startSharedStateDrain', 'startSharedStateNodeWorker',
     ];
     const files = [...sources(join(ROOT, 'src')), ...sources(join(ROOT, 'ee')), ...sources(join(ROOT, 'app'))];
     for (const name of names) {

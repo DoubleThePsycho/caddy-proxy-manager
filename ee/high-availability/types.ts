@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * High availability (feature "high_availability", Enterprise), phase 1:
- * shared certificate storage for Caddy nodes. Shared types and constants.
- * Safe to import from client components: nothing here touches the database.
+ * High availability, phase 1: shared certificate storage for Caddy nodes.
+ * Shared types and constants. Safe to import from client components:
+ * nothing here touches the database.
  */
-
-export const HIGH_AVAILABILITY_FEATURE = "high_availability" as const;
 
 /** The settings key (instance sync stores the master's as synced:certificate_storage). */
 export const CERTIFICATE_STORAGE_SETTING_KEY = "certificate_storage";
@@ -120,8 +118,6 @@ export type CertificateStorageView = {
   /** "default": never set (local); "local": set on this instance; "master": synced from the master. */
   source: "default" | "local" | "master";
   updatedAt: string | null;
-  /** The license lets this instance enable or change shared storage (switching back to local never needs it). */
-  configurable: boolean;
   /** False on a sync slave, which uses the master's setting. */
   editable: boolean;
   /** Set when the stored value is not valid; Caddy keeps its previous configuration until it is saved again. */

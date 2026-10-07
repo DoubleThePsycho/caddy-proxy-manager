@@ -3721,7 +3721,7 @@ async function applyHoldingLock(signal: AbortSignal): Promise<LockedApplyOutcome
   lastAppliedConfigHash = liveHash;
 
   // Configuration history (ee): record what Caddy now serves when history is
-  // enabled. Never throws and does not consult the license.
+  // enabled. Never throws.
   await recordConfigSnapshotAfterApply();
   return "applied";
 }

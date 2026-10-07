@@ -130,7 +130,6 @@ const ENTITY_LABELS: Record<string, string> = {
   approval_policy: "Approval policy",
   backup_destination: "Backup destination",
   instance: "Instance",
-  license: "License",
   waf: "WAF",
 };
 

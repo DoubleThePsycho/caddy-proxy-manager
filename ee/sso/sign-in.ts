@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Enforced SSO on the sign-in path. Called from Better Auth's hooks in
- * src/lib/auth-server.ts. Deliberately license-free: enforcement keeps
- * working with an expired or removed license key.
+ * src/lib/auth-server.ts.
  */
 import { SAML_ACS_PATH } from "@/ee/saml/constants";
 import { canAnyBreakGlassSignIn, describeBreakGlassAccounts, readSsoEnforcement, type SsoReader } from "./enforcement-store";

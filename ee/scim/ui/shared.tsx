@@ -4,8 +4,6 @@
 import type { ReactNode } from "react";
 import { Label } from "@/components/ui/label";
 
-export const LOCKED_HINT = "Needs a license with SCIM provisioning";
-
 async function readError(response: Response): Promise<string> {
   try {
     const data = await response.json();

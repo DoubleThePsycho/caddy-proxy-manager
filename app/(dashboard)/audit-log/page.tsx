@@ -10,7 +10,6 @@ import {
 import { requirePermission } from "@/src/lib/auth";
 import { ApiValidationError } from "@/src/lib/api-errors";
 import { can } from "@/src/lib/permissions";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { getAuditChainStatus } from "@/ee/audit/chain-status";
 import { listAuditSinkSummaries } from "@/ee/audit/sink-summary";
 import { getAuditRetention } from "@/ee/audit/retention";
@@ -117,11 +116,10 @@ export default async function AuditLogPage({ searchParams }: PageProps) {
   const total = await countAuditEventsMatching(filter);
   const filters = { ...requested, page: Math.min(requested.page, Math.max(1, Math.ceil(total / PER_PAGE))) };
 
-  const [records, inRange, facets, licensed, chain, sinks, retention] = await Promise.all([
+  const [records, inRange, facets, chain, sinks, retention] = await Promise.all([
     queryAuditEvents(filter, { limit: PER_PAGE, offset: (filters.page - 1) * PER_PAGE }),
     hasNarrowingFilters(filters) ? countAuditEventsMatching({ from: filter.from, to: filter.to }) : Promise.resolve(null),
     listAuditFacets(),
-    isFeatureConfigurable("audit_streaming"),
     getAuditChainStatus(),
     canStreaming ? listAuditSinkSummaries() : Promise.resolve(null),
     canStreaming ? getAuditRetention() : Promise.resolve(null),
@@ -145,7 +143,6 @@ export default async function AuditLogPage({ searchParams }: PageProps) {
         actions: facets.actions,
         entityTypes: facets.entityTypes,
       }}
-      licensed={licensed}
       chain={chain}
       sinks={sinks}
       retentionDays={retention ? retention.days : null}

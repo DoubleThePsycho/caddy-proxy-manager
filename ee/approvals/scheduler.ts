@@ -2,8 +2,7 @@
 /**
  * Every minute: expires change requests past their expiry and applies
  * approved ones whose change windows are open. Started from
- * src/instrumentation.ts (never in tests). Never checks the license: approved
- * changes keep being applied after it lapses.
+ * src/instrumentation.ts (never in tests).
  */
 import { applyDueChangeRequests } from "./requests";
 import { onShutdown } from "@/src/lib/shutdown";

@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: Elastic-2.0
 import { requirePermission } from "@/src/lib/auth";
 import { can } from "@/src/lib/permissions";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { describeControlMapping } from "@/ee/compliance/controls";
 import { getControlStatus } from "@/ee/compliance/control-status";
 import { getReport, listReports } from "@/ee/compliance/reports";
 import { listEvidencePacks, listReportSchedules } from "@/ee/compliance/schedules";
 import { listRestoreTests } from "@/ee/compliance/restore-tests";
 import { listDraftSources, listIncidents } from "@/ee/compliance/incidents";
-import { FEATURE, readComplianceFramework, readComplianceTab, type StoredReportSummary } from "@/ee/compliance/types";
+import { readComplianceFramework, readComplianceTab, type StoredReportSummary } from "@/ee/compliance/types";
 import { listAlertChannels } from "@/ee/alerting/channels";
 import { listSavedQuestions } from "@/ee/ai/questions/saved";
 import { getQuestionAvailability } from "@/ee/ai/questions/availability";
@@ -81,14 +79,13 @@ export default async function CompliancePage({
   // Reports are listed without their content; draft sources are ids, names and titles only;
   // of alert channels and backup destinations only ids, names and types reach the page.
   const canAsk = can(access, "analytics:read");
-  const [reports, incidents, controls, schedules, restoreTests, last, configurable, channels, destinations, savedQuestions, askAvailability] = await Promise.all([
+  const [reports, incidents, controls, schedules, restoreTests, last, channels, destinations, savedQuestions, askAvailability] = await Promise.all([
     clampedPage(parsePageParam(pageParam), REPORTS_PER_PAGE, (page) => listReports({ page, perPage: REPORTS_PER_PAGE })),
     clampedPage(incidentsPage, INCIDENTS_PER_PAGE, (page) => listIncidents({ page, perPage: INCIDENTS_PER_PAGE })),
     getControlStatus(),
     listReportSchedules(),
     clampedPage(parsePageParam(restorePage), RESTORE_TESTS_PER_PAGE, (page) => listRestoreTests({ page, perPage: RESTORE_TESTS_PER_PAGE })),
     lastReport(),
-    isFeatureConfigurable(FEATURE),
     canWrite ? listAlertChannels() : Promise.resolve([]),
     canWrite && can(access, "backups:read") ? listBackupDestinations() : Promise.resolve([]),
     // Saved analytics questions a schedule can include: the user's own and the shared ones they can see.
@@ -110,9 +107,7 @@ export default async function CompliancePage({
       destinations={destinations.map((destination) => ({ id: destination.id, name: destination.name }))}
       sources={canWrite ? await listDraftSources() : { alertEvents: [], proxyHosts: [] }}
       mapping={describeControlMapping()}
-      configurable={configurable}
       canWrite={canWrite}
-      editionLabel={EDITION_LABELS[FEATURE_INFO[FEATURE].edition]}
       questions={savedQuestions.map((question) => ({ id: question.id, question: question.question, interpretation: question.interpretation }))}
       ask={askAvailability ? { availability: askAvailability, isAdmin: access.isAdmin, canOpenAiSettings: can(access, "ai:read") } : null}
     />

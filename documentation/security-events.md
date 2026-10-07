@@ -1,6 +1,6 @@
 # Security events
 
-**Security events** (`/security`, under Observe) shows what Ingressi stopped: requests the WAF blocked or logged, and requests refused by geo rules, access lists, sign-in (forward authentication) and rate limits. It is a Community feature. It reads ClickHouse analytics; without analytics the page says so and shows only the WAF rule set.
+**Security events** (`/security`, under Observe) shows what Ingressi stopped: requests the WAF blocked or logged, and requests refused by geo rules, access lists, sign-in (forward authentication) and rate limits. It reads ClickHouse analytics; without analytics the page says so and shows only the WAF rule set.
 
 Reading the page needs the `waf:read` permission. Actions need their own: adding a WAF exclusion needs `waf:write`, blocking an address needs `access_lists:write`. Buttons a user may not use are disabled with the reason.
 
@@ -46,7 +46,7 @@ For a request stopped by another rule, the page says which kind of rule stopped 
 
 ## Tuning suggestions
 
-With the AI analyst (a paid feature) the page also lists likely false positives found in the last 14 days of WAF events, each with its evidence and a proposed exclusion. Without a license they stay visible but cannot be applied.
+With the AI analyst ([ai-analyst.md](../ee/docs/ai-analyst.md)) the page also lists likely false positives found in the last 14 days of WAF events, each with its evidence and a proposed exclusion.
 
 ## REST API
 

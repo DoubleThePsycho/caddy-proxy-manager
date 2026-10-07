@@ -1,8 +1,7 @@
 /**
  * Server-side render of the Roles tab (Users and groups), the role picker on
- * the Users tab and the host tag field: the license notice, the permissions
- * grouped by area, the scope and the controls a user without users:write
- * does not get.
+ * the Users tab and the host tag field: the permissions grouped by area, the
+ * scope and the controls a user without users:write does not get.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -43,8 +42,6 @@ function tab(overrides: Partial<Parameters<typeof RolesTab>[0]> = {}) {
     actor: { isAdmin: true, permissions: [], scopeTags: [], customRoleId: null },
     holders: { admin: ['admin'], user: [], viewer: ['val'], custom: { 1: ['ann', 'bob'], 2: [] } },
     canWrite: true,
-    licensed: true,
-    editionLabel: 'Business',
     saveRole: vi.fn(),
     deleteRole: vi.fn(),
     ...overrides,
@@ -59,7 +56,6 @@ describe('Roles tab', () => {
     expect(html).toContain('Administrator-level');
     expect(html).toContain(`of ${PERMISSIONS.length}`);
     expect(html).toContain('Create role');
-    expect(html).not.toContain('license or higher');
   });
 
   it('labels the values for narrow screens, where the column headings are hidden', () => {
@@ -90,15 +86,6 @@ describe('Roles tab', () => {
     expect(html).toContain(`Holds all ${PERMISSIONS.length} permissions`);
     expect(html).toContain('Built-in roles cannot be edited or deleted.');
     expect(html).not.toContain('Delete role');
-  });
-
-  it('shows the license notice and no create or edit without a license', () => {
-    const html = tab({ licensed: false, initialOpen: 'custom-1' });
-    expect(html).toContain('needs an active Ingressi Business license or higher');
-    expect(html).not.toContain('Create role');
-    expect(html).not.toContain('Edit role');
-    // Deleting stays possible.
-    expect(html).toContain('Delete role');
   });
 
   it('gives a user without users:write no controls and keeps your own role out of reach', () => {

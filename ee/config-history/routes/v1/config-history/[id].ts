@@ -15,7 +15,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
-/** Deletes the snapshot. Needs no license: winding the feature down never does. */
+/** Deletes the snapshot. */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "config_history:write");

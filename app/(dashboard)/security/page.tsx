@@ -29,7 +29,6 @@ import type { AnalyticsStatus } from "@/src/lib/analytics/run";
 import { allProxyHostDomains } from "@/src/lib/analytics/service";
 import { proxyHostForName } from "@/src/lib/analytics/scope";
 import { formatBucketTime } from "@/components/ui/chart-format";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { getAiSettingsView } from "@/ee/ai/settings";
 import { listOpenSuggestions } from "@/ee/ai/waf-tuning";
 import SecurityClient from "./SecurityClient";
@@ -128,7 +127,7 @@ export default async function SecurityEventsPage({ searchParams }: { searchParam
   const allDomains = await allProxyHostDomains();
   const canReadAccessLists = can(access, "access_lists:read");
 
-  const [series, rules, sources, hosts, events, wafSettings, proxyHosts, exclusionCounts, rateLimit, blockedList, suggestions, canConfigureAi, ai] =
+  const [series, rules, sources, hosts, events, wafSettings, proxyHosts, exclusionCounts, rateLimit, blockedList, suggestions, ai] =
     await Promise.all([
       querySecuritySeries({ range }, now),
       querySecurityRules({ range, limit: TOP_LIMIT }),
@@ -140,9 +139,7 @@ export default async function SecurityEventsPage({ searchParams }: { searchParam
       countWafExclusionsByScope(),
       getRateLimitSettings(),
       canReadAccessLists ? getBlockedSourcesList().catch(() => null) : Promise.resolve(null),
-      // Stored suggestions are a read-only view; finding new ones needs the AI analyst.
       listOpenSuggestions(),
-      isFeatureConfigurable("ai_analyst"),
       getAiSettingsView(),
     ]);
 
@@ -236,7 +233,6 @@ export default async function SecurityEventsPage({ searchParams }: { searchParam
     },
     tuning: {
       suggestions,
-      canConfigure: canConfigureAi,
       analyticsEnabled: isAnalyticsEnabled(),
       aiConfigured: ai.configured,
     },

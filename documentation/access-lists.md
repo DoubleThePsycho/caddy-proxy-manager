@@ -1,6 +1,6 @@
 # Access lists
 
-An access list decides who may reach the proxy hosts it is attached to: which addresses and networks, which countries, continents and networks (AS numbers), and who has to sign in with a username and password first. It is a Community feature.
+An access list decides who may reach the proxy hosts it is attached to: which addresses and networks, which countries, continents and networks (AS numbers), and who has to sign in with a username and password first.
 
 One list can serve many hosts. A host uses at most one list, set in the proxy host's settings. Changing a list changes every host using it at once.
 

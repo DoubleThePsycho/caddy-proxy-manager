@@ -346,7 +346,7 @@ export async function updateWafExclusion(
   return (await getWafExclusion(id))!;
 }
 
-/** Removes an exclusion. Never checks a license or an approval: removing one only makes the WAF stricter. */
+/** Removes an exclusion. Never checks an approval: removing one only makes the WAF stricter. */
 export async function deleteWafExclusion(id: number, actorUserId: number | null, options: WafWriteOptions = {}): Promise<void> {
   const deleted = await appDb.transaction(async (tx) => {
     const row = await first(tx.select().from(wafRuleExclusions).where(eq(wafRuleExclusions.id, id)).limit(1));

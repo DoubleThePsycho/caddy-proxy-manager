@@ -1,6 +1,6 @@
 # Traffic analytics
 
-With access logging on and ClickHouse enabled (see [Enabling analytics](#enabling-analytics-recommended)), every request Caddy handles is stored for the retention window: 30 days by default, `CLICKHOUSE_RETENTION_DAYS` changes it. Nothing is sampled. Analytics is part of the Community edition.
+With access logging on and ClickHouse enabled (see [Enabling analytics](#enabling-analytics-recommended)), every request Caddy handles is stored for the retention window: 30 days by default, `CLICKHOUSE_RETENTION_DAYS` changes it. Nothing is sampled.
 
 ## Storage and retention
 
@@ -140,7 +140,7 @@ A saved view is a name for a range, filters, metric and grouping. On the Analyti
 
 ## Asking in plain language
 
-With the AI analyst (a paid feature) and an AI provider set up, **Ask about your traffic** at the top of the page takes a question such as "Which countries were blocked most last week on the shop hosts?". Your model turns it into a query over the same metrics, dimensions and filters as this page; the query is checked and runs here, and the answer links to this page with the same settings. See [Analytics questions](../ee/docs/analytics-questions.md) for what the model sees and the limits.
+With the AI analyst and an AI provider set up, **Ask about your traffic** at the top of the page takes a question such as "Which countries were blocked most last week on the shop hosts?". Your model turns it into a query over the same metrics, dimensions and filters as this page; the query is checked and runs here, and the answer links to this page with the same settings. See [Analytics questions](../ee/docs/analytics-questions.md) for what the model sees and the limits.
 
 ## Who can see what
 
@@ -162,7 +162,7 @@ All under `/api/v1/analytics`, with permission `analytics:read`. The reference i
 | `GET /security/series`, `/security/rules`, `/security/sources`, `/security/hosts`, `/security/events` | Security events: mitigated requests by source with the peak explained, top rules, sources and hosts, and the event list (`kind`, `filters` on host, path, country, ip, method and waf_rule). |
 | `GET /signals` | The "Needs attention" signals. |
 | `GET, POST /views`, `GET, PATCH, DELETE /views/{id}` | Saved views. |
-| `POST /questions`, `/questions/saved...` | Plain-language questions and saved questions (paid, see [Analytics questions](../ee/docs/analytics-questions.md)). |
+| `POST /questions`, `/questions/saved...` | Plain-language questions and saved questions (see [Analytics questions](../ee/docs/analytics-questions.md)). |
 
 ```bash
 curl -G https://dash.example.com/api/v1/analytics/query \

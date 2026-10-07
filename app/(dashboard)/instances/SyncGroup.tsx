@@ -63,9 +63,7 @@ export default function SyncGroup({
             <PullReplicasPanel
               replicas={instanceSync.master.pullReplicas.replicas}
               canManage={instanceSync.master.pullReplicas.canManage}
-              configurable={instanceSync.master.pullReplicas.configurable}
               isMaster={isMaster}
-              editionLabel={instanceSync.master.pullReplicas.editionLabel}
             />
           )}
         </>

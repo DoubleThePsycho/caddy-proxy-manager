@@ -3,7 +3,7 @@
  * (ee/monetization/overview.ts) and its endpoint
  * GET /api/v1/monetization/overview: UTC months and days from createdAt,
  * charged versus free requests, top consumers, key use, balances, the last
- * top-up, the monetization:read guard and no license needed to read.
+ * top-up and the monetization:read guard.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
@@ -135,7 +135,7 @@ describe('monetization overview', () => {
 describe('GET /api/v1/monetization/overview', () => {
   const request = () => new NextRequest('http://localhost/api/v1/monetization/overview');
 
-  it('answers with the overview under monetization:read, without a license and without caching', async () => {
+  it('answers with the overview under monetization:read, without caching', async () => {
     const acme = await insertConsumer(ctx.db, { name: 'Acme' });
     const today = new Date().toISOString();
     await ledger({ consumerId: acme.id, type: 'usage', amountMicros: -3_000, requests: 3, externalReference: `usage:${acme.id}:now`, createdAt: today });

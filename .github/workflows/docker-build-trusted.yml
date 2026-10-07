@@ -5,7 +5,7 @@ on:
     branches:
       - main
       - develop
-      # Long-term-support lines (ee/docs/lts.md), e.g. lts/2.0
+      # Release lines, e.g. lts/2.0
       - 'lts/**'
     tags:
       - 'v*'
@@ -53,7 +53,7 @@ jobs:
       - name: Decide which moving tags this release gets
         id: release
         run: |
-          # A patch release on an LTS line (lts/2.0 after 2.3 shipped) must not
+          # A patch release on an older release line (lts/2.0 after 2.3 shipped) must not
           # move `latest`, or the major tag, back to an older version. Only the
           # newest stable release gets `latest`, and only the newest stable
           # release of its major version gets the major tag. The minor tag
@@ -121,7 +121,7 @@ jobs:
             # {{is_default_branch}} fired on every dev push and moved `latest`
             # to unreleased builds (issue #281). Tag it only on the newest
             # stable v* tag: not on pre-release tags (e.g. v1.12.0-rc.1), and
-            # not on LTS patch releases of an older line.
+            # not on patch releases of an older line.
             type=raw,value=latest,enable=${{ steps.release.outputs.latest == 'true' }}
 
       - name: Compute app version

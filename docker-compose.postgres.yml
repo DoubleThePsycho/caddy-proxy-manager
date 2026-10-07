@@ -1,7 +1,7 @@
 # PostgreSQL for the dashboard (documentation/postgresql.md), with an
 # optional second dashboard replica (ee/docs/high-availability.md,
-# "PostgreSQL replicas", Enterprise edition). An override of
-# docker-compose.yml; it changes nothing unless you name it:
+# "PostgreSQL replicas"). An override of docker-compose.yml; it changes
+# nothing unless you name it:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
 #
@@ -17,8 +17,7 @@
 # install"). The database is created with the C collation that Ingressi
 # requires, and is reachable only on the compose network.
 #
-# A second replica (web-2) runs with the "replicas" profile. Install an
-# Enterprise license first, then set in .env:
+# A second replica (web-2) runs with the "replicas" profile. Set in .env:
 #
 #   COMPOSE_PROFILES=clickhouse,replicas
 #   DASHBOARD_UPSTREAMS=web:3000,web-2:3000
@@ -101,7 +100,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      # web joins the cluster first; web-2 then needs the license.
+      # web joins the cluster first.
       web:
         condition: service_healthy
 

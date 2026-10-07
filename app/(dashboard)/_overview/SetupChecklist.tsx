@@ -15,7 +15,7 @@ export const ANALYTICS_ENV_LINES = "COMPOSE_PROFILES=clickhouse\nCLICKHOUSE_PASS
 
 const num = (text: string) => <span className="num">{text}</span>;
 
-function stepDescription(step: SetupStepView, firstRun: OverviewFirstRun, configurable: boolean): ReactNode {
+function stepDescription(step: SetupStepView): ReactNode {
   switch (step.key) {
     case "domain":
       return (
@@ -40,13 +40,7 @@ function stepDescription(step: SetupStepView, firstRun: OverviewFirstRun, config
     case "second_user":
       return <>One account per person, so the audit log can tell people apart.</>;
     case "single_sign_on":
-      return configurable ? (
-        <>Sign in through an OpenID Connect or SAML provider, or an LDAP directory.</>
-      ) : (
-        <>
-          OpenID Connect is included. SAML comes with the {firstRun.ssoEdition} edition, LDAP with {firstRun.ldapEdition}.
-        </>
-      );
+      return <>Sign in through an OpenID Connect or SAML provider, or an LDAP directory.</>;
     default:
       return step.description;
   }
@@ -83,7 +77,7 @@ function LinkButton({ href, children, primary = false }: { href: string; childre
 }
 
 /** The step's own action: the page where it is done, while it is not done. */
-function stepAction(step: SetupStepView, permissions: OverviewPermissions, configurable: boolean): ReactNode {
+function stepAction(step: SetupStepView, permissions: OverviewPermissions): ReactNode {
   if (step.done) return null;
   switch (step.key) {
     case "first_proxy_host":
@@ -98,12 +92,7 @@ function stepAction(step: SetupStepView, permissions: OverviewPermissions, confi
     case "second_user":
       return permissions.readUsers ? <LinkButton href="/users">Add a user</LinkButton> : null;
     case "single_sign_on":
-      return (
-        <>
-          {permissions.readSso && <LinkButton href="/sso">Single sign-on</LinkButton>}
-          {!configurable && permissions.readLicense && <LinkButton href="/license">Compare editions</LinkButton>}
-        </>
-      );
+      return permissions.readSso ? <LinkButton href="/sso">Single sign-on</LinkButton> : null;
     default:
       return null;
   }
@@ -151,8 +140,7 @@ export function SetupChecklist({ firstRun, permissions }: { firstRun: OverviewFi
   }
 
   const items: ChecklistItem[] = checklist.steps.map((step) => {
-    const configurable = step.paid?.configurable ?? true;
-    const own = stepAction(step, permissions, configurable);
+    const own = stepAction(step, permissions);
     const manual = step.doneBy === "manual";
     const mark =
       canMark && step.doneBy !== "data" ? (
@@ -170,18 +158,8 @@ export function SetupChecklist({ firstRun, permissions }: { firstRun: OverviewFi
       ) : null;
     return {
       id: step.key,
-      label:
-        step.key === "single_sign_on" && !configurable ? (
-          <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-            {step.title}
-            <span className="rounded-full border border-line2 px-[7px] text-[11px] leading-[18px] font-semibold tracking-[0.04em] text-brand uppercase">
-              {firstRun.ssoEdition}
-            </span>
-          </span>
-        ) : (
-          step.title
-        ),
-      description: stepDescription(step, firstRun, configurable),
+      label: step.title,
+      description: stepDescription(step),
       done: step.done,
       action: own || mark ? (
         <>

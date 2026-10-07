@@ -4,8 +4,6 @@
  * Node.js imports here.
  */
 
-export const FEATURE = "scheduled_backups" as const;
-
 export const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
 export type Weekday = (typeof WEEKDAYS)[number];
 

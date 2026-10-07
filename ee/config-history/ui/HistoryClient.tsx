@@ -14,7 +14,6 @@ import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatusDot } from "@/components/ui/StatusDot";
 import { useFormat } from "@/components/preferences/PreferencesProvider";
-import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import type { HistorySettings } from "@/ee/config-history/settings";
 import type { SnapshotView } from "@/ee/config-history/snapshots";
 import type { RestoreResult } from "@/ee/config-history/service";
@@ -51,9 +50,7 @@ type Props = {
   oldest?: { id: number; createdAt: string } | null;
   backups: BackupsProps;
   settings: HistorySettings;
-  configurable: boolean;
   isSlave: boolean;
-  editionLabel: string;
   limits: { minRetention: number; maxRetention: number; minPassphraseLength: number };
   /** What the user's role allows besides reading history (custom roles); everything when omitted. */
   allowed?: HistoryAllowed;
@@ -75,15 +72,12 @@ export default function HistoryClient({
   oldest = null,
   backups,
   settings,
-  configurable,
   isSlave,
-  editionLabel,
   limits,
   allowed = ALL_ALLOWED,
 }: Props) {
   const router = useRouter();
   const fmt = useFormat();
-  const { productName } = useBranding();
   const [pending, startTransition] = useTransition();
   const [selectedId, setSelectedId] = useState<number | null>(initialVersionId);
   const [compare, setCompare] = useState<CompareTarget>(initialCompare);
@@ -108,7 +102,6 @@ export default function HistoryClient({
     (list.liveId !== null ? versions.find((version) => version.id === list.liveId) : undefined) ??
     versions[0] ??
     null;
-  const canChange = configurable && !isSlave;
 
   // The URL holds the page, version and comparison; updating it needs no server round trip.
   function syncUrl(next: { version?: number | null; compare?: CompareTarget }) {
@@ -250,16 +243,6 @@ export default function HistoryClient({
 
   const versionsContent = (
     <div className="flex flex-col gap-5">
-      {!configurable && (
-        <Banner tone="info">
-          Configuration history needs an active {productName} {editionLabel} license or higher.{" "}
-          {settings.enabled || list.total > 0 ? "You can still turn recording off and delete versions. " : ""}
-          <Link href="/license" className="text-brand underline underline-offset-4">
-            Manage the license
-          </Link>
-          . Export and import are free.
-        </Banner>
-      )}
       {selected === null ? (
         <section aria-label="Versions" className="rounded-2xl border border-line bg-panel">
           <EmptyState
@@ -343,8 +326,8 @@ export default function HistoryClient({
                 setSaveError(null);
                 setSaveOpen(true);
               }}
-              disabled={!canChange}
-              title={isSlave ? "A sync slave records no history" : configurable ? undefined : "Needs a license with configuration history"}
+              disabled={isSlave}
+              title={isSlave ? "A sync slave records no history" : undefined}
             >
               <Plus /> Save a version now
             </Button>
@@ -422,7 +405,6 @@ export default function HistoryClient({
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         settings={settings}
-        configurable={configurable}
         canWrite={allowed.write}
         total={list.total}
         limits={limits}

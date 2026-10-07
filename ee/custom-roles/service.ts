@@ -2,18 +2,12 @@
 /**
  * Custom roles: the administrator actions on roles and on role assignments,
  * shared by the REST API and the dashboard.
- *
- * License (feature "custom_roles"): creating or changing a role and assigning
- * a custom role need it. Deleting a role (its users fall back to the built-in
- * viewer role) and taking a custom role away (assigning a built-in role) never
- * do, and resolving a user's access (access.ts) never looks at it.
  */
 import { eq } from "drizzle-orm";
 import { appDb, nowIso } from "@/src/lib/db";
 import { customRoles, scimRoleMappings, users } from "@/src/lib/db/schema";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import { normalizeTags } from "@/src/lib/host-tags";
 import {
   BUILT_IN_ROLES,
@@ -37,7 +31,6 @@ import {
   grantOfRole,
 } from "./escalation";
 import {
-  FEATURE,
   findCustomRoleByName,
   listCustomRoleViews,
   readCustomRole,
@@ -156,7 +149,6 @@ export async function getRole(id: number): Promise<CustomRoleView> {
 
 export async function createRole(actor: Access, input: unknown): Promise<CustomRoleView> {
   assertManagesRoles(actor);
-  await requireFeature(FEATURE);
   const fields = readRoleFields(input, null);
   assertCanGrant(actor, grantOfRole(fields));
   const now = nowIso();
@@ -200,7 +192,6 @@ export async function updateRole(actor: Access, id: number, input: unknown): Pro
   const existing = await readCustomRole(appDb, id);
   if (!existing) throw new ApiClientError("Role not found", 404);
   assertMayChangeRole(actor, existing);
-  await requireFeature(FEATURE);
   const fields = readRoleFields(input, existing);
   assertCanGrant(actor, grantOfRole(fields));
   const now = nowIso();
@@ -230,8 +221,7 @@ export async function updateRole(actor: Access, id: number, input: unknown): Pro
 
 /**
  * Deletes a role. Its users fall back to the built-in viewer role, in the same
- * transaction, and each of them is recorded in the audit log. Never needs a
- * license.
+ * transaction, and each of them is recorded in the audit log.
  */
 export async function deleteRole(actor: Access, id: number): Promise<{ affectedUserIds: number[] }> {
   assertManagesRoles(actor);
@@ -319,12 +309,11 @@ async function describeAssignment(reader: RoleReader, assignment: { role: string
 
 /**
  * Checks that `actor` may give a new user `assignment`, and that a custom role
- * exists and is licensed. Run before the user is created.
+ * exists. Run before the user is created.
  */
 export async function assertCanAssignOnCreate(actor: Access, assignment: RoleAssignment): Promise<void> {
   assertManagesRoles(actor);
   if (assignment.customRoleId !== null) {
-    await requireFeature(FEATURE);
     const role = await readCustomRole(appDb, assignment.customRoleId);
     if (!role) throw new ApiValidationError("Unknown custom role");
     assertCanGrant(actor, grantOfRole(role));
@@ -364,7 +353,6 @@ export async function assertCanAssignRole(
   if (assignment.customRoleId !== null) {
     role = await readCustomRole(appDb, assignment.customRoleId);
     if (!role) throw new ApiValidationError("Unknown custom role");
-    await requireFeature(FEATURE);
   }
   // Administrators may grant anything, manage anyone, and — acting on another
   // user while being an active administrator themselves — never remove the
@@ -401,8 +389,7 @@ export async function assertActiveAdminRemainsFor(
  * Changes a user's role. Refused (403) when the actor is the user, does not
  * cover the user's current access, or may not grant the new role; refused
  * (400) when it would leave no active administrator or lock out enforced SSO.
- * Assigning a custom role needs the license; assigning a built-in role (which
- * takes a custom role away) does not. Recorded in the audit log.
+ * Recorded in the audit log.
  */
 export async function assignRole(actor: Access, targetUserId: number, assignment: RoleAssignment): Promise<User> {
   await assertCanAssignRole(actor, targetUserId, assignment);

@@ -12,11 +12,8 @@ import { toEnvSlaveInstanceView } from "@/src/lib/instance-sync-view";
 import { listInstances, listSyncKeyPinsWithSlaves, withSyncKeyPins } from "@/src/lib/models/instances";
 import { getSyncPublicKey } from "@/src/lib/sync-crypto";
 import { isPullReplicaMode } from "@/ee/fleet/pull-config";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { listPullReplicas } from "@/ee/fleet/pull-replicas";
 import { getPullAgentStatus } from "@/ee/fleet/pull-agent";
-import { FEATURE as FLEET_FEATURE } from "@/ee/fleet/types";
 import InstancesClient from "./InstancesClient";
 import type { InstanceSyncProps } from "./types";
 
@@ -57,17 +54,8 @@ async function loadInstanceSync(access: Access): Promise<InstanceSyncProps> {
     .map(({ url, keyId, publicKey, pinnedAt, source }) => ({ url, keyId, publicKey, pinnedAt, source }));
   const master: NonNullable<InstanceSyncProps["master"]> = { instances, envInstances, orphanSyncKeyPins };
   // Pull replicas (ee/fleet): listed with fleet:read, managed with fleet:replicas.
-  // Shown when there are some, or the license allows adding them.
   if (can(access, "fleet:read")) {
-    const [replicas, configurable] = await Promise.all([listPullReplicas(), isFeatureConfigurable(FLEET_FEATURE)]);
-    if (replicas.length > 0 || configurable) {
-      master.pullReplicas = {
-        replicas,
-        canManage: can(access, "fleet:replicas"),
-        configurable,
-        editionLabel: EDITION_LABELS[FEATURE_INFO[FLEET_FEATURE].edition],
-      };
-    }
+    master.pullReplicas = { replicas: await listPullReplicas(), canManage: can(access, "fleet:replicas") };
   }
   return { ...base, slave: null, master };
 }

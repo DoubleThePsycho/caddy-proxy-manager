@@ -160,7 +160,7 @@ export function SilenceDialog({ open, target, onClose }: { open: boolean; target
   );
 }
 
-/** Undoes a dismissal or mute (never needs a license). */
+/** Undoes a dismissal or mute. */
 export function useEndSilence(): { end: (silence: AlertSilenceView) => void; pending: boolean } {
   const router = useRouter();
   const [pending, startTransition] = useTransition();

@@ -1,10 +1,9 @@
 /**
  * A fresh install routes and terminates TLS only: every optional protection
  * and every optional sign-in or fleet feature is off or empty until an
- * administrator sets it up. Evidence for the product's stated core
- * functionality (documentation/cra/user-information.md, "Intended purpose"):
- * the WAF, access lists, blocked sources, geo blocking, rate limiting, the
- * sign-in portal, client certificates and instance sync are optional.
+ * administrator sets it up. The WAF, access lists, blocked sources, geo
+ * blocking, rate limiting, the sign-in portal, client certificates and
+ * instance sync are optional (README.md, "Features").
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { inArray } from 'drizzle-orm';

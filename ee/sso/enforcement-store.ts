@@ -4,8 +4,7 @@
  *
  * Everything here takes a database reader or writer (the database or a
  * transaction on it), so a check and the write it guards can share one
- * transaction. Await every check: a promise is always truthy. Nothing here looks at the license:
- * enforcement and its lockout guards keep working without one.
+ * transaction. Await every check: a promise is always truthy.
  *
  * Break-glass accounts are stored by user id, not by username. An id follows
  * the account through renames (including an ADMIN_USERNAME change of the

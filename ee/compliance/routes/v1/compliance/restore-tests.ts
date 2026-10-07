@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** Records a test restore: {testedAt, source, outcome, backupDestinationId?, backupObjectKey?, notes?}; license. */
+/** Records a test restore: {testedAt, source, outcome, backupDestinationId?, backupObjectKey?, notes?}. */
 export async function POST(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "compliance:write");

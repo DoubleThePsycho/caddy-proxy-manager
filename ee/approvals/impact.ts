@@ -5,7 +5,7 @@
  * and on how many nodes, which new certificates Caddy will request, whether
  * L4 listening ports change, and when the change applies given the change
  * windows of the policies that cover it. Pure apart from the reach, which the
- * caller passes in; never checks the license.
+ * caller passes in.
  */
 import { isIP } from "node:net";
 import type { ConfigurationReach } from "@/ee/fleet/reach";

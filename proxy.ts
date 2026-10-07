@@ -52,7 +52,7 @@ export default async function middleware(req: NextRequest) {
   }
 
   // A PostgreSQL replica the cluster did not admit (src/lib/cluster-nodes.ts:
-  // the license rule for a new replica) serves nothing but its health check.
+  // another process runs with its node id) serves nothing but its health check.
   const refusal = replicaRefusal();
   if (refusal && pathname !== "/api/health") {
     return replicaRefusedResponse(pathname, refusal);

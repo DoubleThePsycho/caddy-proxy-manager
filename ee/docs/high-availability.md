@@ -1,6 +1,6 @@
 # High availability
 
-Feature id `high_availability`, included in the **Enterprise** edition. Code: `ee/high-availability/` (Elastic License 2.0). The hooks it uses in the core (the `storage` block in `buildCaddyDocument`, the settings group in instance sync and the configuration, the license check when a configuration is replaced) are MIT.
+Code: `ee/high-availability/` (Elastic License 2.0). The hooks it uses in the core (the `storage` block in `buildCaddyDocument`, the settings group in instance sync and the configuration) are MIT.
 
 High availability comes in phases. Four are in this release:
 
@@ -57,12 +57,11 @@ So run Redis or Valkey itself highly available (Sentinel or cluster, or a manage
 
 ## Set up
 
-1. Install an Enterprise license (**License**).
-2. Run Redis or Valkey (a maintained release) that every Caddy node can reach. Turn on persistence and a password; use TLS when the traffic leaves a private network.
-3. **Upgrade every node first**, web and Caddy images both. A slave on an older release ignores the setting and keeps local storage. A Caddy image without the Redis storage module refuses the configuration (Caddy keeps its previous one).
-4. Open **Certificate settings** (`/certificates/settings`), card **Certificate storage**. Fill in the mode, the addresses, the password, a key prefix and, if you want, an encryption key and TLS. **Test connection**.
-5. **Save without enabling**, then copy the existing certificates in ([Moving certificates](#moving-certificates)).
-6. **Enable shared storage.** The master applies it to its own Caddy and syncs it to the slaves.
+1. Run Redis or Valkey (a maintained release) that every Caddy node can reach. Turn on persistence and a password; use TLS when the traffic leaves a private network.
+2. **Upgrade every node first**, web and Caddy images both. A slave on an older release ignores the setting and keeps local storage. A Caddy image without the Redis storage module refuses the configuration (Caddy keeps its previous one).
+3. Open **Certificate settings** (`/certificates/settings`), card **Certificate storage**. Fill in the mode, the addresses, the password, a key prefix and, if you want, an encryption key and TLS. **Test connection**.
+4. **Save without enabling**, then copy the existing certificates in ([Moving certificates](#moving-certificates)).
+5. **Enable shared storage.** The master applies it to its own Caddy and syncs it to the slaves.
 
 If Caddy cannot use the storage (it cannot reach it, the password is wrong, the module is missing), the master puts the previous setting back and says why. A slave that cannot use it keeps its previous configuration and reports the failed sync.
 
@@ -116,7 +115,7 @@ Skip the copy and enable. Each name is ordered once for the whole cluster, but a
 
 ### Switch back to local storage
 
-**Switch back to local storage** keeps the Redis settings so you can enable them again; **Remove setting** forgets them too. Neither needs a license. Each node then orders the certificates it does not have in `/data`. To avoid that, on **every** node, before switching:
+**Switch back to local storage** keeps the Redis settings so you can enable them again; **Remove setting** forgets them too. Each node then orders the certificates it does not have in `/data`. To avoid that, on **every** node, before switching:
 
 ```bash
 docker compose exec -T -e CADDY_STORAGE_PASSWORD="$CADDY_STORAGE_PASSWORD" caddy sh -c \
@@ -128,23 +127,7 @@ Nothing is deleted from Redis or Valkey; remove the keys under the prefix yourse
 
 ## Test connection
 
-**Test connection** (`POST /api/v1/high-availability/storage/test`) runs from the web container you click it on, not from Caddy: on a slave it tests that node's connection. Only Caddy needs to reach the storage; for the test, the web container must reach it too. It connects (asking the Sentinels for the master in Sentinel mode; checking cluster support and following a redirect in cluster mode), signs in, selects the database, then writes, reads back and deletes a key under the prefix (`<prefix>/.storage-test/<uuid>`, which expires after a minute in any case). Each step reports a fixed message; nothing the server sends is shown. It changes nothing, needs no license, and is recorded in the audit log (`certificate_storage_tested`).
-
-## License
-
-| Action | License |
-| --- | --- |
-| Set up, enable or change shared storage (also saving it without enabling) | `high_availability` required (`403` otherwise) |
-| Import a configuration or restore a snapshot that brings in or changes shared storage | required |
-| Switch back to local storage, remove the setting | never |
-| Read, test | never |
-| The generated Caddy configuration, sync to slaves | never: configured storage keeps working when the license lapses |
-| Set up a dashboard cluster (the first start from an empty bucket) | required, read from the database the cluster starts from |
-| Run a dashboard cluster: leases, failovers, restores, replication, reading its state | never |
-| A new replica joins next to a running one on PostgreSQL ([the rule](#license-rule)) | required, read when it joins |
-| One replica on PostgreSQL; replicas that joined before: starting, restarting, leading, serving | never |
-
-Without the license, Certificate settings shows only a license note while no shared storage is set up; storage that is set up stays visible, read-only, with switching back and removing.
+**Test connection** (`POST /api/v1/high-availability/storage/test`) runs from the web container you click it on, not from Caddy: on a slave it tests that node's connection. Only Caddy needs to reach the storage; for the test, the web container must reach it too. It connects (asking the Sentinels for the master in Sentinel mode; checking cluster support and following a redirect in cluster mode), signs in, selects the database, then writes, reads back and deletes a key under the prefix (`<prefix>/.storage-test/<uuid>`, which expires after a minute in any case). Each step reports a fixed message; nothing the server sends is shown. It changes nothing and is recorded in the audit log (`certificate_storage_tested`).
 
 ## REST API
 
@@ -178,7 +161,7 @@ The `high_availability` area has `read` and `write`. `write` is **administrator-
 - The setting is the settings group `certificate_storage`. Instance sync sends it to every slave, its secrets sealed to the slave's key. A slave cannot change it (`409`).
 - Older slaves ignore the group and keep local storage. Upgrade them before enabling.
 - Fleet revisions ([fleet.md](fleet.md)) carry it like the other settings groups: a promotion-only environment switches storage when the revision is promoted, so a canary node can try shared storage before the rest.
-- Configuration export, import and history include it. See [License](#license) for import and restore.
+- Configuration export, import and history include it.
 
 ## Rate limiting
 
@@ -213,7 +196,7 @@ Code: `ee/high-availability/cluster/` (the supervisor, the lease, Litestream), w
 - **The supervisor.** With `HA_ENABLED=true` the container's first process is a small supervisor (`/app/ha/supervisor.js`). It holds or waits for the lease and runs the dashboard and Litestream as its children. The dashboard learns its role from the supervisor (`HA_ROLE`) and reads its status file.
 - **The leader lease** lives in Redis or Valkey: the key `{<prefix>}:lease` is set with `SET … NX PX <TTL>` (15 seconds by default) and holds a random token, the node id and the **fencing epoch**, a counter raised with `INCR` on every acquisition. The leader renews it every third of the TTL with a compare-and-renew script (only the holder's exact value is extended). Every key shares one hash tag, so the scripts also run on Redis Cluster.
 - **Crash-only fencing.** The leader's deadline is the time it *sent* its last successful renewal plus the TTL, minus a margin (a fifth of the TTL, at most 2 seconds). Redis started the TTL later, when the request arrived, so the deadline always comes before the lease can expire. If a renewal has not succeeded by then, or Redis says another node holds the lease, the supervisor kills the dashboard and Litestream at once (`SIGKILL`) and exits; the container restarts as a standby. The dashboard has its own watchdog too: it exits when the supervisor stops vouching for the lease.
-- **Only the leader runs jobs.** Start-up tasks (database repairs, applying the configuration to Caddy), the Caddy monitor, instance sync, pull replicas, log and WAF log ingestion, ClickHouse set-up, audit streaming and retention, alert evaluation, scheduled backups, change approvals, access list expiry, access reviews, the fleet scheduler, directory health checks, compliance reports, AI digests, API monetization metering and the usage ping all start through one gate (`startBackgroundJobs` in `src/lib/background-jobs.ts`). A standby starts none of them.
+- **Only the leader runs jobs.** Start-up tasks (database repairs, applying the configuration to Caddy), the Caddy monitor, instance sync, pull replicas, log and WAF log ingestion, ClickHouse set-up, audit streaming and retention, alert evaluation, scheduled backups, change approvals, access list expiry, access reviews, the fleet scheduler, directory health checks, compliance reports, AI digests and API monetization metering all start through one gate (`startBackgroundJobs` in `src/lib/background-jobs.ts`). A standby starts none of them.
 - **Replication.** The leader runs `litestream replicate`, which streams every change to `<HA_S3_PATH>/replicas/e<epoch>-<random>/` in the bucket, sending at most every `HA_SYNC_INTERVAL_SECONDS` (1 by default). Each leader term writes a replica of its own: a former leader that wakes up from a pause can only add to its own, abandoned replica, never to the current one. The current replica is recorded in Redis (`{<prefix>}:replica`, written only by the lease holder) and in `<HA_S3_PATH>/cluster.json`.
 - **Standbys** run the dashboard with `HA_ROLE=standby`. It answers the health check with 503, serves the [request-path routes](#request-path-routes), and answers everything else (the dashboard, the API, sign-in to the dashboard) with `503` and a short explanation (`X-HA-Role: standby`). Every `HA_STANDBY_FOLLOW_INTERVAL_SECONDS` (5 by default) `litestream restore -f` applies the leader's changes to a read-only copy, which the request-path routes read.
 
@@ -248,7 +231,7 @@ Replicas of earlier terms are deleted a minute after a takeover, except the one 
 | Object storage unreachable, leader running | The leader keeps serving; Litestream retries and changes wait on its disk. The High availability page and the API show the replication lag growing. | At risk only if the leader is also lost before storage is back. |
 | Object storage unreachable during a takeover | No standby can restore, so none takes over: the dashboard stays down until storage is back. | Nothing more. |
 | A restore fails (missing or damaged files) | The node gives the lease back and retries with a growing delay; the error is on the High availability page and in the API (`lastRestore`). | See [Runbook: a lost bucket](#runbook-a-lost-bucket). |
-| First start, empty bucket | The node that has a database (and the license in it) sets the cluster up from it. A node without a database waits. | Nothing. |
+| First start, empty bucket | The node that has a database sets the cluster up from it. A node without a database waits. | Nothing. |
 | The bucket was emptied while the leader runs | Every 5 minutes the leader checks that its replica still exists; when it is gone, it sends a full copy again and rewrites `cluster.json`. | Nothing, if the leader stays up. |
 | The bucket was emptied and no leader runs | No node takes over: an empty replica is never taken for a first start. | See the runbook. |
 | Litestream or the dashboard stops on the leader | The supervisor restarts it after 5 seconds; the leader keeps its lease. | Changes wait on disk meanwhile. |
@@ -258,13 +241,12 @@ So run Redis or Valkey highly available (Sentinel, a cluster, or a managed servi
 
 ### Set up
 
-1. **Install an Enterprise license** on the dashboard you start from, running it without `HA_ENABLED`. Setting up the cluster reads the license from that node's database; a running cluster never checks it again.
-2. **Run Redis or Valkey** that every web node can reach, with persistence and a password, allowing `EVAL`. It can be the one Caddy uses for certificates, with its own key prefix.
-3. **Create a bucket** on S3-compatible storage (examples below) and an access key that may list the bucket and read, write and delete objects under the path.
-4. **Upgrade the web image**: it includes Litestream (pinned release, checksum verified at build time) and the supervisor.
-5. **Turn high availability on for the existing node first**: set the `HA_*` variables below, a unique `HA_NODE_ID`, and restart it. Finding the bucket empty, it becomes the leader and sends its database as the first replica. The **High availability** page shows it as the leader with the replication time.
-6. **Add standbys**: the same image and variables, a different `HA_NODE_ID`, their own data volume (it can start empty) and the same `SESSION_SECRET` (stored secrets are encrypted with it). Every node points `CADDY_API_URL` at the same Caddy admin endpoint, or the Caddy nodes are instance sync slaves of the cluster.
-7. **Put a load balancer in front** that checks `/api/health` (below), and give the containers 60 seconds to stop (`stop_grace_period: 60s`), so a hand-over loses nothing.
+1. **Run Redis or Valkey** that every web node can reach, with persistence and a password, allowing `EVAL`. It can be the one Caddy uses for certificates, with its own key prefix.
+2. **Create a bucket** on S3-compatible storage (examples below) and an access key that may list the bucket and read, write and delete objects under the path.
+3. **Upgrade the web image**: it includes Litestream (pinned release, checksum verified at build time) and the supervisor.
+4. **Turn high availability on for the existing node first**: set the `HA_*` variables below, a unique `HA_NODE_ID`, and restart it. Finding the bucket empty, it becomes the leader and sends its database as the first replica. The **High availability** page shows it as the leader with the replication time.
+5. **Add standbys**: the same image and variables, a different `HA_NODE_ID`, their own data volume (it can start empty) and the same `SESSION_SECRET` (stored secrets are encrypted with it). Every node points `CADDY_API_URL` at the same Caddy admin endpoint, or the Caddy nodes are instance sync slaves of the cluster.
+6. **Put a load balancer in front** that checks `/api/health` (below), and give the containers 60 seconds to stop (`stop_grace_period: 60s`), so a hand-over loses nothing.
 
 `docker-compose.ha.yml` is a complete example on one machine: two web nodes, Valkey, MinIO and a Caddy load balancer.
 
@@ -403,7 +385,7 @@ Every takeover is in the audit log: `ha_leader_started`, recorded by the new lea
 - **Planned** (maintenance, upgrades): stop or restart the leader's container (`docker compose stop web`). It hands the lease over after Litestream's last sync; a standby takes over within seconds. Upgrade the standbys first, then the leader: the new leader runs the migrations of its release.
 - **Unplanned**: nothing to do. A standby takes over within about 40 seconds. Afterwards, check the **High availability** page: the new leader, its last restore (`Restored from the newest replica`) and a replication lag of a few seconds.
 - **To move the leader to a given node**, stop the others' containers briefly, or stop the leader while the chosen node is the only standby.
-- **If no node becomes the leader**: look at the containers' logs (`[ha]` lines) and `lastRestore.error` in each node's report. The usual causes: Redis unreachable, object storage unreachable, a first start without a database or license, or [a lost bucket](#runbook-a-lost-bucket).
+- **If no node becomes the leader**: look at the containers' logs (`[ha]` lines) and `lastRestore.error` in each node's report. The usual causes: Redis unreachable, object storage unreachable, a first start without a database, or [a lost bucket](#runbook-a-lost-bucket).
 
 ### Runbook: a lost bucket
 
@@ -483,19 +465,13 @@ If Redis or Valkey **loses its data**, sessions are gone (users sign in again) a
 
 ### Turn it off
 
-**Turn off** (`PUT … {"enabled": false}`) writes the shared balances to the ledger first and changes nothing when it cannot (`502`). **Remove setting** (`DELETE`) turns shared state off even when the server cannot be reached; usage and credits not yet in the ledger are then lost. Neither needs a license. Keys left in Redis expire on their own.
+**Turn off** (`PUT … {"enabled": false}`) writes the shared balances to the ledger first and changes nothing when it cannot (`502`). **Remove setting** (`DELETE`) turns shared state off even when the server cannot be reached; usage and credits not yet in the ledger are then lost. Keys left in Redis expire on their own.
 
 ### Leader and standbys
 
 Only the leader writes back to the database. A node started as a standby (`HA_ROLE=standby`) never does; a lock in Redis keeps two nodes from writing back at once, and the write-back is idempotent either way. Every node announces changes to plans, consumers, keys and hosts; the others reload their copy of the gate's configuration at once and again for ten seconds (a standby's database trails the leader's), and every 30 seconds in any case.
 
-### License, permissions, sync
-
-| Action | License |
-| --- | --- |
-| Turn shared state on, change its key prefix | `high_availability` required (`403` otherwise) |
-| Turn it off, remove the setting, read it and its status | never |
-| Request paths (forward auth, the gate, top-ups) | never: shared state keeps working when the license lapses |
+### Permissions, sync
 
 Permissions: `high_availability:read` to read, `high_availability:write` (administrator-level) to change. Audit events: `ha_shared_state_updated`, `ha_shared_state_removed`.
 
@@ -503,7 +479,7 @@ The setting is the instance's own (settings key `ha_shared_state`): it is not sy
 
 | Method and path | Permission | Notes |
 | --- | --- | --- |
-| `GET /api/v1/high-availability/shared-state` | `high_availability:read` | `enabled`, `backend` in use, `keyPrefix`, `namespace`, the connection (from certificate storage, no secrets), `configurable`, `editable`, `error`. |
+| `GET /api/v1/high-availability/shared-state` | `high_availability:read` | `enabled`, `backend` in use, `keyPrefix`, `namespace`, the connection (from certificate storage, no secrets), `editable`, `error`. |
 | `PUT /api/v1/high-availability/shared-state` | `high_availability:write` | `{enabled?, keyPrefix?}`. `400` without the certificate storage's Redis settings, `409` on a slave, `502` when the server cannot be reached or the balances cannot be written back. |
 | `DELETE /api/v1/high-availability/shared-state` | `high_availability:write` | Off, whatever the server says. |
 | `GET /api/v1/high-availability/shared-state/status` | `high_availability:read` | `reachable`, `keys` (`forwardAuthSessions`, `monetizationConsumers`, `pendingCredits`), `drain` (last write-back), `leader`. |
@@ -515,11 +491,11 @@ curl -X PUT https://dash.example.com/api/v1/high-availability/shared-state \
 
 ## PostgreSQL replicas
 
-With the dashboard on PostgreSQL (`DATABASE_URL=postgres://…`), several web containers can point at the same database. Every replica serves the dashboard, the API and the request-path routes (forward auth, the portal, the API gate) from it. One replica, the **leader**, runs the background jobs: the start-up tasks, applying the configuration to Caddy, the Caddy monitor, log and WAF log ingestion, ClickHouse set-up, audit streaming and retention, instance sync, pull replicas, alerts, scheduled backups, change approvals, access list expiry, access reviews, the fleet scheduler, directory health checks, compliance reports, AI digests, license updates, the usage ping, API monetization metering and the shared state write-back. The others start none of them.
+With the dashboard on PostgreSQL (`DATABASE_URL=postgres://…`), several web containers can point at the same database. Every replica serves the dashboard, the API and the request-path routes (forward auth, the portal, the API gate) from it. One replica, the **leader**, runs the background jobs: the start-up tasks, applying the configuration to Caddy, the Caddy monitor, log and WAF log ingestion, ClickHouse set-up, audit streaming and retention, instance sync, pull replicas, alerts, scheduled backups, change approvals, access list expiry, access reviews, the fleet scheduler, directory health checks, compliance reports, AI digests, API monetization metering and the shared state write-back. The others start none of them.
 
 Nothing else is needed: no `HA_*` variables, no Redis for the lead, no object storage. `HA_ENABLED` (the SQLite cluster above) is refused with a PostgreSQL URL. On SQLite none of this runs.
 
-Code: `src/lib/db/leader.ts` (the election), `src/lib/cluster-nodes.ts` (membership), `src/lib/background-jobs.ts` (the jobs), `ee/high-availability/replicas.ts` (the license rule and the view), `src/lib/dashboard-upstreams.ts` (how Caddy reaches the replicas), `docker-compose.postgres.yml` (a deployment).
+Code: `src/lib/db/leader.ts` (the election), `src/lib/cluster-nodes.ts` (membership), `src/lib/background-jobs.ts` (the jobs), `ee/high-availability/replicas.ts` (the view), `src/lib/dashboard-upstreams.ts` (how Caddy reaches the replicas), `docker-compose.postgres.yml` (a deployment).
 
 ### Leader election
 
@@ -545,25 +521,15 @@ The election needs a direct connection to PostgreSQL or a pooler in **session** 
 
 ### Membership
 
-Each replica registers in the `cluster_nodes` table when it starts and records a heartbeat every 10 seconds: its id, host name (a label only), version, the newest migration it knows, when it was first seen and when it started, and whether it leads. A replica silent for 45 seconds shows as gone; one that stopped cleanly shows as stopped; rows silent for 30 days are deleted by the leader.
+Each replica registers in the `cluster_nodes` table when it starts and records a heartbeat every 10 seconds: its id, host name (a label only), version, the newest migration it knows, when it was first seen and when it started, and whether it leads. A replica silent for 45 seconds shows as gone; one that stopped cleanly shows as stopped; rows silent for 30 days are deleted by the leader. A new node id joins when it starts; the audit log records it (`ha_replica_joined`).
 
 The **node id** is `INGRESSI_NODE_ID` (letters, digits, `.`, `_`, `-`, up to 64; it must be unique), or else an id generated once and kept in the container's data volume (`/app/data/node-id`; `INGRESSI_DATA_DIR` moves it). A container without a data volume gets a new id at every start: set `INGRESSI_NODE_ID` for it.
 
-**One process per node id.** Two containers on one data volume, or with the same `INGRESSI_NODE_ID`, would otherwise count as one replica, write over each other's heartbeat and leader flag, and let the second one skip the license rule. So every process draws a random token when it starts and records it with its heartbeat:
+**One process per node id.** Two containers on one data volume, or with the same `INGRESSI_NODE_ID`, would otherwise count as one replica and write over each other's heartbeat and leader flag. So every process draws a random token when it starts and records it with its heartbeat:
 
-- A heartbeat that finds another process's token on its node id, written within 45 seconds, means two processes share the id. The newer one (the later start) refuses to run as a replica, the way a replica refused under the license rule does: it stops leading and running jobs, answers `503`, logs why (`[replicas] This replica was not admitted: another process is already running with its node id …`, with the id) and tries again every 30 seconds. It runs once the other process has stopped. The refusal is in the audit log (`ha_replica_refused`, reason `duplicate`). The older process runs on, writes its heartbeat back and logs a warning.
+- A heartbeat that finds another process's token on its node id, written within 45 seconds, means two processes share the id. The newer one (the later start) refuses to run as a replica: it stops leading and running jobs, answers every request but the health check with `503` and the reason (`X-HA-Role: refused`; `/api/health` answers `503` too, except `scope=live`), logs why (`[replicas] This replica was not admitted: another process is already running with its node id …`, with the id) and tries again every 30 seconds. It runs once the other process has stopped. The refusal is in the audit log (`ha_replica_refused`, reason `duplicate`). The older process runs on, writes its heartbeat back and logs a warning.
 - A container restarted after a crash finds its own old row, written seconds ago by a process that no longer exists. That is not a duplicate: it takes the row over, serves requests at once, and competes for the lead after one heartbeat interval (about 15 seconds) has shown that nobody else writes the row.
 - Give every container its own data volume or its own `INGRESSI_NODE_ID`.
-
-### License rule
-
-- One replica on a PostgreSQL database is free (Community).
-- A node id the cluster does not know **joins** when it starts. If another replica is live (a heartbeat within 45 seconds, not stopped), joining needs a license that lets an administrator set up high availability: Enterprise, active or in its grace period. The license is read from the database at that moment.
-- A replica that joined before always starts, restarts and serves, whatever the license says then. A running replica never checks the license. A license that expires or is removed later changes nothing for the replicas that joined.
-- A refused replica is not added. It competes for no lead, runs no job and answers every request but the health check with `503` and the reason (`X-HA-Role: refused`); `/api/health` answers `503` too, except `scope=live`. It logs why (`[replicas] This replica was not admitted …`) and tries again every 30 seconds: install the license on a running replica and it joins on its own. The replicas already running are not affected. The refusal is in the audit log (`ha_replica_refused`), as is every new replica that joins (`ha_replica_joined`).
-- Two new replicas that start together without the license: one joins, the other is refused (joining runs under the database's write lock).
-- A copy of a replica with the same node id is not a replica that joined before: it is refused as long as the other runs (see [Membership](#membership)).
-- A replica that stops cleanly no longer counts as live, so replacing the only replica (a new id after recreating a container without its volume) needs no license.
 
 ### Deploy
 
@@ -576,10 +542,9 @@ The **node id** is `INGRESSI_NODE_ID` (letters, digits, `.`, `_`, `-`, up to 64;
    ```
 
    `COMPOSE_FILE=docker-compose.yml:docker-compose.postgres.yml` in `.env` saves typing the files.
-2. Install an Enterprise license (**License**).
-3. In `.env`, add `replicas` to `COMPOSE_PROFILES` (`COMPOSE_PROFILES=clickhouse,replicas`) and list the replicas for Caddy: `DASHBOARD_UPSTREAMS=web:3000,web-2:3000`.
-4. Run the same `up -d` again. `web` is recreated with the new list; `web-2` starts once `web` is healthy and joins. The **High availability** page shows both.
-5. Make the dashboard reachable through both replicas ([The dashboard](#the-dashboard)).
+2. In `.env`, add `replicas` to `COMPOSE_PROFILES` (`COMPOSE_PROFILES=clickhouse,replicas`) and list the replicas for Caddy: `DASHBOARD_UPSTREAMS=web:3000,web-2:3000`.
+3. Run the same `up -d` again. `web` is recreated with the new list; `web-2` starts once `web` is healthy and joins. The **High availability** page shows both.
+4. Make the dashboard reachable through both replicas ([The dashboard](#the-dashboard)).
 
 A third replica is a copy of `web-2` in your own override file: another service name, its own data volume, `L4_PORTS_DIR` on `caddy-manager-data`, and its name in `DASHBOARD_UPSTREAMS`. Do not use `deploy.replicas` or `docker compose up --scale`: the copies would share one data volume, and so one node id, and all but the oldest would refuse to run.
 
@@ -606,9 +571,9 @@ A third replica is a copy of `web-2` in your own override file: another service 
 
 | Topology | Supported | What it takes |
 | --- | --- | --- |
-| One web container, one Caddy, PostgreSQL | Yes, Community | The override without the `replicas` profile. |
-| Several replicas and one Caddy on one Docker host | Yes, Enterprise | The override with the `replicas` profile, as above. |
-| Replicas on several machines, one Caddy | Yes, Enterprise | Every replica reaches PostgreSQL, and Caddy's admin API on a private network under the name `caddy` (Caddy only answers its admin API for that name: map it with `extra_hosts`). Caddy reaches every replica (`DASHBOARD_UPSTREAMS` with their private addresses). Every replica mounts Caddy's log directory at `/logs` and the `acme-ca` directory, for example from a network file system. Never publish port 2019. |
+| One web container, one Caddy, PostgreSQL | Yes | The override without the `replicas` profile. |
+| Several replicas and one Caddy on one Docker host | Yes | The override with the `replicas` profile, as above. |
+| Replicas on several machines, one Caddy | Yes | Every replica reaches PostgreSQL, and Caddy's admin API on a private network under the name `caddy` (Caddy only answers its admin API for that name: map it with `extra_hosts`). Caddy reaches every replica (`DASHBOARD_UPSTREAMS` with their private addresses). Every replica mounts Caddy's log directory at `/logs` and the `acme-ca` directory, for example from a network file system. Never publish port 2019. |
 | Several Caddy nodes | Yes, as instance sync slaves | The replicas' leader syncs the configuration to the slaves, each a web container on SQLite and a Caddy; [shared certificate storage](#cluster-design) lets them share certificates. Slaves serve neither Ingressi forward auth nor monetized hosts ([Honest limits](#honest-limits)). |
 | A Caddy per replica, each replica on its own | No | A change reaches only the Caddy of the replica that applied it, and only the leader's Caddy is watched for drift. Every replica points `CADDY_API_URL` at the same Caddy. |
 
@@ -631,7 +596,7 @@ How far the logs were read is kept in the database, so a new leader goes on wher
 Caddy calls the dashboard for every request to a host behind Ingressi forward auth (`/api/forward-auth/verify`), for the sign-in callback on those hosts, and for every request to a monetized host (`/api/monetization/gate`). `DASHBOARD_UPSTREAMS` lists the replicas it sends these to: `host:port`, separated by commas, IPv6 in brackets, `http://` allowed in front. Set it to the same value on every replica: any replica may apply the configuration.
 
 - Unset or empty, Caddy uses the single address it always used: `FORWARD_AUTH_INTERNAL_URL`, else `web:3000`, else the host of `BASE_URL`. With one address the configuration is exactly as without replicas. `DASHBOARD_UPSTREAMS` wins over `FORWARD_AUTH_INTERNAL_URL`.
-- With several, each of these routes checks `/api/health` on every replica when Caddy loads the configuration and every 10 seconds after. A replica that does not answer 200 within 5 seconds (stopped, starting, or refused: its license, or a node id another process uses) gets nothing until it does.
+- With several, each of these routes checks `/api/health` on every replica when Caddy loads the configuration and every 10 seconds after. A replica that does not answer 200 within 5 seconds (stopped, starting, or refused because another process uses its node id) gets nothing until it does.
 - Three failed requests to a replica within 10 seconds take it out for those 10 seconds, for every route at once.
 - A request that could not reach a replica is tried on another for up to 5 seconds, every 250 milliseconds. One that reached a replica and got no answer is tried again for the forward-auth check and the callback (the check only reads; a sign-in code is redeemed once, so a repeat is refused, never counted twice), never for the API gate: it charges the consumer when it answers.
 - An entry that is not an address stops the container at start-up with a message that names its position.
@@ -700,7 +665,7 @@ Each replica opens up to `DATABASE_POOL_MAX` (10) connections for queries, up to
 
 ### Dashboard page and API
 
-The **High availability** page shows **PostgreSQL mode**: every replica with its role (leader, follower, stopped, gone), last heartbeat, version, schema and when it was first seen, which one leads, and this replica's election state. It is read-only: a replica joins by starting with the same `DATABASE_URL`. It needs `high_availability:read`, as does `GET /api/v1/cluster/nodes`, which returns the same (see [REST API](#rest-api)). Reading never needs a license.
+The **High availability** page shows **PostgreSQL mode**: every replica with its role (leader, follower, stopped, gone), last heartbeat, version, schema and when it was first seen, which one leads, and this replica's election state. It is read-only: a replica joins by starting with the same `DATABASE_URL`. It needs `high_availability:read`, as does `GET /api/v1/cluster/nodes`, which returns the same (see [REST API](#rest-api)).
 
 Nothing here is a setting: there is nothing to sync to instance sync slaves, export or restore. `DASHBOARD_UPSTREAMS` is an environment variable of each replica.
 

@@ -5,11 +5,8 @@ import { can } from "@/src/lib/permissions";
 import { getInstanceMode } from "@/src/lib/instance-sync";
 import { MIN_EXPORT_PASSPHRASE_LENGTH } from "@/src/lib/config-transfer";
 import { DEFAULT_PAGE_SIZE, parsePageParam } from "@/src/lib/pagination";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { listBackupDestinations } from "@/ee/backups/destinations";
 import { listBackupRuns } from "@/ee/backups/runner";
-import { FEATURE } from "@/ee/backups/types";
 import BackupsTab from "./BackupsTab";
 
 export const metadata = { title: "Backups" };
@@ -27,9 +24,8 @@ export default async function BackupsPage({ searchParams }: { searchParams?: Pro
   );
 
   const requested = parsePageParam((await searchParams)?.page);
-  const [destinations, configurable, mode, first] = await Promise.all([
+  const [destinations, mode, first] = await Promise.all([
     listBackupDestinations(),
-    isFeatureConfigurable(FEATURE),
     getInstanceMode(),
     listBackupRuns({ page: requested, perPage: DEFAULT_PAGE_SIZE }),
   ]);
@@ -43,9 +39,7 @@ export default async function BackupsPage({ searchParams }: { searchParams?: Pro
       <BackupsTab
         destinations={destinations}
         runs={runs}
-        configurable={configurable}
         isSlave={mode === "slave"}
-        editionLabel={EDITION_LABELS[FEATURE_INFO[FEATURE].edition]}
         minPassphraseLength={MIN_EXPORT_PASSPHRASE_LENGTH}
         paginateRuns
       />

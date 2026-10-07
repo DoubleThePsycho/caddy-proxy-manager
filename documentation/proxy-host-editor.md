@@ -1,6 +1,6 @@
 # Proxy host editor
 
-Proxy hosts are created and changed on their own page: **Proxy hosts → New host** (`/proxy-hosts/new`) and **Edit** on a host (`/proxy-hosts/<id>/edit`). **Duplicate** opens a new host that starts as a copy (`/proxy-hosts/new?from=<id>`). The editor is a Community feature.
+Proxy hosts are created and changed on their own page: **Proxy hosts → New host** (`/proxy-hosts/new`) and **Edit** on a host (`/proxy-hosts/<id>/edit`). **Duplicate** opens a new host that starts as a copy (`/proxy-hosts/new?from=<id>`).
 
 ## Sections
 

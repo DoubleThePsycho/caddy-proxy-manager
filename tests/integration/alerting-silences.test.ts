@@ -2,9 +2,9 @@
  * Dismissing alerts and muting rules (ee/alerting/silences.ts): what the
  * engine notifies and records while a rule is muted or an alert dismissed,
  * when mutes and dismissals end, Needs attention and the sidebar badge, and
- * the REST API (validation, the license rules, the audit log).
+ * the REST API (validation, the audit log).
  */
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TestDb } from '../helpers/db';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -41,13 +41,8 @@ import { DELETE as deleteRule } from '../../app/api/v1/alert-rules/[id]/route';
 import { logAuditEvent } from '../../src/lib/audit';
 import { adminAccess } from '../../src/lib/permissions';
 import { getNavSummary } from '../../src/lib/nav-summary';
-import { setSetting } from '../../src/lib/settings';
 import { encryptSecret } from '../../src/lib/secret';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
-import { LICENSE_SETTING_KEY } from '../../ee/licensing/store';
-import { createTestSigner, licensePayload, signLicense } from '../helpers/license';
 
-const signer = createTestSigner();
 const T0 = new Date('2026-10-02T10:00:00.000Z');
 const minutes = (n: number) => new Date(T0.getTime() + n * 60_000);
 const HOUR = 60;
@@ -153,13 +148,6 @@ async function post(body: unknown): Promise<{ status: number; data: any }> {
   return { status: response.status, data: await response.json() };
 }
 
-function installLicense() {
-  return setSetting(
-    LICENSE_SETTING_KEY,
-    signLicense(signer, licensePayload(signer, { edition: 'homelab', iat: '2026-01-01T00:00:00.000Z', exp: '2099-01-01T00:00:00.000Z' }))
-  );
-}
-
 beforeEach(async () => {
   for (const table of [schema.alertSilences, schema.alertEvents, schema.alertRuleStates, schema.alertRules, schema.alertChannels, schema.settings, schema.users]) {
     await ctx.db.delete(table);
@@ -167,11 +155,9 @@ beforeEach(async () => {
   const now = new Date().toISOString();
   await ctx.db.insert(schema.users).values({ id: 1, email: 'alex@example.com', name: 'Alex Morgan', role: 'admin', status: 'active', createdAt: now, updatedAt: now });
   vi.mocked(logAuditEvent).mockClear();
-  setTrustedLicenseKeysForTests(signer.keys);
 });
 
 afterEach(() => vi.restoreAllMocks());
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('the engine with mutes and dismissals', () => {
   it('records what fires while the rule is muted without notifying, and sends no resolve notice for it', async () => {
@@ -289,7 +275,6 @@ describe('the engine with mutes and dismissals', () => {
 
     expect((await deleteRule(request('DELETE'), params(first))).status).toBe(204);
     expect((await silences()).map((row) => row.ruleId)).toEqual([second, second]);
-    // Disabling is winding down: no license needed.
     await updateAlertRule(second, { enabled: false }, 1);
     expect((await silences()).map((row) => row.id)).toEqual([timed]);
   });
@@ -327,12 +312,12 @@ describe('Needs attention and the sidebar badge', () => {
 });
 
 describe('REST API', () => {
-  async function freeRule(): Promise<number> {
+  async function certificateRule(): Promise<number> {
     return addRule({ name: 'Certificates', type: 'cert_expiring', params: '{"days":14}', channelIds: JSON.stringify([await addChannel('email')]) });
   }
 
-  it('dismisses a firing alert until it resolves without a license, lists it and undoes it', async () => {
-    const ruleId = await freeRule();
+  it('dismisses a firing alert until it resolves, lists it and undoes it', async () => {
+    const ruleId = await certificateRule();
     await addFiring(ruleId, 'certificate:1');
 
     const { status, data } = await post({ ruleId, subjectKey: 'certificate:1', note: '  Renewal ordered  ' });
@@ -361,7 +346,7 @@ describe('REST API', () => {
   });
 
   it('mutes a rule for a duration, shows it on the rule and replaces an earlier mute', async () => {
-    const ruleId = await freeRule();
+    const ruleId = await certificateRule();
     const before = Date.now();
     const first = await post({ ruleId, durationMinutes: 60 });
     expect(first.status).toBe(201);
@@ -401,7 +386,7 @@ describe('REST API', () => {
     ['an unknown field', { durationMinutes: 60, kind: 'mute' }, 400],
     ['dismissing until it resolves an alert that is not firing', { subjectKey: 'certificate:2' }, 409],
   ])('refuses %s', async (_label, overrides, expected) => {
-    const ruleId = await freeRule();
+    const ruleId = await certificateRule();
     const body = { ruleId, ...overrides };
     expect((await post(body)).status).toBe(expected);
     expect(await silences()).toEqual([]);
@@ -411,20 +396,20 @@ describe('REST API', () => {
     expect((await createSilence(request('POST'))).status).toBe(400);
   });
 
-  it('needs the license that changing the rule needs, but never to undo', async () => {
-    const paid = await addRule({ name: 'Upstreams' });
-    await addFiring(paid, 'upstream:a');
-    const slackCertificates = await addRule({ name: 'Slack certificates', type: 'cert_expiring', params: '{"days":14}', channelIds: JSON.stringify([await addChannel('slack')]) });
-    expect((await post({ ruleId: paid, subjectKey: 'upstream:a' })).status).toBe(403);
-    expect((await post({ ruleId: paid, durationMinutes: 60 })).status).toBe(403);
-    expect((await post({ ruleId: slackCertificates, durationMinutes: 60 })).status).toBe(403);
+  it('treats a stored rule of a type that no longer exists as missing', async () => {
+    const ruleId = await addRule({ name: 'Old', type: 'license_expiring', params: '{"days":30}' });
+    expect((await post({ ruleId, durationMinutes: 60 })).status).toBe(400);
+    expect(await silences()).toEqual([]);
+  });
 
-    await installLicense();
-    const dismissed = await post({ ruleId: paid, subjectKey: 'upstream:a' });
+  it('dismisses and mutes alerts of any rule, and undoes it', async () => {
+    const upstreams = await addRule({ name: 'Upstreams' });
+    await addFiring(upstreams, 'upstream:a');
+    const slackCertificates = await addRule({ name: 'Slack certificates', type: 'cert_expiring', params: '{"days":14}', channelIds: JSON.stringify([await addChannel('slack')]) });
+    const dismissed = await post({ ruleId: upstreams, subjectKey: 'upstream:a' });
     const muted = await post({ ruleId: slackCertificates, durationMinutes: 60 });
     expect([dismissed.status, muted.status]).toEqual([201, 201]);
 
-    await setSetting(LICENSE_SETTING_KEY, null);
     expect((await deleteSilence(request('DELETE'), params(dismissed.data.id))).status).toBe(204);
     expect((await deleteSilence(request('DELETE'), params(muted.data.id))).status).toBe(204);
     expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'alert_silence_deleted', summary: 'Unmuted alert rule "Slack certificates"' }));
@@ -432,7 +417,7 @@ describe('REST API', () => {
   });
 
   it('keeps the dismissal of a deleted user, without a name', async () => {
-    const ruleId = await freeRule();
+    const ruleId = await certificateRule();
     await addFiring(ruleId, 'certificate:1');
     await post({ ruleId, subjectKey: 'certificate:1' });
     await ctx.db.delete(schema.users).where(eq(schema.users.id, 1));

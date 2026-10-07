@@ -1,6 +1,6 @@
 /**
  * "The configuration": everything stored in the database that decides what
- * Caddy serves. Configuration export/import (Community) and configuration
+ * Caddy serves. Configuration export/import and configuration
  * history (ee/config-history) read and replace exactly this set.
  *
  * Included: proxy hosts, L4 proxy hosts, access lists with their entries and rules,
@@ -14,7 +14,7 @@
  * anybody out of the dashboard or sign anybody in: users, group memberships,
  * dashboard sessions, sign-in accounts and OAuth state, OAuth providers, API
  * tokens, audit events, instances and sync tokens/keys, forward-auth sessions,
- * the license, the instance mode and every other settings key.
+ * the instance mode and every other settings key.
  *
  * Rows are kept as stored: secret columns stay encrypted with this instance's
  * key (see secret.ts) and nothing here decrypts them.

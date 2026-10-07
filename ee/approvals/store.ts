@@ -2,7 +2,7 @@
 /**
  * Approval policies as stored, and the reads the guards use. Everything here
  * takes a database reader (the database or a transaction on it), so a check
- * and the write it guards can share one transaction. Nothing here looks at the license.
+ * and the write it guards can share one transaction.
  */
 import { eq } from "drizzle-orm";
 import { appDb, toIso } from "@/src/lib/db";
@@ -85,7 +85,7 @@ function toRule(view: ApprovalPolicyView): PolicyRule {
   };
 }
 
-/** The enabled policies (the guards read them inside write transactions). Never checks the license. */
+/** The enabled policies (the guards read them inside write transactions). */
 export async function readEnabledPolicyRules(reader: PolicyReader = appDb): Promise<PolicyRule[]> {
   return (await reader
     .select()

@@ -5,11 +5,6 @@
  * dashboard. This is the only way providers are created or changed: the
  * Better Auth plugin (plugin.ts) has no management routes.
  *
- * Licensing: creating a provider, and any change that leaves it enabled or
- * changes its settings, needs "sso_saml". Disabling and deleting a provider
- * never do, and neither do reading one and its metadata. Sign-in through an
- * enabled provider never checks the license (plugin.ts).
- *
  * Providers are per dashboard, like the users and accounts they sign in:
  * they are not synced to slaves, like OAuth providers.
  */
@@ -21,8 +16,7 @@ import { accounts, samlGroupRoles, samlProviders } from "@/src/lib/db/schema";
 import { encryptSecret } from "@/src/lib/secret";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiConflictError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
-import { LIMITS, SAML_DEFAULT_ROLES, SAML_FEATURE, SAML_ROLES, samlProviderId, type SamlRole } from "./constants";
+import { LIMITS, SAML_DEFAULT_ROLES, SAML_ROLES, samlProviderId, type SamlRole } from "./constants";
 import { buildServiceProviderMetadata, parseIdpMetadata } from "./metadata";
 import { deleteProviderState } from "./requests";
 import {
@@ -356,7 +350,8 @@ export async function parseProviderUpdate(body: unknown, existing: SamlProviderR
 
 /**
  * Whether an update only turns the provider off: `enabled: false`, with any
- * other field repeating its stored value. It needs no license.
+ * other field repeating its stored value. Nothing stored is validated again,
+ * so a provider can always be turned off.
  */
 export async function isDisableOnlyUpdate(body: unknown, existing: SamlProviderRow): Promise<boolean> {
   if (!isRecord(body) || body.enabled !== false) return false;
@@ -531,7 +526,6 @@ async function writeMappings(tx: AppTx, providerId: number, mappings: readonly S
 // ── Administrator actions ────────────────────────────────────────────
 
 export async function createProvider(body: unknown, actorUserId: number): Promise<SamlProviderView> {
-  await requireFeature(SAML_FEATURE);
   const input = await parseProviderCreate(body);
   await assertNameAvailable(input.name, null);
   const stamp = nowIso();
@@ -557,7 +551,7 @@ export async function createProvider(body: unknown, actorUserId: number): Promis
 export async function updateProvider(id: number, body: unknown, actorUserId: number): Promise<SamlProviderView> {
   const existing = await requireProviderRow(id);
   if (await isDisableOnlyUpdate(body, existing)) {
-    // Winding down: no license, and nothing stored is validated again.
+    // Turning off: nothing stored is validated again.
     const row = (await first(appDb
       .update(samlProviders)
       .set({ enabled: false, updatedAt: nowIso() })
@@ -573,7 +567,6 @@ export async function updateProvider(id: number, body: unknown, actorUserId: num
     });
     return await toProviderView(row);
   }
-  await requireFeature(SAML_FEATURE);
   const input = await parseProviderUpdate(body, existing);
   await assertNameAvailable(input.name, id);
   const row = await appDb.transaction(async (tx) => {
@@ -610,7 +603,7 @@ export async function updateProvider(id: number, body: unknown, actorUserId: num
 }
 
 /**
- * Needs no license. The accounts signed in through the provider, its group
+ * The accounts signed in through the provider, its group
  * mappings, its sign-ins in progress and its replay records are deleted in
  * the same transaction (foreign keys are not enforced); the users themselves
  * are kept, and those without another way to sign in can no longer sign in

@@ -131,7 +131,7 @@ export async function requireApiUser(request: NextRequest, options: RequireApiUs
 /**
  * What an authenticated caller may do. API tokens act with their owner's
  * role, limited to the token's scopes when it has some
- * (src/lib/api-token-scopes.ts). Never checks the license. Every permission
+ * (src/lib/api-token-scopes.ts). Every permission
  * check on a REST request goes through here, so a scoped token can never do
  * more than its owner or its scopes.
  */

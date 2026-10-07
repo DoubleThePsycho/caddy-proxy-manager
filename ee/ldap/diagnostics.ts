@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Administrator tools for a directory: test the connection, and test a
- * sign-in without signing anyone in. Neither needs the license (they set up
- * or change nothing) and both work on a disabled directory, so one can be
- * checked before it is turned on. Both are recorded in the audit log.
+ * sign-in without signing anyone in. Both work on a disabled directory, so
+ * one can be checked before it is turned on. Both are recorded in the audit log.
  *
  * A test sign-in tells the administrator why it failed (unknown user, wrong
  * password, several entries, ...), which sign-in itself never does. It uses

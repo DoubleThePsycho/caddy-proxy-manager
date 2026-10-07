@@ -16,9 +16,8 @@ export type AlertActionResult = { ok: true; message?: string } | { ok: false; er
 
 /**
  * Runs an admin action for a session that passed its permission check (each
- * action checks its own: alerts:write or ai:write). The ee functions check the
- * license (with the Community carve-out) before changing anything;
- * client-safe errors, 403s included, come back as { ok: false }.
+ * action checks its own: alerts:write or ai:write). Client-safe errors come
+ * back as { ok: false }.
  */
 async function run(
   session: PermissionSession,
@@ -41,7 +40,6 @@ export async function saveAlertChannelAction(id: number | null, input: unknown):
   });
 }
 
-/** Disabling works without a license; enabling a paid channel needs one. */
 export async function setAlertChannelEnabledAction(id: number, enabled: boolean): Promise<AlertActionResult> {
   return run(await requirePermission("alerts:write"), async (userId) => {
     await updateAlertChannel(id, { enabled }, userId);
@@ -71,7 +69,6 @@ export async function saveAlertRuleAction(id: number | null, input: unknown): Pr
   });
 }
 
-/** Disabling works without a license; enabling a paid rule needs one. */
 export async function setAlertRuleEnabledAction(id: number, enabled: boolean): Promise<AlertActionResult> {
   return run(await requirePermission("alerts:write"), async (userId) => {
     await updateAlertRule(id, { enabled }, userId);
@@ -82,14 +79,14 @@ export async function deleteAlertRuleAction(id: number): Promise<AlertActionResu
   return run(await requirePermission("alerts:write"), (userId) => deleteAlertRule(id, userId));
 }
 
-/** Dismisses an alert or mutes a rule ({ ruleId, subjectKey?, durationMinutes?, note? }); licensed like changing the rule. */
+/** Dismisses an alert or mutes a rule ({ ruleId, subjectKey?, durationMinutes?, note? }). */
 export async function silenceAlertAction(input: unknown): Promise<AlertActionResult> {
   return run(await requirePermission("alerts:write"), async (userId) => {
     await createAlertSilence(input, userId);
   });
 }
 
-/** Undoes a dismissal or mute; works without a license. */
+/** Undoes a dismissal or mute. */
 export async function endAlertSilenceAction(id: number): Promise<AlertActionResult> {
   return run(await requirePermission("alerts:write"), (userId) => deleteAlertSilence(id, userId));
 }
@@ -100,7 +97,7 @@ export async function saveAiSettingsAction(input: unknown): Promise<AlertActionR
   });
 }
 
-/** Removes the provider and its key; works without a license. */
+/** Removes the provider and its key. */
 export async function removeAiSettingsAction(): Promise<AlertActionResult> {
   return run(await requirePermission("ai:write"), async (userId) => {
     await clearAiSettings(userId);
@@ -118,7 +115,7 @@ export async function testAiProviderAction(): Promise<AlertActionResult> {
   }
 }
 
-/** Analytics question settings; turning them off works without a license. */
+/** Analytics question settings. */
 export async function saveQuestionSettingsAction(input: unknown): Promise<AlertActionResult> {
   return run(await requirePermission("ai:write"), async (userId) => {
     await saveQuestionSettings(input, userId);

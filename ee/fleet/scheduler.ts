@@ -2,8 +2,7 @@
 /**
  * Runs the fleet in the background: rollout steps every few seconds and
  * drift checks every few minutes. Started from src/instrumentation.ts (never
- * in tests). Neither checks the license: rollouts that were started finish,
- * and drift keeps being reported, when a license lapses.
+ * in tests).
  */
 import { count } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

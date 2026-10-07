@@ -1,8 +1,8 @@
 # Host tags
 
-Proxy hosts and L4 proxy hosts can carry free-form **tags**, such as `team-a`, `production` or `eu/west`. Tags are a Community feature.
+Proxy hosts and L4 proxy hosts can carry free-form **tags**, such as `team-a`, `production` or `eu/west`.
 
-Tags alone change nothing: Caddy's configuration does not use them. They label hosts in the lists, the search on the Proxy Hosts and L4 Proxy Hosts pages also matches them, and a custom role (Business edition, `ee/docs/custom-roles.md`) can be limited to hosts that carry one of its tags.
+Tags alone change nothing: Caddy's configuration does not use them. They label hosts in the lists, the search on the Proxy Hosts and L4 Proxy Hosts pages also matches them, and a custom role (`ee/docs/custom-roles.md`) can be limited to hosts that carry one of its tags.
 
 ## Rules
 

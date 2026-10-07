@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Elastic-2.0
 "use client";
 
-import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -23,14 +22,10 @@ import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import type { SamlRole } from "@/ee/saml/constants";
 import type { SamlProviderView } from "@/ee/saml/types";
 
-const LOCKED_HINT = "Needs a license with SAML single sign-on";
-
 type Props = {
   providers: SamlProviderView[];
-  configurable: boolean;
   canWrite: boolean;
   secureBaseUrl: boolean;
-  editionLabel: string;
 };
 
 type Mapping = { group: string; role: SamlRole };
@@ -186,7 +181,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function SamlClient({ providers, configurable, canWrite, secureBaseUrl, editionLabel }: Props) {
+export default function SamlClient({ providers, canWrite, secureBaseUrl }: Props) {
   const router = useRouter();
   const { productName } = useBranding();
   const [pending, startTransition] = useTransition();
@@ -197,7 +192,6 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
   const [deleteTarget, setDeleteTarget] = useState<SamlProviderView | null>(null);
   const [detailsTarget, setDetailsTarget] = useState<SamlProviderView | null>(null);
 
-  const canChange = configurable && canWrite;
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((previous) => ({ ...previous, [key]: value }));
 
   function openCreate() {
@@ -292,19 +286,12 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
         title="SAML"
         description={`Sign in to ${productName} through a SAML 2.0 identity provider. The forward-auth portal is not affected.`}
         actions={canWrite ? (
-          <Button onClick={openCreate} disabled={!canChange || pending} title={configurable ? undefined : LOCKED_HINT}>
+          <Button onClick={openCreate} disabled={pending}>
             <Plus /> Add provider
           </Button>
         ) : undefined}
       />
 
-      {!configurable && (
-        <Banner tone="info" title="Read-only without a license.">
-          Setting up and changing SAML providers needs an active {productName} {editionLabel} license or higher. You can still disable and
-          delete them.{" "}
-          <Link href="/license" className="text-brand underline-offset-4 hover:underline">Manage the license</Link>
-        </Banner>
-      )}
       {!secureBaseUrl && (
         <Banner tone="bad" title="BASE_URL does not use https.">
           SAML sign-in needs it: browsers drop the cookie that ties the identity provider&apos;s answer to the browser that started
@@ -319,7 +306,7 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
             icon={IdCard}
             title="No SAML providers yet"
             action={canWrite ? (
-              <Button size="sm" onClick={openCreate} disabled={!canChange || pending}>
+              <Button size="sm" onClick={openCreate} disabled={!canWrite || pending}>
                 <Plus /> Add provider
               </Button>
             ) : undefined}
@@ -342,11 +329,9 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
                   <TableCell>
                     <Switch
                       checked={provider.enabled}
-                      // Turning off always works; turning on needs the license.
-                      disabled={!canWrite || pending || (!configurable && !provider.enabled)}
+                      disabled={!canWrite || pending}
                       onCheckedChange={(checked) => setEnabled(provider, checked)}
                       aria-label={provider.enabled ? "Disable provider" : "Enable provider"}
-                      title={!configurable && !provider.enabled ? LOCKED_HINT : undefined}
                     />
                   </TableCell>
                   <TableCell>
@@ -388,8 +373,8 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
                     </Button>
                     {canWrite && (
                       <>
-                        <Button variant="ghost" size="icon-sm" title={configurable ? "Edit" : LOCKED_HINT} aria-label={`Edit "${provider.name}"`}
-                          disabled={!configurable || pending} onClick={() => openEdit(provider)}>
+                        <Button variant="ghost" size="icon-sm" title="Edit" aria-label={`Edit "${provider.name}"`}
+                          disabled={pending} onClick={() => openEdit(provider)}>
                           <Pencil />
                         </Button>
                         <Button variant="ghost" size="icon-sm" className="text-bad hover:text-bad" title="Delete" aria-label={`Delete "${provider.name}"`}

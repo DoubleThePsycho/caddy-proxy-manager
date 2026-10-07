@@ -1,9 +1,9 @@
 /**
- * Fleet pull replicas on the master of the test stack (web-master:3002). The
- * stack has no license, so this covers what works without one: the pull
- * endpoint reaches its route without a session (the proxy middleware lets it
- * through) and refuses unknown credentials, adding a pull replica is refused,
- * and the Fleet page shows the Pull replicas card with the license notice.
+ * Fleet pull replicas on the master of the test stack (web-master:3002): the
+ * pull endpoint reaches its route without a session (the proxy middleware
+ * lets it through) and refuses unknown credentials, a pull replica is added
+ * with its credential shown once and deleted again, and the Fleet page shows
+ * the Pull replicas card.
  */
 import { test, expect, type Browser, type BrowserContext } from '@playwright/test';
 
@@ -21,7 +21,7 @@ async function loginContext(browser: Browser, baseURL: string): Promise<BrowserC
   return context;
 }
 
-test.describe.serial('Fleet pull replicas (master, unlicensed)', () => {
+test.describe.serial('Fleet pull replicas (master)', () => {
   let master: BrowserContext;
 
   test.beforeAll(async ({ browser }) => {
@@ -45,23 +45,33 @@ test.describe.serial('Fleet pull replicas (master, unlicensed)', () => {
     await anonymous.dispose();
   });
 
-  test('refuses to add a pull replica without a license', async () => {
+  test('adds a pull replica with its credential, and deletes it', async () => {
     const response = await master.request.post(`${MASTER}/api/v1/fleet/pull-replicas`, {
       data: { name: 'e2e-branch' },
       headers: { 'Content-Type': 'application/json', Origin: MASTER },
     });
-    expect(response.status()).toBe(403);
+    expect(response.status()).toBe(201);
+    const issued = (await response.json()) as { replica: { id: number; name: string; hasCredential: boolean }; credential: string; env: string };
+    expect(issued.replica).toMatchObject({ name: 'e2e-branch', hasCredential: true });
+    expect(issued.credential).toMatch(/^pull_/);
+    expect(issued.env).toContain(issued.credential);
+
     const list = await master.request.get(`${MASTER}/api/v1/fleet/pull-replicas`);
     expect(list.status()).toBe(200);
-    expect(await list.json()).toEqual([]);
+    const replicas = (await list.json()) as Array<{ id: number; name: string }>;
+    expect(replicas.map((replica) => replica.name)).toEqual(['e2e-branch']);
+    expect(JSON.stringify(replicas)).not.toContain(issued.credential);
+
+    const removed = await master.request.delete(`${MASTER}/api/v1/fleet/pull-replicas/${issued.replica.id}`, { headers: { Origin: MASTER } });
+    expect(removed.status()).toBe(204);
+    expect(await (await master.request.get(`${MASTER}/api/v1/fleet/pull-replicas`)).json()).toEqual([]);
   });
 
   test('shows the Pull replicas card on the Fleet page', async () => {
     const page = await master.newPage();
     await page.goto(`${MASTER}/fleet`);
     await expect(page.getByText('Pull replicas', { exact: true })).toBeVisible();
-    await expect(page.getByText(/Adding pull replicas and issuing credentials needs an active .* Enterprise license or higher/)).toBeVisible();
-    await expect(page.getByRole('button', { name: /Add pull replica/ })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /Add pull replica/ })).toBeEnabled();
     await page.close();
   });
 });

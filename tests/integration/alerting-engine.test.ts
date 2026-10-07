@@ -1,6 +1,6 @@
 /**
  * Alert evaluation: firing/resolved transitions, cooldown, notification
- * routing, AI explanations that never hold up an alert, and no license checks.
+ * routing, AI explanations that never hold up an alert.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TestDb } from '../helpers/db';
@@ -19,7 +19,6 @@ import { runAlertEvaluation, MAX_NEW_ALERTS_PER_RULE_RUN, type EngineDependencie
 import type { Evaluation, Finding } from '../../ee/alerting/evaluators';
 import type { AlertNotification } from '../../ee/alerting/format';
 import type { ResolvedChannel } from '../../ee/alerting/channels';
-import { isFeatureConfigurable } from '../../ee/licensing/store';
 
 const T0 = new Date('2026-10-02T10:00:00.000Z');
 const minutes = (n: number) => new Date(T0.getTime() + n * 60_000);
@@ -257,11 +256,11 @@ describe('runAlertEvaluation', () => {
     expect(h.sent).toHaveLength(MAX_NEW_ALERTS_PER_RULE_RUN + 5);
   });
 
-  it('runs paid rules without a license and ignores disabled rules', async () => {
-    expect(await isFeatureConfigurable('alerting')).toBe(false);
+  it('ignores disabled rules and stored rules of a type that no longer exists', async () => {
     const mail = await addChannel('email', 'Mail');
     await addRule({ type: 'waf_spike', params: '{"threshold":1,"windowMinutes":5}', channelIds: JSON.stringify([mail]) });
     await addRule({ name: 'Off', enabled: false, channelIds: JSON.stringify([mail]) });
+    await addRule({ name: 'Old', type: 'license_expiring', params: '{"days":30}', channelIds: JSON.stringify([mail]) });
     const h = harness();
     h.set({ status: 'ok', findings: [finding('waf')] });
     expect(await h.run(T0)).toMatchObject({ rules: 1, fired: 1, notifications: 1 });

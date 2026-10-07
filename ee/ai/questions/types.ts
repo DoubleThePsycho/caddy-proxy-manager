@@ -221,8 +221,6 @@ export type QuestionSettingsView = {
 
 /** What the Ask box needs to know before the first question. */
 export type QuestionAvailability = {
-  /** The license includes the AI analyst. */
-  licensed: boolean;
   /** An AI provider is enabled and complete. */
   providerConfigured: boolean;
   /** Questions are turned on in the AI settings. */

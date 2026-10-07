@@ -15,9 +15,8 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * {usageRetentionMonths?, replicas?: {mode?, gateUrl?}}. Needs the
- * api_monetization feature, except turning replica serving off. Changing
- * replica serving also needs instances:write (checked by
+ * {usageRetentionMonths?, replicas?: {mode?, gateUrl?}}. Changing replica
+ * serving also needs instances:write (checked by
  * saveMonetizationOptions): it decides what the master sends its replicas
  * and where they send their allowance credential.
  */

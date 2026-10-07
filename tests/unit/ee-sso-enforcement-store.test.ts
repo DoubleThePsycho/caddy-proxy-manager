@@ -9,7 +9,6 @@ import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { createTestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { FEATURE_INFO } from '@/ee/licensing/features';
 import { parseSsoEnforcement, readSsoEnforcement, writeSsoEnforcement } from '@/ee/sso/enforcement-store';
 import { SSO_SESSION_PATHS, isSessionAllowedUnderSsoEnforcement, loginPageEnforcement } from '@/ee/sso/sign-in';
 
@@ -95,11 +94,6 @@ describe('loginPageEnforcement', () => {
 });
 
 describe('enforced SSO shipping', () => {
-  it('is available as a Business feature, and so is SAML', () => {
-    expect(FEATURE_INFO.sso_enforce).toMatchObject({ edition: 'business' });
-    expect(FEATURE_INFO.sso_saml).toMatchObject({ edition: 'business' });
-  });
-
   it('puts the password form behind "Sign in with a password" on the login page when SSO is enforced', () => {
     const root = resolve(__dirname, '../..');
     const page = readFileSync(resolve(root, 'app/(auth)/login/page.tsx'), 'utf8');

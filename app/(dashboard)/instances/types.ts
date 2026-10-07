@@ -48,8 +48,6 @@ export type InstanceSyncProps = {
     pullReplicas?: {
       replicas: PullReplicaView[];
       canManage: boolean;
-      configurable: boolean;
-      editionLabel: string;
     } | null;
   } | null;
 };

@@ -167,7 +167,6 @@ export const IDENTITY_OVERVIEW_OPENAPI_SCHEMAS = {
         type: "object",
         properties: {
           enabled: { type: "boolean" },
-          configurable: { type: "boolean" },
           warnings: { type: "array", items: string },
           changedAt: nullable(dateTime),
           changedBy: nullable(string),
@@ -292,7 +291,6 @@ export const IDENTITY_OVERVIEW_OPENAPI_SCHEMAS = {
         type: "object",
         properties: {
           enabled: { type: "boolean" },
-          configurable: { type: "boolean" },
           endpointUrl: string,
           signInProvider: nullable(string),
           deleteMode: { type: "string", enum: ["disable", "delete"] },

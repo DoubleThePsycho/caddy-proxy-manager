@@ -1,18 +1,16 @@
 /**
  * Change approvals (ee/approvals) through the REST API, with real API tokens,
- * the real permission guards and custom roles: the license gate on policies
- * (and enforcement without a license), four-eyes (self-approval refused,
- * distinct approvers), staleness and the re-checks of the requester at apply
+ * the real permission guards and custom roles: managing policies, four-eyes
+ * (self-approval refused, distinct approvers), staleness and the re-checks of the requester at apply
  * time, change windows and the scheduler, expiry, emergency changes, request
  * visibility within a role's scope, the audit trail and the approval_pending
  * alert.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
 import { apiRequest, idParams, json } from '../helpers/custom-roles';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import {
   ADMIN, ALICE, BOB, CAROL, ROLE_OPERATORS,
   accessOf, hostRow, l4Row, requestRow, seedApprovals, type Hosts, type Tokens,
@@ -26,7 +24,6 @@ vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 import { applyCaddyConfig } from '../../src/lib/caddy';
 import { logAuditEvent } from '../../src/lib/audit';
 import { isAdminLevel } from '../../src/lib/permissions';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import * as policiesRoute from '../../app/api/v1/approval-policies/route';
 import * as policyRoute from '../../app/api/v1/approval-policies/[id]/route';
 import * as requestsRoute from '../../app/api/v1/change-requests/route';
@@ -54,8 +51,6 @@ import { evaluateApprovalPending } from '../../ee/alerting/evaluators';
 import { createAlertRule } from '../../ee/alerting/rules';
 import { first as dbFirst } from '@/src/lib/db/ops';
 
-const LICENSE_ERROR = 'Change approvals needs an active Ingressi Enterprise license or higher';
-
 let tokens: Tokens;
 let hosts: Hosts;
 
@@ -63,16 +58,8 @@ beforeEach(async () => {
   ctx.db = createTestDb();
   vi.clearAllMocks();
   vi.mocked(applyCaddyConfig).mockResolvedValue(undefined as never);
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.db, 'enterprise');
   ({ tokens, hosts } = await seedApprovals(ctx.db));
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
-
-async function removeLicense() {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-}
 
 async function createPolicy(body: Record<string, unknown> = {}) {
   const response = await policiesRoute.POST(apiRequest('POST', '/api/v1/approval-policies', tokens.admin, { name: 'Production', hostTags: ['prod'], ...body }));
@@ -94,38 +81,21 @@ function auditActions(): string[] {
 }
 
 describe('approval policies', () => {
-  it('needs the license to create or change a policy, never to read, disable or delete it', async () => {
-    await removeLicense();
-    const refused = await policiesRoute.POST(apiRequest('POST', '/x', tokens.admin, { name: 'Production' }));
-    expect(refused.status).toBe(403);
-    expect((await json(refused)).error).toBe(LICENSE_ERROR);
-
-    await installLicense(ctx.db, 'enterprise');
+  it('creates, reads, changes, disables, enables and deletes a policy', async () => {
     const policy = await createPolicy();
-    await removeLicense();
     expect((await policiesRoute.GET(apiRequest('GET', '/x', tokens.admin))).status).toBe(200);
     expect((await policyRoute.GET(apiRequest('GET', '/x', tokens.admin), idParams(policy.id))).status).toBe(200);
-    for (const body of [{ requiredApprovals: 2 }, { enabled: true }, { enabled: false, name: 'Other' }]) {
-      const response = await policyRoute.PUT(apiRequest('PUT', '/x', tokens.admin, body), idParams(policy.id));
-      expect(response.status, JSON.stringify(body)).toBe(403);
-    }
+    const changed = await policyRoute.PUT(apiRequest('PUT', '/x', tokens.admin, { requiredApprovals: 2 }), idParams(policy.id));
+    expect(changed.status).toBe(200);
+    expect((await json(changed)).requiredApprovals).toBe(2);
     const disabled = await policyRoute.PUT(apiRequest('PUT', '/x', tokens.admin, { enabled: false }), idParams(policy.id));
     expect(disabled.status).toBe(200);
     expect((await json(disabled)).enabled).toBe(false);
-    // Turning it back on is setting it up again.
-    expect((await policyRoute.PUT(apiRequest('PUT', '/x', tokens.admin, { enabled: true }), idParams(policy.id))).status).toBe(403);
+    const enabled = await policyRoute.PUT(apiRequest('PUT', '/x', tokens.admin, { enabled: true }), idParams(policy.id));
+    expect(enabled.status).toBe(200);
+    expect((await json(enabled)).enabled).toBe(true);
     expect((await policyRoute.DELETE(apiRequest('DELETE', '/x', tokens.admin), idParams(policy.id))).status).toBe(204);
     expect(await ctx.db.select().from(schema.approvalPolicies)).toHaveLength(0);
-  });
-
-  it('keeps enforcing a policy after the license lapses', async () => {
-    await createPolicy();
-    await removeLicense();
-    const request = await requestRename();
-    expect((await hostRow(ctx.db, hosts.prod))!.name).toBe('App');
-    const approved = await json(await approve(request.id, tokens.bob));
-    expect(approved.status).toBe('applied');
-    expect((await hostRow(ctx.db, hosts.prod))!.name).toBe('Renamed');
   });
 
   it('is managed with approvals:manage, which is administrator-level', async () => {
@@ -518,9 +488,6 @@ describe('emergency changes', () => {
 describe('approval_pending alerts', () => {
   it('reports each pending request once and resolves it when decided', async () => {
     await createPolicy();
-    await removeLicense();
-    await expect(createAlertRule({ name: 'Approvals', type: 'approval_pending' }, ADMIN)).rejects.toMatchObject({ status: 403 });
-    await installLicense(ctx.db, 'enterprise');
     await createAlertRule({ name: 'Approvals', type: 'approval_pending' }, ADMIN);
 
     const request = await requestRename();

@@ -7,7 +7,7 @@ Four tools that use a model you choose, never in the way of traffic or alerts:
 - **WAF tuning suggestions**: likely WAF false positives, each with the narrowest exclusion the WAF settings support and its evidence.
 - **Analytics questions**: ask about your traffic in plain language on the Analytics page; the model turns the question into a checked query that runs on your analytics, and saved questions can be part of compliance report schedules. See [analytics-questions.md](analytics-questions.md).
 
-Feature id: `ai_analyst` (Homelab edition and up). Code: `ee/ai/`.
+Code: `ee/ai/` (Elastic License 2.0).
 
 ## The AI provider
 
@@ -73,7 +73,7 @@ The digest covers the 24 hours before it is built and is made from aggregated fi
 - requests and distinct clients; blocked requests by reason: WAF (requests the WAF interrupted), geo/ASN blocking, and access lists (401 answers on hosts protected by an access list, which includes first-time credential prompts); WAF matches that did not block;
 - the most attacked hosts, paths (query strings removed) and WAF rules, and the source countries and autonomous systems of WAF events and geo-blocked requests;
 - countries and autonomous systems that sent traffic in the last 24 hours but none in the 7 days before. Autonomous systems come from the GeoLite2-ASN database used by the geo blocker (looked up in the dashboard, only AS numbers and names are kept); the comparison uses the busiest client addresses of each period and confirms that the new networks sent nothing before;
-- certificates expiring within 14 days (imported, CA and issued client certificates; ACME certificates are renewed by Caddy), configuration changes from the audit log (sign-ins, tests and exports left out), alerts fired and resolved, and the license status.
+- certificates expiring within 14 days (imported, CA and issued client certificates; ACME certificates are renewed by Caddy), configuration changes from the audit log (sign-ins, tests and exports left out), and alerts fired and resolved.
 
 Without ClickHouse analytics the traffic part is replaced by a sentence saying it is not available, and the rest is sent; the same happens when ClickHouse cannot be queried. A missing ASN database or missing earlier traffic is noted in the digest.
 
@@ -107,11 +107,6 @@ Each run replaces the open suggestions. Nothing is applied automatically:
 
 Suggestions are stored in the `waf_tuning_suggestions` table, which is not synced to slaves.
 
-## Licensing
+## Turning it off
 
-- Setting up or changing the provider (`PUT /api/v1/ai/settings`), testing it and turning `explain` on for a rule need a license that includes `ai_analyst`.
-- Configuring or enabling the digest, previewing it and sending it on demand need the license; generating, applying and dismissing WAF tuning suggestions too.
-- Winding down never needs one: `DELETE /api/v1/ai/settings` or `PUT {"provider": null}` removes the provider and its key, `PUT {"enabled": false}` (optionally with `"apiKey": null`) switches it off, `{"explain": false}` turns explanations off for a rule, and `PUT /api/v1/ai/digest` with `{"enabled": false}` and/or `{"ai": false}` turns the digest or its summary off.
-- Nothing is license-checked at runtime: rules already set up with explanations keep getting them, and a digest that was set up keeps being sent, when the license expires or is removed.
-- `GET /api/v1/ai/settings`, `GET /api/v1/ai/digest` and the stored suggestions on the WAF page are always available to admins.
-- Asking analytics questions, saving them and turning them on need the license; listing and deleting saved questions and turning questions off (`PUT /api/v1/ai/question-settings` with only `false` values) do not. See [analytics-questions.md](analytics-questions.md).
+`DELETE /api/v1/ai/settings` or `PUT {"provider": null}` removes the provider and its key, `PUT {"enabled": false}` (optionally with `"apiKey": null`) switches it off, `{"explain": false}` turns explanations off for a rule, and `PUT /api/v1/ai/digest` with `{"enabled": false}` and/or `{"ai": false}` turns the digest or its summary off.

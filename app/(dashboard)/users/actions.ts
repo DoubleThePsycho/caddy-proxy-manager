@@ -70,7 +70,7 @@ export async function createUserAction(formData: FormData): Promise<UserActionRe
   }
 
   try {
-    // Only roles the actor may grant; a custom role needs the license.
+    // Only roles the actor may grant.
     await assertCanAssignOnCreate(session.access, assignment);
   } catch (error) {
     return storageFailure(error, "create user");
@@ -102,8 +102,8 @@ export async function createUserAction(formData: FormData): Promise<UserActionRe
 
 /**
  * Changes a user's role: "admin", "user", "viewer" or "custom:<id>" (the role
- * picker's values). assignRole applies the escalation guards and the license
- * check for custom roles and records the change in the audit log.
+ * picker's values). assignRole applies the escalation guards and records the
+ * change in the audit log.
  */
 export async function updateUserRoleAction(userId: number, role: string): Promise<UserActionResult> {
   const session = await requirePermission("users:write");

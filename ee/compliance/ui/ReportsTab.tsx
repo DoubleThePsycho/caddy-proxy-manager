@@ -18,7 +18,7 @@ import type { ReportListPage, StoredReportSummary } from "../types";
 import type { ChannelChoice, QuestionChoice } from "./ComplianceClient";
 import { FINDING_TEXT, findingParts, periodText } from "./format";
 import SchedulesSection from "./SchedulesSection";
-import { API_BASE, callApi, LOCKED_HINT } from "./shared";
+import { API_BASE, callApi } from "./shared";
 
 function Findings({ report }: { report: StoredReportSummary }) {
   const parts = findingParts(report.findings);
@@ -41,7 +41,6 @@ export default function ReportsTab({
   channels,
   questions,
   canWrite,
-  configurable,
   now,
   onGenerate,
 }: {
@@ -51,7 +50,6 @@ export default function ReportsTab({
   /** Saved analytics questions a schedule can include. */
   questions: QuestionChoice[];
   canWrite: boolean;
-  configurable: boolean;
   now: number;
   onGenerate: () => void;
 }) {
@@ -104,7 +102,7 @@ export default function ReportsTab({
             title="No reports yet"
             action={
               canWrite ? (
-                <Button variant="secondary" size="sm" onClick={onGenerate} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
+                <Button variant="secondary" size="sm" onClick={onGenerate}>
                   <Plus />
                   Generate a report
                 </Button>
@@ -178,7 +176,7 @@ export default function ReportsTab({
         )}
       </SectionCard>
 
-      <SchedulesSection schedules={schedules} channels={channels} questions={questions} canWrite={canWrite} configurable={configurable} now={now} />
+      <SchedulesSection schedules={schedules} channels={channels} questions={questions} canWrite={canWrite} now={now} />
 
       <AppDialog open={confirmDelete !== null} onClose={() => setConfirmDelete(null)} title="Delete report" submitLabel="Delete" onSubmit={remove} isSubmitting={pending}>
         <p className="text-sm">

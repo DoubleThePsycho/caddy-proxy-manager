@@ -54,7 +54,7 @@ test.describe('Two replicas: the leader', () => {
     }
   });
 
-  test('High availability shows both replicas and the license rule', async ({ page }) => {
+  test('High availability shows both replicas', async ({ page }) => {
     const leader = await soleLeader();
     for (const replica of REPLICAS) {
       await page.goto(`${replica.url}/high-availability`);
@@ -67,8 +67,6 @@ test.describe('Two replicas: the leader', () => {
         await expect(row.getByText(other === leader ? 'Leader' : 'Follower', { exact: true })).toBeVisible();
         await expect(row.getByText('this replica', { exact: true })).toHaveCount(other === replica ? 1 : 0);
       }
-      // Two live replicas and no license: the rule for a third one is spelled out.
-      await expect(group.getByText(/^Adding a replica needs an active .+ license\.$/)).toBeVisible();
       await expect(group.getByText('No replica leads.')).toHaveCount(0);
     }
   });

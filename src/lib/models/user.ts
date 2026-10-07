@@ -176,7 +176,7 @@ export async function createUser(data: {
   email: string;
   name?: string | null;
   role?: User["role"];
-  /** A custom role; the caller checks the license and escalation rules (ee/custom-roles). */
+  /** A custom role; the caller checks the escalation rules (ee/custom-roles). */
   customRoleId?: number | null;
   provider: string;
   subject: string;

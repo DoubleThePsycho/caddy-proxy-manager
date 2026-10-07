@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** {name, frequency, weekday?, dayOfMonth?, time?, timeZone?, reportTypes?, channelIds?, enabled?}; license. */
+/** {name, frequency, weekday?, dayOfMonth?, time?, timeZone?, reportTypes?, channelIds?, enabled?}. */
 export async function POST(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "compliance:write");

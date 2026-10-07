@@ -1,6 +1,6 @@
 # White-label
 
-Feature id `white_label`, Enterprise edition. Source: `ee/white-label/`.
+Source: `ee/white-label/` (Elastic License 2.0).
 
 White-label puts your own brand on the dashboard and on every sign-in page. Your users see your product name, logo, colours and support contact instead of the product's own.
 
@@ -21,18 +21,17 @@ The forward-auth portal (`/portal`) is the page your users see most: it shows th
 
 ### What keeps the real name
 
-- The **License** page, the license texts ("needs an active … license") and the notices required by the MIT and Elastic licenses.
+- The notices required by the MIT and Elastic licenses.
 - Identifiers: HTTP header names (`X-Ingressi-*` and the forward-auth headers), the webhook `source` field, PagerDuty dedup keys, syslog app names, User-Agent strings, cookie, image and volume names, environment variables and file names.
 - The CA name of client-certificate authorities created in the dashboard, and the instructions sent to the AI model.
 - Authenticator app entries made before the change keep the name they were created with.
 
 ## Setup
 
-1. Install an Enterprise license (**License**).
-2. Open **Branding** in the sidebar.
-3. Fill in the fields you want; leave a field empty to keep the default. The preview shows the sign-in page in both themes as you type.
-4. Upload the logos and the favicon. Each upload is stored at once.
-5. **Save** the text fields and colours.
+1. Open **Branding** in the sidebar.
+2. Fill in the fields you want; leave a field empty to keep the default. The preview shows the sign-in page in both themes as you type.
+3. Upload the logos and the favicon. Each upload is stored at once.
+4. **Save** the text fields and colours.
 
 Pages pick the change up on the next load. **Reset to defaults** removes everything, images included.
 
@@ -54,11 +53,11 @@ Every file is at most 512 KB.
 
 | Method and path | Permission | Notes |
 | --- | --- | --- |
-| `GET /api/v1/branding` | `branding:read` | Settings, effective values, images, limits, `source` (`default`, `local`, `master`) and `configurable`. |
+| `GET /api/v1/branding` | `branding:read` | Settings, effective values, images, limits, and `source` (`default`, `local`, `master`). |
 | `PUT /api/v1/branding` | `branding:write` | Partial update: fields left out keep their values; `null` or `""` restores the default; unknown fields are refused. |
-| `DELETE /api/v1/branding` | `branding:write` | Resets everything, images included. Never needs a license. |
+| `DELETE /api/v1/branding` | `branding:write` | Resets everything, images included. |
 | `PUT /api/v1/branding/assets/{asset}` | `branding:write` | `logo-light`, `logo-dark` or `favicon`: multipart/form-data with a `file` field, or the image as the body. `413` above 512 KB. |
-| `DELETE /api/v1/branding/assets/{asset}` | `branding:write` | Never needs a license. |
+| `DELETE /api/v1/branding/assets/{asset}` | `branding:write` | Removes an image. |
 | `GET /api/branding/{asset}` | public | Serves an image (see below). |
 
 ```bash
@@ -78,12 +77,6 @@ Every change is audited: `branding_updated` (the fields changed, with old and ne
 ## Permissions
 
 The `branding` area has `read` and `write`. `branding:write` is **administrator-level**: only administrators can grant it. Whoever holds it chooses the name and logo every sign-in page of the install shows, including the forward-auth portal of every protected site, so it could be used to make those pages look like another organisation's.
-
-## Licensing
-
-- Setting a field to a value of your own, or uploading an image, needs a license that includes `white_label` (`403` otherwise).
-- Restoring a field to its default, removing an image, resetting and reading never do. Without a license the Branding page is read-only, with **Remove** and **Reset to defaults** still available.
-- Nothing on the request path checks the license: configured branding keeps showing when a license lapses.
 
 ## Instance sync
 

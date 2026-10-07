@@ -2,11 +2,9 @@
 import { requirePermission } from "@/src/lib/auth";
 import { can } from "@/src/lib/permissions";
 import { ApiClientError } from "@/src/lib/api-errors";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
 import { listApprovalPolicies } from "@/ee/approvals/policies";
 import { getChangeRequest, listChangeRequests } from "@/ee/approvals/requests";
-import { FEATURE, type ChangeRequestPage, type ChangeRequestView } from "@/ee/approvals/types";
+import type { ChangeRequestPage, ChangeRequestView } from "@/ee/approvals/types";
 import { listAlertChannels } from "@/ee/alerting/channels";
 import { listAlertRules } from "@/ee/alerting/rules";
 import ApprovalsClient, { type ApprovalsTab } from "./ApprovalsClient";
@@ -75,12 +73,11 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
   const requestedId = parseRowId(requestParam);
 
   // Change requests are limited to hosts the user can read (and their own); policies hold no secrets.
-  const [queue, decided, recent, policies, configurable, alertChannels] = await Promise.all([
+  const [queue, decided, recent, policies, alertChannels] = await Promise.all([
     openQueue(access, parsePageParam(queueParam)),
     decidedPage(access, parsePageParam(pageParam)),
     listChangeRequests(access, { status: "closed", page: 1, perPage: RECENT_SHOWN }),
     listApprovalPolicies(),
-    isFeatureConfigurable(FEATURE),
     can(access, "alerts:read") ? approvalAlertChannels() : Promise.resolve(null),
   ]);
 
@@ -104,8 +101,6 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
       decided={decided}
       selected={selected}
       policies={policies}
-      configurable={configurable}
-      editionLabel={EDITION_LABELS[FEATURE_INFO[FEATURE].edition]}
       canManage={can(access, "approvals:manage")}
       alertChannels={alertChannels}
       now={new Date().toISOString()}

@@ -46,9 +46,9 @@ const suggestion: WafTuningSuggestionView = {
   generatedAt: '2026-10-02T10:00:00.000Z',
 };
 
-function render(canConfigure: boolean) {
+function render(canWrite: boolean) {
   return renderToStaticMarkup(
-    createElement(TuningSuggestions, { initialSuggestions: [suggestion], canConfigure, analyticsEnabled: true, aiConfigured: true })
+    createElement(TuningSuggestions, { initialSuggestions: [suggestion], canWrite, analyticsEnabled: true, aiConfigured: true })
   );
 }
 
@@ -63,12 +63,13 @@ describe('Tuning suggestions panel', () => {
     expect(html).toContain('Turn WAF rule 942100 off');
     expect(html).toContain('AI-generated risk assessment: </span>The rule blocks SQL injection');
     expect(html).not.toContain('<img src=x');
-    expect(html).not.toContain('needs a license');
+    expect(html).not.toMatch(/license/i);
+    expect(html.match(/<button[^>]*disabled=""[^>]*>Apply<\/button>/)).toBeNull();
   });
 
-  it('keeps stored suggestions visible but not actionable without a license', () => {
+  it('keeps stored suggestions visible but not actionable without waf:write', () => {
     const html = render(false);
-    expect(html).toContain('needs a license that includes the AI analyst');
+    expect(html).toContain('needs the waf:write permission');
     expect(html).toContain('Rule 942100');
     expect(html.match(/<button[^>]*disabled=""[^>]*>Apply<\/button>/)).not.toBeNull();
   });

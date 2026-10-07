@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * LDAP / Active Directory sign-in (feature "ldap"): names and limits shared by
+ * LDAP / Active Directory sign-in: names and limits shared by
  * the sign-in path, Better Auth's hooks and the administration code. Nothing
- * here touches the database or the license, so src/lib can import it.
+ * here touches the database, so src/lib can import it.
  */
-
-export const LDAP_FEATURE = "ldap" as const;
 
 /** The Better Auth endpoint (under /api/auth) that signs a user in with a directory. */
 export const LDAP_SIGN_IN_PATH = "/sign-in/ldap";

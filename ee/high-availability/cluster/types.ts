@@ -142,7 +142,7 @@ export type ReplicaElectionView = {
 export type PostgresReplicasView = {
   /** The replica answering; null before it registered. */
   nodeId: string | null;
-  /** The replica answering: leader, follower, refused (not admitted, D6) or joining (not registered yet). */
+  /** The replica answering: leader, follower, refused (not admitted: another process uses its node id) or joining (not registered yet). */
   role: "leader" | "follower" | "refused" | "joining";
   /** Why the replica answering was refused, when it was. */
   refusal: string | null;
@@ -159,8 +159,6 @@ export type PostgresReplicasView = {
 export type ClusterView = {
   /** HA_ENABLED is set on this node. */
   enabled: boolean;
-  /** The license includes high availability (needed to set a cluster up; a running cluster never checks). */
-  configurable: boolean;
   /** Fixed text when the configuration or the supervisor's status cannot be read. */
   error: string | null;
   node: { id: string; role: NodeRole; startedAt: string; statusUpdatedAt: string } | null;

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  ArrowLeftRight, BadgeCheck, Bell, ChartColumn, ChevronsUpDown, CircleCheck, ClipboardCheck, Coins,
+  ArrowLeftRight, Bell, ChartColumn, ChevronsUpDown, CircleCheck, ClipboardCheck, Coins,
   Ellipsis, FileCheck2, FileJson2, History, KeyRound, Layers, LayoutGrid, LockKeyhole, LogOut, Menu, Network, Palette,
   ScrollText, Search, Server, ShieldAlert, ShieldCheck, SlidersHorizontal, UserRound, Users, type LucideIcon,
 } from "lucide-react";
@@ -37,7 +37,7 @@ type User = {
   isAdmin?: boolean;
 };
 
-const EMPTY_SUMMARY: NavSummary = { badges: {}, edition: null, environment: null };
+const EMPTY_SUMMARY: NavSummary = { badges: {}, environment: null };
 
 const ICONS: Record<NavEntryKey, LucideIcon> = {
   overview: LayoutGrid,
@@ -60,7 +60,6 @@ const ICONS: Record<NavEntryKey, LucideIcon> = {
   monetization: Coins,
   settings: SlidersHorizontal,
   branding: Palette,
-  license: BadgeCheck,
   profile: UserRound,
   "api-docs": FileJson2,
 };
@@ -176,7 +175,7 @@ function SubLinks({ entry, pathname, onNavigate }: { entry: VisibleNavEntry; pat
   );
 }
 
-function BrandRow({ edition }: { edition: string | null }) {
+function BrandRow() {
   const branding = useBranding();
   return (
     <div className="flex items-center gap-2 px-2 py-1">
@@ -190,11 +189,6 @@ function BrandRow({ edition }: { edition: string | null }) {
         </span>
       )}
       <span className="min-w-0 truncate text-[17px] font-bold tracking-[-0.01em]">{branding.productName}</span>
-      {edition && (
-        <span className="ml-auto shrink-0 rounded-full border border-line2 px-1.5 text-[10px] font-semibold uppercase leading-[18px] tracking-[0.02em] text-brand">
-          {edition}
-        </span>
-      )}
     </div>
   );
 }
@@ -354,7 +348,7 @@ function NavContent({
 
   return (
     <div className="flex h-full flex-col gap-3.5 px-3 py-4">
-      <BrandRow edition={summary.edition} />
+      <BrandRow />
       {summary.environment && <EnvironmentSwitcher environment={summary.environment} />}
       <SearchButton onOpen={() => { onNavigate?.(); palette.open(); }} />
 

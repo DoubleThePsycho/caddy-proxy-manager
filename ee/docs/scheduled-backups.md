@@ -1,14 +1,14 @@
 # Scheduled backups
 
-Feature id `scheduled_backups` (Business edition and up). Code: `ee/backups/`.
+Code: `ee/backups/` (Elastic License 2.0).
 
-On a schedule, the configuration is exported exactly like the free **Export** on the Change history page and uploaded to your own S3-compatible storage: Amazon S3, Cloudflare R2, Backblaze B2, Hetzner Object Storage, Wasabi, MinIO, Ceph and others. Older backups are deleted according to a retention count. A stored backup can be restored from the dashboard, or downloaded from the bucket and loaded with the free import.
+On a schedule, the configuration is exported exactly like **Export** on the Change history page and uploaded to your own S3-compatible storage: Amazon S3, Cloudflare R2, Backblaze B2, Hetzner Object Storage, Wasabi, MinIO, Ceph and others. Older backups are deleted according to a retention count. A stored backup can be restored from the dashboard, or downloaded from the bucket and imported on the Change history page.
 
 Configure it on the **Backups** page (`/backups`, under Change history in the sidebar; it needs `backups:read`) or through `/api/v1/backup-destinations` and `/api/v1/backup-runs`.
 
 ## What a backup contains
 
-Each backup is the file `POST /api/v1/config/export` produces (see [config-history.md](config-history.md#export-and-import-community-free)): the configuration as JSON with every secret (certificate and CA private keys, access-list password hashes, DNS provider credentials) encrypted with the destination's **passphrase** (scrypt, AES-256-GCM). Users, sessions, API tokens, sign-in settings, the license and the backup destinations themselves are not part of it.
+Each backup is the file `POST /api/v1/config/export` produces (see [config-history.md](config-history.md#export-and-import)): the configuration as JSON with every secret (certificate and CA private keys, access-list password hashes, DNS provider credentials) encrypted with the destination's **passphrase** (scrypt, AES-256-GCM). Users, sessions, API tokens, sign-in settings and the backup destinations themselves are not part of it.
 
 Only the secrets are encrypted. Host names, upstream addresses and settings are readable by anyone who can read the file, so keep the bucket private and, where the provider offers it, turn on server-side encryption and object versioning or object lock.
 
@@ -82,7 +82,7 @@ Errors stored and shown name the HTTP status and the S3 error code (for example 
 
 The destination's passphrase is used unless the request gives one. Restore is refused on a sync slave (409).
 
-To restore without a license or on a fresh installation: download the file from the bucket with your provider's tools and use **Export or import** on the Change history page (free), with the passphrase from your password manager.
+To restore on a fresh installation: download the file from the bucket with your provider's tools and use **Export or import** on the Change history page, with the passphrase from your password manager.
 
 ## Storage access
 
@@ -92,30 +92,24 @@ To restore without a license or on a fresh installation: download the file from 
 
 All endpoints are admin-only, documented in the OpenAPI spec (tag "Backups") and audited.
 
-| Method and path | What | License |
-| --- | --- | --- |
-| `GET /api/v1/backup-destinations` | List destinations (no secrets) | no |
-| `POST /api/v1/backup-destinations` | Create | yes |
-| `GET /api/v1/backup-destinations/{id}` | Get | no |
-| `PUT /api/v1/backup-destinations/{id}` | Update; omitted fields and empty secrets keep their values | yes, unless the body only disables it |
-| `DELETE /api/v1/backup-destinations/{id}` | Delete (bucket files are kept) | no |
-| `POST /api/v1/backup-destinations/{id}/test` | Connection test `{ok, error, failedStep, durationMs}` | yes |
-| `POST /api/v1/backup-destinations/{id}/run` | Back up now; returns the run (a failed upload is `status: "failed"`) | yes |
-| `GET /api/v1/backup-destinations/{id}/objects` | Stored backups, newest first; 502 if the storage fails | no |
-| `POST /api/v1/backup-destinations/{id}/restore` `{key, passphrase?}` | Restore a stored backup | yes |
-| `GET /api/v1/backup-runs?page&per_page&destination_id` | Run history, newest first | no |
+| Method and path | What |
+| --- | --- |
+| `GET /api/v1/backup-destinations` | List destinations (no secrets) |
+| `POST /api/v1/backup-destinations` | Create |
+| `GET /api/v1/backup-destinations/{id}` | Get |
+| `PUT /api/v1/backup-destinations/{id}` | Update; omitted fields and empty secrets keep their values |
+| `DELETE /api/v1/backup-destinations/{id}` | Delete (bucket files are kept) |
+| `POST /api/v1/backup-destinations/{id}/test` | Connection test `{ok, error, failedStep, durationMs}` |
+| `POST /api/v1/backup-destinations/{id}/run` | Back up now; returns the run (a failed upload is `status: "failed"`) |
+| `GET /api/v1/backup-destinations/{id}/objects` | Stored backups, newest first; 502 if the storage fails |
+| `POST /api/v1/backup-destinations/{id}/restore` `{key, passphrase?}` | Restore a stored backup |
+| `GET /api/v1/backup-runs?page&per_page&destination_id` | Run history, newest first |
 
 Audit actions: `backup_destination_created`, `backup_destination_updated`, `backup_destination_deleted`, `backup_destination_tested`, `backup_run_manual`, `config_backup_restored`, `config_backup_restore_failed` (plus `config_imported` from the import a restore performs). Scheduled runs are recorded in the run history, not in the audit log.
 
 ## Alerts
 
 The alert rule type `backup_failed` (see [alerting.md](alerting.md)) fires for each enabled destination whose backups failed `minFailures` times in a row (default 1) and resolves after the next successful backup.
-
-## Licensing behaviour
-
-- Creating a destination, changing one, turning one on, **Back up now**, **Test connection** and restore need a license that includes `scheduled_backups` (Business and up, active or in its grace period).
-- Turning a destination off and deleting it never need one; neither do viewing destinations, runs and stored backups.
-- Scheduled backups of destinations that are already enabled keep running when the license lapses: the scheduler never checks it.
 
 ## Instance sync and data
 

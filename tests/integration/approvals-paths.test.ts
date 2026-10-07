@@ -7,12 +7,11 @@
  * configuration import and configuration history rollback. Instance sync applying the master's configuration on a replica is
  * not a user change and keeps working.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
 import { apiRequest, idParams, json } from '../helpers/custom-roles';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import {
   ADMIN, ALICE, BOB,
   hostRow, insertPolicy, l4Row, requestRow, seedApprovals, type Hosts, type Tokens,
@@ -41,7 +40,6 @@ vi.mock('next/navigation', () => ({ redirect: (url: string) => { throw new Error
 vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
 
 import { applyCaddyConfig } from '../../src/lib/caddy';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { createProxyHost, updateProxyHost } from '../../src/lib/models/proxy-hosts';
 import { deleteL4ProxyHost, updateL4ProxyHost } from '../../src/lib/models/l4-proxy-hosts';
 import { suppressWafRuleForHost } from '../../src/lib/waf-suppression';
@@ -72,13 +70,9 @@ beforeEach(async () => {
   ctx.db = createTestDb();
   vi.clearAllMocks();
   vi.mocked(applyCaddyConfig).mockResolvedValue(undefined as never);
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.db, 'enterprise');
   ({ tokens, hosts } = await seedApprovals(ctx.db));
   await insertPolicy(ctx.db, { name: 'Production' });
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 const approve = (id: number) => approveRoute.POST(apiRequest('POST', '/x', tokens.bob), idParams(id));
 
@@ -239,7 +233,7 @@ describe('paths refused while a policy covers the host', () => {
     await ctx.db.update(schema.proxyHosts).set({ name: 'Changed since' }).where(eq(schema.proxyHosts.id, hosts.prod));
     await expect(restoreSnapshot(snapshot.id, ADMIN)).rejects.toMatchObject({ status: 409, message: expect.stringMatching(/would change hosts protected/) });
     expect((await hostRow(ctx.db, hosts.prod))!.name).toBe('Changed since');
-    // With the policy disabled (no license needed for that), the rollback goes through.
+    // With the policy disabled, the rollback goes through.
     await ctx.db.update(schema.approvalPolicies).set({ enabled: false });
     await restoreSnapshot(snapshot.id, ADMIN);
     expect((await hostRow(ctx.db, hosts.prod))!.name).toBe('App');

@@ -46,8 +46,7 @@
  *
  * Fail closed: the facilitator or Stripe unreachable never lets a request
  * through. Only the payer's address, the transaction hash and the
- * PaymentIntent id are stored or logged; the signature never is. Never
- * checks the license.
+ * PaymentIntent id are stored or logged; the signature never is.
  */
 import { createHash } from "node:crypto";
 import { and, eq, inArray, lt } from "drizzle-orm";

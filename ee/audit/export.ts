@@ -7,7 +7,6 @@
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiValidationError } from "@/src/lib/api-errors";
 import { AUDIT_CHAIN_VERSION } from "@/src/lib/audit-chain";
-import { requireFeature } from "@/ee/licensing/store";
 import { latestAuditEventId, readAuditRecords, type AuditRecord } from "./records";
 
 export const EXPORT_FORMATS = ["csv", "json"] as const;
@@ -130,9 +129,8 @@ export type AuditExport = {
   contentType: string;
 };
 
-/** Checks the license, records the export in the audit log and returns the stream. */
+/** Records the export in the audit log and returns the stream. */
 export async function exportAuditLog(params: URLSearchParams, actorUserId: number, now: Date = new Date()): Promise<AuditExport> {
-  await requireFeature("audit_streaming");
   const query = parseExportQuery(params);
   await logAuditEvent({
     userId: actorUserId,

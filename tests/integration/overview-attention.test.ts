@@ -192,7 +192,6 @@ describe('setup checklist', () => {
       ['domain', false], ['first_proxy_host', false], ['analytics', false], ['second_user', true], ['single_sign_on', false],
     ]);
     expect(checklist).toMatchObject({ done: 1, total: 5, complete: false, dismissed: false });
-    expect(checklist.steps.find((step) => step.key === 'single_sign_on')!.paid).toEqual({ features: ['sso_saml', 'ldap'], configurable: false });
 
     const t = stamp();
     await ctx.db.insert(schema.proxyHosts).values({ name: 'App', domains: '["app.example.com"]', upstreams: '[]', createdAt: t, updatedAt: t });

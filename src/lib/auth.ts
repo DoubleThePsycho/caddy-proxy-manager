@@ -174,7 +174,7 @@ export async function requireUser(): Promise<Session> {
   return session;
 }
 
-/** What the session's user may do (built-in role or custom role). Never checks the license. */
+/** What the session's user may do (built-in role or custom role). */
 export async function getSessionAccess(session: Session): Promise<Access> {
   return await accessForUser({
     id: Number(session.user.id),

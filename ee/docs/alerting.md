@@ -1,8 +1,8 @@
 # Alerting
 
-Notifications when something needs attention: certificates about to expire or failing renewal, failing upstreams, WAF block spikes, 5xx error rates, failed instance syncs, failed Caddy config applies, an expiring license, failing scheduled backups, drifted fleet instances and failed fleet rollouts. Configure it on **Alerts** in the dashboard or through `/api/v1/alert-*`.
+Notifications when something needs attention: certificates about to expire or failing renewal, failing upstreams, WAF block spikes, 5xx error rates, failed instance syncs, failed Caddy config applies, failing scheduled backups, drifted fleet instances and failed fleet rollouts. Configure it on **Alerts** in the dashboard or through `/api/v1/alert-*`.
 
-Feature id: `alerting` (Homelab edition and up). Code: `ee/alerting/`.
+Code: `ee/alerting/` (Elastic License 2.0).
 
 ## How it works
 
@@ -28,7 +28,7 @@ Feature id: `alerting` (Homelab edition and up). Code: `ee/alerting/`.
 - **Channels**: where each channel delivers (the host only, never a credential), how many rules use it, its last delivery and **Send test**, searchable by name, type and destination and paged 25 at a time. A channel whose last delivery failed is also shown in a banner above the table.
 - **AI**: the AI provider for explanations and the daily security digest (permission `ai:read`).
 
-Without `alerts:write` the page is read-only. Without a license with Alerting, paid channels and rules are shown read-only and can still be turned off and deleted.
+Without `alerts:write` the page is read-only.
 
 ## Dismissing and muting
 
@@ -38,7 +38,7 @@ Without `alerts:write` the page is read-only. Without a license with Alerting, p
 - What fires while muted or dismissed is still recorded in the history, as not sent because of the mute or dismissal (`silenced`). Notifications already sent are not taken back: an alert dismissed after its firing notification went out still gets its resolve notice; one whose firing notification a mute or dismissal held back gets none.
 - A note is optional (up to 500 characters). Dismissing an alert again, or muting a rule again, replaces the previous dismissal or mute. **Undo** (or **Unmute**) ends either at any time.
 - The evaluator removes dismissals and mutes that ended on each run; deleting a rule deletes them, and disabling one ends its dismissals "until it resolves". They are not exported or synced to slaves.
-- Dismissing and muting need `alerts:write` and the license that changing the rule needs (so Community certificate-expiry rules that notify e-mail can be dismissed and muted without one); undoing never needs a license. Both are audited (`alert_silence_created`, `alert_silence_deleted`).
+- Dismissing, muting and undoing need `alerts:write`. They are audited (`alert_silence_created`, `alert_silence_deleted`).
 
 ## Rule types
 
@@ -50,7 +50,6 @@ Without `alerts:write` the page is read-only. Without a license with Alerting, p
 | `error_rate` | `thresholdPercent` (0.1-100, one decimal, default 5), `windowMinutes` (1-1440, default 5), `minRequests` (default 20), `perHost` (default true) | The share of 5xx responses in ClickHouse's traffic over the window: one alert per proxy host (`perHost`), or one for the hosts in scope together. Counts only when there were at least `minRequests` requests; fires when the share is above the threshold. Skipped when ClickHouse analytics is not configured or cannot be queried. |
 | `instance_sync_failed` | none | Enabled instances whose last sync failed (`lastSyncError`), in master mode. |
 | `caddy_apply_failed` | none | The last attempt to push the configuration to Caddy failed; resolves after the next successful apply. |
-| `license_expiring` | `days` (default 30) | The installed license expires within the window (also fires during the grace period and after expiry). |
 | `backup_failed` | `minFailures` (1-100, default 1) | Enabled scheduled-backup destinations whose backups failed that many times in a row (see [scheduled-backups.md](scheduled-backups.md)); resolves after the next successful backup. Failed backups are retried after 5 minutes, then with growing delays. |
 | `approval_pending` | none | Each change request waiting for approval (see [change-approvals.md](change-approvals.md)), so approvers hear about it once; resolves when it is approved, rejected, cancelled or expires. |
 | `access_review_started` | none | An access review campaign is open (started by hand or by a schedule, see [access-reviews.md](access-reviews.md)); severity info; resolves when it is completed or cancelled. |
@@ -69,7 +68,7 @@ Without `alerts:write` the page is read-only. Without a license with Alerting, p
 
 Every other type answers 400 for a host list. Each rule's view has a `scopeLabel` that says what it watches in words ("Each proxy host", "Upstreams of 3 proxy hosts", "This node"). It also has `lastFiredAt`: when the rule last fired, from its newest firing event in the 90-day history (null when it has not).
 
-`forMinutes` (0 to 1440, default 0: fire at once) is accepted by `cert_expiring`, `upstream_down`, `waf_spike`, `error_rate`, `instance_sync_failed`, `caddy_apply_failed`, `backup_failed` and `fleet_drift`. Rules about one-off events (a change waiting for approval, a review that started or is overdue, a failed rollout, an expiring license) fire at once and answer 400 for any other value.
+`forMinutes` (0 to 1440, default 0: fire at once) is accepted by `cert_expiring`, `upstream_down`, `waf_spike`, `error_rate`, `instance_sync_failed`, `caddy_apply_failed`, `backup_failed` and `fleet_drift`. Rules about one-off events (a change waiting for approval, a review that started or is overdue, a failed rollout) fire at once and answer 400 for any other value.
 
 ### Certificates Caddy manages
 
@@ -143,7 +142,7 @@ All endpoints are admin-only (API token or session) and audited; see `/api/v1/op
 | `GET /api/v1/alert-events?page=&per_page=&rule_id=` | History, newest first. A firing event carries `resolvedAt`, when that episode ended (null while it fires). |
 | `GET /api/v1/alert-events/firing` | Every subject firing now, with the event that started it, the channels told and its `dismissal` and `mute` (or null): those neither dismissed nor muted first, then most severe first |
 | `GET /api/v1/alert-silences`, `POST /api/v1/alert-silences` | List the dismissals and mutes in effect; dismiss or mute: `{"ruleId": 3, "subjectKey": "certificate:7", "durationMinutes": 480, "note": "…"}`. Without `subjectKey` the whole rule is muted (it then needs `durationMinutes` or `until`); without a duration, the dismissal lasts until the alert resolves (409 if it is not firing). |
-| `DELETE /api/v1/alert-silences/{id}` | Undo a dismissal or mute (no license needed) |
+| `DELETE /api/v1/alert-silences/{id}` | Undo a dismissal or mute |
 
 ```bash
 curl -X POST https://ingressi.example.com/api/v1/alert-channels \
@@ -156,18 +155,6 @@ curl -X POST https://ingressi.example.com/api/v1/alert-rules \
 ```
 
 The type of a channel or rule cannot be changed after creation.
-
-## Licensing
-
-A license only controls **setting up and changing** alerting; nothing that runs is ever checked:
-
-- **Community (no license):** e-mail channels, and `cert_expiring` rules that only notify e-mail channels, can be created and changed. Their test notifications work too.
-- **With `alerting`:** every other channel type and rule type (`error_rate` included), and certificate rules that notify a non-e-mail channel. Scopes and `forMinutes` follow the rule's own license rule.
-- **With `ai_analyst`:** turning `explain` on for a rule, and setting up the AI provider.
-- **Dismissing an alert or muting a rule** follows the rule's own license rule.
-- **Winding down never needs a license:** deleting any channel or rule, an update whose body only disables (`{"enabled": false}` for channels; `{"enabled": false}` and/or `{"explain": false}` for rules), undoing a dismissal or mute and removing the AI provider always work, so an install whose license lapsed can switch everything off.
-- Without the license, paid channels and rules stay visible (read-only), keep being evaluated and keep delivering. Changing them (renaming, editing, re-enabling, sending a test) answers 403 until a license is installed again. An expired license keeps everything editable for its 30-day grace period.
-- Reading (`GET`) never needs a license.
 
 ## Data
 

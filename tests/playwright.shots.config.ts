@@ -6,8 +6,6 @@
  * Runs on the end-to-end Docker stack with the same global setup and
  * teardown as playwright.config.ts: the stack is built and started, seeded
  * with synthetic data (tests/shots/seed.ts), photographed and removed again.
- * Paid screens need a development license key in tests/.auth/license.txt
- * (git-ignored, removed by the teardown) or at SHOTS_LICENSE_FILE.
  *
  * While iterating: SHOTS_KEEP_STACK=1 leaves the stack up after the run,
  * SHOTS_REUSE_STACK=1 runs against a stack that is already up (no setup or

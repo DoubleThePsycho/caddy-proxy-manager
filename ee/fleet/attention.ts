@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Attention provider: fleet nodes that failed to sync, drifted, stopped
- * checking in or run another release than this master. Only on a master;
- * never checks the license.
+ * checking in or run another release than this master. Only on a master.
  */
 import type { AttentionItem, AttentionProvider } from "@/src/lib/attention/types";
 import { can } from "@/src/lib/permissions";

@@ -7,8 +7,6 @@
  * are the record of money moved. Credited charge ids are pruned once they can
  * no longer be credited (answer-credits.ts). Balances never change: they are
  * kept on the consumers, not summed from the ledger.
- *
- * Never checks the license.
  */
 import { and, inArray, lt } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

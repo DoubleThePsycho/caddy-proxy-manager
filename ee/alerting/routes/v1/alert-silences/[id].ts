@@ -6,7 +6,7 @@ import { parseId } from "@/ee/alerting/validation";
 
 type Params = { params: Promise<{ id: string }> };
 
-/** Ends a dismissal or mute. Winding down: never needs a license. */
+/** Ends a dismissal or mute. */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "alerts:write");

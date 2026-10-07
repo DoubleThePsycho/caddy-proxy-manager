@@ -1,6 +1,6 @@
 /**
- * Every guard of a route, page or server action (in app/, or in ee/ where a
- * paid one lives) names one permission from the catalogue, the call-site
+ * Every guard of a route, page or server action (in app/, or in ee/ for ee/
+ * features) names one permission from the catalogue, the call-site
  * table in ee/docs/custom-roles.md matches the code, no route or page is left
  * on the old administrator-only guards, and the sidebar shows each page to
  * exactly the users its page guard lets in.

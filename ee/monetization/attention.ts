@@ -3,7 +3,7 @@
  * Attention provider of API monetization: Stripe refusing the secret key
  * (postpaid charges wait, stripe-status.ts) and x402 payments settled on
  * chain that Stripe has not recorded (their requests are not served until it
- * does). Never checks the license.
+ * does).
  */
 import type { AttentionProvider } from "@/src/lib/attention/types";
 import { readStripeKeyRejection } from "./stripe-status";

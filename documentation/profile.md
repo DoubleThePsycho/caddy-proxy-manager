@@ -1,6 +1,6 @@
 # Profile, sessions and API tokens
 
-**Profile** (the account menu) is where you manage your own account: your picture, how you sign in, where you are signed in, your API tokens and how the dashboard shows times and numbers. Nothing on it changes anyone else's account. It is part of the Community edition and never needs a license.
+**Profile** (the account menu) is where you manage your own account: your picture, how you sign in, where you are signed in, your API tokens and how the dashboard shows times and numbers. Nothing on it changes anyone else's account.
 
 ## Account
 

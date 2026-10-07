@@ -6,12 +6,12 @@
  * alert evaluator.
  */
 import { createHash } from 'node:crypto';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createTestDb, testDbIsPostgres, type TestDb } from '../helpers/db';
 import { createPgReplica } from '../helpers/pg-test-db';
 import * as schema from '../../src/lib/db/schema';
-import { CERT_KEY, DNS_TOKEN, installLicense, licenseSigner, seedConfiguration, setSettingRow, type Fixture } from '../helpers/config-fixture';
+import { CERT_KEY, DNS_TOKEN, seedConfiguration, setSettingRow, type Fixture } from '../helpers/config-fixture';
 import { FakeS3 } from '../helpers/fake-s3';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -23,7 +23,6 @@ import { logAuditEvent } from '../../src/lib/audit';
 import { ApiValidationError } from '../../src/lib/api-errors';
 import { decryptSecret, isEncryptedSecret } from '../../src/lib/secret';
 import { decodeConfigurationExport } from '../../src/lib/config-transfer';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { HISTORY_SETTING_KEY } from '../../ee/config-history/settings';
 import {
   createBackupDestination,
@@ -67,17 +66,9 @@ beforeEach(async () => {
   ctx.db = createTestDb();
   vi.clearAllMocks();
   vi.mocked(applyCaddyConfig).mockResolvedValue(undefined as never);
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
   fx = await seedConfiguration(ctx.db);
-  await installLicense(ctx.db, 'business');
   fake = newFake();
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
-
-async function removeLicense() {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-}
 
 function input(overrides: Record<string, unknown> = {}) {
   return {
@@ -236,11 +227,9 @@ describe('destinations', () => {
     expect(on).toMatchObject({ enabled: true, nextRunAt: '2026-10-03T03:00:00.000Z', consecutiveFailures: 0 });
   });
 
-  it('disables without a license even when a stored field no longer validates', async () => {
+  it('disables even when a stored field no longer validates', async () => {
     const view = await destination();
     await ctx.db.update(schema.backupDestinations).set({ bucket: 'x', schedule: 'garbage' }).where(eq(schema.backupDestinations.id, view.id));
-    await removeLicense();
-    await expect(updateBackupDestination(view.id, { name: 'Renamed' }, fx.adminId)).rejects.toMatchObject({ status: 403 });
     const off = await updateBackupDestination(view.id, { enabled: false, name: 'Offsite' }, fx.adminId);
     expect(off).toMatchObject({ enabled: false, nextRunAt: null, name: 'Offsite' });
     expect((await row(view.id)).bucket).toBe('x');
@@ -439,12 +428,8 @@ describe('backup runs', () => {
     expect(run).toMatchObject({ status: 'failed', error: 'Interrupted: the server stopped during the backup' });
   });
 
-  it('"Back up now" needs the license and is audited', async () => {
+  it('"Back up now" is audited', async () => {
     const view = await destination();
-    await removeLicense();
-    await expect(runBackupNow(view.id, fx.adminId, deps())).rejects.toMatchObject({ status: 403 });
-    expect(fake.requests).toHaveLength(0);
-    await installLicense(ctx.db, 'business');
     const run = await runBackupNow(view.id, fx.adminId, deps());
     expect(run.status).toBe('success');
     expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'backup_run_manual', entityId: view.id }));
@@ -452,7 +437,7 @@ describe('backup runs', () => {
 });
 
 describe('scheduler', () => {
-  it('runs due, enabled destinations without a license and leaves the rest', async () => {
+  it('runs due, enabled destinations and leaves the rest', async () => {
     const now = new Date('2026-10-02T10:00:00Z');
     const due = await destination({ name: 'Due', prefix: 'due' });
     const later = await destination({ name: 'Later', prefix: 'later' }, now);
@@ -460,7 +445,6 @@ describe('scheduler', () => {
     const unscheduled = await destination({ name: 'Unscheduled', prefix: 'unscheduled' });
     await ctx.db.update(schema.backupDestinations).set({ nextRunAt: '2026-10-02T09:59:00.000Z' }).where(eq(schema.backupDestinations.id, due.id));
     await ctx.db.update(schema.backupDestinations).set({ nextRunAt: null }).where(eq(schema.backupDestinations.id, unscheduled.id));
-    await removeLicense();
 
     const result = await runDueBackups({ ...deps(), now: () => now });
     expect(result).toEqual({ due: 1, succeeded: 1, failed: 0 });
@@ -504,12 +488,6 @@ describe('connection test', () => {
     expect(result.error).toMatch(/^HTTP 403 \(AccessDenied\)/);
     expect(fake.keys()).toEqual([]);
   });
-
-  it('needs the license', async () => {
-    const view = await destination();
-    await removeLicense();
-    await expect(testBackupDestination(view.id, fx.adminId, deps())).rejects.toMatchObject({ status: 403 });
-  });
 });
 
 describe('restore', () => {
@@ -519,11 +497,10 @@ describe('restore', () => {
     return { view, key: run.objectKey! };
   }
 
-  it('lists stored backups newest first, without a license', async () => {
+  it('lists stored backups newest first', async () => {
     const { view, key } = await backedUp();
     fake.put('ingressi/ingressi-config-2026-01-01T00-00-00.000Z.json', 'older');
     fake.put('ingressi/readme.txt', 'not a backup');
-    await removeLicense();
     const listing = await listBackupObjects(view.id, deps());
     expect(listing.complete).toBe(true);
     expect(listing.objects.map((object) => object.key)).toEqual([key, 'ingressi/ingressi-config-2026-01-01T00-00-00.000Z.json']);
@@ -581,11 +558,8 @@ describe('restore', () => {
     expect((await dbFirst(ctx.db.select().from(schema.proxyHosts).limit(1)))!.name).toBe('Changed');
   });
 
-  it('needs the license and is refused on a sync slave', async () => {
+  it('is refused on a sync slave', async () => {
     const { view, key } = await backedUp();
-    await removeLicense();
-    await expect(restoreBackup(view.id, { key }, fx.adminId, deps())).rejects.toMatchObject({ status: 403 });
-    await installLicense(ctx.db, 'business');
     await setSettingRow(ctx.db, 'instance_mode', 'slave');
     await expect(restoreBackup(view.id, { key }, fx.adminId, deps())).rejects.toMatchObject({ status: 409 });
   });
@@ -613,10 +587,7 @@ describe('backup_failed alerts', () => {
     expect(await evaluateBackupFailed({ minFailures: 4 })).toEqual({ status: 'ok', findings: [] });
   });
 
-  it('is a paid rule type', async () => {
-    await removeLicense();
-    await expect(createAlertRule({ name: 'Backups', type: 'backup_failed' }, fx.adminId)).rejects.toMatchObject({ status: 403 });
-    await installLicense(ctx.db, 'business');
+  it('validates its parameters', async () => {
     const rule = await createAlertRule({ name: 'Backups', type: 'backup_failed', params: { minFailures: 2 } }, fx.adminId);
     expect(rule.params).toEqual({ minFailures: 2 });
     await expect(createAlertRule({ name: 'Bad', type: 'backup_failed', params: { minFailures: 0 } }, fx.adminId)).rejects.toThrow(/minFailures/);

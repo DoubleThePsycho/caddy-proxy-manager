@@ -39,7 +39,6 @@ export default function OverviewTab({
   hosts,
   stripe,
   canWrite,
-  configurable,
   standalone,
   onAddConsumer,
   onOpenTab,
@@ -50,7 +49,6 @@ export default function OverviewTab({
   hosts: HostMonetizationView[];
   stripe: StripeSettingsView;
   canWrite: boolean;
-  configurable: boolean;
   standalone: boolean;
   onAddConsumer: () => void;
   onOpenTab: (tab: "hosts" | "stripe" | "ledger") => void;
@@ -212,20 +210,18 @@ export default function OverviewTab({
         monthLabel={month}
         now={now}
         canWrite={canWrite}
-        configurable={configurable}
         onAdd={onAddConsumer}
         onShowLedger={() => onOpenTab("ledger")}
       />
 
       <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
         <div className="flex min-w-0 flex-col gap-4">
-          <PlansTab plans={plans} currency={currency} canWrite={canWrite} configurable={configurable} />
+          <PlansTab plans={plans} currency={currency} canWrite={canWrite} />
           <HostsTab
             variant="overview"
             hosts={hosts}
             plans={plans}
             canWrite={canWrite}
-            configurable={configurable}
             standalone={standalone}
             onShowAll={() => onOpenTab("hosts")}
           />

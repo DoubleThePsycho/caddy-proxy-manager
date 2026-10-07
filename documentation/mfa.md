@@ -1,6 +1,6 @@
 # Multi-factor authentication
 
-Multi-factor authentication (MFA) adds a second step to **dashboard sign-in with a password**: a 6-digit code from an authenticator app (TOTP), or a one-time backup code. A **passkey** counts as MFA too: it checks your device and your PIN or biometrics, and signs you in without the password. It is part of the Community edition and never needs a license.
+Multi-factor authentication (MFA) adds a second step to **dashboard sign-in with a password**: a 6-digit code from an authenticator app (TOTP), or a one-time backup code. A **passkey** counts as MFA too: it checks your device and your PIN or biometrics, and signs you in without the password.
 
 It is built on Better Auth's two-factor and passkey plugins. Ingressi adds its own checks around them: enforced SSO, account status, the MFA policy, audit records and the limits described below.
 
@@ -9,10 +9,10 @@ An account has MFA on when it has an authenticator app, at least one passkey, or
 ## What it covers
 
 - **Dashboard password sign-in only.** Both Better Auth password endpoints are covered: `/api/auth/sign-in/username` (the login page) and `/api/auth/sign-in/email`. For an account with MFA, a correct password does not create a session. The answer is `{"twoFactorRedirect": true}` together with a short-lived challenge cookie, and the session is created only after a valid code.
-- **Directory sign-in** (LDAP / Active Directory, `/api/auth/sign-in/ldap`, a paid feature) checks a password too and gets the same second step. See `ee/docs/ldap.md`.
+- **Directory sign-in** (LDAP / Active Directory, `/api/auth/sign-in/ldap`) checks a password too and gets the same second step. See `ee/docs/ldap.md`.
 - **Passkey sign-in** (`/api/auth/passkey/verify-authentication`) is a sign-in of its own: the passkey proves both factors, so it asks for nothing else. See [Passkeys](#passkeys).
 - **Not covered:**
-  - **OAuth/OIDC and SAML sign-in.** The identity provider is responsible for MFA, so sign-ins through it are never asked for a local code, even by an account that has MFA turned on (it applies to that account's password sign-in). SAML sign-in (a paid feature, `ee/docs/sso-saml.md`) does not ask the identity provider for a particular authentication method either; require MFA there.
+  - **OAuth/OIDC and SAML sign-in.** The identity provider is responsible for MFA, so sign-ins through it are never asked for a local code, even by an account that has MFA turned on (it applies to that account's password sign-in). SAML sign-in (`ee/docs/sso-saml.md`) does not ask the identity provider for a particular authentication method either; require MFA there.
   - **The forward-auth portal** (`/portal`, where end users of protected applications sign in). It is unchanged and does not ask for a second factor. A dashboard session from a password and a second factor does not sign anyone in to protected apps: the portal asks for the username and password. Sign-ins through an identity provider are reused, and the second factor is then the provider's.
   - **API tokens.** They are separate credentials and keep working. New tokens can only be created from an interactive session, which means after the second step.
 

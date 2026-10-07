@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { DEFAULT_PAGE_SIZE, paginate } from "@/src/lib/pagination";
 import type { ConsumerDetailView, ConsumerKeyView, ConsumerView, MonetizationConsumerUsage, PaymentView, PlanView, PostpaidView } from "../types";
 import ConsumerFormDialog from "./ConsumerFormDialog";
-import { callApi, Field, fromInput, LOCKED_HINT, money, shortTime } from "./shared";
+import { callApi, Field, fromInput, money, shortTime } from "./shared";
 
 function CopyField({ value, label }: { value: string; label: string }) {
   return (
@@ -148,7 +148,6 @@ export default function ConsumersTab({
   monthLabel,
   now,
   canWrite,
-  configurable,
   onAdd,
   onShowLedger,
 }: {
@@ -162,7 +161,6 @@ export default function ConsumersTab({
   /** The page's reference time, for short timestamps. */
   now: string;
   canWrite: boolean;
-  configurable: boolean;
   /** Opens the add-consumer dialog (the page header's primary action). */
   onAdd?: () => void;
   /** Switches to the ledger tab. */
@@ -170,7 +168,6 @@ export default function ConsumersTab({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const canChange = canWrite && configurable;
   const usageById = new Map(usage.map((item) => [item.consumerId, item]));
   const includedByPlan = new Map(plans.map((plan) => [plan.id, plan.includedRequestsPerMonth]));
   const { page, hrefFor } = useUrlPage("consumers");
@@ -351,7 +348,7 @@ export default function ConsumersTab({
             description="Give each consumer a plan and an API key."
             action={
               canWrite && onAdd ? (
-                <Button size="sm" variant="outline" onClick={onAdd} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
+                <Button size="sm" variant="outline" onClick={onAdd}>
                   <Plus className="h-4 w-4" /> Add consumer
                 </Button>
               ) : undefined
@@ -466,7 +463,6 @@ export default function ConsumersTab({
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem onSelect={() => openKeys(consumer)}>API keys</DropdownMenuItem>
                                 <DropdownMenuItem
-                                  disabled={!canChange}
                                   onSelect={() => {
                                     setAdjustFor(consumer);
                                     setAdjust({ amount: "", reason: "" });
@@ -493,19 +489,18 @@ export default function ConsumersTab({
                                       Charge open amount now
                                     </DropdownMenuItem>
                                     {consumer.postpaid.state === "suspended" && (
-                                      <DropdownMenuItem disabled={!canChange} onSelect={() => resume(consumer)}>
+                                      <DropdownMenuItem onSelect={() => resume(consumer)}>
                                         Resume
                                       </DropdownMenuItem>
                                     )}
                                     {consumer.postpaid.card && <DropdownMenuItem onSelect={() => forgetCard(consumer)}>Remove saved card</DropdownMenuItem>}
                                   </>
                                 )}
-                                <DropdownMenuItem disabled={!canChange} onSelect={() => setEditing(consumer)}>
+                                <DropdownMenuItem onSelect={() => setEditing(consumer)}>
                                   Edit
                                 </DropdownMenuItem>
                                 {disabled ? (
-                                  // Enabling needs the license; disabling always works.
-                                  <DropdownMenuItem disabled={!configurable} onSelect={() => setStatus(consumer, true)}>
+                                  <DropdownMenuItem onSelect={() => setStatus(consumer, true)}>
                                     Enable
                                   </DropdownMenuItem>
                                 ) : (
@@ -556,7 +551,7 @@ export default function ConsumersTab({
                 <Input id="key-name" value={keyName} maxLength={100} placeholder="Optional, e.g. production" onChange={(event) => setKeyName(event.target.value)} />
               </Field>
             </div>
-            <Button onClick={createKey} disabled={pending || !canChange} title={canChange ? undefined : LOCKED_HINT}>
+            <Button onClick={createKey} disabled={pending || !canWrite}>
               <Plus className="h-4 w-4" /> Create key
             </Button>
           </div>
@@ -658,7 +653,7 @@ export default function ConsumersTab({
             <p>{portalFor?.hasPortalLink ? "A portal link is active." : "No portal link yet."}</p>
           )}
           <div className="flex flex-wrap gap-2">
-            <Button onClick={rotatePortal} disabled={pending || !canChange} title={canChange ? undefined : LOCKED_HINT}>
+            <Button onClick={rotatePortal} disabled={pending || !canWrite}>
               {portalFor?.hasPortalLink || portalUrl ? "Issue a new link" : "Create link"}
             </Button>
             {(portalFor?.hasPortalLink || portalUrl) && (

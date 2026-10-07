@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState, useTransition, type ReactNode } from 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Lock, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AppDialog } from "@/components/ui/AppDialog";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +25,6 @@ import {
 type Props = {
   view: SharedStateView;
   canWrite: boolean;
-  editionLabel: string;
   save: (input: Record<string, unknown>) => Promise<SharedStateActionResult>;
   remove: () => Promise<SharedStateActionResult>;
   loadStatus: () => Promise<SharedStateStatusActionResult>;
@@ -96,7 +95,7 @@ function StatusPanel({ status, onRefresh, pending }: { status: SharedStateStatus
   );
 }
 
-export default function SharedStateSection({ view: initialView, canWrite, editionLabel, save, remove, loadStatus }: Props) {
+export default function SharedStateSection({ view: initialView, canWrite, save, remove, loadStatus }: Props) {
   const router = useRouter();
   const [view, setView] = useState(initialView);
   const [prefix, setPrefix] = useState(initialView.keyPrefix || DEFAULT_SHARED_STATE_PREFIX);
@@ -106,7 +105,7 @@ export default function SharedStateSection({ view: initialView, canWrite, editio
   const [pending, startTransition] = useTransition();
 
   const writable = canWrite && view.editable;
-  const canEnable = writable && view.configurable && view.connection.configured;
+  const canEnable = writable && view.connection.configured;
 
   const refresh = useCallback(() => {
     startTransition(async () => {
@@ -163,7 +162,6 @@ export default function SharedStateSection({ view: initialView, canWrite, editio
         description="Forward-auth sessions, sign-in codes and API balances in Redis or Valkey, the same on every web node."
         descriptionPlacement="below"
         headingLevel={2}
-        actions={<Badge variant="outline">{editionLabel}</Badge>}
         footer={
           writable ? (
             <div className="flex flex-wrap justify-end gap-2">
@@ -172,7 +170,7 @@ export default function SharedStateSection({ view: initialView, canWrite, editio
                   Remove setting
                 </Button>
               )}
-              {view.enabled && view.configurable && prefix.trim() !== view.keyPrefix && (
+              {view.enabled && prefix.trim() !== view.keyPrefix && (
                 <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => setConfirm("prefix")}>
                   Change prefix
                 </Button>
@@ -215,7 +213,7 @@ export default function SharedStateSection({ view: initialView, canWrite, editio
               aria-label="Shared state key prefix"
               value={prefix}
               onChange={(event) => setPrefix(event.target.value)}
-              disabled={!writable || !view.configurable || pending}
+              disabled={!writable || pending}
               className="num max-w-xs"
             />
             {view.namespace && <p className="mt-1 text-xs text-soft num">{view.namespace}…</p>}
@@ -223,18 +221,6 @@ export default function SharedStateSection({ view: initialView, canWrite, editio
         </div>
       </SectionCard>
 
-      {!view.configurable && (
-        <Alert>
-          <Lock className="h-4 w-4" />
-          <AlertDescription>
-            Shared state needs an active {editionLabel} license. State that is already shared keeps working and is shown read-only; you can
-            still turn it off or remove the setting.{" "}
-            <Link href="/license" className="underline underline-offset-4">
-              Manage the license
-            </Link>
-          </AlertDescription>
-        </Alert>
-      )}
       {!view.editable && (
         <Alert>
           <AlertDescription>This instance is a sync replica: replicas keep request-path state in their own database.</AlertDescription>

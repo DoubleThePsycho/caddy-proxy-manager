@@ -7,7 +7,7 @@ import { forgetCard } from "@/ee/monetization/postpaid";
 
 type Params = { params: Promise<{ id: string }> };
 
-/** Removes a postpaid consumer's saved card (and detaches it in Stripe). Never needs a license. */
+/** Removes a postpaid consumer's saved card (and detaches it in Stripe). */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "monetization:write");

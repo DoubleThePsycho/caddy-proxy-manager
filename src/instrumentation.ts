@@ -168,8 +168,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
   },
 
   // API monetization (ee/monetization): load the gate's in-memory index and
-  // write metered usage every few seconds and when the process exits. Runs
-  // whatever the license state.
+  // write metered usage every few seconds and when the process exits.
   {
     name: "API monetization metering",
     skipInTests: true,
@@ -184,8 +183,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
   },
 
   // API monetization (ee/monetization/jobs.ts): postpaid charges, reconciling
-  // charges whose outcome is unknown, usage history retention. Leader only;
-  // runs whatever the license state.
+  // charges whose outcome is unknown, usage history retention. Leader only.
   {
     name: "API monetization billing and retention",
     skipInTests: true,
@@ -296,8 +294,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
   },
 
   // Audit streaming to configured sinks and the daily audit log retention
-  // run (ee/audit). They run whatever the license state; a license only
-  // gates changing their configuration.
+  // run (ee/audit).
   {
     name: "audit streaming and retention jobs",
     skipInTests: true,
@@ -347,7 +344,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
   },
 
   // Pull replicas (ee/fleet): a slave with INSTANCE_SYNC_MODE=pull polls its
-  // master instead of waiting for pushes. Runs whatever the license state.
+  // master instead of waiting for pushes.
   {
     name: "pull replica agent",
     skipInTests: true,
@@ -362,8 +359,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
   },
 
   // Alert evaluation (ee/alerting): every minute, on the node where the
-  // rules are configured (they are not synced to slaves). Configured alerts
-  // run whatever the license state.
+  // rules are configured (they are not synced to slaves).
   {
     name: "alert evaluator",
     skipInTests: true,
@@ -380,7 +376,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
 
   // Scheduled configuration backups (ee/backups): every minute, due
   // destinations upload an encrypted export to S3-compatible storage. They
-  // are not synced to slaves and run whatever the license state.
+  // are not synced to slaves.
   {
     name: "backup scheduler",
     skipInTests: true,
@@ -398,7 +394,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
   // Change approvals (ee/approvals): every minute, approved changes to
   // protected hosts are applied when their change windows open and stale
   // requests expire, on the node where the policies are configured (not
-  // synced to slaves). Configured policies work whatever the license state.
+  // synced to slaves).
   {
     name: "change approval scheduler",
     skipInTests: true,
@@ -414,7 +410,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
   },
 
   // Access list rules with an expiry (blocked sources added for a while):
-  // removed when they expire, every minute. Community; not a paid feature.
+  // removed when they expire, every minute.
   {
     name: "access list expiry job",
     skipInTests: true,
@@ -430,8 +426,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
   },
 
   // Recurring access reviews (ee/access-reviews): due schedules start a
-  // campaign. Master-only data (not synced); schedules that were set up
-  // keep running whatever the license state.
+  // campaign. Master-only data (not synced).
   {
     name: "access review scheduler",
     skipInTests: true,
@@ -447,8 +442,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
   },
 
   // Fleet management (ee/fleet): rollout steps and drift checks, on the
-  // master. Rollouts that were started and configured environments keep
-  // working whatever the license state.
+  // master.
   {
     name: "fleet scheduler",
     skipInTests: true,
@@ -465,7 +459,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
 
   // LDAP directory health (ee/ldap): every 5 minutes each enabled
   // directory is connected to, bound with its service account and its user
-  // search base read. A runtime path: it runs whatever the license state.
+  // search base read.
   {
     name: "directory health checks",
     skipInTests: true,
@@ -481,8 +475,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
   },
 
   // Scheduled compliance evidence reports (ee/compliance): due schedules
-  // generate their reports. Master-local data (not synced); schedules that
-  // were set up keep running whatever the license state.
+  // generate their reports. Master-local data (not synced).
   {
     name: "compliance report scheduler",
     skipInTests: true,
@@ -498,8 +491,7 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
   },
 
   // Daily security digest (ee/ai): checked every minute, sent once a day
-  // from the node where it is configured (not synced to slaves). A digest
-  // that was set up keeps being sent whatever the license state.
+  // from the node where it is configured (not synced to slaves).
   {
     name: "daily digest scheduler",
     skipInTests: true,
@@ -511,58 +503,6 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
     stop: async () => {
       const { stopDigestScheduler } = await import("../ee/ai/digest-scheduler");
       stopDigestScheduler();
-    },
-  },
-
-  // Anonymous usage ping (src/lib/usage-ping): sends nothing until the
-  // overview question is answered with yes (or USAGE_PING_ENABLED answers
-  // it); never on a slave, and does not start at all with
-  // USAGE_PING_DISABLED. Settings → Usage Ping shows what it sends.
-  {
-    name: "usage ping scheduler",
-    skipInTests: true,
-    start: async () => {
-      const { startUsagePingScheduler } = await import("./lib/usage-ping/scheduler");
-      const { applyUsagePingEnvironmentAnswer } = await import("./lib/usage-ping/store");
-      if (startUsagePingScheduler() && (await applyUsagePingEnvironmentAnswer())) {
-        console.log("[usage-ping] Turned on the anonymous usage ping: USAGE_PING_ENABLED is set (documentation/usage-ping.md)");
-      }
-    },
-    stop: async () => {
-      const { stopUsagePingScheduler } = await import("./lib/usage-ping/scheduler");
-      stopUsagePingScheduler();
-    },
-  },
-
-  // Automatic license updates (ee/licensing/auto-update.ts): off until an
-  // administrator turns them on with the license's refresh token; never on
-  // a slave, and does not start at all with LICENSE_AUTO_UPDATE_DISABLED.
-  {
-    name: "license update scheduler",
-    skipInTests: true,
-    start: async () => {
-      const { startLicenseAutoUpdateScheduler } = await import("../ee/licensing/auto-update-scheduler");
-      startLicenseAutoUpdateScheduler();
-    },
-    stop: async () => {
-      const { stopLicenseAutoUpdateScheduler } = await import("../ee/licensing/auto-update-scheduler");
-      stopLicenseAutoUpdateScheduler();
-    },
-  },
-
-  // Online license check (ee/licensing/online-check.ts): confirms an online
-  // key (purchases and trials from ingres.si) with the license server once a day. Does nothing
-  // with an offline key or without a key, and never on a slave.
-  {
-    name: "online license check",
-    skipInTests: true,
-    start: async () => {
-      const { startOnlineLicenseCheckScheduler } = await import("../ee/licensing/online-check-scheduler");
-      startOnlineLicenseCheckScheduler();
-    },
-    stop: async () => {
-      const { stopOnlineLicenseCheckScheduler } = await import("../ee/licensing/online-check-scheduler");
-      stopOnlineLicenseCheckScheduler();
     },
   },
 

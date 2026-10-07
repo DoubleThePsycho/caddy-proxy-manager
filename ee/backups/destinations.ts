@@ -1,13 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Backup destinations: validation, storage and the administrator actions on
- * them.
- *
- * Licensing: creating a destination, and any change that leaves it enabled or
- * changes its settings, needs "scheduled_backups". Disabling and deleting a
- * destination never do, and viewing destinations needs no license. Scheduled
- * backups of a destination that is already enabled keep running whatever the
- * license state (runner.ts and scheduler.ts never check it).
+ * them. Scheduled backups run in runner.ts and scheduler.ts.
  *
  * Destinations are master-only configuration and not part of instance sync.
  */
@@ -19,14 +13,12 @@ import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
 import { assertConfigurationEditable } from "@/src/lib/config-replace";
 import { MIN_EXPORT_PASSPHRASE_LENGTH } from "@/src/lib/config-transfer";
-import { requireFeature } from "@/ee/licensing/store";
 import { isDestinationRunning, runningDestinationIds } from "./locks";
 import { S3Client, S3Error, type S3ClientOptions } from "./s3";
 import { nextRunAfter, parseSchedule, parseTimeZone, readStoredSchedule } from "./schedule";
 import {
   DEFAULT_REGION,
   DEFAULT_RETENTION,
-  FEATURE,
   MAX_RETENTION,
   MIN_RETENTION,
   type BackupDestinationView,
@@ -270,8 +262,7 @@ export function parseDestinationUpdate(body: unknown, existing: BackupDestinatio
 
 /**
  * Whether an update only turns the destination off: `enabled: false`, with
- * any other field repeating its stored value and no new secret. It needs no
- * license.
+ * any other field repeating its stored value and no new secret.
  */
 export function isDisableOnlyUpdate(body: unknown, existing: BackupDestinationRow): boolean {
   if (!isRecord(body) || body.enabled !== false) return false;
@@ -400,7 +391,6 @@ function auditData(input: ParsedDestination) {
 // ── Administrator actions ────────────────────────────────────────────
 
 export async function createBackupDestination(body: unknown, actorUserId: number, now: Date = new Date()): Promise<BackupDestinationView> {
-  await requireFeature(FEATURE);
   const input = parseDestinationCreate(body);
   // A slave's configuration comes from the master: back up the master.
   await assertConfigurationEditable();
@@ -445,7 +435,7 @@ export async function updateBackupDestination(
 ): Promise<BackupDestinationView> {
   const existing = await requireDestinationRow(id);
   if (isDisableOnlyUpdate(body, existing)) {
-    // Winding down: no license, and nothing stored is validated again.
+    // Turning it off: nothing stored is validated again.
     const [row] = await appDb
       .update(backupDestinations)
       .set({ enabled: false, nextRunAt: null, updatedAt: nowIso() })
@@ -461,7 +451,6 @@ export async function updateBackupDestination(
     });
     return toDestinationView(row, await isDestinationRunning(id));
   }
-  await requireFeature(FEATURE);
   const input = parseDestinationUpdate(body, existing);
 
   const scheduleChanged = JSON.stringify(input.schedule) !== existing.schedule || input.timeZone !== existing.timeZone;
@@ -526,8 +515,8 @@ export async function updateBackupDestination(
 }
 
 /**
- * Needs no license: removing a destination only winds the feature down. Its
- * run history goes with it; the backup files in the bucket are left alone.
+ * Deletes a destination. Its run history goes with it; the backup files in
+ * the bucket are left alone.
  */
 export async function deleteBackupDestination(id: number, actorUserId: number): Promise<void> {
   const existing = await requireDestinationRow(id);

@@ -30,8 +30,6 @@ type Props = {
   /** Only administrators grant the admin role and administrator-level roles. */
   canAssignAdmin?: boolean;
   customRoles?: CustomRoleOption[];
-  /** The license allows assigning custom roles. */
-  customRolesLicensed?: boolean;
   totalPermissions: number;
   /** sso:read: link to Sign-in and directories. */
   canReadSignIn?: boolean;
@@ -68,7 +66,6 @@ export default function UsersAndGroupsClient({
   canWriteMfaPolicy = false,
   canAssignAdmin = false,
   customRoles = [],
-  customRolesLicensed = false,
   totalPermissions,
   canReadSignIn = false,
   groups,
@@ -93,7 +90,7 @@ export default function UsersAndGroupsClient({
     }
   };
 
-  const roleOptions = { customRoles, canAssignAdmin, customRolesLicensed };
+  const roleOptions = { customRoles, canAssignAdmin };
 
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">

@@ -11,10 +11,8 @@ export const COMPLIANCE_OPENAPI_TAG = {
   description:
     "Compliance reports (access review, change log, certificate inventory, protection coverage) mapped to NIS2 Article 21(2) and " +
     "ISO/IEC 27001:2022 Annex A, report schedules (evidence packs), live control status, recorded test restores, and the incident " +
-    "register with NIS2 Article 23 significance assessments and notification drafts (Enterprise edition). Reports and control statuses " +
-    "are evidence that can support those controls, not proof of compliance. Generating a report, setting up or changing a schedule, " +
-    "recording a test restore and creating or drafting an incident need the compliance_reports feature; reading, downloading, disabling " +
-    "and deleting never do. Nothing is ever sent to a CSIRT or authority.",
+    "register with NIS2 Article 23 significance assessments and notification drafts. Reports and control statuses " +
+    "are evidence that can support those controls, not proof of compliance. Nothing is ever sent to a CSIRT or authority.",
 };
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
@@ -33,7 +31,7 @@ const pageParams = [
   { name: "page", in: "query", schema: { type: "integer", minimum: 1, default: 1 } },
   { name: "perPage", in: "query", schema: { type: "integer", minimum: 1, maximum: 100, default: 25 } },
 ];
-const LICENSED = "Permission compliance:write; needs the compliance_reports feature (403 otherwise).";
+const WRITE = "Permission compliance:write.";
 
 export const COMPLIANCE_OPENAPI_PATHS = {
   "/api/v1/compliance/controls/status": {
@@ -43,8 +41,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
       description:
         "Six checks of this installation: TLS on every host, MFA for administrators, audit log integrity verified in the last 31 days, " +
         "a successful test restore in the last 90 days, access reviews completed and none overdue, and the WAF blocking on every enabled " +
-        "proxy host. Each comes with what was checked, the evidence and its NIS2 and ISO/IEC 27001 references. Permission compliance:read; " +
-        "available without a license.",
+        "proxy host. Each comes with what was checked, the evidence and its NIS2 and ISO/IEC 27001 references. Permission compliance:read.",
       operationId: "getComplianceControlStatus",
       responses: { "200": { description: "Control status", content: json(ref("ComplianceControlStatus")) }, ...errors("401", "403") },
     },
@@ -64,7 +61,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Create a report schedule",
       description:
-        `${LICENSED} Every week (the seven days before the run) or month (the previous calendar month), the chosen reports are ` +
+        `${WRITE} Every week (the seven days before the run) or month (the previous calendar month), the chosen reports are ` +
         "generated, stored and hashed like reports made by hand, the audit log's hash chain is verified, and a notice with the findings and " +
         "SHA-256 digests goes to the chosen alert channels (not PagerDuty). Report contents are never sent. questionIds copies saved analytics " +
         "questions (GET /api/v1/analytics/questions/saved) into the schedule; each run then adds a traffic_questions report that re-runs them " +
@@ -85,7 +82,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
     put: {
       tags: [TAG],
       summary: "Update a report schedule",
-      description: `${LICENSED} Fields left out keep their values. {"enabled": false} works without a license.`,
+      description: `${WRITE} Fields left out keep their values.`,
       operationId: "updateComplianceSchedule",
       parameters: [idParam],
       requestBody: { required: true, content: json(ref("ComplianceScheduleInput")) },
@@ -94,7 +91,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Delete a report schedule",
-      description: "Permission compliance:write; works without a license. The reports it generated are kept.",
+      description: `${WRITE} The reports it generated are kept.`,
       operationId: "deleteComplianceSchedule",
       parameters: [idParam],
       responses: { "204": { description: "Deleted" }, ...errors("401", "403", "404") },
@@ -104,7 +101,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
     post: {
       tags: [TAG],
       summary: "Run a report schedule now",
-      description: `${LICENSED} Generates the schedule's reports for the week or month that has ended, as a scheduled run would.`,
+      description: `${WRITE} Generates the schedule's reports for the week or month that has ended, as a scheduled run would.`,
       operationId: "runComplianceSchedule",
       parameters: [idParam],
       responses: { "200": { description: "The run", content: json(ref("ComplianceScheduleRun")) }, ...errors("401", "403", "404") },
@@ -163,7 +160,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
     post: {
       tags: [TAG],
       summary: "Record a test restore",
-      description: `${LICENSED} Records that a configuration backup was restored as a test (usually on a spare instance); evidence for the backup control.`,
+      description: `${WRITE} Records that a configuration backup was restored as a test (usually on a spare instance); evidence for the backup control.`,
       operationId: "recordComplianceRestoreTest",
       requestBody: { required: true, content: json(ref("ComplianceRestoreTestInput")) },
       responses: { "201": { description: "Recorded", content: json(ref("ComplianceRestoreTest")) }, ...errors("400", "401", "403") },
@@ -173,7 +170,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Delete a recorded test restore",
-      description: "Permission compliance:write; works without a license.",
+      description: WRITE,
       operationId: "deleteComplianceRestoreTest",
       parameters: [idParam],
       responses: { "204": { description: "Deleted" }, ...errors("401", "403", "404") },
@@ -192,7 +189,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
     get: {
       tags: [TAG],
       summary: "List stored reports",
-      description: "Newest first, without their content. Permission compliance:read; available without a license.",
+      description: "Newest first, without their content. Permission compliance:read.",
       operationId: "listComplianceReports",
       parameters: [
         { name: "type", in: "query", schema: ref("ComplianceReportType") },
@@ -205,7 +202,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Generate a report",
       description:
-        `${LICENSED} Generates the report for the period, stores it with the SHA-256 of its canonical JSON (RFC 8785) and records ` +
+        `${WRITE} Generates the report for the period, stores it with the SHA-256 of its canonical JSON (RFC 8785) and records ` +
         "the generation, with that SHA-256, in the audit log. `to` defaults to now and is capped at now, `from` to 30 days before `to`; " +
         "a bare date as `to` means the end of that day; the period spans at most 366 days. With format csv the answer is the report's " +
         "first table as CSV (other tables: GET /reports/{id}/export).",
@@ -233,7 +230,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Delete a stored report",
-      description: "Permission compliance:write; works without a license. The deletion is recorded in the audit log with the report's SHA-256.",
+      description: `${WRITE} The deletion is recorded in the audit log with the report's SHA-256.`,
       operationId: "deleteComplianceReport",
       parameters: [idParam],
       responses: { "204": { description: "Deleted" }, ...errors("401", "403", "404") },
@@ -247,7 +244,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
         "format=json: the report with an `integrity` member (remove it, canonicalize with RFC 8785 and hash with SHA-256 to verify). " +
         "format=csv: one table, chosen with `section` (`summary`, `findings` or a section key of the report; default the first section). " +
         "Cells a spreadsheet would run as formulas are prefixed with an apostrophe. Headers X-Report-Id and X-Report-Sha256 carry the " +
-        "report id and SHA-256. Available without a license.",
+        "report id and SHA-256.",
       operationId: "exportComplianceReport",
       parameters: [
         idParam,
@@ -269,7 +266,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
       summary: "List the incident register",
       description:
         "Latest incident first, with its window, classification, whether a notification is required and the next stage due. " +
-        "Permission compliance:read; available without a license.",
+        "Permission compliance:read.",
       operationId: "listComplianceIncidents",
       parameters: [{ name: "status", in: "query", schema: { type: "string", enum: ["open", "closed"] } }, ...pageParams],
       responses: { "200": { description: "Drafts", content: json(ref("ComplianceIncidentList")) }, ...errors("401", "403") },
@@ -278,7 +275,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Record an incident",
       description:
-        `${LICENSED} Records the incident in the register (window, significance assessment, classification, cause, timeline) and collects aggregated facts (WAF and traffic figures from ClickHouse, alert events, configuration changes) for the period ` +
+        `${WRITE} Records the incident in the register (window, significance assessment, classification, cause, timeline) and collects aggregated facts (WAF and traffic figures from ClickHouse, alert events, configuration changes) for the period ` +
         "and the affected hosts, and fills every stage from a structured template. Starting from an alert event (alertEventId) takes its " +
         "title and time unless given. `detectedAt` (when you became aware) defaults to the alert's time or now; the period defaults to the " +
         "24 hours before it up to now and spans at most 31 days. Nothing is sent anywhere.",
@@ -303,7 +300,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Update an incident",
       description:
-        "Permission compliance:write; works without a license, so an incident under way stays editable. Fields left out keep their values. " +
+        `${WRITE} Fields left out keep their values. ` +
         "Changing the period or the hosts collects the facts again. Changing a stage's text records editedAt (an AI-generated draft keeps its " +
         "label). Record a submission you made with stages.<stage>.submittedAt and reference. Setting classification records who classified it " +
         "and when; status closed records closedAt. Assessment answers for suspected malicious acts and cross-border impact fill the early " +
@@ -316,7 +313,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Delete an incident notification draft",
-      description: "Permission compliance:write; works without a license.",
+      description: WRITE,
       operationId: "deleteComplianceIncident",
       parameters: [idParam],
       responses: { "204": { description: "Deleted" }, ...errors("401", "403", "404") },
@@ -326,7 +323,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
     post: {
       tags: [TAG],
       summary: "Collect the draft's facts again",
-      description: `${LICENSED} The stages' text is not changed.`,
+      description: `${WRITE} The stages' text is not changed.`,
       operationId: "refreshComplianceIncidentFacts",
       parameters: [idParam],
       responses: { "200": { description: "Updated", content: json(ref("ComplianceIncident")) }, ...errors("401", "403", "404") },
@@ -337,7 +334,7 @@ export const COMPLIANCE_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Fill a stage from the template or with AI",
       description:
-        `${LICENSED} source template: the structured template from the facts. source ai: a first draft from the configured AI provider ` +
+        `${WRITE} source template: the structured template from the facts. source ai: a first draft from the configured AI provider ` +
         "(your own model, see the AI tag); the model gets the aggregated facts only, as untrusted data, and no tools. The stage is marked " +
         "as AI-generated until replaced; a person must review, edit and submit it. Choice fields and the submission record are kept. " +
         "400 when no AI provider is configured, 502 when the provider fails.",

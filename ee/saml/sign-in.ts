@@ -3,8 +3,8 @@
  * SAML sign-in after the response was verified: which local account it
  * signs in, linking and provisioning, and the role the group mapping gives.
  * Called from the assertion consumer service (plugin.ts) before any session
- * exists; the session is created the standard way afterwards. Never checks
- * the license. Mirrors directory sign-in (ee/ldap/sign-in.ts).
+ * exists; the session is created the standard way afterwards. Mirrors
+ * directory sign-in (ee/ldap/sign-in.ts).
  *
  * The account id (accounts.accountId of "saml:<id>") is the NameID only when
  * its Format is persistent; otherwise the provider must name an attribute

@@ -4,7 +4,7 @@ import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { parseRouteId } from "@/ee/compliance/http";
 import { fileHeaders, getReport, parseExportQuery, REPORT_NOT_FOUND, reportFile } from "@/ee/compliance/reports";
 
-/** ?format=json|csv&section= : the stored report as a file. Available without a license. */
+/** ?format=json|csv&section= : the stored report as a file. */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     await requireApiPermission(request, "compliance:read");

@@ -20,7 +20,7 @@
  *              standby (crash-only fencing).
  *
  * A promotion that fails (no replica can be restored, object storage or Redis
- * unreachable, no license to set a cluster up) gives the lease back and
+ * unreachable) gives the lease back and
  * retries later with a growing delay; it never starts the dashboard on a
  * database it could not vouch for.
  */
@@ -359,17 +359,11 @@ export class Supervisor {
     this.guard();
 
     if (!pointer) {
-      // Never set up: this node's own database becomes the first replica. This is setting
-      // high availability up, so it needs the license installed in that database.
+      // Never set up: this node's own database becomes the first replica.
       if (!this.deps.local.exists(this.config.databasePath)) {
         throw new PromotionError(
-          "the cluster has no replica yet and this node has no database to start it from: start one node without HA_ENABLED, " +
-            "install the license, then turn high availability on"
-        );
-      }
-      if (!this.deps.local.licenseAllowsHa(this.config.databasePath, new Date(this.now()))) {
-        throw new PromotionError(
-          "setting up high availability needs an Enterprise license: install it on this node's dashboard (without HA_ENABLED) first"
+          "the cluster has no replica yet and this node has no database to start it from: start one node without HA_ENABLED " +
+            "first, then turn high availability on"
         );
       }
       return { source: "bootstrap", replicaId: null, restoredPath: null };

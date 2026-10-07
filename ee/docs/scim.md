@@ -1,6 +1,6 @@
 # SCIM provisioning
 
-Feature id `scim`, Enterprise edition. Source: `ee/scim/` (Elastic License 2.0), with the SCIM 2.0 routes in `routes/scim/v2/` and the dashboard page in `ui/`; `app/scim/v2/` and `app/(dashboard)/scim/` only route to them.
+Source: `ee/scim/` (Elastic License 2.0), with the SCIM 2.0 routes in `routes/scim/v2/` and the dashboard page in `ui/`; `app/scim/v2/` and `app/(dashboard)/scim/` only route to them.
 
 SCIM 2.0 (RFC 7643, RFC 7644) lets your identity provider manage dashboard users. Microsoft Entra ID, Okta or any SCIM 2.0 client can create users, update them, disable them when they leave, and keep forward-auth groups in step. Users created this way have no password: they sign in through your OAuth/OIDC or SAML provider.
 
@@ -51,7 +51,7 @@ Roles never come from SCIM attributes.
 
 - A new SCIM user gets the **default role** from the settings (`user` or `viewer`; default `user`).
 - **Group-to-role mappings** map a SCIM group to a built-in role or a custom role. With **Manage roles** on, every SCIM user gets the role of the first mapping (lowest priority number, then oldest) whose group the identity provider put them in, or the default role when none applies. Only memberships the identity provider asserted through SCIM count: adding or removing a member by hand on the Groups page (which `groups:write` allows) changes forward-auth access but never a role. Roles are re-applied when group membership changes through SCIM, when a mapping is added, changed or deleted, and when Manage roles is turned on. Role changes made by hand to a SCIM user are overwritten then. With Manage roles off, mappings are kept but not applied and SCIM never changes a role after creating the user.
-- A mapping is a grant: you can only map a role you could assign yourself (only administrators map `admin` or an administrator-level custom role), only to groups SCIM manages, one mapping per group. A mapping to a custom role also needs the `custom_roles` license.
+- A mapping is a grant: you can only map a role you could assign yourself (only administrators map `admin` or an administrator-level custom role), only to groups SCIM manages, one mapping per group.
 - Protected accounts are never touched. A change that would leave no active administrator (or no break-glass administrator while SSO is enforced) is refused for that user and recorded as `scim_role_change_refused`; the SCIM request that caused it still succeeds.
 
 ### Deprovisioning
@@ -128,23 +128,23 @@ Every request needs a SCIM token. API tokens and dashboard sessions are refused 
 
 **Provisioning** (`/scim`, permission `scim:read`; changes need `scim:write`) shows the settings, tokens, mappings and the users and groups SCIM manages.
 
-| Method and path | Permission | License | Notes |
-| --- | --- | --- | --- |
-| `GET /api/v1/scim/settings` | `scim:read` | no | With the SCIM base URL, the providers to choose from and counts. |
-| `PUT /api/v1/scim/settings` | `scim:write` | yes, except `{"enabled": false}` | `enabled`, `providerId`, `deleteMode` (`disable`, `delete`), `defaultRole` (`user`, `viewer`), `manageRoles`, `requireVerifiedEmail`, `externalIdClaim`. |
-| `GET /api/v1/scim/tokens` | `scim:read` | no | Prefix only. |
-| `POST /api/v1/scim/tokens` | `scim:write` | yes | `{name, expiresAt?}`; the `token` is in this response only. At most 20. |
-| `DELETE /api/v1/scim/tokens/{id}` | `scim:write` | no | Revokes. |
-| `GET /api/v1/scim/role-mappings` | `scim:read` | no | |
-| `POST /api/v1/scim/role-mappings` | `scim:write` | yes (and `custom_roles` for a custom role) | `{groupId, role \| customRoleId, priority?}`. |
-| `PUT /api/v1/scim/role-mappings/{id}` | `scim:write` | yes | |
-| `DELETE /api/v1/scim/role-mappings/{id}` | `scim:write` | no | |
-| `GET /api/v1/scim/users` | `scim:read` | no | Users SCIM manages, with `origin`, `deletedAt`, `linkedAt`. |
-| `POST /api/v1/scim/users` | `scim:write` | yes | Hand over an account: `{userId, userName, externalId?}`. |
-| `DELETE /api/v1/scim/users/{id}` | `scim:write` | no | Stop managing; the account is not changed. |
-| `GET /api/v1/scim/groups` | `scim:read` | no | |
-| `POST /api/v1/scim/groups` | `scim:write` | yes | Hand over a group: `{groupId, externalId?}`. |
-| `DELETE /api/v1/scim/groups/{id}` | `scim:write` | no | Stop managing; members stay, its mapping is deleted. |
+| Method and path | Permission | Notes |
+| --- | --- | --- |
+| `GET /api/v1/scim/settings` | `scim:read` | With the SCIM base URL, the providers to choose from and counts. |
+| `PUT /api/v1/scim/settings` | `scim:write` | `enabled`, `providerId`, `deleteMode` (`disable`, `delete`), `defaultRole` (`user`, `viewer`), `manageRoles`, `requireVerifiedEmail`, `externalIdClaim`. |
+| `GET /api/v1/scim/tokens` | `scim:read` | Prefix only. |
+| `POST /api/v1/scim/tokens` | `scim:write` | `{name, expiresAt?}`; the `token` is in this response only. At most 20. |
+| `DELETE /api/v1/scim/tokens/{id}` | `scim:write` | Revokes. |
+| `GET /api/v1/scim/role-mappings` | `scim:read` | |
+| `POST /api/v1/scim/role-mappings` | `scim:write` | `{groupId, role \| customRoleId, priority?}`. |
+| `PUT /api/v1/scim/role-mappings/{id}` | `scim:write` | |
+| `DELETE /api/v1/scim/role-mappings/{id}` | `scim:write` | |
+| `GET /api/v1/scim/users` | `scim:read` | Users SCIM manages, with `origin`, `deletedAt`, `linkedAt`. |
+| `POST /api/v1/scim/users` | `scim:write` | Hand over an account: `{userId, userName, externalId?}`. |
+| `DELETE /api/v1/scim/users/{id}` | `scim:write` | Stop managing; the account is not changed. |
+| `GET /api/v1/scim/groups` | `scim:read` | |
+| `POST /api/v1/scim/groups` | `scim:write` | Hand over a group: `{groupId, externalId?}`. |
+| `DELETE /api/v1/scim/groups/{id}` | `scim:write` | Stop managing; members stay, its mapping is deleted. |
 
 `scim:write` is administrator-level: only administrators can give it to a custom role, because its tokens create users and its mappings grant roles.
 
@@ -154,10 +154,6 @@ curl -X PUT https://dash.example.com/api/v1/scim/settings -H "Authorization: Bea
 curl -X POST https://dash.example.com/api/v1/scim/tokens -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"name":"Okta"}'
 ```
-
-## License
-
-Turning SCIM on, changing its settings, creating tokens, adding or changing mappings and handing users or groups to SCIM need the license. Turning SCIM off, revoking tokens, deleting mappings and releasing users or groups never do. SCIM requests, linking at sign-in and applying mappings never check it: provisioning that is set up keeps working when the license lapses.
 
 ## Audit log
 

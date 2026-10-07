@@ -30,7 +30,6 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { DEFAULT_PAGE_SIZE, paginate } from "@/src/lib/pagination";
-import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import type { RevisionDiff } from "@/ee/fleet/revisions";
 import type { EnvironmentView, FleetInstanceView, FleetOverview, PullReplicaView, RevisionView, RolloutView } from "@/ee/fleet/types";
 import PullReplicasPanel from "@/ee/fleet/ui/PullReplicasPanel";
@@ -65,9 +64,6 @@ type Props = {
   rolloutPage?: ServerPage<RolloutView>;
   /** The page of revisions the table shows (?revisions=); the overview's latest ones when omitted. */
   revisionPage?: ServerPage<RevisionView>;
-  /** The license allows setting fleet management up and changing it. */
-  configurable: boolean;
-  editionLabel: string;
   /** What the user's role allows besides reading (custom roles); everything when omitted. */
   allowed?: { write: boolean; promote: boolean; replicas?: boolean };
   /** When the server read the overview (ISO), so server and browser render the same times. */
@@ -114,13 +110,10 @@ export default function FleetClient({
   overview,
   rolloutPage,
   revisionPage,
-  configurable,
-  editionLabel,
   allowed = { write: true, promote: true, replicas: true },
   now: renderedAt,
 }: Props) {
   const router = useRouter();
-  const { productName } = useBranding();
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<Message | null>(null);
   const [editing, setEditing] = useState<EnvironmentView | "new" | null>(null);
@@ -532,7 +525,7 @@ export default function FleetClient({
                           <DropdownMenuRadioItem
                             key={option.id}
                             value={String(option.id)}
-                            disabled={locked || (!configurable && option.id !== instance.environmentId)}
+                            disabled={locked}
                           >
                             {option.name}
                           </DropdownMenuRadioItem>
@@ -660,7 +653,7 @@ export default function FleetClient({
               <Button
                 variant="secondary"
                 size="sm"
-                disabled={pending || !configurable || !isMaster || active !== null}
+                disabled={pending || !isMaster || active !== null}
                 title={active ? `Rollout #${active.id} is running` : undefined}
                 onClick={() => setPromoting(environment)}
               >
@@ -767,11 +760,11 @@ export default function FleetClient({
               </Button>
             )}
             {allowed.replicas && (
-              <Button variant="outline" disabled={pending || !configurable || !isMaster} onClick={() => setAddingReplica(true)}>
+              <Button variant="outline" disabled={pending || !isMaster} onClick={() => setAddingReplica(true)}>
                 Add pull replica
               </Button>
             )}
-            {allowed.write && configurable && isMaster && (
+            {allowed.write && isMaster && (
               <Button onClick={() => setEditing("new")}>
                 <Plus className="h-4 w-4" /> New environment
               </Button>
@@ -783,21 +776,6 @@ export default function FleetClient({
       {!isMaster && (
         <Banner tone="info" title="Fleet management works on the master instance.">
           This instance is in {overview.mode} mode, so nothing here is pushed.
-        </Banner>
-      )}
-      {!configurable && (
-        <Banner
-          tone="info"
-          actions={
-            <Button asChild variant="outline" size="sm">
-              <Link href="/license">Manage the license</Link>
-            </Button>
-          }
-        >
-          {`Fleet management needs an active ${productName} ${editionLabel} license or higher.`}
-          {environments.length > 0
-            ? " Environments that exist keep working as configured; you can still delete them, turn promotion-only off, take instances out, abort rollouts and re-sync instances."
-            : ""}
         </Banner>
       )}
       {message && (
@@ -854,7 +832,7 @@ export default function FleetClient({
               title="No environments yet"
               description="Create one per stage, for example staging and production."
               action={
-                allowed.write && configurable && isMaster ? (
+                allowed.write && isMaster ? (
                   <Button onClick={() => setEditing("new")}>
                     <Plus className="h-4 w-4" /> New environment
                   </Button>
@@ -1123,7 +1101,7 @@ export default function FleetClient({
                             </Button>
                           )}
                           {canRollback && (
-                            <Button variant="ghost" size="sm" disabled={pending || !configurable || !isMaster} onClick={() => rollback(rollout)}>
+                            <Button variant="ghost" size="sm" disabled={pending || !isMaster} onClick={() => rollback(rollout)}>
                               <RotateCcw className="h-3.5 w-3.5" /> Roll back to #{rollout.fromRevisionId}
                             </Button>
                           )}
@@ -1150,9 +1128,7 @@ export default function FleetClient({
         <PullReplicasPanel
           replicas={overview.pullReplicas}
           canManage={allowed.replicas ?? false}
-          configurable={configurable}
           isMaster={isMaster}
-          editionLabel={editionLabel}
           onChanged={() => router.refresh()}
           showAddButton={false}
           adding={addingReplica}
@@ -1261,7 +1237,6 @@ export default function FleetClient({
         open={editing !== null}
         environment={editing === "new" ? null : editing}
         nextPosition={nextPosition}
-        configurable={configurable}
         canRelease={allowed.promote}
         onClose={() => setEditing(null)}
         onSaved={(text) => {

@@ -1,19 +1,18 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * API monetization on the E2E stack, which runs without a license: every tab
- * renders read-only (postpaid, failed-answer credits, x402, replica serving
- * and retention included), the REST API reads everything, refuses changes
- * that need the license and allows the ones that wind things down. Nothing
- * here calls Stripe or the x402 facilitator.
+ * API monetization on the E2E stack: every tab renders (postpaid,
+ * failed-answer credits, x402, replica serving and retention included), and
+ * the REST API reads and changes the settings, x402 and plans, putting back
+ * what it changed. Nothing here calls Stripe or the x402 facilitator.
  */
 const ORIGIN = { Origin: 'http://localhost:3000' };
 
 test.describe('API monetization', () => {
-  test('shows every tab read-only without a license', async ({ page }) => {
+  test('shows every tab', async ({ page }) => {
     await page.goto('/api-monetization');
     await expect(page.getByRole('heading', { name: 'API monetization', level: 1 })).toBeVisible();
-    await expect(page.getByText('Read-only without a license.')).toBeVisible();
+    await expect(page.getByText(/needs a license|read-only without/i)).toHaveCount(0);
     for (const tab of ['Overview', 'Plans', 'Consumers', 'Hosts', 'Stripe', 'x402', 'Settings', 'Ledger']) {
       await expect(page.getByRole('tab', { name: new RegExp(`^${tab}`) })).toBeVisible();
     }
@@ -29,7 +28,7 @@ test.describe('API monetization', () => {
     await expect(page.getByText('x402 pay-per-request')).toBeVisible();
     await expect(page.getByText('Stripe receives the payments.')).toBeVisible();
     await expect(page.getByText('No x402 payments yet')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled();
 
     await page.getByRole('tab', { name: 'Stripe' }).click();
     for (const event of ['setup_intent.succeeded', 'payment_intent.payment_failed', 'charge.dispute.created']) {
@@ -37,12 +36,14 @@ test.describe('API monetization', () => {
     }
   });
 
-  test('REST API: reads the new endpoints and refuses licensed changes', async ({ page }) => {
+  test('REST API: reads and changes the settings, x402 and plans', async ({ page }) => {
     const settings = await page.request.get('/api/v1/monetization/settings');
     expect(settings.status()).toBe(200);
     expect(await settings.json()).toMatchObject({ usageRetentionMonths: 13, replicas: { mode: 'off' }, analyticsAvailable: expect.any(Boolean) });
-    expect((await page.request.put('/api/v1/monetization/settings', { data: { usageRetentionMonths: 6 }, headers: ORIGIN })).status()).toBe(403);
-    // Turning replica serving off never needs the license.
+    const retention = await page.request.put('/api/v1/monetization/settings', { data: { usageRetentionMonths: 6 }, headers: ORIGIN });
+    expect(retention.status()).toBe(200);
+    expect(await retention.json()).toMatchObject({ usageRetentionMonths: 6 });
+    expect((await page.request.put('/api/v1/monetization/settings', { data: { usageRetentionMonths: 13 }, headers: ORIGIN })).status()).toBe(200);
     expect((await page.request.put('/api/v1/monetization/settings', { data: { replicas: { mode: 'off' } }, headers: ORIGIN })).status()).toBe(200);
 
     const x402 = await page.request.get('/api/v1/monetization/x402');
@@ -51,7 +52,12 @@ test.describe('API monetization', () => {
     expect(view).toMatchObject({ enabled: false, configured: false, hasCdpKeySecret: false, network: 'eip155:8453', priceCents: 1, depositAddress: null, stripeReady: false });
     expect(JSON.stringify(view)).not.toContain('"cdpKeySecret"');
     expect(view.networks).toEqual([{ id: 'eip155:8453', label: 'Base' }]);
-    expect((await page.request.put('/api/v1/monetization/x402', { data: { priceCents: 5 }, headers: ORIGIN })).status()).toBe(403);
+    const price = await page.request.put('/api/v1/monetization/x402', { data: { priceCents: 5 }, headers: ORIGIN });
+    expect(price.status()).toBe(200);
+    expect(await price.json()).toMatchObject({ enabled: false, priceCents: 5 });
+    expect((await page.request.put('/api/v1/monetization/x402', { data: { priceCents: 1 }, headers: ORIGIN })).status()).toBe(200);
+    // Turning x402 on needs the CDP facilitator's credentials first.
+    expect((await page.request.put('/api/v1/monetization/x402', { data: { enabled: true }, headers: ORIGIN })).status()).toBe(400);
     expect((await page.request.delete('/api/v1/monetization/x402', { headers: ORIGIN })).status()).toBe(200);
 
     const payments = await page.request.get('/api/v1/monetization/x402/payments');
@@ -65,7 +71,10 @@ test.describe('API monetization', () => {
       data: { name: 'Metered', pricePerRequestMicros: 1000, billing: 'postpaid', postpaidCapMicros: 50_000_000 },
       headers: ORIGIN,
     });
-    expect(plan.status()).toBe(403);
+    expect(plan.status()).toBe(201);
+    const created = await plan.json();
+    expect(created).toMatchObject({ name: 'Metered', billing: 'postpaid', postpaidCapMicros: 50_000_000 });
+    expect((await page.request.delete(`/api/v1/monetization/plans/${created.id}`, { headers: ORIGIN })).status()).toBe(204);
   });
 
   test('OpenAPI documents the new endpoints', async ({ page }) => {

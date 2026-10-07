@@ -78,20 +78,6 @@ services:
       CLICKHOUSE_DB: ${CLICKHOUSE_DB:-analytics}
       # Days of analytics data to keep before TTL deletes it (default 30)
       CLICKHOUSE_RETENTION_DAYS: ${CLICKHOUSE_RETENTION_DAYS:-30}
-
-      # Anonymous usage ping: sends nothing until an administrator says yes
-      # (documentation/usage-ping.md). USAGE_PING_ENABLED=true answers yes at
-      # start-up; USAGE_PING_DISABLED=true turns it off entirely and hides the
-      # question; USAGE_PING_URL replaces the endpoint (https only).
-      USAGE_PING_ENABLED: ${USAGE_PING_ENABLED:-}
-      USAGE_PING_DISABLED: ${USAGE_PING_DISABLED:-false}
-      USAGE_PING_URL: ${USAGE_PING_URL:-}
-
-      # Automatic license updates: off until an administrator turns them on
-      # on the License page (ee/docs/licenses.md). LICENSE_AUTO_UPDATE_DISABLED=true
-      # forbids them; LICENSE_SERVER_URL replaces the license server (https only).
-      LICENSE_AUTO_UPDATE_DISABLED: ${LICENSE_AUTO_UPDATE_DISABLED:-false}
-      LICENSE_SERVER_URL: ${LICENSE_SERVER_URL:-}
     group_add:
       # caddy's GID: group access to the log files (read access.log,
       # truncate the group-writable waf-audit.log). The web user never needs

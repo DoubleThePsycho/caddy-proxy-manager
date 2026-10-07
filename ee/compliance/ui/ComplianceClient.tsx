@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Plus, Sparkles } from "lucide-react";
 import { AppDialog } from "@/components/ui/AppDialog";
-import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SegmentedControl } from "@/components/ui/SegmentedControl";
@@ -27,7 +25,6 @@ import LastReportCard, { type LastReportView } from "./LastReportCard";
 import NextScheduleCard from "./NextScheduleCard";
 import ReportsTab from "./ReportsTab";
 import RestoreTests from "./RestoreTests";
-import { LOCKED_HINT } from "./shared";
 
 export type ChannelChoice = { id: number; name: string; type: string };
 
@@ -52,9 +49,7 @@ type Props = {
   destinations: { id: number; name: string }[];
   sources: DraftSources;
   mapping: ControlMappingView;
-  configurable: boolean;
   canWrite: boolean;
-  editionLabel: string;
   /** Saved analytics questions the user can add to a schedule. */
   questions?: QuestionChoice[];
   /** The Ask box, for users who can read analytics; null hides it. */
@@ -129,7 +124,7 @@ export default function ComplianceClient(props: Props) {
                 </Button>
               )}
               {props.canWrite && (
-                <Button onClick={() => setGenerateOpen(true)} disabled={!props.configurable} title={props.configurable ? undefined : LOCKED_HINT}>
+                <Button onClick={() => setGenerateOpen(true)}>
                   <Plus />
                   Generate report
                 </Button>
@@ -151,26 +146,17 @@ export default function ComplianceClient(props: Props) {
           <span>{info.note}</span>
         </div>
 
-        {!props.configurable && (
-          <Banner tone="info" title="Read-only without a license.">
-            {`Generating reports and creating incidents, schedules and test restores needs a license with compliance reports (${props.editionLabel} edition). ` +
-              "Incidents can still be assessed, classified and closed. "}
-            <Link href="/license" className="text-brand underline-offset-4 hover:underline">Licensing</Link>
-          </Banner>
-        )}
-
         <TabsContent value="overview" className="mt-0 flex min-w-0 flex-col gap-5">
           <div className="flex flex-wrap items-stretch gap-5">
             <NextScheduleCard schedules={props.schedules} now={now} canWrite={props.canWrite} onOpenSchedules={openSchedules} />
             <LastReportCard last={props.lastReport} schedules={props.schedules} onOpenReports={() => changeTab("reports")} />
           </div>
           <ControlsTable controls={props.controls} framework={framework} />
-          <RestoreTests initial={props.restoreTests} destinations={props.destinations} canWrite={props.canWrite} configurable={props.configurable} />
+          <RestoreTests initial={props.restoreTests} destinations={props.destinations} canWrite={props.canWrite} />
           <IncidentRegister
             page={props.incidents}
             sources={props.sources}
             canWrite={props.canWrite}
-            configurable={props.configurable}
             initialOpenId={props.initialIncidentId ?? null}
             now={now}
           />
@@ -184,7 +170,6 @@ export default function ComplianceClient(props: Props) {
             channels={props.channels}
             questions={props.questions ?? []}
             canWrite={props.canWrite}
-            configurable={props.configurable}
             now={now}
             onGenerate={() => setGenerateOpen(true)}
           />
@@ -195,7 +180,7 @@ export default function ComplianceClient(props: Props) {
         </TabsContent>
       </Tabs>
 
-      {props.canWrite && <GenerateReportDialog open={generateOpen} onClose={() => setGenerateOpen(false)} configurable={props.configurable} />}
+      {props.canWrite && <GenerateReportDialog open={generateOpen} onClose={() => setGenerateOpen(false)} />}
       {props.ask && (
         <AppDialog open={askOpen} onClose={() => setAskOpen(false)} title="Ask about traffic" maxWidth="xl" actions={<Button variant="outline" onClick={() => setAskOpen(false)}>Close</Button>}>
           <AskPanel

@@ -19,7 +19,7 @@ export async function POST(request: NextRequest, { params }: Params) {
   }
 }
 
-/** Turns the portal link off. Never needs a license. */
+/** Turns the portal link off. */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "monetization:write");

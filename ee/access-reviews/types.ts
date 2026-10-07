@@ -4,8 +4,6 @@
  * components (no server-only dependencies).
  */
 
-export const FEATURE = "access_reviews" as const;
-
 /**
  * What an item reviews:
  *  - account: the dashboard account itself (revoke: disable it);

@@ -15,7 +15,7 @@
  *  - a write scope also grants the area's read action, as in custom roles.
  *
  * A token without scopes acts with its owner's role, as before scopes
- * existed. Nothing here reads the license.
+ * existed.
  */
 import {
   can,

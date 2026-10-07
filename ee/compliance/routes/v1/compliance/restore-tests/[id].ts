@@ -6,7 +6,6 @@ import { deleteRestoreTest, RESTORE_TEST_NOT_FOUND } from "@/ee/compliance/resto
 
 type Params = { params: Promise<{ id: string }> };
 
-/** Never needs a license. */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "compliance:write");

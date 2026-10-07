@@ -8,7 +8,7 @@
  *
  * A change that would leave no active administrator, or no break-glass
  * administrator while SSO is enforced, is refused for that user and recorded;
- * the SCIM request that caused it still succeeds. Never checks the license.
+ * the SCIM request that caused it still succeeds.
  */
 import { and, eq, isNull } from "drizzle-orm";
 import { groups, scimGroupMembers, scimGroups, scimRoleMappings, scimUsers, users } from "@/src/lib/db/schema";

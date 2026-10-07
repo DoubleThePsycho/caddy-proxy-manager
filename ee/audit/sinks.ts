@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Audit streaming sinks: validation, storage and the administrator actions on
- * them. Creating, changing, enabling and testing a sink needs the
- * audit_streaming feature. Listing, disabling and deleting sinks do not, so an
- * install whose license lapsed can always wind streaming down; delivery to
- * sinks that are already set up (worker.ts) never checks the license.
+ * them. Delivery to enabled sinks runs in worker.ts.
  *
  * Sinks are master-only configuration and deliberately not part of instance
  * sync: each node streams its own audit log.
@@ -17,7 +14,6 @@ import { auditSinks } from "@/src/lib/db/schema";
 import { decryptSecret, encryptSecret } from "@/src/lib/secret";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import { countAuditEventsAfter, firstAuditEventAfter, latestAuditEventId } from "./records";
 import {
   DeliveryError,
@@ -351,7 +347,6 @@ function describeTarget(type: AuditSinkType, config: AuditSinkConfig): string {
 // ── Administrator actions ────────────────────────────────────────────
 
 export async function createAuditSink(body: unknown, actorUserId: number): Promise<AuditSinkView> {
-  await requireFeature("audit_streaming");
   const input = parseSinkCreate(body);
   const now = nowIso();
   // New sinks start after the newest event unless a backfill was asked for.
@@ -380,23 +375,8 @@ export async function createAuditSink(body: unknown, actorUserId: number): Promi
   return toView(row);
 }
 
-/**
- * Whether an update only turns the sink off: `enabled: false` and nothing else
- * (fields repeating their stored value are allowed). It needs no license.
- */
-export function isDisableOnlyUpdate(body: unknown, existing: AuditSinkRow): boolean {
-  if (!isRecord(body) || body.enabled !== false) return false;
-  return Object.entries(body).every(([key, value]) => {
-    if (key === "enabled") return true;
-    if (key === "type") return value === existing.type;
-    if (key === "name") return typeof value === "string" && value.trim() === existing.name;
-    return false;
-  });
-}
-
 export async function updateAuditSink(id: number, body: unknown, actorUserId: number): Promise<AuditSinkView> {
   const existing = await requireSinkRow(id);
-  if (!isDisableOnlyUpdate(body, existing)) await requireFeature("audit_streaming");
   const input = parseSinkUpdate(body, existing);
   const type = existing.type as AuditSinkType;
   const configChanged = JSON.stringify(input.config) !== existing.config || input.secret !== undefined;
@@ -430,7 +410,6 @@ export async function updateAuditSink(id: number, body: unknown, actorUserId: nu
   return toView(row);
 }
 
-/** Needs no license: removing a sink only winds the feature down. */
 export async function deleteAuditSink(id: number, actorUserId: number): Promise<void> {
   const existing = await requireSinkRow(id);
   await appDb.delete(auditSinks).where(eq(auditSinks.id, id));
@@ -446,7 +425,6 @@ export async function deleteAuditSink(id: number, actorUserId: number): Promise<
 
 /** Sends one synthetic event; leaves the delivery cursor and status alone. */
 export async function testAuditSink(id: number, actorUserId: number): Promise<AuditSinkTestResult> {
-  await requireFeature("audit_streaming");
   const existing = await requireSinkRow(id);
   const started = Date.now();
   let error: string | null = null;

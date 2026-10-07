@@ -14,12 +14,8 @@
  * Saved analytics questions (ee/ai/questions) can be part of a schedule:
  * they are copied into it (question and validated query), and each run adds
  * a "Traffic questions" report that re-runs them for the period. Adding them
- * follows the compliance permissions and license; the copies stay when the
- * saved question or its owner is deleted.
- *
- * Licensing: creating a schedule, changing or enabling one and running one
- * by hand need "compliance_reports"; disabling and deleting never do, and
- * schedules that were set up keep running whatever the license state.
+ * follows the compliance permissions; the copies stay when the saved
+ * question or its owner is deleted.
  */
 import { randomUUID } from "node:crypto";
 import { and, eq, isNotNull, lte } from "drizzle-orm";
@@ -28,8 +24,6 @@ import { complianceReports, complianceReportSchedules, users } from "@/src/lib/d
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
 import { config } from "@/src/lib/config";
-import { requireFeature } from "@/ee/licensing/store";
-import { isWindDownOnly } from "@/ee/alerting/gate";
 import { getChannelTypes } from "@/ee/alerting/channels";
 import { sendNotice, type Notice, type NoticeDelivery, type NoticeDependencies } from "@/ee/alerting/notice";
 import { nextRunAfter, parseTimeZone, resolveWallTime, wallTime } from "@/ee/backups/schedule";
@@ -40,7 +34,6 @@ import { buildReportDocument, listReports, storeReportDocument, type ReportDepen
 import { describeSavedQuery, savedQuestionsVisibleTo } from "@/ee/ai/questions/saved";
 import { parseQuestionQuery } from "@/ee/ai/questions/schema";
 import {
-  FEATURE,
   REPORT_TYPE_LABELS,
   REPORT_TYPES,
   SELECTABLE_REPORT_TYPES,
@@ -369,9 +362,7 @@ function auditData(values: ScheduleValues) {
 
 // ── Changes ───────────────────────────────────────────────────────────
 
-/** Needs the compliance_reports feature. */
 export async function createReportSchedule(body: unknown, actorUserId: number, now: Date = new Date()): Promise<ReportScheduleView> {
-  await requireFeature(FEATURE);
   const record = requireRecord(body);
   rejectUnknownKeys(record, FIELDS, "the report schedule");
   const scheduleCount = async () => (await appDb.select({ id: complianceReportSchedules.id }).from(complianceReportSchedules)).length;
@@ -397,12 +388,11 @@ export async function createReportSchedule(body: unknown, actorUserId: number, n
   return toView(row);
 }
 
-/** Disabling needs no license; any other change does. */
+/** Partial update; fields left out keep their values. */
 export async function updateReportSchedule(id: number, body: unknown, actorUserId: number, now: Date = new Date()): Promise<ReportScheduleView> {
   const existing = await requireRow(id);
   const record = requireRecord(body);
   rejectUnknownKeys(record, FIELDS, "the report schedule");
-  if (!isWindDownOnly(record, { enabled: false })) await requireFeature(FEATURE);
   const values = await readValues(record, existing, actorUserId);
   const timingChanged =
     values.enabled !== existing.enabled ||
@@ -427,7 +417,7 @@ export async function updateReportSchedule(id: number, body: unknown, actorUserI
   return toView(row);
 }
 
-/** Never needs a license. Reports it generated are kept. */
+/** Reports it generated are kept. */
 export async function deleteReportSchedule(id: number, actorUserId: number): Promise<void> {
   const existing = await requireRow(id);
   await appDb.delete(complianceReportSchedules).where(eq(complianceReportSchedules.id, id));
@@ -561,16 +551,15 @@ async function runSchedule(row: ScheduleRow, period: { from: Date; to: Date }, a
   return { packId, period: { from: period.from.toISOString(), to: period.to.toISOString() }, status, reports, failed, chain, deliveries };
 }
 
-/** Runs a schedule now, for the period its last due run covered. Needs the compliance_reports feature. */
+/** Runs a schedule now, for the period its last due run covered. */
 export async function runReportScheduleNow(id: number, actorUserId: number, deps: ScheduleRunDependencies = {}): Promise<ScheduleRunResult> {
   const row = await requireRow(id);
-  await requireFeature(FEATURE);
   const now = (deps.now ?? (() => new Date()))();
   // The period of a run made now: the week or month that has ended.
   return runSchedule(row, periodOfRun(timingOf(row), now), actorUserId, deps);
 }
 
-/** Runs every enabled schedule that is due. Never checks the license. */
+/** Runs every enabled schedule that is due. */
 export async function runDueReportSchedules(now: Date = new Date(), deps: ScheduleRunDependencies = {}): Promise<number> {
   const due = await appDb
     .select()

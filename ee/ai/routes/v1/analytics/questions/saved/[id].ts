@@ -17,7 +17,7 @@ export async function GET(request: NextRequest, { params }: Context) {
   }
 }
 
-/** The owner changes question, query or shared. Making it private needs no license. */
+/** The owner changes question, query or shared. */
 export async function PATCH(request: NextRequest, { params }: Context) {
   try {
     const { access } = await requireApiPermission(request, "analytics:read");
@@ -28,7 +28,7 @@ export async function PATCH(request: NextRequest, { params }: Context) {
   }
 }
 
-/** Never needs a license. Report schedules keep their copies. */
+/** The owner, or an administrator for a shared question. Report schedules keep their copies. */
 export async function DELETE(request: NextRequest, { params }: Context) {
   try {
     const { access } = await requireApiPermission(request, "analytics:read");

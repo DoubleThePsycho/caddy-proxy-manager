@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 import { listHeldPermissions, type Access } from "@/src/lib/permissions";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
 import { describePermissionCatalogue } from "@/ee/custom-roles/catalogue";
-import { FEATURE, type CustomRoleView } from "@/ee/custom-roles/store";
+import type { CustomRoleView } from "@/ee/custom-roles/store";
 import RolesTab from "./RolesTab";
 import { deleteRoleAction, saveRoleAction } from "./actions";
 
@@ -19,13 +18,11 @@ export function RolesTabSection({
   roles,
   users,
   canWrite,
-  licensed,
 }: {
   access: Access;
   roles: CustomRoleView[];
   users: RoleHolderUser[];
   canWrite: boolean;
-  licensed: boolean;
 }) {
   const holderName = (user: RoleHolderUser) => `${user.name || user.email}${user.status === "active" ? "" : " (disabled)"}`;
   return (
@@ -45,8 +42,6 @@ export function RolesTabSection({
         custom: Object.fromEntries(roles.map((role) => [role.id, users.filter((user) => user.customRoleId === role.id).map(holderName)])),
       }}
       canWrite={canWrite}
-      licensed={licensed}
-      editionLabel={EDITION_LABELS[FEATURE_INFO[FEATURE].edition]}
       saveRole={saveRoleAction}
       deleteRole={deleteRoleAction}
     />

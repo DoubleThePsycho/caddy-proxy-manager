@@ -15,8 +15,6 @@
  *   resolve notice.
  * - A new dismissal of the same alert, or a new mute of the same rule,
  *   replaces the previous one.
- * - Creating one needs the license that changing its rule needs (the
- *   Community carve-out applies); removing one never needs a license.
  * - Each evaluation run (engine.ts) prunes the ones that ended: expired, or
  *   dismissed until a subject resolves that no longer fires (the engine also
  *   removes those when it records the resolve). Deleting a rule deletes its
@@ -29,11 +27,8 @@ import { isRowId } from "@/src/lib/row-ids";
 import { alertRules, alertRuleStates, alertSilences, users } from "@/src/lib/db/schema";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiConflictError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
-import { existingChannelTypes } from "./channels";
-import { requireRuleLicense } from "./gate";
 import { MAX_SILENCE_MINUTES, MAX_SILENCE_NOTE_LENGTH, isRuleType, type AlertSilenceView } from "./types";
-import { parseChannelIds, rejectUnknownKeys, requireObject } from "./validation";
+import { rejectUnknownKeys, requireObject } from "./validation";
 
 type SilenceRow = typeof alertSilences.$inferSelect;
 
@@ -277,10 +272,8 @@ export async function createAlertSilence(body: unknown, actorUserId: number, now
   rejectUnknownKeys(record, SILENCE_FIELDS, "the request");
   const ruleId = readRuleId(record.ruleId);
   const [rule] = await appDb.select().from(alertRules).where(eq(alertRules.id, ruleId));
-  if (!rule) throw new ApiValidationError(`Alert rule ${ruleId} does not exist`);
-  // The same check as changing the rule (Community certificate rules that notify e-mail need no license).
-  if (isRuleType(rule.type)) await requireRuleLicense(rule.type, await existingChannelTypes(parseChannelIds(rule.channelIds)));
-  else await requireFeature("alerting");
+  // A rule of a type that no longer exists is treated like a missing one.
+  if (!rule || !isRuleType(rule.type)) throw new ApiValidationError(`Alert rule ${ruleId} does not exist`);
 
   const subjectKey = readSubjectKey(record.subjectKey);
   const until = readEnd(record, now);
@@ -322,7 +315,7 @@ export async function createAlertSilence(body: unknown, actorUserId: number, now
   return view;
 }
 
-/** Ends a dismissal or mute. Winding down: never needs a license. */
+/** Ends a dismissal or mute. */
 export async function deleteAlertSilence(id: number, actorUserId: number): Promise<void> {
   const [row] = await appDb
     .select({ silence: alertSilences, ruleName: alertRules.name, title: alertRuleStates.title })

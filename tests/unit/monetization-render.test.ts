@@ -1,8 +1,8 @@
 /**
  * Server-side render of the API monetization page tabs and the consumer
- * portal: the overview from the ledger, the license notice, amounts in the
- * install's currency, the Stripe webhook instructions without secrets, and
- * the portal's top-up buttons.
+ * portal: the overview from the ledger, amounts in the install's currency,
+ * the Stripe webhook instructions without secrets, and the portal's top-up
+ * buttons.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -81,7 +81,6 @@ const X402_SETTINGS: X402SettingsView = {
 
 function render(
   tab: MonetizationTab,
-  configurable = true,
   canManageReplicas = true,
   x402: Partial<X402SettingsView> = {},
   extra: Partial<Parameters<typeof MonetizationClient>[0]> = {}
@@ -102,7 +101,6 @@ function render(
         ],
         total: 2, page: 1, perPage: 50,
       },
-      configurable,
       canWrite: true,
       canManagePayments: true,
       standalone: true,
@@ -117,7 +115,6 @@ function render(
         }],
         total: 1, page: 1, perPage: 20,
       },
-      editionLabel: 'Enterprise',
       ...extra,
     })
   );
@@ -150,7 +147,7 @@ describe('API monetization page', () => {
     const html = render('plans');
     expect(html).toContain('Standard');
     expect(html).toContain('€0.0005');
-    expect(html).not.toContain('needs a license with it');
+    expect(html).not.toMatch(/license/i);
   });
 
   it('shows consumers with balances, plans, this month’s usage and key use', () => {
@@ -185,7 +182,7 @@ describe('API monetization page', () => {
 
   it('pages consumers 25 at a time and offers to filter them', () => {
     const many = Array.from({ length: 30 }, (_, index) => ({ ...consumers[0], id: 100 + index, name: `Consumer ${String(index + 1).padStart(2, '0')}` }));
-    const html = render('consumers', true, true, {}, { consumers: many });
+    const html = render('consumers', true, {}, { consumers: many });
     expect(html).toContain('aria-label="Filter consumers"');
     expect(html).toContain('Consumer 25');
     expect(html).not.toContain('Consumer 26');
@@ -198,16 +195,18 @@ describe('API monetization page', () => {
       entries: [{ id: 51, consumerId: 7, consumerName: 'Acme', type: 'topup' as const, amountMicros: 10_000_000, balanceAfterMicros: 12_502_000, requests: 0, freeRequests: 0, reference: null, description: 'Page two', createdBy: null, createdAt: stamp, updatedAt: stamp }],
       total: 120, page: 2, perPage: 25,
     };
-    const html = render('ledger', true, true, {}, { ledger, ledgerFilter: { consumer: '7', type: 'topup' } });
+    const html = render('ledger', true, {}, { ledger, ledgerFilter: { consumer: '7', type: 'topup' } });
     expect(html).toContain('Page two');
     expect(text(html)).toMatch(/26 – 50 of 120 entries/);
     expect(html).toContain('href="/api-monetization?ledger=3"');
   });
 
-  it('explains the license and stays read-only without one', () => {
-    const html = render('plans', false);
-    expect(html).toContain('needs a license with it (Enterprise edition)');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*title="Needs a license with API monetization"/);
+  it('offers adding plans and consumers to writers', () => {
+    const html = render('plans');
+    const buttons = html.match(/<button[^>]*>(?:(?!<\/button>).)*<\/button>/g) ?? [];
+    const adding = buttons.filter((button) => /Add (plan|consumer)/.test(button));
+    expect(adding).toHaveLength(2);
+    for (const button of adding) expect(button).not.toContain('disabled=""');
   });
 });
 
@@ -274,19 +273,19 @@ describe('phase 2 views', () => {
   });
 
   it('says what to do when Stripe has not enabled Stablecoins and Crypto', () => {
-    const html = render('x402', true, true, { notEnabledAt: stamp, notEnabledMessage: 'Outside the US, the account owner must email machine-payments@stripe.com with the Stripe account ID to request access.' });
+    const html = render('x402', true, { notEnabledAt: stamp, notEnabledMessage: 'Outside the US, the account owner must email machine-payments@stripe.com with the Stripe account ID to request access.' });
     expect(html).toContain('Stablecoins and Crypto is not enabled on your Stripe account.');
     expect(html).toContain('machine-payments@stripe.com');
   });
 
   it('says x402 needs a live Stripe key', () => {
-    const html = render('x402', true, true, { stripeMode: 'test', stripeReady: false, configured: false });
+    const html = render('x402', true, { stripeMode: 'test', stripeReady: false, configured: false });
     expect(html).toContain('it needs a live Stripe secret key');
     expect(html).toContain('x402 is not offered: the Stripe key is not the live key the deposit address was created with.');
   });
 
   it('asks for Stripe first when no Stripe key is set', () => {
-    const html = render('x402', true, true, { stripeConfigured: false, stripeMode: null, stripeReady: false, depositAddress: null, configured: false });
+    const html = render('x402', true, { stripeConfigured: false, stripeMode: null, stripeReady: false, depositAddress: null, configured: false });
     expect(html).toContain('Set up Stripe on the Stripe tab first');
     expect(html).toContain('Not created yet');
   });
@@ -307,7 +306,7 @@ describe('phase 2 views', () => {
   });
 
   it('asks for instances:write before replica serving can be changed', () => {
-    const html = render('settings', true, false);
+    const html = render('settings', false);
     expect(html).toContain('Changing this needs permission to manage instances (instances:write) as well.');
   });
 

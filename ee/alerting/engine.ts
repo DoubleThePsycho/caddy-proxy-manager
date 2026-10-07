@@ -21,8 +21,6 @@
  *   notified with the reason ("silenced") and sends nothing, so no resolve
  *   notice follows either. A dismissal until the subject resolves ends when
  *   it resolves. Each run first prunes the mutes and dismissals that ended.
- *
- * Runs regardless of the license: configured alerts keep working.
  */
 import { and, eq, isNull, lt, or } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

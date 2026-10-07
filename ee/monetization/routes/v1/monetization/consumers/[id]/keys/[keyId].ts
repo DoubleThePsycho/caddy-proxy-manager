@@ -6,7 +6,7 @@ import { CONSUMER_NOT_FOUND, KEY_NOT_FOUND, revokeConsumerKey } from "@/ee/monet
 
 type Params = { params: Promise<{ id: string; keyId: string }> };
 
-/** Revokes the key (it stops working at once). Never needs a license. */
+/** Revokes the key (it stops working at once). */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "monetization:write");

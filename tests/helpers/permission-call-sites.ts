@@ -5,10 +5,10 @@
  * tests/unit/permission-call-sites.test.ts compares the result with the
  * table in ee/docs/custom-roles.md.
  *
- * A route or page of a paid feature is a shim in app/ that re-exports its
+ * A route or page of an ee/ feature is a shim in app/ that re-exports its
  * implementation from ee/ (ee/boundary.ts): its guards are found in the ee/
  * module and listed under the app/ file, which names the URL. Guards in other
- * ee/ modules (server actions of paid pages) are listed under the ee/ file.
+ * ee/ modules (server actions of ee/ pages) are listed under the ee/ file.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';

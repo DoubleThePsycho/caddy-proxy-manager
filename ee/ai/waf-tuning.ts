@@ -11,8 +11,7 @@
  *
  * Applying one goes through the same per-host suppression as "Suppress for
  * host" on the WAF page, is audited and never happens automatically.
- * Dismissing one is remembered. Generating, applying and dismissing need the
- * ai_analyst feature; stored suggestions stay readable without it.
+ * Dismissing one is remembered.
  */
 import { createHash } from "node:crypto";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
@@ -25,7 +24,6 @@ import { findProxyHostForRequestHost, suppressWafRuleForHost } from "@/src/lib/w
 import { logAuditEvent } from "@/src/lib/audit";
 import { BRAND_NAME } from "@/src/lib/brand";
 import { ApiClientError, ApiConflictError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import { isPlainObject } from "@/ee/alerting/validation";
 import { buildDataBlock, requestModelText, type ModelPrompt } from "./explain";
 import { getAiProviderConfig, type ResolvedAiProvider } from "./settings";
@@ -152,7 +150,7 @@ function sortViews(views: WafTuningSuggestionView[]): WafTuningSuggestionView[] 
   );
 }
 
-/** The open suggestions from the last run. Read-only: no license needed. */
+/** The open suggestions from the last run. */
 export async function listOpenSuggestions(): Promise<WafTuningSuggestionView[]> {
   const rows = await appDb.select().from(wafTuningSuggestions).where(eq(wafTuningSuggestions.status, "open")).orderBy(asc(wafTuningSuggestions.id));
   return sortViews(rows.map(toView).filter((view): view is WafTuningSuggestionView => view !== null));
@@ -351,7 +349,7 @@ async function addExplanations(views: WafTuningSuggestionView[], deps: WafTuning
   return results.find((error) => error !== null) ?? null;
 }
 
-// ── Generation (ai_analyst) ────────────────────────────────────────────
+// ── Generation ─────────────────────────────────────────────────────────
 
 function isSuppressed(host: ProxyHost, ruleId: number, globalExcluded: readonly number[]): boolean {
   if ((host.waf?.excluded_rule_ids ?? []).includes(ruleId)) return true;
@@ -362,13 +360,12 @@ function isSuppressed(host: ProxyHost, ruleId: number, globalExcluded: readonly 
 /**
  * Finds likely false positives in the WAF events of the last 14 days (or the
  * ClickHouse retention, if shorter), replaces the open suggestions with them
- * and returns them, highest confidence first. Needs the ai_analyst feature.
+ * and returns them, highest confidence first.
  */
 export async function generateWafTuningSuggestions(
   options: { explain?: boolean; now?: Date } = {},
   overrides: Partial<WafTuningDependencies> = {}
 ): Promise<WafTuningResult> {
-  await requireFeature("ai_analyst");
   const deps = dependencies(overrides);
   const now = options.now ?? new Date();
   const windowDays = Math.max(1, Math.min(TUNING_WINDOW_DAYS, deps.retentionDays()));
@@ -523,7 +520,7 @@ export async function generateWafTuningSuggestions(
   return { analyticsEnabled: true, windowDays, generatedAt, suggestions, error: null, explanationError };
 }
 
-// ── Apply and dismiss (ai_analyst) ─────────────────────────────────────
+// ── Apply and dismiss ──────────────────────────────────────────────────
 
 async function getRow(id: string): Promise<Row> {
   if (typeof id !== "string" || !/^\d{1,9}-[0-9a-f]{12}$/.test(id)) throw new ApiClientError("Suggestion not found", 404);
@@ -547,10 +544,9 @@ export type ApplySuggestionResult = {
 
 /**
  * Suppresses the suggestion's rule for its proxy host, through the same code
- * as "Suppress for host" on the WAF page. Needs the ai_analyst feature.
+ * as "Suppress for host" on the WAF page.
  */
 export async function applyWafTuningSuggestion(id: string, actorUserId: number): Promise<ApplySuggestionResult> {
-  await requireFeature("ai_analyst");
   const row = await getRow(id);
   if (row.status === "applied") throw new ApiConflictError("This suggestion was already applied");
   if (row.status === "dismissed") throw new ApiConflictError("This suggestion was dismissed");
@@ -594,9 +590,8 @@ export async function applyWafTuningSuggestion(id: string, actorUserId: number):
   return { suggestion: view, proxyHost, warning };
 }
 
-/** Marks the suggestion dismissed so it is not proposed again. Needs the ai_analyst feature. */
+/** Marks the suggestion dismissed so it is not proposed again. */
 export async function dismissWafTuningSuggestion(id: string, actorUserId: number): Promise<WafTuningSuggestionView> {
-  await requireFeature("ai_analyst");
   const row = await getRow(id);
   if (row.status === "applied") throw new ApiConflictError("This suggestion was already applied");
   if (row.status === "dismissed") return viewOf(row);

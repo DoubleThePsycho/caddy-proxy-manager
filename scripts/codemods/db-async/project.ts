@@ -54,7 +54,7 @@ const R3_FILES =
  * be split between reviewers: R1 models; R2 identity and sign-in; R3 configuration, sync and jobs;
  * R4 SCIM and access reviews; R5 roles, SSO, approvals, white-label;
  * R6 monetization, high availability, fleet; R7 compliance,
- * history, audit, backups, AI, SAML, LDAP, licensing;
+ * history, audit, backups, AI, SAML, LDAP;
  * app / src-other / ee-other / tests for the rest.
  */
 export function areaOf(rel: string): string {
@@ -65,7 +65,7 @@ export function areaOf(rel: string): string {
   if (/^ee\/(scim|access-reviews)\//.test(rel)) return "R4";
   if (/^ee\/(custom-roles|sso|approvals|white-label)\//.test(rel)) return "R5";
   if (/^ee\/(monetization|high-availability|fleet)\//.test(rel)) return "R6";
-  if (/^ee\/(compliance|config-history|audit|backups|ai|saml|ldap|licensing)\//.test(rel)) return "R7";
+  if (/^ee\/(compliance|config-history|audit|backups|ai|saml|ldap)\//.test(rel)) return "R7";
   if (rel.startsWith("app/")) return "app";
   if (rel.startsWith("src/")) return "src-other";
   if (rel.startsWith("ee/")) return "ee-other";

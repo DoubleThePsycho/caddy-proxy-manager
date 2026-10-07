@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useFormat } from "@/components/preferences/PreferencesProvider";
 import type { RestoreOutcome, RestoreSource, RestoreTestView } from "../restore-tests";
 import { RESTORE_OUTCOME_LABELS, RESTORE_OUTCOME_TONE, RESTORE_SOURCE_LABELS } from "./format";
-import { callApi, Field, fromLocalInput, LOCKED_HINT, toLocalInput } from "./shared";
+import { callApi, Field, fromLocalInput, toLocalInput } from "./shared";
 
 const SOURCES: RestoreSource[] = ["backup", "snapshot", "export", "other"];
 const OUTCOMES: RestoreOutcome[] = ["success", "partial", "failed"];
@@ -36,13 +36,11 @@ export default function RestoreTests({
   initial,
   destinations,
   canWrite,
-  configurable,
 }: {
   /** A page of the test restores, newest first (?restorePage=). */
   initial: { tests: RestoreTestView[]; total: number; page: number; perPage: number };
   destinations: { id: number; name: string }[];
   canWrite: boolean;
-  configurable: boolean;
 }) {
   const router = useRouter();
   const format = useFormat();
@@ -108,7 +106,7 @@ export default function RestoreTests({
       }
       actions={
         canWrite && (
-          <Button variant="secondary" size="sm" onClick={openForm} disabled={!configurable} title={configurable ? undefined : LOCKED_HINT}>
+          <Button variant="secondary" size="sm" onClick={openForm}>
             <Plus />
             Record a test restore
           </Button>

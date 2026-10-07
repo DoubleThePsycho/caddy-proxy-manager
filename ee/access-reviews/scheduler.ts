@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Starts due access review campaigns every few minutes. Started from
- * src/instrumentation.ts (never in tests). Scheduled reviews never check the
- * license: a schedule that was set up keeps starting campaigns after the
- * license lapses.
+ * src/instrumentation.ts (never in tests).
  */
 import { runDueSchedules } from "./schedules";
 import { onShutdown } from "@/src/lib/shutdown";

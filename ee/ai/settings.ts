@@ -8,8 +8,6 @@ import { clearSetting, getSetting, setSetting } from "@/src/lib/settings";
 import { decryptSecret, encryptSecret } from "@/src/lib/secret";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
-import { isWindDownOnly } from "@/ee/alerting/gate";
 import {
   isPlainObject,
   readBoolean,
@@ -112,7 +110,7 @@ function readModel(value: unknown): string {
   return model;
 }
 
-/** Removes the provider and its key. Winding down: never needs a license. */
+/** Removes the provider and its key. */
 export async function clearAiSettings(actorUserId: number): Promise<AiSettingsView> {
   const previous = await readStored();
   await clearSetting(AI_SETTINGS_KEY);
@@ -129,9 +127,8 @@ export async function clearAiSettings(actorUserId: number): Promise<AiSettingsVi
 }
 
 /**
- * Validates and stores the provider settings. Needs the ai_analyst feature,
- * except to wind down: {"provider": null} removes the provider, and
- * {"enabled": false} and/or {"apiKey": null} switch it off.
+ * Validates and stores the provider settings. {"provider": null} removes the
+ * provider; {"enabled": false} and/or {"apiKey": null} switch it off.
  */
 export async function saveAiSettings(body: unknown, actorUserId: number): Promise<AiSettingsView> {
   const record = requireObject(body, "Request body");
@@ -139,10 +136,11 @@ export async function saveAiSettings(body: unknown, actorUserId: number): Promis
     rejectUnknownKeys(record, ["provider"], "a request that removes the AI provider");
     return clearAiSettings(actorUserId);
   }
-  if (!isWindDownOnly(record, { enabled: false, apiKey: null })) await requireFeature("ai_analyst");
   rejectUnknownKeys(record, ["enabled", "provider", "model", "apiKey", "baseUrl", "timeoutSeconds"], "the AI settings");
   const previous = await readStored();
-  if (!previous && isWindDownOnly(record, { enabled: false, apiKey: null })) return toView(null);
+  // Switching off a provider that was never set up changes nothing.
+  const onlyOff = Object.keys(record).length > 0 && Object.entries(record).every(([key, value]) => (key === "enabled" && value === false) || (key === "apiKey" && value === null));
+  if (!previous && onlyOff) return toView(null);
 
   const provider = record.provider !== undefined ? record.provider : previous?.provider;
   if (!isProvider(provider)) throw new ApiValidationError(`provider must be one of: ${AI_PROVIDERS.join(", ")}`);
@@ -200,7 +198,7 @@ export async function saveAiSettings(body: unknown, actorUserId: number): Promis
   return toView(next);
 }
 
-/** The provider to call, or null when none is enabled and complete. Never checks the license. */
+/** The provider to call, or null when none is enabled and complete. */
 export async function getAiProviderConfig(): Promise<ResolvedAiProvider | null> {
   const settings = await readStored();
   if (!settings?.enabled || !isComplete(settings)) return null;

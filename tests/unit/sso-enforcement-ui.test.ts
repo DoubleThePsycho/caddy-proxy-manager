@@ -67,7 +67,6 @@ function view(overrides: Partial<SsoEnforcementView> = {}): SsoEnforcementView {
     breakGlassAccounts: [],
     ssoProviders: [{ id: 'corp', name: 'Corp SSO', kind: 'oidc' }],
     warnings: [],
-    configurable: true,
     ...overrides,
   };
 }

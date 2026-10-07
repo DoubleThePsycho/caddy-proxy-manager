@@ -8,7 +8,7 @@ A fresh install shows a checklist of five steps on the overview, in place of the
 | Add your first proxy host | A proxy host exists. |
 | Turn on analytics | ClickHouse analytics is configured (`CLICKHOUSE_PASSWORD`). |
 | Invite a teammate | There are at least two users. |
-| Set up single sign-on | An enabled OAuth/OIDC provider, SAML provider or LDAP directory exists. OpenID Connect is included in every edition; SAML providers and LDAP directories come with the paid editions. |
+| Set up single sign-on | An enabled OAuth/OIDC provider, SAML provider or LDAP directory exists. |
 
 The checklist is complete when every step is done. **Hide the checklist** hides it; the REST API below shows it again. Either way the overview then shows traffic, hosts and recent changes.
 

@@ -1,6 +1,6 @@
 # LDAP / Active Directory sign-in
 
-Feature id `ldap`, Enterprise edition. Source: `ee/ldap/`.
+Source: `ee/ldap/` (Elastic License 2.0).
 
 People sign in to the dashboard with their LDAP or Active Directory account. Directory groups can decide their role. One installation can have several directories.
 
@@ -225,7 +225,6 @@ Every 5 minutes each **enabled** directory is checked the way **Test the connect
 - **Where it shows:** the LDAP directories page has a Health column, and **Sign-in and directories** shows a failing directory with when it started failing, the failed checks in a row and the last error, with **Test the connection** next to it (`documentation/sign-in-and-directories.md`).
 - **The overview** lists a failing directory under "Needs attention" (`getIdentityHealth()` in `src/lib/identity-health.ts`); after 3 failed checks in a row it is shown as critical.
 - **Audit:** only changes of state are recorded, `ldap_directory_unavailable` when a directory starts failing and `ldap_directory_recovered` when it works again, with no user.
-- **Licensing:** the checks never look at the license, like sign-in.
 - Disabled directories are not checked.
 
 ## Deleting a directory
@@ -233,13 +232,6 @@ Every 5 minutes each **enabled** directory is checked the way **Test the connect
 - **Account links** of the directory are deleted with it, in the same transaction.
 - **Users are kept.** Those without a local password or another sign-in method can no longer sign in until an administrator gives them one or deletes them.
 - **Existing sessions** stay valid until they expire. Disabling a directory has the same effect on sign-in, and keeps the links.
-
-## Licensing
-
-- **The license gates changes only.** Creating a directory, enabling one, and changing a directory's settings need an active (or in-grace) Enterprise license, through both the API and the dashboard.
-- **Never gated:** disabling and deleting a directory, reading directories, and the two tests.
-- **Sign-in never checks the license.** Enabled directories keep working with an expired, removed or invalid key.
-- **Without a license** the LDAP directories page shows the directories read-only, with **disable**, **delete** and the tests still available.
 
 ## Multiple instances
 

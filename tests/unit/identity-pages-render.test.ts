@@ -69,7 +69,7 @@ function usersTab(overrides: Partial<Parameters<typeof UsersTab>[0]> = {}) {
     mfaPolicy: { scope: 'admins', graceDays: 7, deadline: '2026-10-01T00:00:00.000Z', required: 2, enrolled: 1 },
     canWrite: true,
     canWriteMfaPolicy: true,
-    roleOptions: { customRoles: [], canAssignAdmin: true, customRolesLicensed: true },
+    roleOptions: { customRoles: [], canAssignAdmin: true },
     totalPermissions: 68,
     ...overrides,
   }));
@@ -169,7 +169,7 @@ function overview(): SignInOverview {
   return {
     generatedAt: stamp,
     enforcement: {
-      enabled: true, configurable: true, warnings: [], changedAt: stamp, changedBy: 'admin', refusedLastWeek: 3,
+      enabled: true, warnings: [], changedAt: stamp, changedBy: 'admin', refusedLastWeek: 3,
       breakGlass: [{ id: 2, username: 'breakglass', name: 'Break glass', email: 'ops@example.com', role: 'admin', status: 'active', passwordSignIn: true, validAdmin: true, authenticatorApp: true, passkeys: 1, lastSignInAt: stamp, lastSignInMethod: 'password' }],
     },
     loginPage: [

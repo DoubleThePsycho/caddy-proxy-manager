@@ -8,10 +8,10 @@
  *    hosts the asker's role reaches;
  *  - what reaches the provider: the question and schema, then aggregates
  *    only, with client addresses as placeholders by default;
- *  - license, settings and provider gates, rate limits, the audit trail,
+ *  - settings and provider gates, rate limits, the audit trail,
  *    saved questions and the OpenAPI document.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { eq } from 'drizzle-orm';
 import type { TestDb } from '../helpers/db';
@@ -85,8 +85,7 @@ import * as schema from '../../src/lib/db/schema';
 import { adminAccess } from '../../src/lib/permissions';
 import { logAuditEvent } from '../../src/lib/audit';
 import { deleteUser } from '../../src/lib/models/user';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
-import { installLicense, licenseSigner, setSettingRow } from '../helpers/config-fixture';
+import { setSettingRow } from '../helpers/config-fixture';
 import { resetQuestionRateLimits } from '../../ee/ai/questions/ask';
 import { POST as ask } from '../../app/api/v1/analytics/questions/route';
 import { GET as listSaved, POST as createSaved } from '../../app/api/v1/analytics/questions/saved/route';
@@ -94,7 +93,6 @@ import { DELETE as deleteSaved, GET as getSaved, PATCH as patchSaved } from '../
 import { POST as runSaved } from '../../app/api/v1/analytics/questions/saved/[id]/run/route';
 import { GET as getSettings, PUT as putSettings } from '../../app/api/v1/ai/question-settings/route';
 import { GET as getOpenApi } from '../../app/api/v1/openapi.json/route';
-import { first as dbFirst } from '@/src/lib/db/ops';
 
 const PROVIDER = { enabled: true, provider: 'openai_compatible', model: 'llama3.1', baseUrl: 'http://ollama.example.test:11434/v1' };
 
@@ -135,7 +133,6 @@ function auditCalls(action: string) {
 }
 
 beforeEach(async () => {
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
   ctx.access = adminAccess(1);
   ctx.enabled = true;
   ctx.seen = ['shop.example.com', 'shop.example.com:443', 'admin.example.org', 'api.example.org'];
@@ -170,11 +167,8 @@ beforeEach(async () => {
   await host({ id: 1, domains: ['shop.example.com'], tags: ['shop'] });
   await host({ id: 2, domains: ['admin.example.org'], tags: ['shop', 'internal'] });
   await host({ id: 3, domains: ['api.example.org'], tags: ['api'] });
-  await installLicense(ctx.db, 'homelab');
   await setSettingRow(ctx.db, 'ai_provider', PROVIDER);
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('asking', () => {
   it('turns the question into a validated query, runs it with bound parameters and audits it', async () => {
@@ -370,24 +364,6 @@ describe('what reaches the provider', () => {
 });
 
 describe('gates', () => {
-  it('needs the AI analyst license to ask and save, never to list or delete', async () => {
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-    const asked = await askQ('Which countries were blocked most?');
-    expect(asked.status).toBe(403);
-    expect(asked.body.error).toMatch(/AI analyst needs an active .* license/);
-    expect(ctx.modelCalls).toHaveLength(0);
-    const saved = await createSaved(req('/api/v1/analytics/questions/saved', { method: 'POST', body: { question: 'Blocked?', query: query() } }));
-    expect(saved.status).toBe(403);
-
-    const now = new Date().toISOString();
-    const row = (await dbFirst(ctx.db.insert(schema.analyticsQuestions).values({ userId: 1, question: 'Blocked?', query: JSON.stringify(query()), createdAt: now, updatedAt: now }).returning()))!;
-    expect((await listSaved(req('/api/v1/analytics/questions/saved'))).status).toBe(200);
-    expect((await patchSaved(req('/x', { method: 'PATCH', body: { shared: false } }), id(row.id))).status).toBe(200);
-    expect((await patchSaved(req('/x', { method: 'PATCH', body: { shared: true } }), id(row.id))).status).toBe(403);
-    expect((await runSaved(req('/x', { method: 'POST' }), id(row.id))).status).toBe(403);
-    expect((await deleteSaved(req('/x', { method: 'DELETE' }), id(row.id))).status).toBe(204);
-  });
-
   it('needs a provider and questions turned on', async () => {
     await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'ai_provider'));
     const none = await askQ('Which countries were blocked most?');
@@ -410,11 +386,9 @@ describe('gates', () => {
     expect(ctx.modelCalls).toHaveLength(0);
   });
 
-  it('changes the settings with ai:write; turning things off needs no license', async () => {
+  it('changes the settings with ai:write', async () => {
     expect(await (await getSettings(req('/api/v1/ai/question-settings'))).json()).toEqual({ enabled: true, aiSummaries: true, shareRequestDetails: false });
     expect((await putSettings(req('/x', { method: 'PUT', body: { shareRequestDetails: true } }))).status).toBe(200);
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-    expect((await putSettings(req('/x', { method: 'PUT', body: { shareRequestDetails: true, enabled: true } }))).status).toBe(403);
     const off = await putSettings(req('/x', { method: 'PUT', body: { shareRequestDetails: false, enabled: false } }));
     expect(off.status).toBe(200);
     expect(await off.json()).toEqual({ enabled: false, aiSummaries: true, shareRequestDetails: false });
@@ -492,9 +466,8 @@ describe('saved questions', () => {
     expect(ctx.modelCalls[0].prompt.system).toMatch(/You summarise/);
     expect(auditCalls('analytics_question_asked')[0].data).toMatchObject({ savedQuestionId: created.body.id });
 
-    // An administrator may delete a shared question; deleting needs no license.
+    // An administrator may delete a shared question.
     ctx.access = adminAccess(2);
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
     expect((await deleteSaved(req('/x', { method: 'DELETE' }), id(created.body.id))).status).toBe(204);
   });
 

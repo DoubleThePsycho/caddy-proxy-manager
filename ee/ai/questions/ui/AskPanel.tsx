@@ -7,8 +7,8 @@
  * POST /api/v1/analytics/questions, the answer shows under it, and it can be
  * saved (/api/v1/analytics/questions/saved) to run again with fresh data or
  * to add to a compliance report schedule. The API decides what is allowed;
- * without a license, an AI provider or with questions turned off, the box
- * explains why it is read-only.
+ * without an AI provider or with questions turned off, the box explains why
+ * it is read-only.
  */
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
@@ -70,16 +70,6 @@ export type AskPanelProps = {
 function Unavailable({ availability, canOpenAiSettings }: Pick<AskPanelProps, "availability" | "canOpenAiSettings">) {
   if (!availability.analyticsEnabled) {
     return <Banner tone="info" title="Traffic analytics is off." />;
-  }
-  if (!availability.licensed) {
-    return (
-      <Banner tone="info" title="Read-only without a license.">
-        Asking needs a license that includes the AI analyst.{" "}
-        <Link href="/license" className="text-brand underline-offset-4 hover:underline">
-          Licensing
-        </Link>
-      </Banner>
-    );
   }
   if (!availability.enabled) {
     return <Banner tone="info" title="Questions are turned off.">An administrator turned them off in the AI settings (Alerts → AI).</Banner>;
@@ -170,7 +160,7 @@ function SavedList({
 }
 
 export function AskPanel({ availability, isAdmin, canOpenAiSettings, variant = "card", onSavedChange }: AskPanelProps) {
-  const ready = availability.analyticsEnabled && availability.licensed && availability.enabled && availability.providerConfigured;
+  const ready = availability.analyticsEnabled && availability.enabled && availability.providerConfigured;
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState<QuestionAnswer | null>(null);

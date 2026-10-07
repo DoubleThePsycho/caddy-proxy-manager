@@ -9,15 +9,12 @@ const TAG = "Fleet";
 export const FLEET_OPENAPI_TAG = {
   name: TAG,
   description:
-    "Fleet management (Enterprise edition): environments of slave instances in promotion order, revisions that promotion-only " +
-    "environments are pinned to, promotions with canary rollout, rollbacks, and drift detection. Master mode. Creating and " +
-    "changing environments, assigning instances and starting promotions or rollbacks need the fleet feature; deleting " +
-    "environments, turning promotion-only off, taking instances out, aborting rollouts, re-syncing and drift checks never do, " +
-    "and running rollouts and syncs never check the license. Permissions: fleet:read, fleet:write (environments, assignments, " +
+    "Fleet management: environments of slave instances in promotion order, revisions that promotion-only " +
+    "environments are pinned to, promotions with canary rollout, rollbacks, and drift detection. Master mode. " +
+    "Permissions: fleet:read, fleet:write (environments, assignments, " +
     "drift checks), fleet:promote (promotions, rollbacks, aborts, re-syncs) and fleet:replicas (pull replicas and their " +
     "credentials; administrator-level). Releasing instances from a promotion-only environment also needs fleet:promote. Pull " +
-    "replicas poll POST /api/instances/pull with their own credential (not part of this API); adding one and rotating its " +
-    "credential need the fleet feature, revoking and deleting never do.",
+    "replicas poll POST /api/instances/pull with their own credential (not part of this API).",
 };
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
@@ -56,7 +53,7 @@ export const FLEET_OPENAPI_PATHS = {
     post: {
       tags: [TAG],
       summary: "Create an environment",
-      description: "Permission fleet:write; needs the fleet feature. 409 for a duplicate name.",
+      description: "Permission fleet:write. 409 for a duplicate name.",
       operationId: "createFleetEnvironment",
       requestBody: { required: true, content: json(ref("FleetEnvironmentInput")) },
       responses: { "201": { description: "Created", content: json(ref("FleetEnvironment")) }, ...errors("400", "401", "403", "409") },
@@ -74,8 +71,8 @@ export const FLEET_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Update an environment",
       description:
-        "Permission fleet:write. Fields left out keep their values. Needs the fleet feature unless the body is exactly " +
-        '{"promotionOnly": false}. Turning promotion-only off drops the pinned revision and, when the environment has ' +
+        "Permission fleet:write. Fields left out keep their values. " +
+        "Turning promotion-only off drops the pinned revision and, when the environment has " +
         "instances, also needs fleet:promote (403 otherwise): they then receive every change, from the next change or sync on. " +
         "409 while a rollout runs in the environment.",
       operationId: "updateFleetEnvironment",
@@ -87,7 +84,7 @@ export const FLEET_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Delete an environment",
       description:
-        "Permission fleet:write; never needs a license. Its instances lose their environment and its rollouts are deleted. " +
+        "Permission fleet:write. Its instances lose their environment and its rollouts are deleted. " +
         "Deleting a promotion-only environment with instances also needs fleet:promote. 409 while a rollout runs there.",
       operationId: "deleteFleetEnvironment",
       parameters: [idParam],
@@ -108,7 +105,7 @@ export const FLEET_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Assign an instance to an environment",
       description:
-        "Permission fleet:write. Assigning needs the fleet feature; {\"environmentId\": null} (taking it out) does not. Leaving a " +
+        "Permission fleet:write. {\"environmentId\": null} takes the instance out of its environment. Leaving a " +
         "promotion-only environment for none or for one that receives every change also needs fleet:promote. Nothing is pushed. " +
         "409 while a rollout runs in either environment.",
       operationId: "assignFleetInstance",
@@ -130,7 +127,7 @@ export const FLEET_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Re-sync an instance",
       description:
-        "Permission fleet:promote; never needs a license. Pushes what the instance should run: its promotion-only environment's " +
+        "Permission fleet:promote. Pushes what the instance should run: its promotion-only environment's " +
         "revision, or the master's configuration. The manual repair for a drifted instance. A pull replica is asked to take it " +
         "with its next poll (`pending: true`), even when it reports it runs it. 409 in slave or standalone mode, while " +
         "a rollout runs in its environment, or when that environment has no revision yet.",
@@ -151,7 +148,7 @@ export const FLEET_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Check drift now",
       description:
-        "Permission fleet:write; never needs a license. Asks every enabled instance which configuration it runs (GET " +
+        "Permission fleet:write. Asks every enabled instance which configuration it runs (GET " +
         "/api/instances/sync?status=1 on the slave; a pull replica's last report instead) and returns the instances afterwards.",
       operationId: "checkFleetDrift",
       responses: { "200": { description: "Instances", content: json({ type: "array", items: ref("FleetInstance") }) }, ...errors("401", "403") },
@@ -241,7 +238,7 @@ export const FLEET_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Start a promotion",
       description:
-        "Permission fleet:promote; needs the fleet feature and master mode. Promotes into a promotion-only environment what the " +
+        "Permission fleet:promote; needs master mode. Promotes into a promotion-only environment what the " +
         "environment before it runs (capturing the master's configuration as a revision when needed), with the environment's " +
         "canary settings unless `canary` overrides them (false: no canary). The rollout runs in the background; poll GET " +
         "/api/v1/fleet/rollouts/{id}. 409 while another rollout runs there or when everything already runs that revision.",
@@ -264,7 +261,7 @@ export const FLEET_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Abort a rollout",
       description:
-        "Permission fleet:promote; never needs a license. Instances already pushed keep the new revision; the others and the " +
+        "Permission fleet:promote. Instances already pushed keep the new revision; the others and the " +
         "environment stay where they are. 409 when the rollout is not running.",
       operationId: "abortFleetRollout",
       parameters: [idParam],
@@ -276,7 +273,7 @@ export const FLEET_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Roll back a rollout",
       description:
-        "Permission fleet:promote; needs the fleet feature. Promotes the revision the environment ran before the rollout, without " +
+        "Permission fleet:promote. Promotes the revision the environment ran before the rollout, without " +
         "a canary unless the body asks for one. Only for the latest rollout of an environment once it stopped.",
       operationId: "rollbackFleetRollout",
       parameters: [idParam],
@@ -299,7 +296,7 @@ export const FLEET_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Add a pull replica",
       description:
-        "Permission fleet:replicas (administrator-level); needs the fleet feature. Creates an instance that fetches its " +
+        "Permission fleet:replicas (administrator-level). Creates an instance that fetches its " +
         "configuration from this master, and its credential. The credential and the replica's environment variables are in " +
         "this reply only; the master keeps the credential's hash. `syncPublicKey` (the replica's sync public key, from its " +
         "own Instance Sync settings) pins its key at once; otherwise the first key it proves is pinned.",
@@ -319,7 +316,7 @@ export const FLEET_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Delete a pull replica",
-      description: "Permission fleet:replicas; never needs a license. Removes the instance with its credential, key pin and fleet records.",
+      description: "Permission fleet:replicas. Removes the instance with its credential, key pin and fleet records.",
       operationId: "deleteFleetPullReplica",
       parameters: [idParam],
       responses: { "204": { description: "Deleted" }, ...errors("401", "403", "404") },
@@ -330,7 +327,7 @@ export const FLEET_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Rotate a pull replica's credential",
       description:
-        "Permission fleet:replicas; needs the fleet feature. Issues a new credential (also after a revocation); the old one " +
+        "Permission fleet:replicas. Issues a new credential (also after a revocation); the old one " +
         "stops working at once. The key pin stays. The credential is in this reply only.",
       operationId: "rotateFleetPullCredential",
       parameters: [idParam],
@@ -340,7 +337,7 @@ export const FLEET_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Revoke a pull replica's credential",
       description:
-        "Permission fleet:replicas; never needs a license. The replica's polls are refused (401) until a new credential is " +
+        "Permission fleet:replicas. The replica's polls are refused (401) until a new credential is " +
         "issued; the replica, its key pin and its history stay.",
       operationId: "revokeFleetPullCredential",
       parameters: [idParam],

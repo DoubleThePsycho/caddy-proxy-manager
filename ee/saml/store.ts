@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Reading stored SAML providers, for sign-in and for the administration
- * code. Nothing here looks at the license: sign-in through a provider that
- * is already set up keeps working without one.
+ * code.
  */
 import { and, eq } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

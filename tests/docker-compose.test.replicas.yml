@@ -6,7 +6,7 @@
 # is web-b (ingressi-web-b, port 3010). Both run the same image with the
 # same SESSION_SECRET and BASE_URL, as behind a load balancer; each has its
 # own INGRESSI_NODE_ID. web-c (ingressi-web-c, port 3011) is a third node
-# with a new id, started by the license spec only (profile third-replica).
+# with a new id, started by the third-replica spec only (profile third-replica).
 #
 # Caddy sends forward-auth verify, sign-in callbacks and the API monetization
 # gate to both replicas (DASHBOARD_UPSTREAMS, src/lib/dashboard-upstreams.ts,
@@ -42,8 +42,6 @@ x-replica-environment: &replica-environment
   CLICKHOUSE_PASSWORD: "test-clickhouse-password-2026"
   CLICKHOUSE_DB: analytics
   CLICKHOUSE_RETENTION_DAYS: "30"
-  USAGE_PING_DISABLED: "true"
-  LICENSE_AUTO_UPDATE_DISABLED: "true"
   DASHBOARD_UPSTREAMS: "web:3000,web-b:3000"
 
 x-replica: &replica
@@ -73,8 +71,6 @@ services:
       AUTH_ALLOW_OAUTH_REGISTRATION: "false"
       AUTH_RATE_LIMIT_ENABLED: "true"
       AUTH_RATE_LIMIT_MAX: "10000"
-      USAGE_PING_DISABLED: "true"
-      LICENSE_AUTO_UPDATE_DISABLED: "true"
       DASHBOARD_UPSTREAMS: "web:3000,web-b:3000"
     # The specs stop and start the replicas; Docker must not bring one back.
     restart: "no"
@@ -102,9 +98,8 @@ services:
       retries: 40
       start_period: 10s
 
-  # A third node with an id the cluster has never seen. Without an Enterprise
-  # license it is refused while A and B run, so its health check is the
-  # liveness scope only.
+  # A third node with an id the cluster has never seen: it joins next to A and
+  # B. Its health check is the liveness scope only.
   web-c:
     <<: *replica
     container_name: ingressi-web-c

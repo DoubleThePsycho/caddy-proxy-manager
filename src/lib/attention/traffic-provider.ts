@@ -15,7 +15,6 @@
  * Times are in UTC, as everywhere in the REST API. The signals are cached
  * for 30 seconds, so the overview and its attention list share one set of
  * ClickHouse queries.
- * Never checks the license: analytics is part of the Community edition.
  */
 import { can, type Access } from "@/src/lib/permissions";
 import { allProxyHostDomains, visibleProxyHostDomains } from "@/src/lib/analytics/service";

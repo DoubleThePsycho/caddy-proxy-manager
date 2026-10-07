@@ -2,14 +2,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Pencil, Plus, RadioTower, Send, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AppDialog } from "@/components/ui/AppDialog";
-import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/input";
@@ -46,8 +44,6 @@ import {
 type Props = {
   sinks: AuditSinkView[];
   retention: AuditRetentionView;
-  /** Whether the license allows changing sinks and retention. */
-  licensed: boolean;
   /** When the page was built; lags are measured against it. */
   generatedAt: string;
 };
@@ -140,7 +136,7 @@ function SinkStatus({ sink }: { sink: AuditSinkView }) {
   return <StatusDot tone="ok" label="Delivering" />;
 }
 
-export default function StreamingClient({ sinks, retention, licensed, generatedAt }: Props) {
+export default function StreamingClient({ sinks, retention, generatedAt }: Props) {
   const router = useRouter();
   const { productName } = useBranding();
   const format = useFormat();
@@ -215,7 +211,8 @@ export default function StreamingClient({ sinks, retention, licensed, generatedA
     });
   }
 
-  function saveRetention(value: number = Number(days)) {
+  function saveRetention() {
+    const value = Number(days);
     startTransition(async () => {
       const result = await saveAuditRetentionAction(value);
       if ("error" in result) {
@@ -236,24 +233,12 @@ export default function StreamingClient({ sinks, retention, licensed, generatedA
         title="Audit streaming"
         description={`Send ${productName}'s audit log to a SIEM as it is written, and choose how long it is kept.`}
         actions={
-          licensed ? (
-            <Button onClick={openCreate}>
-              <Plus />
-              Add sink
-            </Button>
-          ) : undefined
+          <Button onClick={openCreate}>
+            <Plus />
+            Add sink
+          </Button>
         }
       />
-
-      {!licensed && (
-        <Banner tone="info">
-          Setting up, changing or enabling sinks and retention needs a Business license. You can still disable or delete sinks and
-          turn retention off.{" "}
-          <Link href="/license" className="text-brand underline underline-offset-4">
-            Manage the license
-          </Link>
-        </Banner>
-      )}
 
       <SectionCard title="Destinations" count={sinks.length}>
         {sinks.length === 0 ? (
@@ -262,12 +247,10 @@ export default function StreamingClient({ sinks, retention, licensed, generatedA
             title="No sinks yet"
             description="Add a webhook, syslog or Splunk HEC sink."
             action={
-              licensed ? (
-                <Button onClick={openCreate}>
-                  <Plus />
-                  Add sink
-                </Button>
-              ) : undefined
+              <Button onClick={openCreate}>
+                <Plus />
+                Add sink
+              </Button>
             }
           />
         ) : (
@@ -289,15 +272,15 @@ export default function StreamingClient({ sinks, retention, licensed, generatedA
                     <Switch
                       checked={sink.enabled}
                       onCheckedChange={(checked) => setEnabled(sink, checked)}
-                      disabled={pending || (!licensed && !sink.enabled)}
+                      disabled={pending}
                       aria-label={sink.enabled ? `Disable ${sink.name}` : `Enable ${sink.name}`}
                       title={sink.enabled ? "Disable" : "Enable"}
                       className="mr-1.5"
                     />
-                    <Button variant="outline" size="sm" onClick={() => test(sink)} disabled={!licensed || pending}>
+                    <Button variant="outline" size="sm" onClick={() => test(sink)} disabled={pending}>
                       <Send /> {testingId === sink.id ? "Sending…" : "Send test event"}
                     </Button>
-                    <Button variant="ghost" size="icon-sm" onClick={() => openEdit(sink)} disabled={!licensed} title="Edit sink" aria-label={`Edit ${sink.name}`}>
+                    <Button variant="ghost" size="icon-sm" onClick={() => openEdit(sink)} title="Edit sink" aria-label={`Edit ${sink.name}`}>
                       <Pencil />
                     </Button>
                     <Button
@@ -371,18 +354,12 @@ export default function StreamingClient({ sinks, retention, licensed, generatedA
                 max={36500}
                 value={days}
                 onChange={(e) => setDays(e.target.value)}
-                disabled={!licensed}
                 className="num w-40"
               />
             </div>
-            <Button onClick={() => saveRetention()} disabled={!licensed || pending || days.trim() === ""}>
+            <Button onClick={() => saveRetention()} disabled={pending || days.trim() === ""}>
               Save
             </Button>
-            {!licensed && retention.days > 0 && (
-              <Button variant="outline" onClick={() => saveRetention(0)} disabled={pending}>
-                Keep events forever
-              </Button>
-            )}
           </div>
           <p className="m-0 text-[13px] text-muted-foreground">
             {retention.lastRunAt ? (

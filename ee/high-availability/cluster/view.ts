@@ -4,14 +4,12 @@
  * GET /api/v1/high-availability/cluster and the High availability page:
  * the configuration from the environment (without secrets) and the status
  * the supervisor of this container last wrote. Only the leader serves the
- * dashboard and the API, so this is the leader's view; reading it never
- * needs a license. On PostgreSQL (where HA_ENABLED is refused) `postgres`
- * holds the replicas sharing the database instead (../replicas.ts).
+ * dashboard and the API, so this is the leader's view. On PostgreSQL (where
+ * HA_ENABLED is refused) `postgres` holds the replicas sharing the database
+ * instead (../replicas.ts).
  */
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { isPostgres } from "@/src/lib/db/dialect";
 import { getPostgresReplicasView } from "../replicas";
-import { HIGH_AVAILABILITY_FEATURE } from "../types";
 import { HA_STATUS_FILE_ENV, HaConfigError, isHaEnabled, parseHaConfig, toClusterConfigView, type HaConfig } from "./config";
 import { readStatusFile } from "./status";
 import type { ClusterView } from "./types";
@@ -20,10 +18,9 @@ import type { ClusterView } from "./types";
 const STALE_STATUS_MS = 60_000;
 
 export async function getClusterView(env: Record<string, string | undefined> = process.env, now = Date.now()): Promise<ClusterView> {
-  const configurable = await isFeatureConfigurable(HIGH_AVAILABILITY_FEATURE);
   if (!isHaEnabled(env)) {
     const postgres = isPostgres(env) ? await getPostgresReplicasView({ now: new Date(now) }) : null;
-    return { enabled: false, configurable, error: null, node: null, lease: null, replication: null, lastRestore: null, nodes: [], config: null, postgres };
+    return { enabled: false, error: null, node: null, lease: null, replication: null, lastRestore: null, nodes: [], config: null, postgres };
   }
   let config: HaConfig | null = null;
   let error: string | null = null;
@@ -41,7 +38,6 @@ export async function getClusterView(env: Record<string, string | undefined> = p
   }
   return {
     enabled: true,
-    configurable,
     error,
     node: status ? { id: status.nodeId, role: status.role, startedAt: status.startedAt, statusUpdatedAt: status.updatedAt } : null,
     lease: status

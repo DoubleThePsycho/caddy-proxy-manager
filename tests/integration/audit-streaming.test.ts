@@ -22,10 +22,7 @@ vi.mock('@/src/lib/db', async () => {
 
 import * as schema from '@/src/lib/db/schema';
 import { insertAuditEvent } from '@/src/lib/audit-chain';
-import { setSetting } from '@/src/lib/settings';
 import { isEncryptedSecret, decryptSecret } from '@/src/lib/secret';
-import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
-import { LICENSE_SETTING_KEY } from '@/ee/licensing/store';
 import { createAuditSink, getAuditSink, listAuditSinks, testAuditSink, updateAuditSink } from '@/ee/audit/sinks';
 import { backoffDelayMs, runAuditStreamingTick } from '@/ee/audit/worker';
 import {
@@ -36,10 +33,8 @@ import {
   SYSLOG_SD_ID,
   testStreamEvent,
 } from '@/ee/audit/delivery';
-import { createTestSigner, licensePayload, signLicense } from '../helpers/license';
 import { createSelfSignedServerCertificate } from '../helpers/certs';
 
-const signer = createTestSigner();
 const WEBHOOK_SECRET = 'whsec-0123456789abcdef';
 
 type Received = { path: string; headers: IncomingMessage['headers']; body: string };
@@ -65,7 +60,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((resolve) => http.close(() => resolve()));
-  setTrustedLicenseKeysForTests(null);
 });
 
 beforeEach(async () => {
@@ -74,10 +68,6 @@ beforeEach(async () => {
   await ctx.db.delete(schema.auditSinks);
   await ctx.db.delete(schema.auditEvents);
   await ctx.db.delete(schema.settings);
-  setTrustedLicenseKeysForTests(signer.keys);
-  await setSetting(LICENSE_SETTING_KEY, signLicense(signer, licensePayload(signer, {
-    iat: '2026-01-01T00:00:00.000Z', exp: '2099-01-01T00:00:00.000Z',
-  })));
 });
 
 afterEach(() => {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Escalation guards for roles. Every rule here is about who may hand out
- * access, and none of them looks at the license:
+ * access:
  *
  *  - Only a user with users:write manages roles and assignments (the callers'
  *    permission guard; checked again here).

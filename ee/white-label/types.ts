@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * White-label (feature "white_label"): shared types and constants. Safe to
- * import from client components: nothing here touches the database.
+ * White-label: shared types and constants. Safe to import from client
+ * components: nothing here touches the database.
  */
 import { BRAND_NAME } from "@/src/lib/brand";
-
-export const WHITE_LABEL_FEATURE = "white_label" as const;
 
 /** The settings key holding the branding (instance sync stores the master's as synced:white_label). */
 export const WHITE_LABEL_SETTING_KEY = "white_label";
@@ -135,8 +133,6 @@ export type BrandingView = {
   updatedAt: string | null;
   defaultProductName: string;
   limits: { maxBytes: number; assets: Record<AssetKind, AssetLimits> };
-  /** The license lets administrators set up or change the branding now. */
-  configurable: boolean;
 };
 
 export const DEFAULT_PUBLIC_BRANDING: PublicBranding = Object.freeze({

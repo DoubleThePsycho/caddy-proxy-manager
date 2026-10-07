@@ -1,6 +1,6 @@
 # Enforced SSO
 
-Feature id `sso_enforce`, Business edition and higher. Source: `ee/sso/`.
+Source: `ee/sso/` (Elastic License 2.0).
 
 Enforced SSO turns off password sign-in to the dashboard. People sign in through an OAuth/OIDC or SAML provider instead. Optionally, a short list of **break-glass accounts** keeps its username and password, so that an administrator can still get in when the identity provider is down. Without one, the way back in during an outage is [turning enforcement off from the host](#turning-enforcement-off-from-the-host).
 
@@ -39,15 +39,11 @@ Break-glass accounts are optional, so the setting can be saved with none. While 
 
 Break-glass accounts are stored by user id, so renaming an account (including an `ADMIN_USERNAME` change of the primary admin) keeps it break-glass. A deleted account is removed from the list, so a later account cannot inherit it. The API and the page show and accept usernames.
 
-These guards never look at the license.
-
 ## REST API
 
 Both operations require an administrator (Bearer token or session).
 
 ### `GET /api/v1/sso/enforcement`
-
-Readable without a license.
 
 ```json
 {
@@ -58,12 +54,11 @@ Readable without a license.
       "role": "admin", "status": "active", "passwordSignIn": true, "validAdmin": true }
   ],
   "ssoProviders": [{ "id": "a1b2", "name": "Keycloak", "kind": "oidc" }, { "id": "saml:3", "name": "Entra ID", "kind": "saml" }],
-  "warnings": [],
-  "configurable": true
+  "warnings": []
 }
 ```
 
-`configurable` is false when the license does not allow changes. `warnings` lists problems with the setting, such as a break-glass account that lost its password or enforcement with no enabled provider. `validAdmin` marks an active administrator that can sign in with a password; with none while `enabled`, the way back in during an outage is turning enforcement off from the host.
+`warnings` lists problems with the setting, such as a break-glass account that lost its password or enforcement with no enabled provider. `validAdmin` marks an active administrator that can sign in with a password; with none while `enabled`, the way back in during an outage is turning enforcement off from the host.
 
 ### `PUT /api/v1/sso/enforcement`
 
@@ -80,14 +75,8 @@ curl -X PUT https://proxy.example.com/api/v1/sso/enforcement \
 - **Responses:**
   - `200` returns the same body as `GET`.
   - `400` for validation failures, and when turning enforcement on (or changing it while on) with no enabled OAuth/OIDC or SAML provider.
-  - `403` when the caller is not an administrator or the license does not include the feature.
+  - `403` when the caller is not an administrator.
 - **Audit:** every change is recorded as `sso_enforcement_updated`.
-
-## Licensing
-
-- **The license gates changes only.** Turning enforcement on, or changing it while it is on, needs an active (or in-grace) Business or Enterprise license, through both the API and the dashboard. Turning it off never needs one, so an install whose license lapsed can always wind the feature down.
-- **Enforcement never checks the license.** It keeps working with an expired, removed or invalid key: password sign-in stays refused for non-break-glass accounts, and the lockout guards stay in force.
-- **Without a license** the SSO page shows the setting read-only, with a **Turn off** button while it is on. To change anything else, renew the license.
 
 ## Recovery
 

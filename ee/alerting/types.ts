@@ -14,7 +14,6 @@ export const RULE_TYPES = [
   "error_rate",
   "instance_sync_failed",
   "caddy_apply_failed",
-  "license_expiring",
   "backup_failed",
   "approval_pending",
   "access_review_started",
@@ -23,10 +22,6 @@ export const RULE_TYPES = [
   "fleet_rollout_failed",
 ] as const;
 export type RuleType = (typeof RULE_TYPES)[number];
-
-/** Community carve-out: these can be set up and changed without a license. */
-export const FREE_CHANNEL_TYPES: readonly ChannelType[] = ["email"];
-export const FREE_RULE_TYPES: readonly RuleType[] = ["cert_expiring"];
 
 export const CHANNEL_TYPE_LABELS: Record<ChannelType, string> = {
   email: "E-mail (SMTP)",
@@ -44,7 +39,6 @@ export const RULE_TYPE_LABELS: Record<RuleType, string> = {
   error_rate: "Error rate",
   instance_sync_failed: "Instance sync failed",
   caddy_apply_failed: "Caddy config apply failed",
-  license_expiring: "License expiring",
   backup_failed: "Backup failed",
   approval_pending: "Change awaiting approval",
   access_review_started: "Access review started",
@@ -63,7 +57,6 @@ export const RULE_TYPE_DESCRIPTIONS: Record<RuleType, string> = {
     "The share of 5xx responses of a proxy host, or of the chosen hosts together, is above the threshold in the time window, counting only when there were at least the minimum number of requests (needs ClickHouse analytics).",
   instance_sync_failed: "A slave instance whose last configuration sync failed (master mode).",
   caddy_apply_failed: "The last attempt to push the configuration to Caddy failed.",
-  license_expiring: "The installed license expires within the given number of days.",
   backup_failed:
     "Scheduled configuration backups to an enabled destination failed the given number of times in a row (Scheduled backups, on the History page).",
   approval_pending:
@@ -85,7 +78,6 @@ export type UpstreamDownParams = { minFails: number };
 export type WafSpikeParams = { threshold: number; windowMinutes: number };
 /** thresholdPercent: 0.1 to 100 in steps of 0.1. perHost: one alert per proxy host, or one for all hosts in scope together. */
 export type ErrorRateParams = { thresholdPercent: number; windowMinutes: number; minRequests: number; perHost: boolean };
-export type LicenseExpiringParams = { days: number };
 export type BackupFailedParams = { minFailures: number };
 export type EmptyParams = Record<string, never>;
 
@@ -96,7 +88,6 @@ export type RuleParams = {
   error_rate: ErrorRateParams;
   instance_sync_failed: EmptyParams;
   caddy_apply_failed: EmptyParams;
-  license_expiring: LicenseExpiringParams;
   backup_failed: BackupFailedParams;
   approval_pending: EmptyParams;
   access_review_started: EmptyParams;
@@ -112,7 +103,6 @@ export const DEFAULT_RULE_PARAMS: { [T in RuleType]: RuleParams[T] } = {
   error_rate: { thresholdPercent: 5, windowMinutes: 5, minRequests: 20, perHost: true },
   instance_sync_failed: {},
   caddy_apply_failed: {},
-  license_expiring: { days: 30 },
   backup_failed: { minFailures: 1 },
   approval_pending: {},
   access_review_started: {},

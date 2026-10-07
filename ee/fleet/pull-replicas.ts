@@ -8,10 +8,6 @@
  * with what the replica should run, sealed to the replica's pinned sync key,
  * or "no change". See ee/docs/fleet.md.
  *
- * Licensing: adding a pull replica and rotating its credential need a
- * license with fleet. Revoking the credential and deleting the replica never
- * do, and serving a configured replica never checks it.
- *
  * Permissions: fleet:replicas (administrator-level: a credential fetches the
  * whole configuration, its secrets sealed to the replica's key) for changes,
  * fleet:read for reading.
@@ -48,9 +44,8 @@ import {
   pullFingerprintToken,
 } from "@/ee/fleet/pull-config";
 import { deleteInstance, pinInstanceSyncKey } from "@/src/lib/models/instances";
-import { requireFeature } from "@/ee/licensing/store";
 import { readBoolean, readName, rejectUnknownKeys, requireObject } from "@/ee/alerting/validation";
-import { FEATURE, type IssuedPullCredential, type PullCheckIn, type PullReplicaView } from "./types";
+import type { IssuedPullCredential, PullCheckIn, PullReplicaView } from "./types";
 import { asc, first } from "@/src/lib/db/ops";
 
 export const PULL_REPLICA_NOT_FOUND = "Pull replica not found";
@@ -230,7 +225,7 @@ export function pullReplicaEnv(credential: string): string {
 /**
  * The replica a pull request's Authorization header names, or null when the
  * header is missing, malformed, or no replica holds the credential. Only the
- * credential's hash is looked up; no license check.
+ * credential's hash is looked up.
  */
 export async function authenticatePullCredential(
   authorization: string | null
@@ -254,10 +249,9 @@ export async function authenticatePullCredential(
  * credential, shown once with the environment variables for the replica.
  * `syncPublicKey` (the replica's sync public key, from its own Instance Sync
  * settings) pins its key at once; otherwise the first key it proves is
- * pinned. Needs the license.
+ * pinned.
  */
 export async function createPullReplica(input: unknown, userId: number): Promise<IssuedPullCredential> {
-  await requireFeature(FEATURE);
   const body = requireObject(input, "Body");
   rejectUnknownKeys(body, ["name", "enabled", "syncPublicKey"], "the pull replica");
   const name = readName(body.name);
@@ -314,10 +308,9 @@ export async function createPullReplica(input: unknown, userId: number): Promise
  * Replace the credential of pull replica `id` (also one that was revoked).
  * The old one stops working at once; the replica keeps its key pin, and
  * receives its configuration once more (its fingerprints are keyed with the
- * credential). Needs the license.
+ * credential).
  */
 export async function rotatePullCredential(id: number, userId: number): Promise<IssuedPullCredential> {
-  await requireFeature(FEATURE);
   const instance = await requirePullInstance(id);
   const issued = issueCredential();
   const now = nowIso();
@@ -339,7 +332,7 @@ export async function rotatePullCredential(id: number, userId: number): Promise<
 /**
  * Revoke the credential of pull replica `id`: its requests are refused from
  * now on. The replica, its key pin and its history stay; rotating issues a
- * new credential. Never needs the license.
+ * new credential.
  */
 export async function revokePullCredential(id: number, userId: number): Promise<PullReplicaView> {
   const instance = await requirePullInstance(id);
@@ -361,7 +354,7 @@ export async function revokePullCredential(id: number, userId: number): Promise<
   return getPullReplica(id);
 }
 
-/** Delete pull replica `id` with its credential, key pin and fleet records. Never needs the license. */
+/** Delete pull replica `id` with its credential, key pin and fleet records. */
 export async function deletePullReplica(id: number, userId: number): Promise<void> {
   const instance = await requirePullInstance(id);
   await deleteInstance(id, userId);

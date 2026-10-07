@@ -31,12 +31,10 @@ type Props = {
   hostNames: ReadonlyMap<number, string>;
   /** Server time the page was rendered at, for durations that render the same on the server and the client. */
   now: number;
-  /** Whether the user may change this rule (alerts:write, and the license unless it is a Community rule). */
-  canEditRule: (rule: AlertRuleView) => boolean;
   onEditRule: (rule: AlertRuleView) => void;
-  /** alerts:write: undo dismissals and mutes (never needs a license). */
+  /** alerts:write: edit rules, dismiss alerts, undo dismissals and mutes. */
   canWrite?: boolean;
-  /** Opens the dismiss dialog (offered where canEditRule allows). */
+  /** Opens the dismiss dialog (offered with canWrite). */
   onDismiss?: (alert: FiringAlertView) => void;
 };
 
@@ -236,7 +234,7 @@ function EpisodeDetail({ episode, hostNames }: { episode: AlertEpisode; hostName
   );
 }
 
-export default function FiringTab({ firing, episodes, rules, hostNames, now, canEditRule, onEditRule, canWrite = false, onDismiss }: Props) {
+export default function FiringTab({ firing, episodes, rules, hostNames, now, onEditRule, canWrite = false, onDismiss }: Props) {
   const format = useFormat();
   const [open, setOpen] = useState<number | null>(null);
   const [page, setPage] = useState(1);
@@ -262,7 +260,7 @@ export default function FiringTab({ firing, episodes, rules, hostNames, now, can
               rule={ruleById.get(alert.ruleId)}
               hostNames={hostNames}
               now={now}
-              canEdit={ruleById.has(alert.ruleId) && canEditRule(ruleById.get(alert.ruleId)!)}
+              canEdit={canWrite && ruleById.has(alert.ruleId)}
               canWrite={canWrite}
               onEditRule={onEditRule}
               onDismiss={onDismiss}

@@ -55,12 +55,6 @@ export function parseStoredSharedState(value: unknown): StoredSharedState | null
   return { enabled: value.enabled, keyPrefix: value.keyPrefix, generation: value.generation };
 }
 
-/** Whether going from `previous` to `next` turns shared state on or changes it while on (license needed). */
-export function sharedStateChangeNeedsLicense(previous: StoredSharedState | null, next: StoredSharedState): boolean {
-  if (!next.enabled) return false;
-  return !previous?.enabled || previous.keyPrefix !== next.keyPrefix;
-}
-
 /** `<keyPrefix>:<generation>:`, the start of every key. */
 export function sharedStateNamespace(setting: Pick<StoredSharedState, "keyPrefix" | "generation">): string {
   return `${setting.keyPrefix}:${setting.generation}:`;

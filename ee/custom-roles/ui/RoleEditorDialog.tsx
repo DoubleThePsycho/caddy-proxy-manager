@@ -37,7 +37,7 @@ export function isAdminLevelSet(catalogue: PermissionCatalogue, permissions: Ite
 
 /**
  * The role editor: name, description, tag scope and the permission matrix.
- * The server checks every rule again (license, escalation, unscoped-only
+ * The server checks every rule again (escalation, unscoped-only
  * permissions); the controls here only steer.
  */
 export default function RoleEditorDialog({

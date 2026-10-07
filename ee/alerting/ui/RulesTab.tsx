@@ -17,18 +17,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useFormat } from "@/components/preferences/PreferencesProvider";
 import { cn } from "@/lib/utils";
 import { paginate } from "@/src/lib/pagination";
-import { FREE_CHANNEL_TYPES, FREE_RULE_TYPES, type AlertChannelView, type AlertRuleView, type RuleType } from "@/ee/alerting/types";
-import type { AlertingLicenseView } from "@/ee/alerting/gate";
+import type { AlertChannelView, AlertRuleView } from "@/ee/alerting/types";
 import { deleteAlertRuleAction, setAlertRuleEnabledAction } from "./actions";
 import { conditionLine, RULE_SEVERITY } from "./format";
 import { Chip, SeverityPill } from "./parts";
-import { LOCKED_HINT } from "./RuleEditor";
 import { useEndSilence, useSilenceHeadline } from "./silence";
 
 type Props = {
   rules: AlertRuleView[];
   channels: AlertChannelView[];
-  license: AlertingLicenseView;
   canWrite: boolean;
   onCreate: () => void;
   onEdit: (rule: AlertRuleView) => void;
@@ -43,7 +40,7 @@ function earliest(values: (string | null)[]): string | null {
   return present[0] ?? null;
 }
 
-export default function RulesTab({ rules, channels, license, canWrite, onCreate, onEdit, onMute, now = Date.now() }: Props) {
+export default function RulesTab({ rules, channels, canWrite, onCreate, onEdit, onMute, now = Date.now() }: Props) {
   const router = useRouter();
   const format = useFormat();
   const [pending, startTransition] = useTransition();
@@ -64,12 +61,6 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
       )
     : rules;
   const shown = paginate(matching, page);
-  const freeChannel = (id: number) => {
-    const channel = channelById.get(id);
-    return channel ? FREE_CHANNEL_TYPES.includes(channel.type) : true;
-  };
-  const isFree = (type: RuleType, channelIds: number[]) => FREE_RULE_TYPES.includes(type) && channelIds.every(freeChannel);
-  const canChange = (rule: AlertRuleView) => license.alerting || isFree(rule.type, rule.channelIds);
   const enabledCount = rules.filter((rule) => rule.enabled).length;
 
   function setEnabled(rule: AlertRuleView, enabled: boolean) {
@@ -156,7 +147,6 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
             </TableHeader>
             <TableBody>
               {shown.items.map((rule) => {
-                const locked = !canChange(rule);
                 const severity = RULE_SEVERITY[rule.type];
                 const firingSince = rule.enabled ? earliest(rule.firing.map((item) => item.firedAt)) : null;
                 return (
@@ -233,11 +223,9 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
                       {canWrite ? (
                         <Switch
                           checked={rule.enabled}
-                          // Turning off always works; turning a paid rule on needs the license.
-                          disabled={pending || (locked && !rule.enabled)}
+                          disabled={pending}
                           onCheckedChange={(checked) => setEnabled(rule, checked)}
                           aria-label={`Enabled: ${rule.name}`}
-                          title={locked && !rule.enabled ? LOCKED_HINT : undefined}
                         />
                       ) : (
                         <span className="text-muted-foreground">{rule.enabled ? "On" : "Off"}</span>
@@ -263,8 +251,6 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
                               variant="link"
                               size="sm"
                               className="px-2"
-                              title={locked ? LOCKED_HINT : undefined}
-                              disabled={locked}
                               onClick={() => onMute(rule)}
                               aria-label={`Mute rule ${rule.name}`}
                             >
@@ -276,8 +262,6 @@ export default function RulesTab({ rules, channels, license, canWrite, onCreate,
                           variant="link"
                           size="sm"
                           className="px-2"
-                          title={locked ? LOCKED_HINT : undefined}
-                          disabled={locked}
                           onClick={() => onEdit(rule)}
                           aria-label={`Edit rule ${rule.name}`}
                         >

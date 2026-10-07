@@ -33,14 +33,6 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     href: "/settings",
   },
   {
-    id: "usage-ping",
-    name: "Usage ping",
-    desc: "Anonymous usage statistics, off until an administrator says yes",
-    keywords: ["usage", "telemetry", "statistics", "ping", "privacy", "anonymous", "install id"],
-    page: "Settings",
-    href: "/settings#usage-ping",
-  },
-  {
     id: "acme",
     name: "Certificate authority",
     desc: "Let's Encrypt or your own ACME directory, and the contact e-mail",

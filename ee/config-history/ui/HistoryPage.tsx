@@ -4,11 +4,8 @@ import { requirePermission } from "@/src/lib/auth";
 import { can } from "@/src/lib/permissions";
 import { getInstanceMode } from "@/src/lib/instance-sync";
 import { MIN_EXPORT_PASSPHRASE_LENGTH } from "@/src/lib/config-transfer";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { listSnapshots } from "@/ee/config-history/snapshots";
 import { getHistorySettings, MAX_RETENTION, MIN_RETENTION } from "@/ee/config-history/settings";
-import { FEATURE } from "@/ee/config-history/service";
 import { getVersion, listVersions, type VersionView } from "@/ee/config-history/versions";
 import { listBackupDestinations } from "@/ee/backups/destinations";
 import HistoryClient from "./HistoryClient";
@@ -37,10 +34,9 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
   const requestedPage = parsePageParam(params.page);
 
   // Destination views carry no secrets (hasSecretAccessKey / hasPassphrase only); versions and diffs mask secrets.
-  const [firstList, settings, configurable, mode, destinations] = await Promise.all([
+  const [firstList, settings, mode, destinations] = await Promise.all([
     listVersions({ limit: PER_PAGE, offset: (requestedPage - 1) * PER_PAGE }),
     getHistorySettings(),
-    isFeatureConfigurable(FEATURE),
     getInstanceMode(),
     allowed.backups ? listBackupDestinations() : Promise.resolve([]),
   ]);
@@ -83,9 +79,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
       oldest={oldest ? { id: oldest.id, createdAt: oldest.createdAt } : null}
       backups={{ destinations }}
       settings={settings}
-      configurable={configurable}
       isSlave={mode === "slave"}
-      editionLabel={EDITION_LABELS[FEATURE_INFO[FEATURE].edition]}
       limits={{ minRetention: MIN_RETENTION, maxRetention: MAX_RETENTION, minPassphraseLength: MIN_EXPORT_PASSPHRASE_LENGTH }}
       allowed={allowed}
     />

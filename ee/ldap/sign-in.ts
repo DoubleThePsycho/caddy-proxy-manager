@@ -3,7 +3,7 @@
  * Directory sign-in after the directory accepted the password: which local
  * account it signs in, linking and provisioning, and the role the group
  * mapping gives. Called from the Better Auth endpoint (plugin.ts), which
- * creates the session the standard way afterwards. Never checks the license.
+ * creates the session the standard way afterwards.
  *
  * Local account, in this order:
  *  1. The account already linked to the entry's stable unique id in this

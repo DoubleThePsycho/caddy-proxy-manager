@@ -25,7 +25,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   }
 }
 
-/** Turns monetization off for the host and forgets its settings. Never needs a license. */
+/** Turns monetization off for the host and forgets its settings. */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { userId } = await requireApiPermission(request, "monetization:write");

@@ -40,7 +40,6 @@ function facts(overrides: Partial<DigestFacts> = {}): DigestFacts {
     certificates: { withinDays: 14, expiring: [{ kind: 'Certificate', name: 'example.com wildcard', expiresAt: '2026-10-11T00:00:00.000Z', daysLeft: 8, expired: false }] },
     configChanges: { total: 12, recent: [{ at: '2026-10-01T09:12:00.000Z', actor: 'admin', summary: 'Updated proxy host app' }] },
     alerts: { fired: 1, resolved: 1, recent: [{ at: '2026-10-01T10:00:00.000Z', severity: 'warning', title: 'WAF blocked 150 requests' }] },
-    license: { status: 'active', edition: 'Homelab', expiresAt: '2027-10-01T00:00:00.000Z', trial: false },
     notes: [],
     ...overrides,
   };
@@ -77,7 +76,7 @@ describe('digest sections', () => {
     expect(text).toContain('and 11 more in the audit log');
     expect(text).toContain('Alerts fired: 1');
     expect(text).toContain('[warning] WAF blocked 150 requests');
-    expect(text).toContain('Homelab license, active until 2027-10-01.');
+    expect(text).not.toMatch(/license/i);
   });
 
   it('says so when ClickHouse is not configured and still includes the rest', () => {

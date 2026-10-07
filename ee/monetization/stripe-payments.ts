@@ -11,7 +11,7 @@
  * Each is written once: refunds by "stripe-refund:<charge>:<total refunded>"
  * (Stripe reports the running total), disputes by "stripe-dispute:<id>". A
  * dispute also suspends a postpaid consumer until an administrator resumes
- * it. Never checks the license.
+ * it.
  */
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { appDb, nowIso } from "@/src/lib/db";

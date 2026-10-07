@@ -26,8 +26,6 @@ import {
   ACCESS_REVIEWS_OPENAPI_TAG,
 } from "@/ee/access-reviews/openapi";
 import { FLEET_OPENAPI_PATHS, FLEET_OPENAPI_SCHEMAS, FLEET_OPENAPI_TAG } from "@/ee/fleet/openapi";
-import { USAGE_PING_OPENAPI_PATHS, USAGE_PING_OPENAPI_SCHEMAS, USAGE_PING_OPENAPI_TAG } from "@/src/lib/usage-ping/openapi";
-import { LICENSE_AUTO_UPDATE_OPENAPI_PATHS, LICENSE_AUTO_UPDATE_OPENAPI_SCHEMAS } from "@/ee/licensing/auto-update-openapi";
 import { SEARCH_OPENAPI_PATHS, SEARCH_OPENAPI_SCHEMAS, SEARCH_OPENAPI_TAG } from "@/src/lib/search-openapi";
 import { ANALYTICS_OPENAPI_PATHS, ANALYTICS_OPENAPI_SCHEMAS, ANALYTICS_OPENAPI_TAG } from "@/src/lib/analytics/openapi";
 import { QUESTIONS_OPENAPI_PATHS, QUESTIONS_OPENAPI_SCHEMAS } from "@/ee/ai/questions/openapi";
@@ -81,7 +79,6 @@ const spec = {
     ACCESS_LISTS_OPENAPI_TAG,
     { name: "Settings", description: "Application settings" },
     WAF_OPENAPI_TAG,
-    USAGE_PING_OPENAPI_TAG,
     SEARCH_OPENAPI_TAG,
     { name: "Instances", description: "Multi-instance management" },
     FLEET_OPENAPI_TAG,
@@ -90,18 +87,15 @@ const spec = {
     {
       name: "Roles",
       description:
-        "Custom roles: named sets of permissions, optionally limited to hosts with given tags (Business edition). " +
-        "Creating, changing and assigning a custom role needs a license with custom roles; reading, deleting and " +
-        "taking a role away never do, and existing assignments keep working when the license lapses.",
+        "Custom roles: named sets of permissions, optionally limited to hosts with given tags.",
     },
     { name: "Groups", description: "User groups for forward auth access control" },
     { name: "mTLS Roles", description: "Role-based access control for mTLS client certificates" },
     { name: "Forward Auth", description: "Forward auth sessions and per-host access control" },
     ANALYTICS_OPENAPI_TAG,
     { name: "Audit Log", description: "Audit log" },
-    { name: "Audit Streaming", description: "Audit log export, hash chain verification, retention and streaming to a SIEM (Business edition)" },
-    { name: "License", description: "License key for the paid editions" },
-    { name: "SSO", description: "Single sign-on policy for dashboard sign-in (paid editions)" },
+    { name: "Audit Streaming", description: "Audit log export, hash chain verification, retention and streaming to a SIEM" },
+    { name: "SSO", description: "Single sign-on policy for dashboard sign-in" },
     {
       name: "MFA",
       description:
@@ -109,11 +103,11 @@ const spec = {
         "Setting it up, turning it off and new backup codes use Better Auth's /api/auth/two-factor/* endpoints, " +
         "which need an interactive session and the account password; API tokens cannot change a second factor.",
     },
-    { name: "Configuration History", description: "Snapshots of the configuration with diffs and rollback (paid: Homelab edition and up)" },
+    { name: "Configuration History", description: "Snapshots of the configuration with diffs and rollback" },
     { name: "Configuration", description: "Export and import the whole configuration as a passphrase-protected file" },
-    { name: "Backups", description: "Scheduled, passphrase-encrypted configuration backups to S3-compatible storage (Business edition; deleting and disabling destinations never need a license)" },
-    { name: "Alerting", description: "Alert channels, rules, history, mutes and dismissals (e-mail channels and certificate-expiry rules are Community; setting up the rest needs a license with alerting, deleting, disabling and undoing a mute never do)" },
-    { name: "AI", description: "AI analyst: the AI provider, the daily security digest, WAF tuning suggestions and the settings of plain-language analytics questions (setting them up and using them needs a license with the AI analyst; removing the provider and turning the digest or questions off do not)" },
+    { name: "Backups", description: "Scheduled, passphrase-encrypted configuration backups to S3-compatible storage" },
+    { name: "Alerting", description: "Alert channels, rules, history, mutes and dismissals" },
+    { name: "AI", description: "AI analyst: the AI provider, the daily security digest, WAF tuning suggestions and the settings of plain-language analytics questions" },
     MONETIZATION_OPENAPI_TAG,
     WHITE_LABEL_OPENAPI_TAG,
     APPROVALS_OPENAPI_TAG,
@@ -149,8 +143,7 @@ const spec = {
     ...FLEET_OPENAPI_PATHS,
     // ── WAF: exclusions, per-host modes, events ────────────────────
     ...WAF_OPENAPI_PATHS,
-    // ── Usage ping ──────────────────────────────────────────────────
-    ...USAGE_PING_OPENAPI_PATHS,
+    // ── Search ──────────────────────────────────────────────────────
     ...SEARCH_OPENAPI_PATHS,
     // ── Analytics ───────────────────────────────────────────────────
     ...ANALYTICS_OPENAPI_PATHS,
@@ -1260,7 +1253,7 @@ const spec = {
         description:
           "Permission users:write. A caller can only give the new user a role they could assign (see PUT /api/v1/users/{id}): " +
           "only administrators grant admin or an administrator-level custom role, and nobody grants permissions or a host " +
-          "scope they do not hold themselves (403). Assigning a custom role needs a license with custom roles (403 without).",
+          "scope they do not hold themselves (403).",
         operationId: "createUser",
         requestBody: {
           required: true,
@@ -1286,7 +1279,7 @@ const spec = {
                   },
                   customRoleId: {
                     type: ["integer", "null"],
-                    description: "A custom role to assign (GET /api/v1/roles); the user is stored with role viewer. Needs a license with custom roles.",
+                    description: "A custom role to assign (GET /api/v1/roles); the user is stored with role viewer.",
                   },
                   username: {
                     type: "string",
@@ -1316,7 +1309,7 @@ const spec = {
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": {
             description:
-              "Missing users:write, a role the caller may not grant, or a custom role without a license that includes custom roles",
+              "Missing users:write, or a role the caller may not grant",
             content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
           },
         },
@@ -1351,8 +1344,7 @@ const spec = {
           "edit users whose access they hold themselves (so never an administrator), only administrators grant admin or an " +
           "administrator-level custom role, and nobody grants permissions or a host scope they do not hold (403). Demoting, " +
           "disabling or deleting the last active administrator is refused (400), as is a change that would lock out enforced SSO. " +
-          "Assigning a custom role needs a license with custom roles (403 without); taking one away (assigning a built-in role, " +
-          "or customRoleId null) never does. Every role change is recorded in the audit log.",
+          "Every role change is recorded in the audit log.",
         operationId: "updateUser",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         requestBody: {
@@ -1408,7 +1400,7 @@ const spec = {
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": {
             description:
-              "Missing users:write, a user or role the caller may not manage or grant, or a custom role without a license that includes custom roles",
+              "Missing users:write, or a user or role the caller may not manage or grant",
             content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
           },
           "404": { $ref: "#/components/responses/NotFound" },
@@ -1421,7 +1413,7 @@ const spec = {
       get: {
         tags: ["Roles"],
         summary: "List custom roles",
-        description: "Permission users:read. Readable without a license.",
+        description: "Permission users:read.",
         operationId: "listCustomRoles",
         responses: {
           "200": {
@@ -1440,7 +1432,7 @@ const spec = {
         tags: ["Roles"],
         summary: "Create a custom role",
         description:
-          "Permission users:write, and a license with custom roles (403 without). A caller can only put permissions they hold " +
+          "Permission users:write. A caller can only put permissions they hold " +
           "into a role, and a scoped caller only a scope made of their own tags; only administrators create administrator-level " +
           "roles (403). Write, restore and import permissions also grant the area's read permission. A role with scopeTags " +
           "cannot hold the permissions that act on every host at once (unscopedOnly in GET /api/v1/permissions; 400). " +
@@ -1458,7 +1450,7 @@ const spec = {
           "400": { $ref: "#/components/responses/BadRequest" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": {
-            description: "Missing users:write, permissions the caller may not grant, or no license that includes custom roles",
+            description: "Missing users:write, or permissions the caller may not grant",
             content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
           },
           "409": {
@@ -1472,7 +1464,7 @@ const spec = {
       get: {
         tags: ["Roles"],
         summary: "Get a custom role",
-        description: "Permission users:read. Readable without a license.",
+        description: "Permission users:read.",
         operationId: "getCustomRole",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -1489,7 +1481,7 @@ const spec = {
         tags: ["Roles"],
         summary: "Change a custom role",
         description:
-          "Permission users:write, and a license with custom roles (403 without). Fields left out keep their value. The same " +
+          "Permission users:write. Fields left out keep their value. The same " +
           "escalation rules as creating a role apply to the role as it is and as it becomes; nobody changes the role they " +
           "have themselves (403). The change applies at once to the role's users and their API tokens. Recorded in the audit log.",
         operationId: "updateCustomRole",
@@ -1507,7 +1499,7 @@ const spec = {
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": {
             description:
-              "Missing users:write, a role or permissions the caller may not grant, the caller's own role, or no license that includes custom roles",
+              "Missing users:write, a role or permissions the caller may not grant, or the caller's own role",
             content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
           },
           "404": { $ref: "#/components/responses/NotFound" },
@@ -1521,7 +1513,7 @@ const spec = {
         tags: ["Roles"],
         summary: "Delete a custom role",
         description:
-          "Permission users:write. Never needs a license. The role's users fall back to the built-in viewer role in the same " +
+          "Permission users:write. The role's users fall back to the built-in viewer role in the same " +
           "transaction; the deletion and each user's fallback are recorded in the audit log. A non-administrator can only delete " +
           "a role whose permissions they hold, and never the role they have themselves (403).",
         operationId: "deleteCustomRole",
@@ -1605,7 +1597,7 @@ const spec = {
       },
     },
 
-    // ── Audit Streaming (Business edition) ──────────────────────────
+    // ── Audit Streaming ─────────────────────────────────────────────
     "/api/v1/audit-log/export": {
       get: {
         tags: ["Audit Streaming"],
@@ -1613,7 +1605,7 @@ const spec = {
         description:
           "Streams the audit log in id order as a CSV or JSON download, including the hash chain fields so the copy can be verified offline. " +
           "CSV cells starting with = + - @, a tab or a carriage return are prefixed with an apostrophe. " +
-          "Needs the audit_streaming feature; every export is recorded in the audit log.",
+          "Every export is recorded in the audit log.",
         operationId: "exportAuditLog",
         parameters: [
           { name: "format", in: "query", schema: { type: "string", enum: ["csv", "json"], default: "csv" } },
@@ -1655,7 +1647,7 @@ const spec = {
         summary: "Verify the audit log hash chain",
         description:
           "Recomputes the hash chain from the oldest remaining chained event (its prevHash is the anchor, since retention deletes older events) to the newest. " +
-          "Needs the audit_streaming feature; every check is recorded in the audit log.",
+          "Every check is recorded in the audit log.",
         operationId: "verifyAuditLog",
         responses: {
           "200": {
@@ -1671,7 +1663,6 @@ const spec = {
       get: {
         tags: ["Audit Streaming"],
         summary: "Get the audit log retention",
-        description: "Available without a license.",
         operationId: "getAuditRetention",
         responses: {
           "200": {
@@ -1686,8 +1677,7 @@ const spec = {
         tags: ["Audit Streaming"],
         summary: "Set the audit log retention",
         description:
-          "A daily job deletes events older than `days` (0 keeps them forever). Needs the audit_streaming feature, except setting 0, which works without a license; " +
-          "the job keeps running without one. Not synced to slaves.",
+          "A daily job deletes events older than `days` (0 keeps them forever). Not synced to slaves.",
         operationId: "setAuditRetention",
         requestBody: {
           required: true,
@@ -1708,7 +1698,7 @@ const spec = {
       get: {
         tags: ["Audit Streaming"],
         summary: "List audit streaming sinks",
-        description: "Available without a license. Secrets are never returned (see hasSecret).",
+        description: "Secrets are never returned (see hasSecret).",
         operationId: "listAuditSinks",
         responses: {
           "200": {
@@ -1723,7 +1713,7 @@ const spec = {
         tags: ["Audit Streaming"],
         summary: "Create an audit streaming sink",
         description:
-          "New sinks receive events recorded from now on; set backfill to also deliver every event still in the log. Needs the audit_streaming feature. Not synced to slaves.",
+          "New sinks receive events recorded from now on; set backfill to also deliver every event still in the log. Not synced to slaves.",
         operationId: "createAuditSink",
         requestBody: {
           required: true,
@@ -1744,7 +1734,6 @@ const spec = {
       get: {
         tags: ["Audit Streaming"],
         summary: "Get an audit streaming sink",
-        description: "Available without a license.",
         operationId: "getAuditSink",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -1761,8 +1750,7 @@ const spec = {
         tags: ["Audit Streaming"],
         summary: "Update an audit streaming sink",
         description:
-          "Fields left out keep their values; config is merged into the stored config. Omit secret to keep it. The type cannot be changed. " +
-          "Needs the audit_streaming feature, except a body that only disables the sink ({\"enabled\": false}), which works without a license.",
+          "Fields left out keep their values; config is merged into the stored config. Omit secret to keep it. The type cannot be changed.",
         operationId: "updateAuditSink",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         requestBody: {
@@ -1783,7 +1771,6 @@ const spec = {
       delete: {
         tags: ["Audit Streaming"],
         summary: "Delete an audit streaming sink",
-        description: "Works without a license, so an install whose license lapsed can wind streaming down.",
         operationId: "deleteAuditSink",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -1799,7 +1786,7 @@ const spec = {
         tags: ["Audit Streaming"],
         summary: "Send a test event to an audit streaming sink",
         description:
-          "Delivers one synthetic event (\"test\": true, id 0) and reports whether the receiver accepted it. The delivery cursor is not changed. Needs the audit_streaming feature.",
+          "Delivers one synthetic event (\"test\": true, id 0) and reports whether the receiver accepted it. The delivery cursor is not changed.",
         operationId: "testAuditSink",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -1814,168 +1801,13 @@ const spec = {
       },
     },
 
-    // ── License ─────────────────────────────────────────────────────
-    "/api/v1/license": {
-      get: {
-        tags: ["License"],
-        summary: "Get the license status",
-        description: "Edition, expiry, node usage and the paid features the installed key grants. The key itself is never returned.",
-        operationId: "getLicense",
-        responses: {
-          "200": {
-            description: "License status",
-            content: { "application/json": { schema: { $ref: "#/components/schemas/License" } } },
-          },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-        },
-      },
-      put: {
-        tags: ["License"],
-        summary: "Install or replace the license key",
-        description:
-          "The key's signature is verified on this install. Invalid keys, and keys past their 30-day grace period, are refused. " +
-          "An online key (purchases and trials from ingres.si) is then confirmed with the license server right away; a failed confirmation does not " +
-          "undo the install (see onlineCheck).",
-        operationId: "installLicense",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["key"],
-                properties: { key: { type: "string", example: "v1.eyJ2IjoxLC..." } },
-              },
-            },
-          },
-        },
-        responses: {
-          "200": {
-            description: "Installed",
-            content: { "application/json": { schema: { $ref: "#/components/schemas/License" } } },
-          },
-          "400": { $ref: "#/components/responses/BadRequest" },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-        },
-      },
-      delete: {
-        tags: ["License"],
-        summary: "Remove the license key",
-        description:
-          "Paid features already set up keep working; they can no longer be changed. An online key is first released on the license server " +
-          "(as POST /api/v1/license/deactivate does), on a best-effort basis: the key is removed even when the license server cannot be reached.",
-        operationId: "removeLicense",
-        responses: {
-          "204": { description: "Removed" },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-        },
-      },
-    },
-    "/api/v1/license/check": {
-      post: {
-        tags: ["License"],
-        summary: "Confirm the installed online key with the license server now",
-        description:
-          "Permission license:write. An online key (purchases and trials from ingres.si) is confirmed with the license server once a day; this asks now. " +
-          "It sends one request, POST /v1/licenses/{licenseId}/status with the SHA-256 of the installed key and this install's random license install id, and nothing else. " +
-          "Answers with the license status, whatever the license server said (see onlineCheck.lastError). 409 with an offline key, " +
-          "without a key, or on an instance sync replica; 429 when the license server was asked less than a minute ago.",
-        operationId: "checkLicense",
-        responses: {
-          "200": {
-            description: "License status after the check",
-            content: { "application/json": { schema: { $ref: "#/components/schemas/License" } } },
-          },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-          "409": { $ref: "#/components/responses/Conflict" },
-          "429": {
-            description: "The license server was asked less than a minute ago",
-            content: { "application/json": { schema: { type: "object", properties: { error: { type: "string" } }, required: ["error"] } } },
-          },
-        },
-      },
-    },
-    "/api/v1/license/deactivate": {
-      post: {
-        tags: ["License"],
-        summary: "Deactivate the license on this install",
-        description:
-          "Permission license:write. A license is active on one install at a time. This releases the installed online key on the license server " +
-          "(POST /v1/licenses/{licenseId}/deactivate with the SHA-256 of the key and this install's license install id), then removes the key here, " +
-          "so another install can use the license. Body: empty, or {\"force\": true} to remove the key even when the license server cannot be reached " +
-          "(it then releases the license after 14 days without checks from this install). Answers with the license status after the removal. " +
-          "409 with an offline key, without a key, or on an instance sync replica; 502 when the license server cannot be reached and force is not set.",
-        operationId: "deactivateLicense",
-        requestBody: {
-          required: false,
-          content: {
-            "application/json": {
-              schema: { type: "object", properties: { force: { type: "boolean", default: false } } },
-            },
-          },
-        },
-        responses: {
-          "200": {
-            description: "Deactivated and removed",
-            content: { "application/json": { schema: { $ref: "#/components/schemas/License" } } },
-          },
-          "400": { $ref: "#/components/responses/BadRequest" },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-          "409": { $ref: "#/components/responses/Conflict" },
-          "502": {
-            description: "The license server could not be reached; nothing was removed",
-            content: { "application/json": { schema: { type: "object", properties: { error: { type: "string" } }, required: ["error"] } } },
-          },
-        },
-      },
-    },
-    "/api/v1/license/verify": {
-      post: {
-        tags: ["License"],
-        summary: "Check a license key without installing it",
-        description:
-          "Permission license:write. Verifies the key's signature on this install and says what it would grant and whether it can be installed. " +
-          "Stores nothing and changes nothing; the key is never returned. A key that cannot be installed (invalid, not valid yet, or past " +
-          "its 30-day grace period) is still a 200, with installable false and the reason in error.",
-        operationId: "verifyLicense",
-        requestBody: {
-          required: true,
-          content: {
-            "application/json": {
-              schema: {
-                type: "object",
-                required: ["key"],
-                properties: { key: { type: "string", example: "v1.eyJ2IjoxLC..." } },
-              },
-            },
-          },
-        },
-        responses: {
-          "200": {
-            description: "What the key grants",
-            content: { "application/json": { schema: { $ref: "#/components/schemas/LicenseKeyCheck" } } },
-          },
-          "400": { $ref: "#/components/responses/BadRequest" },
-          "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/Forbidden" },
-          "413": { description: "The body is larger than 16 KiB" },
-        },
-      },
-    },
-    ...LICENSE_AUTO_UPDATE_OPENAPI_PATHS,
-
     // ── SSO ─────────────────────────────────────────────────────────
     "/api/v1/sso/enforcement": {
       get: {
         tags: ["SSO"],
         summary: "Get the enforced SSO setting",
         description:
-          "Whether password sign-in to the dashboard is limited to break-glass accounts, which accounts those are, and the identity providers that stay open. Readable without a license.",
+          "Whether password sign-in to the dashboard is limited to break-glass accounts, which accounts those are, and the identity providers that stay open.",
         operationId: "getSsoEnforcement",
         responses: {
           "200": {
@@ -1990,7 +1822,6 @@ const spec = {
         tags: ["SSO"],
         summary: "Change the enforced SSO setting",
         description:
-          "Turning enforcement on, or changing it while on, needs a license that includes enforced SSO (Business or higher); without one the API answers 403. Turning it off never needs one. " +
           "Turning enforcement on, or changing it while on, is refused with 400 unless an OAuth/OIDC or SAML provider is enabled. " +
           "Break-glass accounts are optional (an empty list is accepted); every listed username must belong to an account that can sign in with a password. The change is recorded in the audit log.",
         operationId: "updateSsoEnforcement",
@@ -2006,7 +1837,7 @@ const spec = {
           "400": { $ref: "#/components/responses/BadRequest" },
           "401": { $ref: "#/components/responses/Unauthorized" },
           "403": {
-            description: "Not an administrator, or the license does not include enforced SSO",
+            description: "Not an administrator",
             content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
           },
         },
@@ -2115,7 +1946,7 @@ const spec = {
       get: {
         tags: ["Configuration History"],
         summary: "List configuration snapshots",
-        description: "Newest first. Viewing history does not need a license.",
+        description: "Newest first.",
         operationId: "listConfigSnapshots",
         parameters: [
           { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 500, default: 50 } },
@@ -2136,7 +1967,7 @@ const spec = {
         summary: "Create a manual snapshot",
         description:
           "Saves the current configuration as a snapshot, also when it equals the newest one. " +
-          "Needs a license that includes configuration history (403 otherwise). Refused on a sync slave (409).",
+          "Refused on a sync slave (409).",
         operationId: "createConfigSnapshot",
         requestBody: {
           required: false,
@@ -2164,7 +1995,6 @@ const spec = {
       delete: {
         tags: ["Configuration History"],
         summary: "Delete all snapshots",
-        description: "Needs no license: winding configuration history down never does.",
         operationId: "deleteAllConfigSnapshots",
         responses: {
           "200": {
@@ -2199,9 +2029,7 @@ const spec = {
         summary: "Change the configuration history settings",
         description:
           "Turns automatic snapshots on or off and sets how many snapshots are kept (lowering it deletes older snapshots). " +
-          "Turning recording on, or changing anything while it stays on, needs a license that includes configuration history " +
-          "(403 otherwise); turning it off does not. Once on, recording continues when the license expires. Turning it on " +
-          "records a first snapshot.",
+          "Turning it on records a first snapshot.",
         operationId: "updateConfigHistorySettings",
         requestBody: {
           required: true,
@@ -2251,7 +2079,6 @@ const spec = {
       delete: {
         tags: ["Configuration History"],
         summary: "Delete a snapshot",
-        description: "Needs no license: winding configuration history down never does.",
         operationId: "deleteConfigSnapshot",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -2300,8 +2127,8 @@ const spec = {
         description:
           "Replaces the configuration with the snapshot in one transaction, after saving the current configuration as a " +
           "before_restore snapshot, then applies it to Caddy. If Caddy rejects it, the previous configuration is put back (502). " +
-          "Users, group memberships, sessions, API tokens and sign-in settings are never changed. Needs a license that includes " +
-          "configuration history; refused on a sync slave (409)." + REPLACEMENT_PROTECTED_NOTE,
+          "Users, group memberships, sessions, API tokens and sign-in settings are never changed. Refused on a sync slave (409)." +
+          REPLACEMENT_PROTECTED_NOTE,
         operationId: "restoreConfigSnapshot",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -2410,7 +2237,7 @@ const spec = {
       get: {
         tags: ["Backups"],
         summary: "List backup destinations",
-        description: "Available without a license. The secret access key and the passphrase are never returned (see hasSecretAccessKey, hasPassphrase).",
+        description: "The secret access key and the passphrase are never returned (see hasSecretAccessKey, hasPassphrase).",
         operationId: "listBackupDestinations",
         responses: {
           "200": {
@@ -2426,8 +2253,8 @@ const spec = {
         summary: "Create a backup destination",
         description:
           "Stores the secret access key and the export passphrase encrypted with this instance's key, so that backups run unattended. " +
-          "Keep the passphrase in a password manager: restoring a backup on a new machine needs it. Needs the scheduled_backups feature " +
-          "(403 otherwise); refused on a sync slave (409). Not synced to slaves.",
+          "Keep the passphrase in a password manager: restoring a backup on a new machine needs it. Refused on a sync slave (409). " +
+          "Not synced to slaves.",
         operationId: "createBackupDestination",
         requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/BackupDestinationInput" } } } },
         responses: {
@@ -2443,7 +2270,6 @@ const spec = {
       get: {
         tags: ["Backups"],
         summary: "Get a backup destination",
-        description: "Available without a license.",
         operationId: "getBackupDestination",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -2459,8 +2285,7 @@ const spec = {
         description:
           "Fields left out keep their values; an omitted or empty secretAccessKey or passphrase keeps the stored one. Changing the endpoint " +
           "requires entering the secret access key again. Changing the passphrase does not re-encrypt earlier backups: restoring them needs " +
-          "the passphrase they were made with. Needs the scheduled_backups feature, except a body that only disables the destination " +
-          "({\"enabled\": false}), which works without a license.",
+          "the passphrase they were made with.",
         operationId: "updateBackupDestination",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/BackupDestinationUpdate" } } } },
@@ -2475,7 +2300,7 @@ const spec = {
       delete: {
         tags: ["Backups"],
         summary: "Delete a backup destination",
-        description: "Deletes the destination and its run history; the backup files in the bucket are kept. Works without a license.",
+        description: "Deletes the destination and its run history; the backup files in the bucket are kept.",
         operationId: "deleteBackupDestination",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -2491,8 +2316,7 @@ const spec = {
         tags: ["Backups"],
         summary: "Test a backup destination",
         description:
-          "Writes a small object under the prefix, reads it back and deletes it. Failures are reported in the body (200 with ok=false). " +
-          "Needs the scheduled_backups feature.",
+          "Writes a small object under the prefix, reads it back and deletes it. Failures are reported in the body (200 with ok=false).",
         operationId: "testBackupDestination",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -2511,7 +2335,7 @@ const spec = {
           "Builds the passphrase-encrypted export file (the same file as POST /api/v1/config/export), uploads it as " +
           "<prefix>/ingressi-config-<time>.json with Content-Type application/json and its SHA-256 (signed payload hash and " +
           "x-amz-meta-sha256), then deletes backup files beyond the retention. Returns the run; a failed upload is a 200 with " +
-          "status \"failed\". 409 while a backup to the destination is running and on a sync slave. Needs the scheduled_backups feature.",
+          "status \"failed\". 409 while a backup to the destination is running and on a sync slave.",
         operationId: "runBackup",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -2529,7 +2353,7 @@ const spec = {
         summary: "List stored backups",
         description:
           "Backup files directly under the destination's prefix, newest first (at most 1000). Other objects are not listed. " +
-          "Available without a license. 502 when the storage request fails.",
+          "502 when the storage request fails.",
         operationId: "listBackupObjects",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -2549,8 +2373,8 @@ const spec = {
           "Downloads the backup, checks its SHA-256 against the stored checksum and imports it exactly like POST /api/v1/config/import: " +
           "validated and decrypted before anything changes (a wrong passphrase is a 400), the replaced configuration saved as a history " +
           "snapshot when configuration history is on, 502 and nothing changed if Caddy rejects it or the storage request fails. Uses the " +
-          "destination's passphrase unless one is given (for backups made before it changed). Needs the scheduled_backups feature; refused " +
-          "on a sync slave (409). Without a license, download the file from the bucket and use the free import." + REPLACEMENT_PROTECTED_NOTE,
+          "destination's passphrase unless one is given (for backups made before it changed). Refused " +
+          "on a sync slave (409)." + REPLACEMENT_PROTECTED_NOTE,
         operationId: "restoreBackup",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/BackupRestoreInput" } } } },
@@ -2569,7 +2393,7 @@ const spec = {
       get: {
         tags: ["Backups"],
         summary: "List backup runs",
-        description: "Scheduled and manual backup attempts, newest first; the newest 200 per destination are kept. Available without a license.",
+        description: "Scheduled and manual backup attempts, newest first; the newest 200 per destination are kept.",
         operationId: "listBackupRuns",
         parameters: [
           { name: "page", in: "query", schema: { type: "integer", minimum: 1, default: 1 } },
@@ -2601,7 +2425,6 @@ const spec = {
       post: {
         tags: ["Alerting"],
         summary: "Create an alert channel",
-        description: "E-mail channels are part of Community. Creating other channel types needs a license that includes alerting (403 otherwise).",
         operationId: "createAlertChannel",
         requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/AlertChannelInput" } } } },
         responses: {
@@ -2630,8 +2453,7 @@ const spec = {
         summary: "Update an alert channel",
         description:
           "Omitted fields keep their value. In `config`, an omitted or empty secret keeps the stored one and null removes an optional one. " +
-          "Changing the SMTP host or the ntfy server requires entering the password or token again. The type cannot be changed. " +
-          "Changing a non-e-mail channel needs a license that includes alerting, except a body of only {\"enabled\": false}, which always works.",
+          "Changing the SMTP host or the ntfy server requires entering the password or token again. The type cannot be changed.",
         operationId: "updateAlertChannel",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/AlertChannelUpdate" } } } },
@@ -2646,7 +2468,7 @@ const spec = {
       delete: {
         tags: ["Alerting"],
         summary: "Delete an alert channel",
-        description: "Refused with 409 while a rule notifies the channel. Works without a license, so a lapsed install can wind alerting down.",
+        description: "Refused with 409 while a rule notifies the channel.",
         operationId: "deleteAlertChannel",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -2662,7 +2484,7 @@ const spec = {
       post: {
         tags: ["Alerting"],
         summary: "Send a test notification",
-        description: "Delivery failures are reported in the body (200 with ok=false). Non-e-mail channels need a license that includes alerting.",
+        description: "Delivery failures are reported in the body (200 with ok=false).",
         operationId: "testAlertChannel",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -2688,9 +2510,6 @@ const spec = {
       post: {
         tags: ["Alerting"],
         summary: "Create an alert rule",
-        description:
-          "cert_expiring rules that only notify e-mail channels are part of Community; every other rule needs a license that includes alerting. " +
-          "explain=true needs a license that includes the AI analyst.",
         operationId: "createAlertRule",
         requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/AlertRuleInput" } } } },
         responses: {
@@ -2718,9 +2537,7 @@ const spec = {
         tags: ["Alerting"],
         summary: "Update an alert rule",
         description:
-          "Omitted fields keep their value; params are merged. The type cannot be changed. The license check applies to the rule before and after the change; " +
-          "turning explain on needs a license that includes the AI analyst. A body that only disables ({\"enabled\": false} and/or {\"explain\": false}) " +
-          "always works without a license. Disabling a rule forgets what was firing.",
+          "Omitted fields keep their value; params are merged. The type cannot be changed. Disabling a rule forgets what was firing.",
         operationId: "updateAlertRule",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/AlertRuleUpdate" } } } },
@@ -2735,7 +2552,7 @@ const spec = {
       delete: {
         tags: ["Alerting"],
         summary: "Delete an alert rule",
-        description: "Works without a license. The rule's history is kept.",
+        description: "The rule's history is kept.",
         operationId: "deleteAlertRule",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -2788,8 +2605,7 @@ const spec = {
           "(at most 30 days); without either, the dismissal lasts until the alert resolves, which needs it to be firing now (409 otherwise). " +
           "A mute always needs one. While covered, an alert that starts firing is recorded in the history as not notified (silenced) and " +
           "sends nothing, so no resolve notice follows either; notifications already sent are not taken back. A new dismissal of the same " +
-          "alert, or a new mute of the same rule, replaces the previous one. Licensed like changing the rule: certificate-expiry rules that " +
-          "only notify e-mail channels need no license, other rules need one that includes alerting. Permission alerts:write.",
+          "alert, or a new mute of the same rule, replaces the previous one. Permission alerts:write.",
         operationId: "createAlertSilence",
         requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/AlertSilenceInput" } } } },
         responses: {
@@ -2805,7 +2621,7 @@ const spec = {
       delete: {
         tags: ["Alerting"],
         summary: "Undo a dismissal or mute",
-        description: "Works without a license. Permission alerts:write.",
+        description: "Permission alerts:write.",
         operationId: "deleteAlertSilence",
         parameters: [{ $ref: "#/components/parameters/IdPath" }],
         responses: {
@@ -2834,7 +2650,7 @@ const spec = {
         tags: ["AI"],
         summary: "Set the AI provider",
         description:
-          "Needs a license that includes the AI analyst, except to wind down: {\"provider\": null} removes the provider, and a body of only " +
+          "{\"provider\": null} removes the provider, and a body of only " +
           "{\"enabled\": false} and/or {\"apiKey\": null} switches it off. Omitted fields keep their value; an omitted or empty apiKey keeps the stored key, null removes it. " +
           "Changing the provider or base URL requires entering the key again, so a key is only ever sent to the provider it was entered for.",
         operationId: "updateAiSettings",
@@ -2849,7 +2665,7 @@ const spec = {
       delete: {
         tags: ["AI"],
         summary: "Remove the AI provider",
-        description: "Deletes the provider settings and the stored key. Works without a license.",
+        description: "Deletes the provider settings and the stored key.",
         operationId: "deleteAiSettings",
         responses: {
           "204": { description: "Removed" },
@@ -2862,7 +2678,7 @@ const spec = {
       post: {
         tags: ["AI"],
         summary: "Test the AI provider",
-        description: "Asks the configured model to explain a sample alert. Needs a license that includes the AI analyst. Provider failures are reported in the body.",
+        description: "Asks the configured model to explain a sample alert. Provider failures are reported in the body.",
         operationId: "testAiProvider",
         responses: {
           "200": { description: "Result", content: { "application/json": { schema: { $ref: "#/components/schemas/AiTestResult" } } } },
@@ -2889,9 +2705,8 @@ const spec = {
         tags: ["AI"],
         summary: "Configure the daily security digest",
         description:
-          "Needs a license that includes the AI analyst, except to wind down: a body of only {\"enabled\": false} and/or {\"ai\": false} always works. " +
           "Omitted fields keep their value. channelIds are alert channel ids; PagerDuty channels do not receive digests. " +
-          "Enabling the digest or changing its time never sends a slot that has already passed today. The scheduled digest is sent whatever the license state. Not synced to slave instances.",
+          "Enabling the digest or changing its time never sends a slot that has already passed today. Not synced to slave instances.",
         operationId: "updateAiDigestSettings",
         requestBody: { required: true, content: { "application/json": { schema: { $ref: "#/components/schemas/AiDigestSettingsInput" } } } },
         responses: {
@@ -2908,7 +2723,7 @@ const spec = {
         summary: "Preview the daily security digest",
         description:
           "Builds the digest for the last 24 hours and returns it rendered (e-mail subject, plain text and HTML) without sending it. " +
-          "With AI on and a provider configured, the model is asked for the narrative; a failure is reported in narrative and the plain digest is returned. Needs a license that includes the AI analyst.",
+          "With AI on and a provider configured, the model is asked for the narrative; a failure is reported in narrative and the plain digest is returned.",
         operationId: "previewAiDigest",
         requestBody: {
           required: false,
@@ -2926,7 +2741,7 @@ const spec = {
       post: {
         tags: ["AI"],
         summary: "Send the daily security digest now",
-        description: "Sends the digest to its enabled channels now, whether or not the schedule is on. Delivery failures are reported per channel. Needs a license that includes the AI analyst.",
+        description: "Sends the digest to its enabled channels now, whether or not the schedule is on. Delivery failures are reported per channel.",
         operationId: "sendAiDigest",
         responses: {
           "200": { description: "Result", content: { "application/json": { schema: { $ref: "#/components/schemas/AiDigestSendResult" } } } },
@@ -2944,7 +2759,7 @@ const spec = {
           "Looks for likely WAF false positives in the WAF events of the last 14 days (or the ClickHouse retention, if shorter): the same rule matching on the same host " +
           "for many different clients over several days, mostly without blocking or with a low anomaly score, from clients that otherwise behave normally. " +
           "Each suggestion proposes suppressing the rule for that proxy host and carries its evidence. Replaces the open suggestions; dismissed ones are not proposed again. " +
-          "Nothing is applied automatically. Needs ClickHouse analytics and a license that includes the AI analyst.",
+          "Nothing is applied automatically. Needs ClickHouse analytics.",
         operationId: "listWafTuningSuggestions",
         parameters: [
           { name: "explain", in: "query", required: false, schema: { type: "boolean", default: false }, description: "Ask the configured model for a risk assessment of up to 5 suggestions that have none" },
@@ -2962,8 +2777,7 @@ const spec = {
         tags: ["AI"],
         summary: "Apply a WAF tuning suggestion",
         description:
-          "Adds the rule to the excluded rules of the suggestion's proxy host, exactly like \"Suppress for host\" on the WAF page, and applies the configuration. Recorded in the audit log. " +
-          "Needs a license that includes the AI analyst.",
+          "Adds the rule to the excluded rules of the suggestion's proxy host, exactly like \"Suppress for host\" on the WAF page, and applies the configuration. Recorded in the audit log.",
         operationId: "applyWafTuningSuggestion",
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
@@ -2979,7 +2793,7 @@ const spec = {
       post: {
         tags: ["AI"],
         summary: "Dismiss a WAF tuning suggestion",
-        description: "Remembers the dismissal so the suggestion is not proposed again. Recorded in the audit log. Needs a license that includes the AI analyst.",
+        description: "Remembers the dismissal so the suggestion is not proposed again. Recorded in the audit log.",
         operationId: "dismissWafTuningSuggestion",
         parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
         responses: {
@@ -3466,8 +3280,6 @@ const spec = {
       ...SCIM_OPENAPI_SCHEMAS,
       ...ACCESS_REVIEWS_OPENAPI_SCHEMAS,
       ...FLEET_OPENAPI_SCHEMAS,
-      ...USAGE_PING_OPENAPI_SCHEMAS,
-      ...LICENSE_AUTO_UPDATE_OPENAPI_SCHEMAS,
       ...SEARCH_OPENAPI_SCHEMAS,
       ...ANALYTICS_OPENAPI_SCHEMAS,
       ...QUESTIONS_OPENAPI_SCHEMAS,
@@ -3974,7 +3786,7 @@ const spec = {
       HostTags: {
         type: "array",
         description:
-          "Free-form labels (Community). Tags alone change nothing; a custom role can be limited to hosts carrying one of its tags.",
+          "Free-form labels. Tags alone change nothing; a custom role can be limited to hosts carrying one of its tags.",
         items: { type: "string", maxLength: MAX_TAG_LENGTH, pattern: "^[a-z0-9][a-z0-9._:/-]*$" },
         maxItems: MAX_TAGS_PER_HOST,
         example: ["team-a", "production"],
@@ -4613,103 +4425,6 @@ const spec = {
         },
         required: ["id", "action", "entityType", "createdAt"],
       },
-      License: {
-        type: "object",
-        properties: {
-          status: {
-            type: "string",
-            enum: ["unlicensed", "active", "grace", "expired", "invalid", "revoked", "unconfirmed", "in_use"],
-            description:
-              "revoked: the license server reports the license as revoked; unconfirmed: an online key without a current confirmation " +
-              "from the license server; in_use: the license is active on another install. All three leave paid settings read-only; nothing stops running.",
-          },
-          edition: { type: ["string", "null"], enum: ["homelab", "business", "enterprise", null] },
-          editionLabel: { type: ["string", "null"] },
-          customer: { type: ["string", "null"] },
-          email: { type: ["string", "null"] },
-          licenseId: { type: ["string", "null"] },
-          keyId: { type: ["string", "null"], description: "Id of the built-in public key that verified the installed key's signature" },
-          trial: { type: "boolean" },
-          issuedAt: { type: ["string", "null"], format: "date-time" },
-          expiresAt: { type: ["string", "null"], format: "date-time" },
-          graceEndsAt: { type: ["string", "null"], format: "date-time" },
-          nodes: {
-            type: "object",
-            properties: {
-              licensed: { type: ["integer", "null"] },
-              used: { type: "integer", description: "This dashboard plus its enabled sync slaves" },
-              overLimit: { type: "boolean" },
-            },
-          },
-          error: { type: ["string", "null"], description: "Why an installed key is invalid" },
-          onlineCheck: {
-            type: "object",
-            description: "The daily confirmation of an online key with the license server; required is false for offline keys",
-            properties: {
-              required: { type: "boolean", description: "The installed key is an online key (purchases and trials from ingres.si)" },
-              state: {
-                type: ["string", "null"],
-                enum: ["confirmed", "pending", "unconfirmed", "revoked", "in_use", null],
-                description:
-                  "confirmed: a current confirmation; pending: none yet, within 7 days of this install first seeing the license; " +
-                  "unconfirmed: neither, so paid settings are read-only; revoked: the license server says so; in_use: the license is " +
-                  "active on another install. null when not required.",
-              },
-              confirmedAt: { type: ["string", "null"], format: "date-time", description: "When the license server last confirmed the license" },
-              validUntil: {
-                type: ["string", "null"],
-                format: "date-time",
-                description: "Until when paid settings stay editable without a newer confirmation",
-              },
-              lastAttemptAt: { type: ["string", "null"], format: "date-time" },
-              lastError: { type: ["string", "null"], description: "Why the last attempt failed; null after a success" },
-            },
-            required: ["required", "state", "confirmedAt", "validUntil", "lastAttemptAt", "lastError"],
-          },
-          features: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                id: { type: "string" },
-                label: { type: "string" },
-                description: { type: "string" },
-                edition: { type: "string" },
-                editionLabel: { type: "string" },
-                included: { type: "boolean", description: "Granted by the installed license" },
-                configurable: { type: "boolean", description: "Can be set up or changed now" },
-              },
-            },
-          },
-        },
-      },
-      LicenseKeyCheck: {
-        type: "object",
-        description: "What a license key would grant if it were installed now. Never includes the key.",
-        properties: {
-          installable: { type: "boolean", description: "Installing the key (PUT /api/v1/license) would succeed" },
-          online: { type: "boolean", description: "An online key: once installed, it is confirmed daily with the license server" },
-          status: {
-            type: "string",
-            enum: ["active", "grace", "expired", "invalid", "revoked", "unconfirmed", "in_use"],
-            description: "The key's state if it were installed now; invalid covers malformed, wrongly signed and not-yet-valid keys",
-          },
-          error: { type: ["string", "null"], description: "Why the key cannot be installed" },
-          keyId: { type: ["string", "null"], description: "Id of the built-in public key that verified the signature" },
-          licenseId: { type: ["string", "null"] },
-          edition: { type: ["string", "null"], enum: ["homelab", "business", "enterprise", null] },
-          editionLabel: { type: ["string", "null"] },
-          customer: { type: ["string", "null"] },
-          email: { type: ["string", "null"] },
-          trial: { type: "boolean" },
-          issuedAt: { type: ["string", "null"], format: "date-time" },
-          expiresAt: { type: ["string", "null"], format: "date-time" },
-          graceEndsAt: { type: ["string", "null"], format: "date-time" },
-          nodes: { type: ["integer", "null"], description: "Nodes the key covers" },
-          features: { type: "array", items: { type: "string" }, description: "Paid feature ids the key grants" },
-        },
-        required: ["installable", "online", "status", "error", "features"],
-      },
       SsoEnforcementInput: {
         type: "object",
         required: ["enabled"],
@@ -4762,9 +4477,8 @@ const spec = {
             },
           },
           warnings: { type: "array", items: { type: "string" }, description: "Problems with the setting worth showing an administrator" },
-          configurable: { type: "boolean", description: "The installed license lets administrators change the setting" },
         },
-        required: ["enabled", "breakGlassUsernames", "breakGlassAccounts", "ssoProviders", "warnings", "configurable"],
+        required: ["enabled", "breakGlassUsernames", "breakGlassAccounts", "ssoProviders", "warnings"],
       },
       CustomRole: {
         type: "object",
@@ -4841,9 +4555,8 @@ const spec = {
                 permissions: { type: "array", items: { type: "string" }, example: ["proxy_hosts:read", "proxy_hosts:write"] },
                 scopable: { type: "boolean", description: "A role's scopeTags limit these permissions" },
                 instanceWide: { type: "boolean", description: "Reads or changes data of every host, whatever the role's scope" },
-                paid: { type: "boolean", description: "Belongs to a paid feature (holding the permission needs no license)" },
               },
-              required: ["area", "label", "description", "permissions", "scopable", "instanceWide", "paid"],
+              required: ["area", "label", "description", "permissions", "scopable", "instanceWide"],
             },
           },
           adminLevel: {
@@ -5007,9 +4720,8 @@ const spec = {
         properties: {
           enabled: { type: "boolean", description: "Record a snapshot after every applied change" },
           retention: { type: "integer", description: "Snapshots kept; older ones are deleted", default: 200 },
-          configurable: { type: "boolean", description: "The license lets administrators change history now" },
         },
-        required: ["enabled", "retention", "configurable"],
+        required: ["enabled", "retention"],
       },
       ConfigFieldChange: {
         type: "object",
@@ -5237,7 +4949,7 @@ const spec = {
           "or Caddy has no certificate for a domain). upstream_down: minFails (default 1). " +
           "waf_spike: threshold (default 100), windowMinutes (1-1440, default 15). error_rate: thresholdPercent (0.1-100, one decimal, default 5), " +
           "windowMinutes (1-1440, default 5), minRequests (default 20), perHost (default true: one alert per proxy host; false: the hosts in scope together); " +
-          "needs ClickHouse analytics. license_expiring: days (default 30). " +
+          "needs ClickHouse analytics. " +
           "backup_failed: minFailures (1-100, default 1), consecutive failed backups to one destination. instance_sync_failed, caddy_apply_failed, approval_pending, access_review_started, access_review_overdue, fleet_drift, fleet_rollout_failed: none.",
         additionalProperties: false,
         properties: {
@@ -5258,7 +4970,7 @@ const spec = {
         properties: {
           id: { type: "integer" },
           name: { type: "string" },
-          type: { type: "string", enum: ["cert_expiring", "upstream_down", "waf_spike", "error_rate", "instance_sync_failed", "caddy_apply_failed", "license_expiring", "backup_failed", "approval_pending", "access_review_started", "access_review_overdue", "fleet_drift", "fleet_rollout_failed"] },
+          type: { type: "string", enum: ["cert_expiring", "upstream_down", "waf_spike", "error_rate", "instance_sync_failed", "caddy_apply_failed", "backup_failed", "approval_pending", "access_review_started", "access_review_overdue", "fleet_drift", "fleet_rollout_failed"] },
           enabled: { type: "boolean" },
           params: { $ref: "#/components/schemas/AlertRuleParams" },
           channelIds: { type: "array", items: { type: "integer" } },
@@ -5380,7 +5092,7 @@ const spec = {
         additionalProperties: false,
         properties: {
           name: { type: "string", maxLength: 100 },
-          type: { type: "string", enum: ["cert_expiring", "upstream_down", "waf_spike", "error_rate", "instance_sync_failed", "caddy_apply_failed", "license_expiring", "backup_failed", "approval_pending", "access_review_started", "access_review_overdue", "fleet_drift", "fleet_rollout_failed"] },
+          type: { type: "string", enum: ["cert_expiring", "upstream_down", "waf_spike", "error_rate", "instance_sync_failed", "caddy_apply_failed", "backup_failed", "approval_pending", "access_review_started", "access_review_overdue", "fleet_drift", "fleet_rollout_failed"] },
           enabled: { type: "boolean", default: true },
           params: { $ref: "#/components/schemas/AlertRuleParams" },
           channelIds: { type: "array", items: { type: "integer" }, maxItems: 20 },

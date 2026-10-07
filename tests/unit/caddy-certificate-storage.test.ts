@@ -3,8 +3,7 @@
  * (ee/high-availability/caddy-storage.ts in buildCaddyDocument): absent for
  * local storage, the caddy.storage.redis module for every Redis mode, secrets
  * escaped or read from CADDY_STORAGE_* variables, the master's setting on a
- * slave, no license check, and a failed build instead of a silent fallback to
- * local storage. Also the Caddy rejections the storage module can cause.
+ * slave, and a failed build instead of a silent fallback to local storage. Also the Caddy rejections the storage module can cause.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TestDb } from '../helpers/db';
@@ -84,7 +83,7 @@ describe('buildCaddyDocument storage', () => {
     });
   });
 
-  it('uses the master\'s setting on a slave and never checks the license', async () => {
+  it('uses the master\'s setting on a slave', async () => {
     process.env.INSTANCE_MODE = 'slave';
     await setSetting('synced:certificate_storage', { backend: 'redis', redis: redis({ passwordEnv: 'CADDY_STORAGE_PASSWORD' }) });
     const document = (await buildCaddyDocument()) as { storage?: Record<string, unknown> };

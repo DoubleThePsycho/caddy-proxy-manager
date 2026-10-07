@@ -1,8 +1,8 @@
 /**
  * Server-side render of the Certificate storage section of Certificate settings
- * (ee/high-availability/ui): read-only without a license with going back to
- * local storage still offered, read-only on a slave, the migration commands,
- * and no secret in the markup.
+ * (ee/high-availability/ui): editing, enabling and going back to local
+ * storage, read-only for a read-only role and on a slave, the migration
+ * commands, and no secret in the markup.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -39,7 +39,6 @@ function view(overrides: Partial<CertificateStorageView> = {}): CertificateStora
     redis: redisView,
     source: 'local',
     updatedAt: '2026-10-01T00:00:00.000Z',
-    configurable: false,
     editable: true,
     error: null,
     migration: {
@@ -54,7 +53,7 @@ function view(overrides: Partial<CertificateStorageView> = {}): CertificateStora
 function render(v: CertificateStorageView, canWrite = true) {
   const action = vi.fn();
   return renderToStaticMarkup(
-    createElement(CertificateStorageSection, { view: v, canWrite, editionLabel: 'Enterprise', save: action, remove: action, test: action })
+    createElement(CertificateStorageSection, { view: v, canWrite, save: action, remove: action, test: action })
   );
 }
 
@@ -63,41 +62,48 @@ function hasButton(html: string, label: string): boolean {
 }
 
 describe('Certificate Storage section', () => {
-  it('is read-only without a license and keeps switching back and removing', () => {
+  it('edits shared storage, and offers switching back and removing', () => {
     const html = render(view());
-    expect(html).toContain('Shared certificate storage needs an active Enterprise license');
-    expect(html).toMatch(/<fieldset disabled=""/);
+    expect(html).not.toMatch(/license/i);
+    expect(html).not.toMatch(/<fieldset disabled=""/);
     expect(hasButton(html, 'Switch back to local storage')).toBe(true);
     expect(hasButton(html, 'Remove setting')).toBe(true);
     expect(hasButton(html, 'Test connection')).toBe(true);
-    expect(hasButton(html, '>Save<')).toBe(false);
+    expect(hasButton(html, 'Save</button>')).toBe(true);
   });
 
-  it('shows only the license note without a license when nothing is set up', () => {
-    const html = render(view({ backend: 'local', redis: null }));
-    expect(html).toContain('needs an active Enterprise license');
-    expect(html).toContain('href="/license"');
-    expect(html).not.toContain('<fieldset');
+  it('offers to set shared storage up when nothing is set up', () => {
+    const html = render(view({ backend: 'local', redis: null, migration: null }));
+    expect(html).toContain('<fieldset');
+    expect(html).not.toMatch(/<fieldset disabled=""/);
+    expect(hasButton(html, 'Enable shared storage')).toBe(true);
+    expect(hasButton(html, 'Test connection')).toBe(true);
+  });
+
+  it('is read-only for a role without high_availability:write', () => {
+    const html = render(view(), false);
+    expect(html).toMatch(/<fieldset disabled=""/);
+    expect(hasButton(html, 'Save</button>')).toBe(false);
+    expect(hasButton(html, 'Switch back to local storage')).toBe(false);
     expect(hasButton(html, 'Test connection')).toBe(false);
-    expect(hasButton(html, 'Enable shared storage')).toBe(false);
   });
 
-  it('offers to enable, or to save without enabling, with the license', () => {
-    const html = render(view({ backend: 'local', configurable: true }));
+  it('offers to enable, or to save without enabling', () => {
+    const html = render(view({ backend: 'local' }));
     expect(hasButton(html, 'Enable shared storage')).toBe(true);
     expect(hasButton(html, 'Save without enabling')).toBe(true);
     expect(html).not.toMatch(/<fieldset disabled=""/);
   });
 
   it('is read-only on a replica', () => {
-    const html = render(view({ editable: false, configurable: true, source: 'master' }));
+    const html = render(view({ editable: false, source: 'master' }));
     expect(html).toContain('This instance is a sync replica');
     expect(html).toContain('From the master');
     expect(hasButton(html, 'Switch back to local storage')).toBe(false);
   });
 
   it('shows the migration commands with variables, never secrets', () => {
-    const html = render(view({ configurable: true }));
+    const html = render(view());
     expect(html).toContain('caddy storage export --config /config/caddy/autosave.json --output -');
     expect(html).toContain('-e CADDY_STORAGE_PASSWORD=');
     expect(html).toContain('{env.CADDY_STORAGE_PASSWORD}');

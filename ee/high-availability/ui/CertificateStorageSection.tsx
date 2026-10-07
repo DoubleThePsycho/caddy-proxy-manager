@@ -2,10 +2,9 @@
 "use client";
 
 import { useState, useTransition, type ReactNode } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { CheckCircle2, Copy, Database, Lock, PlugZap, XCircle } from "lucide-react";
+import { CheckCircle2, Copy, Database, PlugZap, XCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,7 +30,6 @@ import {
 type Props = {
   view: CertificateStorageView;
   canWrite: boolean;
-  editionLabel: string;
   save: (input: Record<string, unknown>) => Promise<CertificateStorageActionResult>;
   remove: () => Promise<CertificateStorageActionResult>;
   test: (input: Record<string, unknown> | null) => Promise<CertificateStorageTestActionResult>;
@@ -134,12 +132,11 @@ function Row({ label, hint, children }: { label: string; hint?: ReactNode; child
   );
 }
 
-function Section({ title, children, footer, actions }: { title: string; children: ReactNode; footer?: ReactNode; actions?: ReactNode }) {
+function Section({ title, children, footer }: { title: string; children: ReactNode; footer?: ReactNode }) {
   return (
     <SectionCard
       title={title}
       headingLevel={2}
-      actions={actions}
       footer={footer ? <div className="flex flex-wrap justify-end gap-2">{footer}</div> : undefined}
       padded
     >
@@ -297,7 +294,7 @@ function MigrationHelp({ view }: { view: CertificateStorageView }) {
   );
 }
 
-export default function CertificateStorageSection({ view: initialView, canWrite, editionLabel, save, remove, test }: Props) {
+export default function CertificateStorageSection({ view: initialView, canWrite, save, remove, test }: Props) {
   const router = useRouter();
   const [view, setView] = useState(initialView);
   const [form, setForm] = useState<Form>(() => formFrom(initialView));
@@ -306,9 +303,7 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
   const [confirm, setConfirm] = useState<null | "enable" | "local" | "remove">(null);
   const [pending, startTransition] = useTransition();
 
-  // Without the license only going back to local storage and removing work.
   const writable = canWrite && view.editable;
-  const editable = writable && view.configurable;
   const redis = view.redis;
 
   function update<K extends keyof Form>(key: K, value: Form[K]) {
@@ -347,30 +342,11 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
     setError(null);
     setTestResult(null);
     startTransition(async () => {
-      // Read-only (no license, or a replica): test the storage in effect on this instance.
-      const outcome = await test(editable ? { redis: redisInput(form) } : null);
+      // Read-only (a sync replica): test the storage in effect on this instance.
+      const outcome = await test(writable ? { redis: redisInput(form) } : null);
       if (outcome.ok) setTestResult(outcome.result);
       else setError(outcome.error);
     });
-  }
-
-  // Without the license and with nothing set up there is nothing to show but the license.
-  if (!view.configurable && !redis) {
-    return (
-      <div className="flex flex-col gap-4" data-testid="certificate-storage-section">
-        <Section title="Certificate storage" actions={<Badge variant="outline">{editionLabel}</Badge>}>
-          <p className="m-0 flex items-center gap-2 text-sm text-muted-foreground">
-            <Lock className="h-4 w-4 shrink-0" />
-            <span>
-              Shared storage in Redis or Valkey, for several Caddy nodes, needs an active {editionLabel} license.{" "}
-              <Link href="/license" className="text-brand underline-offset-4 hover:underline">
-                Manage the license
-              </Link>
-            </span>
-          </p>
-        </Section>
-      </div>
-    );
   }
 
   const status =
@@ -382,7 +358,7 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
 
   return (
     <div className="flex flex-col gap-4" data-testid="certificate-storage-section">
-      <Section title="Certificate storage" actions={<Badge variant="outline">{editionLabel}</Badge>}>
+      <Section title="Certificate storage">
         <div className="flex flex-col gap-3 text-sm">
           <div className="flex flex-wrap items-center gap-2">
             <Database className="h-4 w-4 text-muted-foreground" />
@@ -394,18 +370,6 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
         </div>
       </Section>
 
-      {!view.configurable && (
-        <Alert>
-          <Lock className="h-4 w-4" />
-          <AlertDescription>
-            Shared certificate storage needs an active {editionLabel} license. Storage that is already configured keeps working and is shown
-            read-only; you can still switch back to local storage or remove the setting.{" "}
-            <Link href="/license" className="underline underline-offset-4">
-              Manage the license
-            </Link>
-          </AlertDescription>
-        </Alert>
-      )}
       {!view.editable && (
         <Alert>
           <AlertDescription>
@@ -443,12 +407,12 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
                 <PlugZap className="h-4 w-4 mr-1" /> Test connection
               </Button>
             )}
-            {editable && view.backend === "local" && (
+            {writable && view.backend === "local" && (
               <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => run({ backend: "local", redis: redisInput(form) }, "Settings saved, not enabled")}>
                 Save without enabling
               </Button>
             )}
-            {editable && (
+            {writable && (
               <Button type="button" size="sm" disabled={pending} onClick={() => (view.backend === "redis" ? run({ backend: "redis", redis: redisInput(form) }, "Certificate storage saved") : setConfirm("enable"))}>
                 {view.backend === "redis" ? "Save" : "Enable shared storage"}
               </Button>
@@ -456,9 +420,9 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
           </>
         }
       >
-        <fieldset disabled={!editable || pending} className="flex flex-col">
+        <fieldset disabled={!writable || pending} className="flex flex-col">
           <Row label="Mode">
-            <Select value={form.mode} onValueChange={(value) => update("mode", value as RedisMode)} disabled={!editable || pending}>
+            <Select value={form.mode} onValueChange={(value) => update("mode", value as RedisMode)} disabled={!writable || pending}>
               <SelectTrigger aria-label="Mode">
                 <SelectValue />
               </SelectTrigger>
@@ -504,7 +468,7 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
               form={form.secrets.password}
               isSet={Boolean(redis?.hasPassword)}
               envPrefix={view.envPrefix}
-              disabled={!editable || pending}
+              disabled={!writable || pending}
               onChange={(next) => updateSecret("password", next)}
             />
           </Row>
@@ -516,7 +480,7 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
                 form={form.secrets.sentinelPassword}
                 isSet={Boolean(redis?.hasSentinelPassword)}
                 envPrefix={view.envPrefix}
-                disabled={!editable || pending}
+                disabled={!writable || pending}
                 onChange={(next) => updateSecret("sentinelPassword", next)}
               />
             </Row>
@@ -534,7 +498,7 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
               form={form.secrets.encryptionKey}
               isSet={Boolean(redis?.hasEncryptionKey)}
               envPrefix={view.envPrefix}
-              disabled={!editable || pending}
+              disabled={!writable || pending}
               onChange={(next) => updateSecret("encryptionKey", next)}
               generate={randomKey}
             />
@@ -542,12 +506,12 @@ export default function CertificateStorageSection({ view: initialView, canWrite,
           <Row label="TLS">
             <div className="flex flex-col gap-2">
               <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={form.tlsEnabled} onCheckedChange={(checked) => update("tlsEnabled", Boolean(checked))} disabled={!editable || pending} />
+                <Checkbox checked={form.tlsEnabled} onCheckedChange={(checked) => update("tlsEnabled", Boolean(checked))} disabled={!writable || pending} />
                 Use TLS
               </label>
               {form.tlsEnabled && (
                 <label className="flex items-center gap-2 text-sm">
-                  <Checkbox checked={form.tlsInsecure} onCheckedChange={(checked) => update("tlsInsecure", Boolean(checked))} disabled={!editable || pending} />
+                  <Checkbox checked={form.tlsInsecure} onCheckedChange={(checked) => update("tlsInsecure", Boolean(checked))} disabled={!writable || pending} />
                   Do not verify the server&apos;s certificate (not recommended)
                 </label>
               )}

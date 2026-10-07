@@ -1,18 +1,17 @@
 /**
- * REST endpoints of API monetization (/api/v1/monetization/*): the license
- * gate on every paid write path (Enterprise), winding down without a license,
- * validation, secret redaction of the Stripe settings, the rule that a sync
+ * REST endpoints of API monetization (/api/v1/monetization/*): reading and
+ * winding down, validation, secret redaction of the Stripe settings, the rule that a sync
  * slave cannot turn it on, monetization as an authentication mode of its own (both ways round),
  * keys shown once, idempotent adjustments, the ledger, the permission
  * catalogue and instance sync leaving monetized hosts on the master.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner, setSettingRow } from '../helpers/config-fixture';
-import { insertConsumer, insertKey, insertMonetizedHost, insertPlan, insertProxyHost } from '../helpers/monetization';
+import { setSettingRow } from '../helpers/config-fixture';
+import { insertConsumer, insertKey, insertMonetizedHost, insertProxyHost } from '../helpers/monetization';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
@@ -26,7 +25,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 import { requireApiAdmin } from '../../src/lib/api-auth';
 import { applyCaddyConfig } from '../../src/lib/caddy';
 import { logAuditEvent } from '../../src/lib/audit';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { PERMISSION_AREAS, isAdminLevel, isPermission } from '../../src/lib/permissions';
 import { decryptSecret, isEncryptedSecret } from '../../src/lib/secret';
 import { updateProxyHost } from '../../src/lib/models/proxy-hosts';
@@ -48,7 +46,6 @@ import * as ledgerRoute from '../../app/api/v1/monetization/ledger/route';
 import { GET as getOpenApi } from '../../app/api/v1/openapi.json/route';
 import { first as dbFirst } from '@/src/lib/db/ops';
 
-const LICENSE_ERROR = 'API monetization needs an active Ingressi Enterprise license or higher';
 const SECRET_KEY = 'sk_test_SENTINELsecretKey1234567890';
 const WEBHOOK_SECRET = 'whsec_SENTINELwebhookSecret123456';
 const ADMIN_ID = 1;
@@ -63,10 +60,6 @@ function req(method: string, path: string, body?: unknown): NextRequest {
 }
 const params = (id: string | number) => ({ params: Promise.resolve({ id: String(id) }) });
 const keyParams = (id: number, keyId: number) => ({ params: Promise.resolve({ id: String(id), keyId: String(keyId) }) });
-
-async function removeLicense() {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-}
 
 async function createPlan(body: Record<string, unknown> = {}) {
   const response = await plansRoute.POST(req('POST', '/api/v1/monetization/plans', { name: 'Standard', pricePerRequestMicros: 1_000, ...body }));
@@ -85,52 +78,13 @@ beforeEach(async () => {
   resetMonetizationEngineForTests();
   vi.clearAllMocks();
   vi.mocked(applyCaddyConfig).mockResolvedValue(undefined as never);
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
   const t = new Date().toISOString();
   await ctx.db.insert(schema.users).values({ id: ADMIN_ID, email: 'admin@example.com', name: 'Admin', role: 'admin', status: 'active', createdAt: t, updatedAt: t });
-  await installLicense(ctx.db, 'enterprise');
   vi.mocked(requireApiAdmin).mockResolvedValue({ userId: ADMIN_ID, role: 'admin', authMethod: 'bearer' });
 });
 
-afterAll(() => setTrustedLicenseKeysForTests(null));
-
-describe('license gate', () => {
-  it('refuses every paid write without a license', async () => {
-    const plan = await insertPlan(ctx.db);
-    const consumer = await insertConsumer(ctx.db, { planId: plan.id });
-    const disabled = await insertConsumer(ctx.db, { name: 'Off', status: 'disabled', planId: plan.id });
-    const host = await insertProxyHost(ctx.db);
-    await removeLicense();
-
-    const responses = [
-      await plansRoute.POST(req('POST', '/x', { name: 'New', pricePerRequestMicros: 1 })),
-      await planRoute.PUT(req('PUT', '/x', { pricePerRequestMicros: 2 }), params(plan.id)),
-      await consumersRoute.POST(req('POST', '/x', { name: 'New' })),
-      await consumerRoute.PUT(req('PUT', '/x', { name: 'Renamed' }), params(consumer.id)),
-      await consumerRoute.PUT(req('PUT', '/x', { status: 'active' }), params(disabled.id)),
-      await consumerRoute.PUT(req('PUT', '/x', { status: 'disabled', overdraftAllowanceMicros: 5 }), params(consumer.id)),
-      await keysRoute.POST(req('POST', '/x', {}), params(consumer.id)),
-      await adjustRoute.POST(req('POST', '/x', { amountMicros: 1_000, reason: 'Goodwill' }), params(consumer.id)),
-      await portalRoute.POST(req('POST', '/x'), params(consumer.id)),
-      await hostRoute.PUT(req('PUT', '/x', { enabled: true }), params(host.id)),
-      await stripeRoute.PUT(req('PUT', '/x', { currency: 'eur' })),
-    ];
-    for (const response of responses) {
-      expect(response.status).toBe(403);
-      expect((await response.json()).error).toBe(LICENSE_ERROR);
-    }
-    expect(await ctx.db.select().from(schema.monetizationKeys)).toHaveLength(0);
-    expect(await ctx.db.select().from(schema.monetizationHosts)).toHaveLength(0);
-    expect(await ctx.db.select().from(schema.monetizationLedger)).toHaveLength(0);
-  });
-
-  it('refuses a Business license (Enterprise feature)', async () => {
-    await installLicense(ctx.db, 'business');
-    const response = await plansRoute.POST(req('POST', '/x', { name: 'New', pricePerRequestMicros: 1 }));
-    expect(response.status).toBe(403);
-  });
-
-  it('lets an unlicensed admin read, disable, revoke, turn off and delete', async () => {
+describe('winding down', () => {
+  it('reads, disables, revokes, turns off and deletes', async () => {
     const plan = await createPlan();
     const consumer = await createConsumer({ planId: plan.id });
     const key = await (await keysRoute.POST(req('POST', '/x', { name: 'prod' }), params(consumer.id))).json();
@@ -138,7 +92,6 @@ describe('license gate', () => {
     const host = await insertProxyHost(ctx.db);
     expect((await hostRoute.PUT(req('PUT', '/x', { enabled: true }), params(host.id))).status).toBe(200);
     await stripeRoute.PUT(req('PUT', '/x', { secretKey: SECRET_KEY, webhookSecret: WEBHOOK_SECRET, topUpAmountsMicros: [10_000_000] }));
-    await removeLicense();
 
     for (const response of [
       await plansRoute.GET(req('GET', '/x')),
@@ -436,8 +389,8 @@ describe('Stripe settings', () => {
 });
 
 describe('permissions and documentation', () => {
-  it('has a paid, instance-wide monetization area with read, write and administrator-level payments', () => {
-    expect(PERMISSION_AREAS.monetization).toMatchObject({ actions: ['read', 'write', 'payments'], paid: true, instanceWide: true });
+  it('has an instance-wide monetization area with read, write and administrator-level payments', () => {
+    expect(PERMISSION_AREAS.monetization).toMatchObject({ actions: ['read', 'write', 'payments'], instanceWide: true });
     expect(isPermission('monetization:read')).toBe(true);
     expect(isPermission('monetization:write')).toBe(true);
     expect(isPermission('monetization:payments')).toBe(true);

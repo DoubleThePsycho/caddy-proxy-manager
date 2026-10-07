@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import type { TestDb } from './db';
 import * as schema from '../../src/lib/db/schema';
 import { encryptSecret } from '../../src/lib/secret';
-import { createTestSigner, licensePayload, signLicense } from './license';
 import { first } from '@/src/lib/db/ops';
 
 /** Secret plaintexts that must never appear in a snapshot or an export file. */
@@ -23,10 +22,6 @@ export const OUTSIDE = {
   forwardAuthTokenHash: 'forward-auth-token-hash-OUTSIDE',
 };
 
-export const licenseSigner = createTestSigner('config-history-test');
-
-const LONG_AGO = '2026-01-01T00:00:00.000Z';
-
 export function now(): string {
   return new Date().toISOString();
 }
@@ -37,15 +32,6 @@ export async function setSettingRow(db: TestDb, key: string, value: unknown): Pr
   await db.insert(schema.settings)
     .values({ key, value: serialized, updatedAt })
     .onConflictDoUpdate({ target: schema.settings.key, set: { value: serialized, updatedAt } });
-}
-
-/** Installs a license for `edition` (homelab includes config_history). */
-export async function installLicense(db: TestDb, edition = 'homelab', overrides: Record<string, unknown> = {}): Promise<void> {
-  const key = signLicense(
-    licenseSigner,
-    licensePayload(licenseSigner, { edition, iat: LONG_AGO, exp: '2099-01-01T00:00:00.000Z', ...overrides })
-  );
-  await setSettingRow(db, 'license', key);
 }
 
 export type Fixture = {

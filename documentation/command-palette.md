@@ -1,6 +1,6 @@
 # Search and the command palette
 
-Press **Ctrl+K** (**⌘K** on a Mac) anywhere in the dashboard, or click **Search or jump to…** in the sidebar, to open the command palette. It is a Community feature.
+Press **Ctrl+K** (**⌘K** on a Mac) anywhere in the dashboard, or click **Search or jump to…** in the sidebar, to open the command palette.
 
 Type part of a name and the palette lists, in this order:
 

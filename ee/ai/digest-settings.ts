@@ -8,8 +8,6 @@
 import { getSetting, setSetting } from "@/src/lib/settings";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
-import { isWindDownOnly } from "@/ee/alerting/gate";
 import { getChannelTypes, listAlertChannels } from "@/ee/alerting/channels";
 import { isPlainObject, readBoolean, rejectUnknownKeys, requireObject } from "@/ee/alerting/validation";
 import { digestSchedule, isValidTimeOfDay, isValidTimeZone } from "./digest-schedule";
@@ -114,7 +112,7 @@ export function toDigestSettingsView(
   };
 }
 
-/** Read-only view; available to administrators without a license. */
+/** Read-only view. */
 export async function getDigestSettingsView(now: Date = new Date()): Promise<DigestSettingsView> {
   const [settings, state, channels] = await Promise.all([readDigestSettings(), readDigestState(), listAlertChannels()]);
   return toDigestSettingsView(settings, state, channels.map((channel) => channel.id), now);
@@ -158,43 +156,28 @@ async function existingIds(ids: readonly number[]): Promise<number[]> {
   return ids.filter((id) => channels.some((channel) => channel.id === id && channel.type !== "pagerduty"));
 }
 
-/**
- * Validates and stores the digest settings. Needs the ai_analyst feature,
- * except to wind down: a body of only {"enabled": false} and/or {"ai": false}
- * always works.
- */
+/** Validates and stores the digest settings. */
 export async function saveDigestSettings(body: unknown, actorUserId: number, now: Date = new Date()): Promise<DigestSettingsView> {
   const record = requireObject(body, "Request body");
-  const windDown = isWindDownOnly(record, { enabled: false, ai: false });
-  if (!windDown) await requireFeature("ai_analyst");
   rejectUnknownKeys(record, ["enabled", "timeOfDay", "timeZone", "channelIds", "ai"], "the digest settings");
   const previous = await readDigestSettings();
 
-  let next: StoredDigestSettings;
-  if (windDown) {
-    next = {
-      ...previous,
-      enabled: record.enabled === false ? false : previous.enabled,
-      ai: record.ai === false ? false : previous.ai,
-    };
-  } else {
-    const enabled = readBoolean(record.enabled, "enabled", previous.enabled);
-    const timeOfDay = record.timeOfDay !== undefined ? readTimeOfDay(record.timeOfDay) : previous.timeOfDay;
-    const timeZone = record.timeZone !== undefined ? readTimeZone(record.timeZone) : previous.timeZone;
-    const channelIds = record.channelIds !== undefined ? await readChannelIds(record.channelIds) : await existingIds(previous.channelIds);
-    const ai = readBoolean(record.ai, "ai", previous.ai);
-    if (enabled && channelIds.length === 0) throw new ApiValidationError("Choose at least one alert channel for the digest");
-    // A schedule that starts (or moves) now never sends a slot that has already passed today.
-    const scheduleChanged = enabled && (!previous.enabled || timeOfDay !== previous.timeOfDay || timeZone !== previous.timeZone);
-    next = {
-      enabled,
-      timeOfDay,
-      timeZone,
-      channelIds,
-      ai,
-      activeSince: scheduleChanged ? now.toISOString() : previous.activeSince,
-    };
-  }
+  const enabled = readBoolean(record.enabled, "enabled", previous.enabled);
+  const timeOfDay = record.timeOfDay !== undefined ? readTimeOfDay(record.timeOfDay) : previous.timeOfDay;
+  const timeZone = record.timeZone !== undefined ? readTimeZone(record.timeZone) : previous.timeZone;
+  const channelIds = record.channelIds !== undefined ? await readChannelIds(record.channelIds) : await existingIds(previous.channelIds);
+  const ai = readBoolean(record.ai, "ai", previous.ai);
+  if (enabled && channelIds.length === 0) throw new ApiValidationError("Choose at least one alert channel for the digest");
+  // A schedule that starts (or moves) now never sends a slot that has already passed today.
+  const scheduleChanged = enabled && (!previous.enabled || timeOfDay !== previous.timeOfDay || timeZone !== previous.timeZone);
+  const next: StoredDigestSettings = {
+    enabled,
+    timeOfDay,
+    timeZone,
+    channelIds,
+    ai,
+    activeSince: scheduleChanged ? now.toISOString() : previous.activeSince,
+  };
 
   await setSetting(DIGEST_SETTINGS_KEY, next);
   await logAuditEvent({

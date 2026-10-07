@@ -2,6 +2,16 @@
 
 Pull the new images and recreate the containers with `docker compose pull && docker compose up -d`. (`docker compose restart` does not re-read `.env`.)
 
+## Upgrading to v2.1.0
+
+From v1.13.x, also read [Upgrading to Ingressi](#upgrading-to-ingressi) below.
+
+- **Every feature is free and needs no license.** The License page, the `/api/v1/license*` endpoints, the online license check and automatic license updates are removed. A license key installed earlier is deleted on the first start.
+- **The `license:read` and `license:write` permissions are removed.** Saved custom roles and API token scopes that name them still load; the names are ignored.
+- **The anonymous usage ping is removed**, with its question on the overview, its Settings section and `/api/v1/usage-ping`. Its settings are deleted on the first start.
+- **`LICENSE_AUTO_UPDATE_DISABLED`, `LICENSE_SERVER_URL`, `USAGE_PING_ENABLED`, `USAGE_PING_DISABLED` and `USAGE_PING_URL`** are ignored and can be removed from `.env`.
+- **Alert rules of the removed type `license_expiring`** are no longer evaluated or listed; delete them with `DELETE /api/v1/alert-rules/{id}` if you want them gone.
+
 ## Upgrading to Ingressi
 
 Caddy Proxy Manager is now Ingressi, and the rename reaches header, cookie, file, image and container names. Most old names keep working; point your compose file at the `ghcr.io/ingres-si/ingressi-*` images, and see [upgrading-to-ingressi.md](upgrading-to-ingressi.md) for every rename. Two things to check:

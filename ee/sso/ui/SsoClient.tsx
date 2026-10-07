@@ -51,7 +51,6 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
   const [saved, setSaved] = useState(false);
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState("");
-  const readOnly = !view.configurable;
   const needle = query.trim().toLowerCase();
   const shownCandidates = needle
     ? candidates.filter((candidate) => `${candidate.username} ${candidate.name ?? ""}`.toLowerCase().includes(needle))
@@ -103,13 +102,6 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
         description={`Require sign-in to ${productName} through your identity provider. The forward-auth portal is not affected.`}
       />
 
-      {readOnly && (
-        <Banner tone="info" title="Read-only without a license.">
-          Changing enforced SSO needs a Business license or higher. You can still turn it off.{" "}
-          <Link href="/license" className="text-brand underline-offset-4 hover:underline">Manage the license</Link>
-        </Banner>
-      )}
-
       <div className="grid gap-5 lg:grid-cols-3">
         <SectionCard
           className="lg:col-span-2"
@@ -141,7 +133,7 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
               id="sso-enforce"
               checked={enabled}
               onCheckedChange={(checked) => { setEnabled(checked); setSaved(false); }}
-              disabled={(readOnly && !(view.enabled && enabled)) || pending}
+              disabled={pending}
             />
           </div>
 
@@ -173,7 +165,7 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
                         id={id}
                         checked={selected.has(candidate.username)}
                         onCheckedChange={(checked) => toggle(candidate.username, checked === true)}
-                        disabled={readOnly || pending}
+                        disabled={pending}
                       />
                       <Label htmlFor={id} className="flex flex-1 flex-wrap items-center gap-2 font-normal">
                         <span className="num font-medium">{candidate.username}</span>
@@ -191,13 +183,11 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
           {error && <Banner tone="bad" live>{error}</Banner>}
           {saved && !error && <Banner tone="ok" live>Saved.</Banner>}
 
-          {(!readOnly || (view.enabled && !enabled)) && (
-            <div>
-              <Button onClick={save} disabled={pending || !dirty}>
-                {pending ? "Saving…" : readOnly ? "Turn off" : "Save"}
-              </Button>
-            </div>
-          )}
+          <div>
+            <Button onClick={save} disabled={pending || !dirty}>
+              {pending ? "Saving…" : "Save"}
+            </Button>
+          </div>
         </SectionCard>
 
         <div className="flex min-w-0 flex-col gap-5">

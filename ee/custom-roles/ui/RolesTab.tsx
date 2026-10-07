@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Elastic-2.0
 "use client";
 
-import { Fragment, useState, useTransition } from "react";
-import Link from "next/link";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Plus } from "lucide-react";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import type { CustomRoleView } from "@/ee/custom-roles/store";
 import type { PermissionCatalogue, PermissionCatalogueArea } from "@/ee/custom-roles/catalogue";
 import { cn } from "@/lib/utils";
@@ -25,9 +23,6 @@ type Props = {
   /** Who holds each role, by name: the built-in roles and each custom role by id. */
   holders?: { admin: string[]; user: string[]; viewer: string[]; custom: Record<number, string[]> };
   canWrite: boolean;
-  /** The license allows creating, changing and assigning custom roles. */
-  licensed: boolean;
-  editionLabel: string;
   saveRole: (id: number | null, input: unknown) => Promise<ActionResult>;
   deleteRole: (id: number) => Promise<ActionResult>;
   /** The row open at first: "admin", "user", "viewer" or "custom-<id>". */
@@ -45,7 +40,7 @@ const FAMILIES: { title: string; areas: readonly string[] }[] = [
   { title: "Govern", areas: ["approvals", "config_history", "compliance"] },
   {
     title: "Platform",
-    areas: ["settings", "instances", "fleet", "high_availability", "backups", "config", "monetization", "branding", "license"],
+    areas: ["settings", "instances", "fleet", "high_availability", "backups", "config", "monetization", "branding"],
   },
 ];
 
@@ -88,15 +83,13 @@ function listHolders(names: string[]): string {
  * custom roles with their permissions grouped by area, their tag scope and
  * who holds them; create, edit, duplicate and delete for users:write.
  */
-export default function RolesTab({ roles, catalogue, actor, holders, canWrite, licensed, editionLabel, saveRole, deleteRole, initialOpen = null }: Props) {
+export default function RolesTab({ roles, catalogue, actor, holders, canWrite, saveRole, deleteRole, initialOpen = null }: Props) {
   const router = useRouter();
-  const { productName } = useBranding();
   const [open, setOpen] = useState<string | null>(initialOpen);
   const [draft, setDraft] = useState<RoleDraft | null>(null);
   const [deleting, setDeleting] = useState<CustomRoleView | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const canEdit = canWrite && licensed;
   const total = catalogue.areas.reduce((sum, area) => sum + area.permissions.length, 0);
   const families = familiesOf(catalogue);
   const adminLevelPermissions = new Set(catalogue.adminLevel.permissions);
@@ -115,7 +108,7 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
       userCount: holders?.admin.length ?? 0,
       detail:
         `Holds all ${total} permissions in the ${catalogue.areas.length} areas, including the administrator-level ones: ` +
-        "single sign-on, the MFA policy, directories, SCIM, the license, access reviews and approval policies.",
+        "single sign-on, the MFA policy, directories, SCIM, access reviews and approval policies.",
       custom: null,
     },
     {
@@ -205,7 +198,7 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
         <p className="m-0 min-w-0 flex-[1_1_420px] text-[13px] text-muted-foreground">
           Custom roles hold the permissions you choose, optionally limited to hosts and certificates with one of their tags.
         </p>
-        {canEdit && (
+        {canWrite && (
           <Button variant="outline" onClick={() => startDraft(null)} data-testid="new-custom-role">
             <Plus />
             Create role
@@ -213,13 +206,6 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
         )}
       </div>
 
-      {!licensed && (
-        <Banner tone="info" title={`Custom roles need a ${editionLabel} license.`}>
-          Creating, changing and assigning custom roles needs an active {productName} {editionLabel} license or higher. You can still delete
-          roles and take them away.{" "}
-          <Link href="/license" className="text-brand underline-offset-4 hover:underline">Licensing</Link>
-        </Banner>
-      )}
       {listError && <Banner tone="bad" live onDismiss={() => setListError(null)}>{listError}</Banner>}
 
       <section aria-label="Roles" className="min-w-0 overflow-hidden rounded-2xl border border-line bg-panel">
@@ -346,16 +332,12 @@ export default function RolesTab({ roles, catalogue, actor, holders, canWrite, l
                       </span>
                       {row.custom && canWrite && !own && (
                         <span className="flex flex-wrap gap-2">
-                          {licensed && (
-                            <Fragment>
-                              <Button variant="secondary" size="sm" onClick={() => startDraft(row.custom)}>
-                                Edit role
-                              </Button>
-                              <Button variant="ghost" size="sm" onClick={() => startDraft(row.custom, true)}>
-                                Duplicate
-                              </Button>
-                            </Fragment>
-                          )}
+                          <Button variant="secondary" size="sm" onClick={() => startDraft(row.custom)}>
+                            Edit role
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => startDraft(row.custom, true)}>
+                            Duplicate
+                          </Button>
                           <Button variant="danger" size="sm" disabled={pending} onClick={() => setDeleting(row.custom)}>
                             Delete role
                           </Button>

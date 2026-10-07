@@ -1,7 +1,7 @@
 /**
- * Dismissing a firing alert on the E2E stack, which runs without a license:
- * a certificate-expiry rule that notifies an e-mail channel (Community)
- * fires for an imported certificate that expires in two days. Dismissed from
+ * Dismissing a firing alert on the E2E stack: a certificate-expiry rule that
+ * notifies an e-mail channel fires for an imported certificate that expires
+ * in two days. Dismissed from
  * the Firing tab, the alert stays listed, marked, and leaves the overview's
  * Needs attention and the sidebar count; Undo brings it back.
  */

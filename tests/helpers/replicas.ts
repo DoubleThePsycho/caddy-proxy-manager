@@ -1,6 +1,6 @@
 /**
  * The replicas stack (tests/docker-compose.test.replicas.yml): two dashboard
- * replicas on one PostgreSQL, and a third node the license spec starts.
+ * replicas on one PostgreSQL, and a third node the third-replica spec starts.
  */
 import { execFileSync } from 'node:child_process';
 import { composeArgs, composeEnv } from './e2e-stack';
@@ -16,7 +16,7 @@ export type Replica = {
 
 export const REPLICA_A: Replica = { nodeId: 'replica-a', service: 'web', container: 'ingressi-web', url: 'http://localhost:3000' };
 export const REPLICA_B: Replica = { nodeId: 'replica-b', service: 'web-b', container: 'ingressi-web-b', url: 'http://localhost:3010' };
-/** A new node without a license (profile third-replica). */
+/** A new node (profile third-replica). */
 export const REPLICA_C: Replica = { nodeId: 'replica-c', service: 'web-c', container: 'ingressi-web-c', url: 'http://localhost:3011' };
 
 export const REPLICAS = [REPLICA_A, REPLICA_B] as const;

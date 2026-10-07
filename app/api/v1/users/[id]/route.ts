@@ -88,8 +88,8 @@ export async function PUT(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     await assertCanManageUserId(auth.access, targetId);
-    // Role and status guards (escalation, license for a custom role, the last
-    // administrator, enforced SSO lockout) before anything is written.
+    // Role and status guards (escalation, the last administrator, enforced SSO
+    // lockout) before anything is written.
     // assignRole and updateUserStatus check again in their own transactions.
     if (assignment) {
       await assertCanAssignRole(auth.access, targetId, assignment);

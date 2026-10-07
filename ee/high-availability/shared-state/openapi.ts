@@ -30,7 +30,7 @@ export const SHARED_STATE_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Get the shared state setting",
       description:
-        "Permission high_availability:read. Available without a license. Whether the web nodes keep forward-auth sessions, exchange " +
+        "Permission high_availability:read. Whether the web nodes keep forward-auth sessions, exchange " +
         "codes, redirect intents and API monetization balances in Redis or Valkey (the certificate storage's server) instead of their own " +
         "database and memory. No secrets.",
       operationId: "getSharedState",
@@ -41,7 +41,7 @@ export const SHARED_STATE_OPENAPI_PATHS = {
       summary: "Turn shared state on or off",
       description:
         "Permission high_availability:write (administrator-level). {enabled?, keyPrefix?}; a missing field keeps the stored value. Turning " +
-        "shared state on, or changing the prefix while on, needs the high_availability feature (403 otherwise) and the certificate " +
+        "shared state on needs the certificate " +
         "storage's Redis or Valkey settings (saved, enabled or not); this web container must reach the server (502 otherwise). Turning it " +
         "off, or moving to another prefix, first writes the shared API balances to the ledger and refuses (502) when it cannot. Either way " +
         "users signed in through Ingressi forward auth sign in again once. 409 on a sync slave.",
@@ -54,8 +54,7 @@ export const SHARED_STATE_OPENAPI_PATHS = {
       summary: "Remove the shared state setting",
       description:
         "Permission high_availability:write. Turns shared state off and forgets the setting even when the server cannot be reached: the " +
-        "shared balances are written to the ledger when it answers, otherwise usage and credits not yet in the ledger are lost. Never " +
-        "needs a license.",
+        "shared balances are written to the ledger when it answers, otherwise usage and credits not yet in the ledger are lost.",
       operationId: "removeSharedState",
       responses: { "200": { description: "Removed", content: json(ref("SharedState")) }, ...errors("401", "403") },
     },
@@ -106,7 +105,6 @@ export const SHARED_STATE_OPENAPI_SCHEMAS = {
         },
       },
       updatedAt: { type: ["string", "null"], format: "date-time" },
-      configurable: { type: "boolean", description: "The license lets this instance turn shared state on or change it." },
       editable: { type: "boolean", description: "False on a sync slave." },
       error: { type: ["string", "null"], description: "Shared state is on but cannot be used; request paths fail closed." },
     },

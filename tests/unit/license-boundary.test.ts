@@ -1,14 +1,13 @@
 /**
- * The open-core boundary (ee/boundary.ts, ee/README.md): every source file
- * under ee/ is Elastic-2.0, every file under a paid route prefix in app/ only
- * routes to ee/ (a shim), license gates and paid logic stay in ee/, and core
- * files outside app/ that import ee/ are listed with the reason.
+ * The license boundary (ee/boundary.ts, ee/README.md): every source file
+ * under ee/ is Elastic-2.0, every file under an ee/ route prefix in app/ only
+ * routes to ee/ (a shim), and core files outside app/ that import ee/ are
+ * listed with the reason.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { CORE_EE_HOOKS, PAID_FEATURES_WITHOUT_ROUTES, PAID_ROUTE_PREFIXES, PAID_ROUTES } from '@/ee/boundary';
-import { FEATURES } from '@/ee/licensing/features';
+import { CORE_EE_HOOKS, EE_ROUTE_PREFIXES, EE_ROUTES } from '@/ee/boundary';
 
 const ROOT = process.cwd();
 
@@ -111,41 +110,31 @@ function shimProblems(file: string, module: string): string[] {
   return problems;
 }
 
-describe('paid routes and pages in app/', () => {
+describe('ee/ routes and pages in app/', () => {
   const appFiles = files('app');
   const groupOf = (file: string) =>
-    PAID_ROUTES.find((group) => group.prefixes.some((prefix) => (prefix.endsWith('/') ? file.startsWith(prefix) : file === prefix)));
-  const paid = appFiles.filter((file) => groupOf(file));
+    EE_ROUTES.find((group) => group.prefixes.some((prefix) => (prefix.endsWith('/') ? file.startsWith(prefix) : file === prefix)));
+  const shims = appFiles.filter((file) => groupOf(file));
 
   it('lists prefixes that exist, once each', () => {
-    expect(new Set(PAID_ROUTE_PREFIXES).size).toBe(PAID_ROUTE_PREFIXES.length);
-    for (const prefix of PAID_ROUTE_PREFIXES) {
+    expect(new Set(EE_ROUTE_PREFIXES).size).toBe(EE_ROUTE_PREFIXES.length);
+    for (const prefix of EE_ROUTE_PREFIXES) {
       expect(appFiles.some((file) => (prefix.endsWith('/') ? file.startsWith(prefix) : file === prefix)), prefix).toBe(true);
     }
-    for (const group of PAID_ROUTES) expect(existsSync(join(ROOT, group.module)), group.module).toBe(true);
-  });
-
-  it('covers every paid feature', () => {
-    const covered = new Set([...PAID_ROUTES.flatMap((group) => group.features), ...Object.keys(PAID_FEATURES_WITHOUT_ROUTES)]);
-    expect(FEATURES.filter((feature) => !covered.has(feature))).toEqual([]);
+    for (const group of EE_ROUTES) expect(existsSync(join(ROOT, group.module)), group.module).toBe(true);
   });
 
   it('has shims to check', () => {
-    expect(paid.length).toBeGreaterThan(190);
+    expect(shims.length).toBeGreaterThan(180);
   });
 
-  it('keeps only shims under the paid prefixes', () => {
-    expect(paid.flatMap((file) => shimProblems(file, groupOf(file)!.module))).toEqual([]);
+  it('keeps only shims under the ee/ prefixes', () => {
+    expect(shims.flatMap((file) => shimProblems(file, groupOf(file)!.module))).toEqual([]);
   });
 });
 
 describe('core code', () => {
   const core = [...files('app'), ...files('src'), 'proxy.ts'].filter((file) => CODE.test(file));
-
-  it('never sets up a paid feature: requireFeature() is called in ee/ only', () => {
-    const offending = core.filter((file) => /\brequireFeature\(/.test(read(file)));
-    expect(offending).toEqual([]);
-  });
 
   it('lists every file outside app/ that imports ee/ in CORE_EE_HOOKS, with a reason', () => {
     const importing = core

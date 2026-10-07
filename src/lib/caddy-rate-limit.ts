@@ -1,5 +1,5 @@
 /**
- * Rate limiting (Community): validation of host rules and global defaults,
+ * Rate limiting: validation of host rules and global defaults,
  * how a host inherits the defaults, and the Caddy configuration of the
  * caddy-ratelimit plugin (http.handlers.rate_limit,
  * github.com/mholt/caddy-ratelimit). See documentation/rate-limiting.md.

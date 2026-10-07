@@ -23,8 +23,6 @@
  *    push would carry it. When the replica reports it runs what it should
  *    (and Caddy took it), that is recorded as a push: drift detection and
  *    rollouts read it from there.
- *
- * Runtime path: never checks the license.
  */
 import { createPrivateKey } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";

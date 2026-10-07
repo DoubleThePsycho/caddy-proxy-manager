@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** Partial. Needs the AI analyst license unless it only turns settings off. */
+/** Partial update. */
 export async function PUT(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "ai:write");

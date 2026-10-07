@@ -12,7 +12,7 @@
  * roles (ee/custom-roles) hold a chosen subset, optionally limited to hosts
  * that carry one of the role's tags.
  *
- * Nothing here reads the database or the license, so the client can import it
+ * Nothing here reads the database, so the client can import it
  * for the permission matrix and the navigation.
  */
 
@@ -24,8 +24,6 @@ export type PermissionAreaInfo = {
   scopable?: boolean;
   /** Reads or changes data of every host, whatever the role's tag scope. */
   instanceWide?: boolean;
-  /** Belongs to a paid feature (the permission can be held without a license). */
-  paid?: boolean;
 };
 
 export const PERMISSION_AREAS = {
@@ -97,14 +95,12 @@ export const PERMISSION_AREAS = {
     description: "Environments of slave instances, revisions, drift status, pull replicas; write: environments and assignments; promote: promotions, rollbacks, aborts and re-syncs, which change what slaves serve; replicas: adding pull replicas and issuing, rotating and revoking their credentials, which can fetch the whole configuration.",
     actions: ["read", "write", "promote", "replicas"],
     instanceWide: true,
-    paid: true,
   },
   high_availability: {
     label: "High availability",
     description: "Where the Caddy nodes keep TLS certificates and their private keys (local or shared Redis/Valkey storage), and testing that storage; read also shows the dashboard cluster (leader, standbys, replication).",
     actions: ["read", "write"],
     instanceWide: true,
-    paid: true,
   },
   api_docs: {
     label: "API docs",
@@ -121,33 +117,28 @@ export const PERMISSION_AREAS = {
     label: "Alerts",
     description: "Alert channels, rules and history.",
     actions: ["read", "write"],
-    paid: true,
   },
   ai: {
     label: "AI analyst",
     description: "AI provider settings, the security digest and the settings of analytics questions.",
     actions: ["read", "write"],
-    paid: true,
   },
   audit_streaming: {
     label: "Audit streaming",
     description: "Audit sinks and audit log retention.",
     actions: ["read", "write"],
-    paid: true,
   },
   config_history: {
     label: "Configuration history",
     description: "Configuration snapshots, history settings and rollback.",
     actions: ["read", "write", "restore"],
     instanceWide: true,
-    paid: true,
   },
   backups: {
     label: "Scheduled backups",
     description: "Backup destinations, runs and restores.",
     actions: ["read", "write", "restore"],
     instanceWide: true,
-    paid: true,
   },
   sso: {
     label: "Single sign-on",
@@ -159,57 +150,45 @@ export const PERMISSION_AREAS = {
     description: "The multi-factor authentication policy.",
     actions: ["read", "write"],
   },
-  license: {
-    label: "License",
-    description: "The installed license key.",
-    actions: ["read", "write"],
-  },
   approvals: {
     label: "Change approvals",
     description:
       "Change requests for protected hosts (read: see them and comment, cancel your own; approve: approve, reject and apply other people's), " +
       "emergency changes that skip approval, and the approval policies. Requests are limited to hosts the role can read.",
     actions: ["read", "approve", "emergency", "manage"],
-    paid: true,
   },
   compliance: {
     label: "Compliance reports",
     description: "Compliance reports (access review, change log, certificate inventory, protection coverage), report schedules, the live control status, recorded test restores and the incident register with NIS2 notification drafts. Reports list every user, API token name and host.",
     actions: ["read", "write"],
     instanceWide: true,
-    paid: true,
   },
   ldap: {
     label: "LDAP / Active Directory",
     description: "Directories for dashboard sign-in with LDAP or Active Directory accounts, their group-to-role mapping, and testing them.",
     actions: ["read", "write"],
-    paid: true,
   },
   scim: {
     label: "SCIM provisioning",
     description: "SCIM settings, SCIM tokens, group-to-role mappings and which users and groups SCIM manages.",
     actions: ["read", "write"],
-    paid: true,
   },
   access_reviews: {
     label: "Access reviews",
     description: "Access review campaigns and schedules, their decisions and records.",
     actions: ["read", "write"],
-    paid: true,
   },
   monetization: {
     label: "API monetization",
     description: "API plans, consumers with their keys and balances, monetized hosts and the ledger; payments: the Stripe account that receives consumers' money.",
     actions: ["read", "write", "payments"],
     instanceWide: true,
-    paid: true,
   },
   branding: {
     label: "Branding",
     description: "White-label branding: product name, logos, favicon, colours and the texts of the sign-in pages and e-mails.",
     actions: ["read", "write"],
     instanceWide: true,
-    paid: true,
   },
 } as const satisfies Record<string, PermissionAreaInfo>;
 
@@ -246,7 +225,7 @@ export function isScopableArea(area: string): area is ScopableArea {
 /**
  * Permissions only administrators may grant, in a custom role or by assigning
  * one: they decide who can sign in or what the instance is (sso, MFA policy,
- * LDAP directories and the roles their groups grant, license, instance sync
+ * LDAP directories and the roles their groups grant, instance sync
  * and the pull replica credentials that fetch the whole configuration,
  * where consumers' payments go, where every certificate's private key is
  * kept, and the name and logo every sign-in page shows, which could make
@@ -263,7 +242,6 @@ export const ADMIN_LEVEL_PERMISSIONS: readonly Permission[] = [
   "sso:write",
   "mfa_policy:write",
   "ldap:write",
-  "license:write",
   "instances:write",
   "fleet:replicas",
   "monetization:payments",

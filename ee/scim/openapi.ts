@@ -12,10 +12,8 @@ export const SCIM_OPENAPI_TAGS = [
   {
     name: TAG,
     description:
-      "SCIM provisioning settings, SCIM tokens, group-to-role mappings and the users and groups SCIM manages (Enterprise " +
-      "edition). Turning SCIM on, changing its settings, creating tokens, adding or changing mappings and handing users or " +
-      "groups to SCIM need the scim feature; turning it off, revoking tokens, deleting mappings and releasing users or groups " +
-      "never do. SCIM requests themselves never check the license. scim:write is administrator-level.",
+      "SCIM provisioning settings, SCIM tokens, group-to-role mappings and the users and groups SCIM manages. " +
+      "scim:write is administrator-level.",
   },
   {
     name: PROTOCOL_TAG,
@@ -65,8 +63,8 @@ export const SCIM_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Change SCIM settings",
       description:
-        "Permission scim:write. Fields left out keep their values. Needs the scim feature, except a body that only turns SCIM off " +
-        "({\"enabled\": false}). Turning manageRoles on (or changing defaultRole while it is on) re-applies the mappings to every SCIM user.",
+        "Permission scim:write. Fields left out keep their values. Turning manageRoles on (or changing defaultRole while it is on) " +
+        "re-applies the mappings to every SCIM user.",
       operationId: "updateScimSettings",
       requestBody: { required: true, content: json(ref("ScimSettingsInput")) },
       responses: { "200": { description: "Settings", content: json(ref("ScimSettings")) }, ...errors("400", "401", "403") },
@@ -83,7 +81,7 @@ export const SCIM_OPENAPI_PATHS = {
     post: {
       tags: [TAG],
       summary: "Create a SCIM token",
-      description: "Permission scim:write (administrator-level); needs the scim feature. The token is in this response only. At most 20 tokens.",
+      description: "Permission scim:write (administrator-level). The token is in this response only. At most 20 tokens.",
       operationId: "createScimToken",
       requestBody: { required: true, content: json(ref("ScimTokenInput")) },
       responses: { "201": { description: "Created", content: json(ref("ScimTokenCreated")) }, ...errors("400", "401", "403") },
@@ -93,7 +91,7 @@ export const SCIM_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Revoke a SCIM token",
-      description: "Permission scim:write. Never needs a license.",
+      description: "Permission scim:write.",
       operationId: "deleteScimToken",
       parameters: [idParam],
       responses: { "204": { description: "Revoked" }, ...errors("401", "403", "404") },
@@ -111,8 +109,8 @@ export const SCIM_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Map a SCIM group to a role",
       description:
-        "Permission scim:write; needs the scim feature (and custom_roles for a custom role). Only roles the caller could assign " +
-        "themselves; only groups SCIM manages; one mapping per group (409). With manageRoles on, applied to every SCIM user at once.",
+        "Permission scim:write. Only roles the caller could assign themselves; only groups SCIM manages; one mapping per group " +
+        "(409). With manageRoles on, applied to every SCIM user at once.",
       operationId: "createScimRoleMapping",
       requestBody: { required: true, content: json(ref("ScimRoleMappingInput")) },
       responses: { "201": { description: "Created", content: json(ref("ScimRoleMapping")) }, ...errors("400", "401", "403", "409") },
@@ -122,7 +120,7 @@ export const SCIM_OPENAPI_PATHS = {
     put: {
       tags: [TAG],
       summary: "Change a mapping",
-      description: "Permission scim:write; needs the scim feature. Fields left out keep their values.",
+      description: "Permission scim:write. Fields left out keep their values.",
       operationId: "updateScimRoleMapping",
       parameters: [idParam],
       requestBody: { required: true, content: json(ref("ScimRoleMappingInput")) },
@@ -131,7 +129,7 @@ export const SCIM_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Delete a mapping",
-      description: "Permission scim:write. Never needs a license. With manageRoles on, its users get their next mapping or the default role.",
+      description: "Permission scim:write. With manageRoles on, its users get their next mapping or the default role.",
       operationId: "deleteScimRoleMapping",
       parameters: [idParam],
       responses: { "204": { description: "Deleted" }, ...errors("401", "403", "404") },
@@ -149,7 +147,7 @@ export const SCIM_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Hand an existing account to SCIM",
       description:
-        "Permission scim:write; needs the scim feature. The only way a local account becomes visible to SCIM: the identity provider " +
+        "Permission scim:write. The only way a local account becomes visible to SCIM: the identity provider " +
         "finds it by userName (exactly as it will send it), can change and disable it, and its first sign-in through the SCIM " +
         "sign-in provider is linked to it. The primary admin and break-glass accounts are refused (400).",
       operationId: "adoptScimUser",
@@ -161,7 +159,7 @@ export const SCIM_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Stop SCIM managing a user",
-      description: "Permission scim:write. The account is not changed. Never needs a license.",
+      description: "Permission scim:write. The account is not changed.",
       operationId: "releaseScimUser",
       parameters: [idParam],
       responses: { "204": { description: "Released" }, ...errors("401", "403", "404") },
@@ -178,7 +176,7 @@ export const SCIM_OPENAPI_PATHS = {
     post: {
       tags: [TAG],
       summary: "Hand an existing forward-auth group to SCIM",
-      description: "Permission scim:write; needs the scim feature. SCIM then adds and removes SCIM users in it; other members stay.",
+      description: "Permission scim:write. SCIM then adds and removes SCIM users in it; other members stay.",
       operationId: "adoptScimGroup",
       requestBody: { required: true, content: json(ref("ScimAdoptGroupInput")) },
       responses: { "201": { description: "Managed", content: json(ref("ScimManagedGroup")) }, ...errors("400", "401", "403", "404", "409") },
@@ -188,7 +186,7 @@ export const SCIM_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Stop SCIM managing a group",
-      description: "Permission scim:write. The group and its members stay; its role mapping is deleted. Never needs a license.",
+      description: "Permission scim:write. The group and its members stay; its role mapping is deleted.",
       operationId: "releaseScimGroup",
       parameters: [idParam],
       responses: { "204": { description: "Released" }, ...errors("401", "403", "404") },
@@ -382,7 +380,6 @@ export const SCIM_OPENAPI_SCHEMAS = {
       requireVerifiedEmail: { type: "boolean" },
       externalIdClaim: { type: ["string", "null"] },
       endpointUrl: { type: "string", description: "The SCIM base URL to give the identity provider" },
-      configurable: { type: "boolean", description: "The license lets this install change SCIM" },
       providers: {
         type: "array",
         items: {
@@ -395,7 +392,7 @@ export const SCIM_OPENAPI_SCHEMAS = {
         properties: { users: { type: "integer" }, groups: { type: "integer" }, tokens: { type: "integer" }, mappings: { type: "integer" } },
       },
     },
-    required: ["enabled", "providerId", "deleteMode", "defaultRole", "manageRoles", "requireVerifiedEmail", "externalIdClaim", "endpointUrl", "configurable"],
+    required: ["enabled", "providerId", "deleteMode", "defaultRole", "manageRoles", "requireVerifiedEmail", "externalIdClaim", "endpointUrl"],
   },
   ScimSettingsInput: {
     type: "object",

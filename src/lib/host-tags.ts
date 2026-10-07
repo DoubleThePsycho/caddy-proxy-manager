@@ -1,5 +1,5 @@
 /**
- * Free-form tags on proxy hosts and L4 proxy hosts (Community). Tags alone
+ * Free-form tags on proxy hosts and L4 proxy hosts. Tags alone
  * change nothing: they label hosts in the lists, and a custom role
  * (ee/custom-roles) can be limited to hosts that carry one of its tags.
  *

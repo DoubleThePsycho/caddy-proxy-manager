@@ -13,7 +13,6 @@ import { formatAppVersion } from "@/src/lib/app-version";
 import { useFormat } from "@/src/components/preferences/PreferencesProvider";
 import { useBranding } from "@/ee/white-label/ui/BrandingProvider";
 import { OVERVIEW_RANGE_LABELS, OVERVIEW_RANGES, type OverviewData, type OverviewRange, type OverviewTraffic } from "@/src/lib/overview-shared";
-import UsagePingQuestion from "./UsagePingQuestion";
 import { AttentionSection } from "./_overview/AttentionSection";
 import { BusiestHosts } from "./_overview/BusiestHosts";
 import { NodesCard } from "./_overview/NodesCard";
@@ -31,16 +30,6 @@ function useNow(initial: string): number {
     return () => clearInterval(timer);
   }, []);
   return now;
-}
-
-/**
- * Whether the usage ping question shows. Kept from the first render: answering
- * revalidates the page, which then no longer asks, and the question's own
- * "thank you" line must stay on screen.
- */
-function useAskedUsagePing(ask: boolean): boolean {
-  const [asked] = useState(ask);
-  return asked;
 }
 
 function rangeHref(range: OverviewRange): string {
@@ -81,7 +70,6 @@ function Overview({ data }: { data: OverviewData }) {
   // The pressed range: the one asked for, while its figures load (the sections show data.range's).
   const [range, setRange] = useState<OverviewRange>(data.range);
   const [pending, startTransition] = useTransition();
-  const askUsagePing = useAskedUsagePing(data.askUsagePing);
   useEffect(() => setRange(data.range), [data.range]);
   const { permissions, traffic, hosts, nodes, changes } = data;
 
@@ -118,8 +106,6 @@ function Overview({ data }: { data: OverviewData }) {
           </div>
         )}
       </header>
-
-      {askUsagePing && <UsagePingQuestion />}
 
       <AttentionSection attention={data.attention} alertsHref={permissions.readAlerts ? "/alerts" : null} />
 
@@ -169,11 +155,10 @@ function Overview({ data }: { data: OverviewData }) {
   );
 }
 
-/** A fresh install: the setup checklist, the usage ping question and empty traffic (Onboarding.dc.html). */
+/** A fresh install: the setup checklist and empty traffic (Onboarding.dc.html). */
 function FirstRun({ data }: { data: OverviewData & { firstRun: NonNullable<OverviewData["firstRun"]> } }) {
   const branding = useBranding();
   const now = useNow(data.generatedAt);
-  const askUsagePing = useAskedUsagePing(data.askUsagePing);
   const { permissions, traffic, hosts, firstRun } = data;
   return (
     <div className="flex flex-col gap-3 md:gap-5">
@@ -188,8 +173,6 @@ function FirstRun({ data }: { data: OverviewData & { firstRun: NonNullable<Overv
         </DateLine>
         <h1 className="m-0 text-2xl leading-8 font-semibold tracking-[-0.015em]">Welcome, {data.userName}</h1>
       </header>
-
-      {askUsagePing && <UsagePingQuestion />}
 
       <AttentionSection attention={data.attention} alertsHref={permissions.readAlerts ? "/alerts" : null} exclude={["setup"]} hideWhenEmpty />
 

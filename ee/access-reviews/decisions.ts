@@ -14,7 +14,7 @@
  *  - api_token: deleteApiToken.
  * Access that is gone or changed since the campaign started is left alone
  * and recorded as unchanged. The campaign completes when its last item is
- * confirmed. Never checks the license.
+ * confirmed.
  */
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { appDb, nowIso } from "@/src/lib/db";

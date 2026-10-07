@@ -6,7 +6,7 @@
  *
  * Only a SCIM token from scim_tokens authenticates: API tokens and dashboard
  * sessions are not accepted here (and SCIM tokens are not accepted by the
- * REST API). The license is never checked: SCIM keeps working when it lapses.
+ * REST API).
  */
 import type { NextRequest } from "next/server";
 import { appDb } from "@/src/lib/db";

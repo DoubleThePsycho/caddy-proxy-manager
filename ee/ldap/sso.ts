@@ -17,7 +17,6 @@
  *    the same hook allowed, and a password sign-in of a user who is not a
  *    break-glass account is refused before any challenge, so this admits
  *    exactly the directory sign-ins that passed the first step.
- * Nothing here looks at the license.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { and, eq } from "drizzle-orm";

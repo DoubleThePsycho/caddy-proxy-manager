@@ -106,7 +106,6 @@ describe('nav summary', () => {
       expect(summary.badges.alertsFiring ?? null).toBeNull();
       expect(summary.badges.certificatesExpiring ?? null).toBeNull();
       expect(summary.environment).toBeNull();
-      expect(summary.badges.licenseNodes ?? null).toBeNull();
     }
     // proxy_hosts:read without approvals:read: still no approvals counter.
     expect((await getNavSummary(role(['proxy_hosts:read']), NONE)).badges.approvalsPending ?? null).toBeNull();
@@ -139,11 +138,5 @@ describe('nav summary', () => {
   it('shows instance readers where this instance stands', async () => {
     const summary = await getNavSummary(role(['instances:read', 'settings:read']), NONE);
     expect(summary.environment).toMatchObject({ mode: 'standalone', name: 'This server', tone: 'ok', environments: [], links: { fleet: false, sync: true } });
-  });
-
-  it('has no edition without a valid license', async () => {
-    const summary = await getNavSummary(adminAccess(1), NONE);
-    expect(summary.edition).toBeNull();
-    expect(summary.badges.licenseNodes ?? null).toBeNull();
   });
 });

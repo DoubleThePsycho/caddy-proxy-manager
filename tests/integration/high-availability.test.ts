@@ -1,16 +1,15 @@
 /**
  * High availability, phase 1 (ee/high-availability): the certificate storage
- * REST API and dashboard actions, the license gate (enabling and changing
- * need it; going back to local storage, removing, reading, testing and the
- * runtime never do), secrets never leaving through the API or the audit log,
+ * REST API and dashboard actions (enabling, changing, going back to local
+ * storage, removing, testing), secrets never leaving through the API or the
+ * audit log,
  * the rollback when Caddy refuses the storage, slaves, configuration
  * import/restore, instance sync and fleet revisions, and the permission.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 import { createTestDb, type TestDb } from '../helpers/db';
-import { createTestSigner, licensePayload, signLicense } from '../helpers/license';
 import { startFakeRedis, type FakeRedis } from '../helpers/fake-redis';
 import * as schema from '../../src/lib/db/schema';
 
@@ -51,27 +50,13 @@ import { readCurrentConfigContent } from '@/src/lib/config-content';
 import { replaceConfiguration } from '@/src/lib/config-replace';
 import { applySyncPayload, buildSyncPayload, buildSyncPayloadFromContent, type SyncPayload } from '@/src/lib/instance-sync';
 import { ADMIN_LEVEL_PERMISSIONS, PERMISSION_AREAS, UNSCOPED_ONLY_PERMISSIONS, isAdminLevel } from '@/src/lib/permissions';
-import { FEATURE_INFO, EDITION_FEATURES } from '@/ee/licensing/features';
-import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
-import { LICENSE_SETTING_KEY, LicenseRequiredError } from '@/ee/licensing/store';
 import { currentFleetContent } from '@/ee/fleet/revisions';
 import type { CertificateStorageView, StoredCertificateStorage, StorageTestResult } from '@/ee/high-availability/types';
 import { first } from '@/src/lib/db/ops';
 
-const signer = createTestSigner();
 const PASSWORD = 'valkey-password-sentinel-7c1e';
 const KEY = 'encryption-key-sentinel-0123456789abcdef';
 const KEY_NAME = 'certificate_storage';
-
-async function installLicense(edition = 'enterprise') {
-  await setRow(LICENSE_SETTING_KEY, signLicense(signer, licensePayload(signer, {
-    edition, iat: '2026-01-01T00:00:00.000Z', exp: '2099-01-01T00:00:00.000Z',
-  })));
-}
-
-async function removeLicense() {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, LICENSE_SETTING_KEY));
-}
 
 async function setRow(key: string, value: unknown) {
   const json = JSON.stringify(value);
@@ -119,52 +104,33 @@ beforeEach(() => {
   vi.mocked(applyCaddyConfig).mockReset();
   vi.mocked(applyCaddyConfig).mockResolvedValue({ ok: true } as never);
   delete process.env.INSTANCE_MODE;
-  setTrustedLicenseKeysForTests(signer.keys);
 });
 
 afterEach(async () => {
   await Promise.all(fakes.splice(0).map((fake) => fake.close()));
 });
 
-afterAll(() => {
-  setTrustedLicenseKeysForTests(null);
-});
-
 describe('GET /api/v1/high-availability/storage', () => {
-  it('reports local storage by default, without a license', async () => {
+  it('reports local storage by default', async () => {
     const { status, data } = await call(GET, 'GET');
     expect(status).toBe(200);
+    expect(data).not.toHaveProperty('configurable');
     expect(data).toMatchObject({
-      backend: 'local', redis: null, source: 'default', configurable: false, editable: true, error: null, migration: null,
+      backend: 'local', redis: null, source: 'default', editable: true, error: null, migration: null,
       envPrefix: 'CADDY_STORAGE_',
     });
   });
 });
 
-describe('license gate', () => {
-  it('refuses to enable shared storage, or to prepare it, without the license', async () => {
-    for (const body of [{ backend: 'redis', redis: redisInput() }, { backend: 'local', redis: redisInput() }]) {
-      const { status, data } = await call(PUT, 'PUT', body);
-      expect(status).toBe(403);
-      expect(data.error).toBe(new LicenseRequiredError('high_availability').message);
-      expect(data.error).toMatch(/High availability needs an active Ingressi Enterprise license/);
-    }
-    await installLicense('business');
-    expect((await call(PUT, 'PUT', { backend: 'redis', redis: redisInput() })).status).toBe(403);
-    expect(await stored()).toBeNull();
-    expect(applyCaddyConfig).not.toHaveBeenCalled();
-    expect(auditCalls()).toEqual([]);
-  });
-
-  it('enables it with the license, stores the secrets encrypted and never returns them', async () => {
-    await installLicense();
+describe('enabling and changing', () => {
+  it('enables it, stores the secrets encrypted and never returns them', async () => {
     const { status, text, data } = await call(PUT, 'PUT', { backend: 'redis', redis: redisInput() });
     expect(status).toBe(200);
     expect(text).not.toContain(PASSWORD);
     expect(text).not.toContain(KEY);
     expect(text).not.toContain('enc:v1:');
     expect(data as CertificateStorageView).toMatchObject({
-      backend: 'redis', source: 'local', configurable: true,
+      backend: 'redis', source: 'local',
       redis: { mode: 'standalone', addresses: ['valkey.example.com:6379'], keyPrefix: 'caddy/cluster-a', hasPassword: true, hasEncryptionKey: true },
       migration: { environment: ['CADDY_STORAGE_PASSWORD', 'CADDY_STORAGE_ENCRYPTION_KEY'] },
     });
@@ -185,10 +151,8 @@ describe('license gate', () => {
     expect(JSON.stringify((await call(GET, 'GET')).data)).not.toMatch(/enc:v1:|sentinel-7c1e/);
   });
 
-  it('keeps working, and can always be switched back or removed, after the license lapses', async () => {
-    await installLicense();
+  it('takes the same settings as no change, and changes, switches back, enables again and removes', async () => {
     await call(PUT, 'PUT', { backend: 'redis', redis: redisInput() });
-    await removeLicense();
     vi.mocked(applyCaddyConfig).mockClear();
 
     // Saving the same settings again (secrets left empty) changes nothing.
@@ -196,30 +160,32 @@ describe('license gate', () => {
     expect(same.status).toBe(200);
     expect(applyCaddyConfig).not.toHaveBeenCalled();
 
-    // Changing it needs the license.
-    expect((await call(PUT, 'PUT', { backend: 'redis', redis: redisInput({ password: '', keyPrefix: 'other' }) })).status).toBe(403);
+    const changed = await call(PUT, 'PUT', { backend: 'redis', redis: redisInput({ password: '', encryptionKey: '', keyPrefix: 'other' }) });
+    expect(changed.status).toBe(200);
+    expect(changed.data).toMatchObject({ backend: 'redis', redis: { keyPrefix: 'other', hasPassword: true, hasEncryptionKey: true } });
+    expect(applyCaddyConfig).toHaveBeenCalledTimes(1);
 
     const local = await call(PUT, 'PUT', { backend: 'local' });
     expect(local.status).toBe(200);
     expect(local.data).toMatchObject({ backend: 'local', redis: { hasPassword: true } });
     expect((await stored())!.backend).toBe('local');
 
-    // Enabling it again needs the license.
-    expect((await call(PUT, 'PUT', { backend: 'redis' })).status).toBe(403);
+    const again = await call(PUT, 'PUT', { backend: 'redis' });
+    expect(again.status).toBe(200);
+    expect(again.data).toMatchObject({ backend: 'redis', redis: { keyPrefix: 'other', hasPassword: true } });
 
     const removed = await call(DELETE, 'DELETE');
     expect(removed.status).toBe(200);
     expect(removed.data).toMatchObject({ backend: 'local', redis: null, source: 'default' });
     expect(await stored()).toBeNull();
     expect(auditCalls().map((event) => event.action)).toEqual([
-      'certificate_storage_updated', 'certificate_storage_updated', 'certificate_storage_removed',
+      'certificate_storage_updated', 'certificate_storage_updated', 'certificate_storage_updated', 'certificate_storage_updated',
+      'certificate_storage_removed',
     ]);
   });
 });
 
 describe('PUT /api/v1/high-availability/storage', () => {
-  beforeEach(async () => await installLicense());
-
   it('validates the input', async () => {
     for (const body of [
       'not json',
@@ -277,7 +243,7 @@ async function prepared() {
 }
 
 describe('POST /api/v1/high-availability/storage/test', () => {
-  it('needs something to test, but no license', async () => {
+  it('needs something to test', async () => {
     const { status, data } = await call(TEST, 'POST');
     expect(status).toBe(400);
     expect(data.error).toMatch(/Nothing to test/);
@@ -291,9 +257,7 @@ describe('POST /api/v1/high-availability/storage/test', () => {
     expect(candidate.data as StorageTestResult).toMatchObject({ ok: true, complete: true, server: fake.address });
     expect(await stored()).toBeNull();
 
-    await installLicense();
     await call(PUT, 'PUT', { backend: 'local', redis: redisInput({ addresses: [fake.address] }) });
-    await removeLicense();
     const saved = await call(TEST, 'POST');
     expect(saved.data).toMatchObject({ ok: true });
     // The stored password only goes where it was entered for.
@@ -308,10 +272,9 @@ describe('POST /api/v1/high-availability/storage/test', () => {
 
 describe('dashboard actions', () => {
   it('return the error instead of throwing, and the view on success', async () => {
-    expect(await saveCertificateStorageAction({ backend: 'redis', redis: redisInput() })).toEqual({
-      ok: false, error: new LicenseRequiredError('high_availability').message,
+    expect(await saveCertificateStorageAction({ backend: 'redis' })).toEqual({
+      ok: false, error: 'Configure redis to use the redis backend',
     });
-    await installLicense();
     const saved = await saveCertificateStorageAction({ backend: 'redis', redis: redisInput() });
     expect(saved).toMatchObject({ ok: true, view: { backend: 'redis' } });
     expect(JSON.stringify(saved)).not.toContain(PASSWORD);
@@ -321,17 +284,12 @@ describe('dashboard actions', () => {
 });
 
 describe('replacing the whole configuration', () => {
-  it('needs the license to bring in or change shared storage, never to keep it or go back to local', async () => {
+  it('brings in, keeps and removes shared storage, and refuses a setting that is not valid', async () => {
     const withStorage = await readCurrentConfigContent();
     withStorage.settings.certificate_storage = { backend: 'redis', redis: { ...(await prepared()), password: encryptSecret(PASSWORD) } };
-    await expect(replaceConfiguration(withStorage, { mode: 'import' })).rejects.toBeInstanceOf(LicenseRequiredError);
-    expect(await stored()).toBeNull();
-
-    await installLicense();
     await replaceConfiguration(withStorage, { mode: 'import' });
     expect(decryptSecret((await stored())!.redis!.password!)).toBe(PASSWORD);
 
-    await removeLicense();
     // The same storage, its secret encrypted again (as an import does), is no change.
     const same = await readCurrentConfigContent();
     same.settings.certificate_storage = { backend: 'redis', redis: { ...(await prepared()), password: encryptSecret(PASSWORD) } };
@@ -347,7 +305,6 @@ describe('replacing the whole configuration', () => {
   });
 
   it('encrypts plaintext secrets an import brings', async () => {
-    await installLicense();
     const content = await readCurrentConfigContent();
     content.settings.certificate_storage = { backend: 'local', redis: { ...(await prepared()), password: PASSWORD } };
     await replaceConfiguration(content, { mode: 'import' });
@@ -393,19 +350,9 @@ describe('instance sync and fleet revisions', () => {
   });
 });
 
-describe('feature, permission and API documentation', () => {
-  it('ships high_availability in the Enterprise edition and says what it includes', () => {
-    expect(FEATURE_INFO.high_availability).toMatchObject({ edition: 'enterprise' });
-    expect(FEATURE_INFO.high_availability.description).toMatch(/Certificates shared by every Caddy node/);
-    expect(FEATURE_INFO.high_availability.description).toMatch(/a warm standby with automatic failover/);
-    expect(FEATURE_INFO.high_availability.description).toMatch(/several dashboard replicas on PostgreSQL/);
-    expect(FEATURE_INFO.high_availability.description).not.toMatch(/Not yet included/);
-    expect(EDITION_FEATURES.enterprise).toContain('high_availability');
-    expect(EDITION_FEATURES.business).not.toContain('high_availability');
-  });
-
+describe('permission and API documentation', () => {
   it('has an administrator-level, unscoped write permission', () => {
-    expect(PERMISSION_AREAS.high_availability).toMatchObject({ actions: ['read', 'write'], paid: true, instanceWide: true });
+    expect(PERMISSION_AREAS.high_availability).toMatchObject({ actions: ['read', 'write'], instanceWide: true });
     expect(ADMIN_LEVEL_PERMISSIONS).toContain('high_availability:write');
     expect(UNSCOPED_ONLY_PERMISSIONS).toContain('high_availability:write');
     expect(isAdminLevel(['high_availability:write'])).toBe(true);

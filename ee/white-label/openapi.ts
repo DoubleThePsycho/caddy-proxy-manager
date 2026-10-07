@@ -10,10 +10,8 @@ const TAG = "White-label";
 export const WHITE_LABEL_OPENAPI_TAG = {
   name: TAG,
   description:
-    "Your own product name, logos, favicon, accent colour, sign-in texts, support contact and e-mail sender name (Enterprise edition). " +
-    "Setting a value of your own and uploading an image need the white_label feature; restoring a default, removing an image, " +
-    "resetting and reading never do, and configured branding keeps showing when the license lapses. The license page, license " +
-    "texts, legal notices, HTTP header names and other identifiers keep the real product name.",
+    "Your own product name, logos, favicon, accent colour, sign-in texts, support contact and e-mail sender name. Legal notices, " +
+    "HTTP header names and other identifiers keep the real product name.",
 };
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
@@ -44,7 +42,7 @@ export const WHITE_LABEL_OPENAPI_PATHS = {
     get: {
       tags: [TAG],
       summary: "Get the branding",
-      description: "Permission branding:read. Available without a license.",
+      description: "Permission branding:read.",
       operationId: "getBranding",
       responses: { "200": { description: "Branding", content: json(ref("Branding")) }, ...errors("401", "403") },
     },
@@ -53,9 +51,8 @@ export const WHITE_LABEL_OPENAPI_PATHS = {
       summary: "Update the branding",
       description:
         "Permission branding:write (administrator-level). A partial update: fields left out keep their values, null or an empty " +
-        "string restores the default. Setting a value of your own needs the white_label feature (403 otherwise); restoring defaults " +
-        "does not. Colours are #rgb or #rrggbb and need 3:1 contrast with the theme's background; the text colour on them is chosen " +
-        "for at least 4.5:1. Text may not contain control or invisible formatting characters.",
+        "string restores the default. Colours are #rgb or #rrggbb and need 3:1 contrast with the theme's background; the text " +
+        "colour on them is chosen for at least 4.5:1. Text may not contain control or invisible formatting characters.",
       operationId: "updateBranding",
       requestBody: { required: true, content: json(ref("BrandingInput")) },
       responses: { "200": { description: "Updated", content: json(ref("Branding")) }, ...errors("400", "401", "403") },
@@ -64,8 +61,8 @@ export const WHITE_LABEL_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Reset the branding",
       description:
-        "Permission branding:write. Restores every default and removes the logos and favicon. Never needs a license. On a sync " +
-        "slave the master's branding applies again.",
+        "Permission branding:write. Restores every default and removes the logos and favicon. On a sync slave the master's " +
+        "branding applies again.",
       operationId: "resetBranding",
       responses: { "200": { description: "Reset", content: json(ref("Branding")) }, ...errors("401", "403") },
     },
@@ -75,7 +72,7 @@ export const WHITE_LABEL_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Upload a logo or the favicon",
       description:
-        `Permission branding:write; needs the white_label feature. Logos: PNG, JPEG or WebP up to 2048×2048; favicon: PNG, ICO, ` +
+        `Permission branding:write. Logos: PNG, JPEG or WebP up to 2048×2048; favicon: PNG, ICO, ` +
         `WebP or JPEG up to 512×512; at most ${MAX_ASSET_BYTES / 1024} KB. Send multipart/form-data with a "file" field, or the ` +
         "image as the body. The type comes from the content; SVG, files with data after the image, and files containing HTML or " +
         "script are refused. Text and EXIF/XMP metadata are removed before the image is stored.",
@@ -95,7 +92,7 @@ export const WHITE_LABEL_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Remove a logo or the favicon",
-      description: "Permission branding:write. Never needs a license. Removing one that is not set changes nothing.",
+      description: "Permission branding:write. Removing one that is not set changes nothing.",
       operationId: "deleteBrandingAsset",
       parameters: [assetParam],
       responses: { "200": { description: "Removed", content: json(ref("Branding")) }, ...errors("401", "403", "404") },
@@ -219,8 +216,7 @@ export const WHITE_LABEL_OPENAPI_SCHEMAS = {
         },
         required: ["maxBytes", "assets"],
       },
-      configurable: { type: "boolean", description: "The license lets administrators set up or change the branding now" },
     },
-    required: ["settings", "effective", "assets", "source", "updatedAt", "defaultProductName", "limits", "configurable"],
+    required: ["settings", "effective", "assets", "source", "updatedAt", "defaultProductName", "limits"],
   },
 };

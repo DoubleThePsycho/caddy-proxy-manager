@@ -22,7 +22,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   } catch {
     // A reminder only; never break the dashboard over it.
   }
-  // Sidebar counters, edition and environment, each guarded by its read permission.
+  // Sidebar counters and environment, each guarded by its read permission.
   const summary = await getNavSummary(access, reviews);
   // Theme, time zone and number format (src/lib/preferences.ts); useFormat() applies them.
   const userId = Number(session.user.id);

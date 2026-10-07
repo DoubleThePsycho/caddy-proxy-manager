@@ -44,7 +44,7 @@ function ErrorBanner({ error }: { error: string | null }) {
   );
 }
 
-/** Records a new incident in the register, optionally from an alert. Needs the license. */
+/** Records a new incident in the register, optionally from an alert. */
 export function RecordIncidentDialog({
   sources,
   onClose,
@@ -173,7 +173,7 @@ export function RecordIncidentDialog({
   );
 }
 
-/** The NIS2 Article 23(3) assessment, the classification, the window and the cause. Needs no license. */
+/** The NIS2 Article 23(3) assessment, the classification, the window and the cause. */
 export function AssessDialog({ incident, onClose, onSaved }: { incident: IncidentView; onClose: () => void; onSaved: (incident: IncidentView) => void }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -277,7 +277,7 @@ export function AssessDialog({ incident, onClose, onSaved }: { incident: Inciden
   );
 }
 
-/** Adds an entry people write to the incident's timeline. Needs no license. */
+/** Adds an entry people write to the incident's timeline. */
 export function TimelineEntryDialog({ incident, onClose, onSaved }: { incident: IncidentView; onClose: () => void; onSaved: (incident: IncidentView) => void }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -316,7 +316,7 @@ export function TimelineEntryDialog({ incident, onClose, onSaved }: { incident: 
   );
 }
 
-/** Deletes an incident with its facts and drafts. Needs no license. */
+/** Deletes an incident with its facts and drafts. */
 export function ConfirmIncidentDelete({ incident, onClose, onDeleted }: { incident: IncidentView; onClose: () => void; onDeleted: () => void }) {
   const [pending, startTransition] = useTransition();
   function remove() {

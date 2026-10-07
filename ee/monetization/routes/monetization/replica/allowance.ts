@@ -7,7 +7,7 @@ import { handleAllowanceHttp } from "@/ee/monetization/replica-allowance";
  * the replica admits them) and reports what it used of earlier ones.
  * Authenticated with the replica's allowance credential, derived from its
  * sync secret (never the secret itself; ee/monetization/replica-allowance.ts),
- * after a per-address limit on failed attempts. Never checks the license.
+ * after a per-address limit on failed attempts.
  */
 
 export async function POST(request: Request): Promise<Response> {

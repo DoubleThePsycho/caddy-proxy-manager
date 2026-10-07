@@ -3,7 +3,6 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,11 +35,10 @@ function timeZones(): string[] {
 type Props = {
   settings: DigestSettingsView;
   channels: AlertChannelView[];
-  canConfigure: boolean;
   aiConfigured: boolean;
 };
 
-export default function DigestSection({ settings, channels, canConfigure, aiConfigured }: Props) {
+export default function DigestSection({ settings, channels, aiConfigured }: Props) {
   const router = useRouter();
   const format = useFormat();
   const [pending, startTransition] = useTransition();
@@ -109,18 +107,9 @@ export default function DigestSection({ settings, channels, canConfigure, aiConf
       padded
       contentClassName="flex flex-col gap-4"
     >
-        {!canConfigure && (
-          <Banner tone="info">
-            Setting up the digest needs a license that includes the AI analyst; a digest already set up keeps being sent and
-            can still be turned off.{" "}
-            <Link href="/license" className="text-brand underline underline-offset-2">
-              Licensing
-            </Link>
-          </Banner>
-        )}
-        <fieldset disabled={!canConfigure || pending} className="grid gap-4 md:grid-cols-2">
+        <fieldset disabled={pending} className="grid gap-4 md:grid-cols-2">
           <label className="flex items-center gap-2 text-sm md:col-span-2">
-            <Switch checked={enabled} onCheckedChange={setEnabled} disabled={!canConfigure} />
+            <Switch checked={enabled} onCheckedChange={setEnabled} />
             Send the digest every day
           </label>
           <div className="space-y-1.5">
@@ -172,7 +161,7 @@ export default function DigestSection({ settings, channels, canConfigure, aiConf
             )}
           </div>
           <label className="flex items-center gap-2 text-sm md:col-span-2">
-            <Switch checked={ai} onCheckedChange={setAi} disabled={!canConfigure} />
+            <Switch checked={ai} onCheckedChange={setAi} />
             Add an AI-generated summary
             {!aiConfigured && <span className="text-xs text-muted-foreground">: set up an AI provider above first</span>}
           </label>
@@ -185,22 +174,16 @@ export default function DigestSection({ settings, channels, canConfigure, aiConf
         <div className="flex flex-wrap gap-2">
           <Button
             onClick={() => save({ enabled, timeOfDay, timeZone: timeZone.trim(), channelIds, ai }, "Digest settings saved")}
-            disabled={!canConfigure || pending}
+            disabled={pending}
           >
             Save
           </Button>
-          <Button variant="outline" onClick={runPreview} disabled={!canConfigure || pending}>
+          <Button variant="outline" onClick={runPreview} disabled={pending}>
             Preview
           </Button>
-          <Button variant="outline" onClick={sendNow} disabled={!canConfigure || pending || settings.channelIds.length === 0}>
+          <Button variant="outline" onClick={sendNow} disabled={pending || settings.channelIds.length === 0}>
             Send now
           </Button>
-          {settings.enabled && !canConfigure && (
-            // Turning the digest off always works, with or without a license.
-            <Button variant="danger" onClick={() => save({ enabled: false }, "Digest turned off")} disabled={pending}>
-              Turn off
-            </Button>
-          )}
         </div>
         <div className="space-y-1 text-xs text-muted-foreground">
           {settings.nextRunAt && (

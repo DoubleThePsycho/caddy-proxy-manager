@@ -2,11 +2,6 @@
 /**
  * API consumers: who pays for requests, their keys, balance adjustments and
  * the self-service portal link.
- *
- * Licensing: creating a consumer, any change that is not only disabling it,
- * creating keys, adjusting balances and issuing portal links need
- * "api_monetization". Disabling or deleting a consumer, revoking a key and
- * turning the portal link off never do. Nothing at request time checks it.
  */
 import { and, count, eq, isNull } from "drizzle-orm";
 import { appDb, nowIso } from "@/src/lib/db";
@@ -14,7 +9,6 @@ import { monetizationConsumers, monetizationKeys, monetizationPlans } from "@/sr
 import { logAuditEvent } from "@/src/lib/audit";
 import { config } from "@/src/lib/config";
 import { ApiClientError, ApiConflictError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import { refreshConsumer, reloadMonetization } from "./engine";
 import { monetizationBalanceStore, type LiveCounters } from "./balance-store";
 import { effectiveBilling, postpaidViews, switchBilling } from "./postpaid";
@@ -23,7 +17,6 @@ import { parseBillingMode } from "./plans";
 import { generateConsumerKey, generatePortalToken } from "./keys";
 import { MAX_AMOUNT_MICROS } from "./money";
 import {
-  isRecord,
   parseAmount,
   parseInteger,
   parseName,
@@ -33,7 +26,6 @@ import {
 } from "./http";
 import {
   CONSUMER_STATUSES,
-  FEATURE,
   MAX_KEYS_PER_CONSUMER,
   PORTAL_PATH,
   type ConsumerDetailView,
@@ -113,24 +105,6 @@ async function assertBillingPossible(input: ParsedConsumer): Promise<void> {
   if (effectiveBilling(input, plan) === "postpaid" && !plan?.postpaidCapMicros) {
     throw new ApiValidationError("A postpaid consumer needs a plan with a postpaid cap: the cap bounds what it can owe");
   }
-}
-
-/** True when the body only disables the consumer (other fields repeat their stored values). */
-export function isDisableOnlyUpdate(body: unknown, existing: ConsumerRow): boolean {
-  if (!isRecord(body) || body.status !== "disabled") return false;
-  const stored: Record<string, unknown> = {
-    name: existing.name,
-    email: existing.email,
-    planId: existing.planId,
-    overdraftAllowanceMicros: existing.overdraftAllowanceMicros,
-    billing: existing.billing,
-  };
-  return Object.entries(body).every(([key, value]) => {
-    if (key === "status") return true;
-    if (!(key in stored)) return false;
-    if (key === "email" && (value === "" || value === null)) return existing.email === null;
-    return typeof value === "string" ? value.trim() === stored[key] : value === stored[key];
-  });
 }
 
 type PlanInfo = { name: string; billing: string };
@@ -245,7 +219,6 @@ function auditData(input: ParsedConsumer) {
 }
 
 export async function createConsumer(body: unknown, actorUserId: number): Promise<ConsumerDetailView> {
-  await requireFeature(FEATURE);
   const input = await parseConsumer(body);
   await assertBillingPossible(input);
   const stamp = nowIso();
@@ -267,7 +240,6 @@ export async function createConsumer(body: unknown, actorUserId: number): Promis
 
 export async function updateConsumer(id: number, body: unknown, actorUserId: number): Promise<ConsumerDetailView> {
   const existing = await requireConsumerRow(id);
-  if (!isDisableOnlyUpdate(body, existing)) await requireFeature(FEATURE);
   const input = await parseConsumer(body, existing);
   await assertBillingPossible(input);
   // A change of the billing in effect goes through switchBilling: under the consumer's charge lock,
@@ -299,7 +271,7 @@ export async function updateConsumer(id: number, body: unknown, actorUserId: num
 
 /**
  * Deletes the consumer and its keys. Its usage is written first; its ledger
- * rows are kept as the record of what was paid and used. Never needs a license.
+ * rows are kept as the record of what was paid and used.
  */
 export async function deleteConsumer(id: number, actorUserId: number): Promise<void> {
   const existing = await requireConsumerRow(id);
@@ -334,7 +306,6 @@ export async function createConsumerKey(
   actorUserId: number
 ): Promise<{ key: ConsumerKeyView; rawKey: string }> {
   const consumer = await requireConsumerRow(consumerId);
-  await requireFeature(FEATURE);
   const record = body === undefined || body === null ? {} : requireRecord(body);
   rejectUnknownKeys(record, ["name"]);
   const name = parseOptionalText(record.name, "name", 100);
@@ -368,7 +339,7 @@ export async function createConsumerKey(
   return { key: toKeyView(row), rawKey: generated.raw };
 }
 
-/** Never needs a license. Revoking a revoked key changes nothing. */
+/** Revoking a revoked key changes nothing. */
 export async function revokeConsumerKey(consumerId: number, keyId: number, actorUserId: number): Promise<void> {
   const consumer = await requireConsumerRow(consumerId);
   const key = await first(appDb
@@ -406,7 +377,6 @@ export async function adjustConsumerBalance(
   actorUserId: number
 ): Promise<{ entry: LedgerEntryView; balanceMicros: number }> {
   const consumer = await requireConsumerRow(consumerId);
-  await requireFeature(FEATURE);
   const record = requireRecord(body);
   rejectUnknownKeys(record, ["amountMicros", "reason", "reference"]);
   const amount = parseInteger(record.amountMicros, "amountMicros", -MAX_AMOUNT_MICROS, MAX_AMOUNT_MICROS);
@@ -485,7 +455,6 @@ export function portalUrl(token: string): string {
 /** Issues a new portal link (the previous one stops working). Shown once. */
 export async function rotatePortalLink(consumerId: number, actorUserId: number): Promise<{ url: string; token: string }> {
   const consumer = await requireConsumerRow(consumerId);
-  await requireFeature(FEATURE);
   const { token, hash } = generatePortalToken();
   await appDb.update(monetizationConsumers).set({ portalTokenHash: hash, updatedAt: nowIso() }).where(eq(monetizationConsumers.id, consumerId));
   await logAuditEvent({
@@ -498,7 +467,7 @@ export async function rotatePortalLink(consumerId: number, actorUserId: number):
   return { url: portalUrl(token), token };
 }
 
-/** Turns the portal link off. Never needs a license. */
+/** Turns the portal link off. */
 export async function revokePortalLink(consumerId: number, actorUserId: number): Promise<void> {
   const consumer = await requireConsumerRow(consumerId);
   if (!consumer.portalTokenHash) return;

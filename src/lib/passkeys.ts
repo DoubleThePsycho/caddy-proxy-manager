@@ -17,8 +17,7 @@
  *  - The last second factor of an account the policy covers cannot be
  *    removed.
  *
- * Community feature: nothing here reads the license. Passkeys are per
- * dashboard, like users: not synced to slaves.
+ * Passkeys are per dashboard, like users: not synced to slaves.
  */
 import { and, count, eq } from "drizzle-orm";
 import { getAuthenticatorName } from "@better-auth/passkey";

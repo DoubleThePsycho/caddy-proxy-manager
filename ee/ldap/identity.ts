@@ -2,8 +2,7 @@
 /**
  * What the database says about a user's directory accounts. Reads that take
  * the database or a transaction, so the MFA policy
- * (src/lib/mfa.ts) and Better Auth's session hook can use them. Nothing here
- * looks at the license.
+ * (src/lib/mfa.ts) and Better Auth's session hook can use them.
  */
 import { and, eq, inArray } from "drizzle-orm";
 import { accounts, ldapDirectories } from "@/src/lib/db/schema";

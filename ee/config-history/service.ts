@@ -1,13 +1,5 @@
 // SPDX-License-Identifier: Elastic-2.0
-/**
- * Configuration history operations for administrators.
- *
- * Licensing: creating snapshots, turning recording on, changing settings
- * while it is on and restoring need a license that includes config_history.
- * Winding the feature down never does: turning recording off and deleting
- * snapshots work with a lapsed or missing license, as do viewing snapshots
- * and diffs.
- */
+/** Configuration history operations for administrators. */
 import { count, eq } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";
 import { configSnapshots } from "@/src/lib/db/schema";
@@ -27,7 +19,6 @@ import {
   ConfigurationApplyError,
   replaceConfiguration,
 } from "@/src/lib/config-replace";
-import { requireFeature } from "@/ee/licensing/store";
 import {
   describeConfigContent,
   diffConfigContent,
@@ -55,8 +46,6 @@ import {
 } from "./snapshots";
 import { parseRowId } from "@/src/lib/row-ids";
 
-export const FEATURE = "config_history" as const;
-
 const MAX_MANUAL_SUMMARY_LENGTH = 200;
 
 /** Parses a positive integer id from a route parameter; 404 otherwise. */
@@ -68,7 +57,6 @@ export function parseSnapshotId(raw: string): number {
 
 /** Saves the current configuration as a manual snapshot (also when it equals the newest one). */
 export async function createManualSnapshot(userId: number, input: unknown = {}): Promise<SnapshotView> {
-  await requireFeature(FEATURE);
   await assertConfigurationEditable();
   let note: string | null = null;
   if (input !== undefined && input !== null) {
@@ -107,15 +95,12 @@ export async function createManualSnapshot(userId: number, input: unknown = {}):
 }
 
 /**
- * Changes the history settings. Needs the license when recording is on
- * afterwards (turning it on, or changing anything while it stays on);
- * turning it off does not. Enabling records a first snapshot right away;
- * lowering the retention deletes the snapshots beyond it.
+ * Changes the history settings. Enabling records a first snapshot right
+ * away; lowering the retention deletes the snapshots beyond it.
  */
 export async function updateHistorySettings(input: unknown, userId: number): Promise<HistorySettings> {
   const current = await getHistorySettings();
   const next = parseHistorySettingsUpdate(input, current);
-  if (next.enabled) await requireFeature(FEATURE);
   await setSetting(HISTORY_SETTING_KEY, next);
 
   await appDb.transaction(async (tx) => {
@@ -140,7 +125,7 @@ export async function updateHistorySettings(input: unknown, userId: number): Pro
   return next;
 }
 
-/** Deletes one snapshot. Needs no license. */
+/** Deletes one snapshot. */
 export async function deleteSnapshot(id: number, userId: number): Promise<void> {
   const snapshot = await getSnapshot(id);
   if (!snapshot) throw new NotFoundError("Snapshot not found");
@@ -154,7 +139,7 @@ export async function deleteSnapshot(id: number, userId: number): Promise<void> 
   });
 }
 
-/** Deletes every snapshot. Needs no license. Returns how many were deleted. */
+/** Deletes every snapshot. Returns how many were deleted. */
 export async function deleteAllSnapshots(userId: number): Promise<number> {
   const [row] = await appDb.select({ value: count() }).from(configSnapshots);
   const deleted = row?.value ?? 0;
@@ -254,7 +239,6 @@ export type RestoreResult = {
  * ConfigurationApplyError is thrown. Refused on sync slaves.
  */
 export async function restoreSnapshot(id: number, userId: number): Promise<RestoreResult> {
-  await requireFeature(FEATURE);
   await assertConfigurationEditable();
 
   const [row] = await appDb

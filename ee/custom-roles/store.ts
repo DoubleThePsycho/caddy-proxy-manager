@@ -3,8 +3,7 @@
  * Custom roles: storage and the reads the request path uses.
  *
  * Everything here takes a database reader (the database or a transaction on
- * it), so a check and the write it guards can share one transaction. Nothing here looks at the license:
- * existing roles and assignments keep working without one.
+ * it), so a check and the write it guards can share one transaction.
  */
 import { count, eq } from "drizzle-orm";
 import { toIso } from "@/src/lib/db";
@@ -13,8 +12,6 @@ import { parseStoredTags } from "@/src/lib/host-tags";
 import { isAdminLevel, isPermission, PERMISSIONS, type Permission } from "@/src/lib/permissions";
 import { asc, first } from "@/src/lib/db/ops";
 import type { DbExecutor } from "@/src/lib/db/types";
-
-export const FEATURE = "custom_roles" as const;
 
 /** The database or a transaction on it, for reads. */
 export type RoleReader = Pick<DbExecutor, "select">;

@@ -4,8 +4,6 @@
  * a password), no change through the user model, the Users page actions or
  * /api/v1/users may take away the last one by accident. Break-glass accounts
  * are optional: once the account is off the list, the change goes through.
- * The guards ignore the license (none is installed here): they protect the
- * install, they do not configure the feature.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import bcrypt from 'bcryptjs';

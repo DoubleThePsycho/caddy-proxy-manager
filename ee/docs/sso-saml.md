@@ -1,6 +1,6 @@
 # SAML single sign-on
 
-Feature id `sso_saml`, Business edition and higher. Source: `ee/saml/`.
+Source: `ee/saml/` (Elastic License 2.0).
 
 People sign in to the dashboard through a SAML 2.0 identity provider (IdP), such as Microsoft Entra ID, Okta, Google Workspace or Keycloak. Groups the IdP sends can decide their role. One installation can have several providers.
 
@@ -70,7 +70,7 @@ All of these are checked on the bytes the signature covers, never on the posted 
 
 ## Setting it up
 
-You need the **SAML** page (sidebar) or `/api/v1/saml-providers`, the `sso:write` permission (administrator-level) and a Business license or higher.
+You need the **SAML** page (sidebar) or `/api/v1/saml-providers`, and the `sso:write` permission (administrator-level).
 
 `BASE_URL` must use `https://`. The binding cookie is `Secure` and `SameSite=None`, which browsers accept only over https (and on `http://localhost` for testing). The start of a sign-in is refused with `503 SAML_NEEDS_HTTPS` otherwise, and the SAML page shows a warning.
 
@@ -234,14 +234,14 @@ Google Workspace offers no immutable user id in SAML. The persistent NameID is t
 
 All of these take a Bearer token or a session.
 
-| Method and path | Permission | License | What |
-| --- | --- | --- | --- |
-| `GET /api/v1/saml-providers` | `sso:read` | no | List providers. |
-| `POST /api/v1/saml-providers` | `sso:write` | yes | Create a provider. `201`; `409` when the name is taken. |
-| `GET /api/v1/saml-providers/{id}` | `sso:read` | no | One provider. |
-| `PUT /api/v1/saml-providers/{id}` | `sso:write` | yes, except a body that only disables it | Change a provider. Fields left out keep their values. |
-| `DELETE /api/v1/saml-providers/{id}` | `sso:write` | no | Delete a provider: its account links, group mappings, sign-ins in progress and replay records are deleted with it (explicitly: the database enforces no foreign keys). The users are kept. |
-| `GET /api/v1/saml-providers/{id}/metadata` | `sso:read` | no | The SP metadata XML. Also public at `GET /api/auth/saml/metadata/{id}`. |
+| Method and path | Permission | What |
+| --- | --- | --- |
+| `GET /api/v1/saml-providers` | `sso:read` | List providers. |
+| `POST /api/v1/saml-providers` | `sso:write` | Create a provider. `201`; `409` when the name is taken. |
+| `GET /api/v1/saml-providers/{id}` | `sso:read` | One provider. |
+| `PUT /api/v1/saml-providers/{id}` | `sso:write` | Change a provider. Fields left out keep their values. |
+| `DELETE /api/v1/saml-providers/{id}` | `sso:write` | Delete a provider: its account links, group mappings, sign-ins in progress and replay records are deleted with it (explicitly: the database enforces no foreign keys). The users are kept. |
+| `GET /api/v1/saml-providers/{id}/metadata` | `sso:read` | The SP metadata XML. Also public at `GET /api/auth/saml/metadata/{id}`. |
 
 ```bash
 curl -X POST https://proxy.example.com/api/v1/saml-providers \
@@ -280,9 +280,6 @@ No `/api/auth` route registers, lists, changes or deletes providers.
 ## Security notes
 
 - **Who can set it up.** Provider management needs `sso:write`, which is administrator-level: only administrators can hold it or grant it in a custom role. A provider decides who can sign in and, through its mappings, who becomes an administrator.
-- **Licensing.**
-  - **Needs a license:** creating, enabling or changing a provider.
-  - **Never needs one:** disabling and deleting, reading, the metadata, and sign-in itself. A lapsed license never locks anyone out.
 - **Secrets.** The SP signing key is encrypted with `SESSION_SECRET` (`encryptSecret`). It is re-encrypted when the secret rotates and never returned. The binding cookie is stored only as a SHA-256 hash.
 - **Cross-site POST.** Better Auth's origin check is skipped for `/api/auth/saml/acs/*` only: the IdP posts there cross-site by design. What protects that endpoint:
   - the binding cookie;
@@ -350,7 +347,7 @@ SAML was held back from an earlier release because of gaps in `@better-auth/sso`
    - A captured assertion re-wrapped with a fresh `InResponseTo` is refused (tested).
 5. **Provider-management routes open to any signed-in user.**
    - `@better-auth/sso` is not used. The plugin has three endpoints (start, ACS, metadata) and no management route.
-   - Providers are managed only through `/api/v1/saml-providers` and the dashboard: `sso:write`, administrator-level, plus the license for set-up and changes.
+   - Providers are managed only through `/api/v1/saml-providers` and the dashboard: `sso:write`, administrator-level.
    - A test signs in as a viewer and gets `404` from every `/sso/*` and `/saml/*` management path, and checks that Better Auth exposes no other SAML route.
 6. **Account linking worked differently from OAuth.**
    - There is no domain verification and no trust in `email_verified`. Linking is an explicit per-provider switch that mirrors directory sign-in (`ee/ldap/sign-in.ts`): exact e-mail match, never administrators, custom-role users, the primary admin or break-glass accounts.

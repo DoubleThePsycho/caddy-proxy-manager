@@ -38,7 +38,7 @@ type Can = {
 type Props = {
   overview: SignInOverview;
   can: Can;
-  /** saveSsoEnforcementAction (ee/sso/ui/actions.ts); turning enforcement off never needs a license. */
+  /** saveSsoEnforcementAction (ee/sso/ui/actions.ts). */
   turnOffEnforcement: (input: { enabled: boolean }) => Promise<{ ok: true } | { ok: false; error: string }>;
 };
 

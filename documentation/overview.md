@@ -11,7 +11,7 @@ The overview is the first page after signing in. It shows what needs attention, 
 | Traffic | `analytics:read` | Served and mitigated requests over the range. The moment with the most mitigated requests is marked and leads to the security events of that moment (`waf:read`). |
 | Busiest hosts | `analytics:read` | The six proxy hosts with the most requests, within the role's tag scope: a status dot, a bar against the busiest one, requests, the 5xx rate, mitigated requests and, with `certificates:read`, the days left on the certificate. A 5xx burst of the last 24 hours shows next to the name. Names link to the host for readers of proxy hosts. |
 | Nodes | `fleet:read` or `instances:read` | This server and, on a master, its replicas: whether they are in sync, when they last synced or checked in, and the release they run. A replica on another release is marked. |
-| Recent changes | `audit_log:read` | The latest audit events. **Roll back** opens the configuration history at the version from before a change, when the history still holds it and the reader may restore it (`config_history:restore`, with a license that includes configuration history, not on a replica). |
+| Recent changes | `audit_log:read` | The latest audit events. **Roll back** opens the configuration history at the version from before a change, when the history still holds it and the reader may restore it (`config_history:restore`, not on a replica). |
 
 The time range is part of the address (`/?range=1h`, `/?range=7d`; 24 hours without one). Dates and times follow your preferences ([profile.md](profile.md)).
 
@@ -21,7 +21,7 @@ When analytics are off the figures are replaced by how to turn them on, and when
 
 ## First run
 
-While the [setup checklist](setup-checklist.md) is neither complete nor hidden, people who may read the settings see it in place of the overview: the five steps with what to do for each, the usage ping question ([usage-ping.md](usage-ping.md)), and the traffic and busiest hosts, empty until there is something to show. Items that need attention still show above the checklist.
+While the [setup checklist](setup-checklist.md) is neither complete nor hidden, people who may read the settings see it in place of the overview: the five steps with what to do for each, and the traffic and busiest hosts, empty until there is something to show. Items that need attention still show above the checklist.
 
 With `settings:write`, **Mark as done** marks a step done (for example one that does not apply) and **Hide the checklist** hides it. The overview takes over once every step is done or the checklist is hidden.
 

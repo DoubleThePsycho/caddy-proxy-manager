@@ -57,11 +57,10 @@ test.describe('Audit Log', () => {
     await expect(page.getByRole('table').getByText('Hash', { exact: true })).toBeVisible();
   });
 
-  test('shows the hash chain and the license notice without a license', async ({ page }) => {
+  test('offers verifying the hash chain and exporting', async ({ page }) => {
     await page.goto('/audit-log');
-    await expect(page.getByRole('button', { name: 'Verify now' })).toBeDisabled();
-    await expect(page.getByText('Export, integrity verification, streaming and retention need a Business license.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Export CSV or JSON' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Verify now' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Export CSV or JSON' })).toBeEnabled();
   });
 
   test('links to streaming and retention', async ({ page }) => {

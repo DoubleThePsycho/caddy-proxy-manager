@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Attention provider: alerts firing now, except dismissed ones and those of
- * muted rules. Never checks the license.
+ * muted rules.
  */
 import type { AttentionProvider } from "@/src/lib/attention/types";
 import { listFiringAlerts } from "./events";

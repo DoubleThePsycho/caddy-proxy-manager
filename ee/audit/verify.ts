@@ -13,7 +13,6 @@ import { appDb } from "@/src/lib/db";
 import { auditEvents } from "@/src/lib/db/schema";
 import { auditActorDigest, computeAuditHash } from "@/src/lib/audit-chain";
 import { logAuditEvent } from "@/src/lib/audit";
-import { requireFeature } from "@/ee/licensing/store";
 import { latestAuditEventId } from "./records";
 import type { AuditVerification } from "./types";
 import { asc } from "@/src/lib/db/ops";
@@ -103,9 +102,8 @@ export async function verifyAuditChain(now: Date = new Date()): Promise<AuditVer
   return result;
 }
 
-/** Checks the license, verifies the chain and records the check in the audit log. */
+/** Verifies the chain and records the check in the audit log. */
 export async function verifyAuditLog(actorUserId: number): Promise<AuditVerification> {
-  await requireFeature("audit_streaming");
   const result = await verifyAuditChain();
   await logAuditEvent({
     userId: actorUserId,

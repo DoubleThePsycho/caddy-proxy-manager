@@ -127,7 +127,7 @@ export const GOVERNANCE_OPENAPI_PATHS = {
       description:
         "Newest first. Each version has a title taken from the audit events that produced it (the manual note, or a summary of the diff " +
         "when there are none), who made it, the change requests whose approved changes it contains, how big the change was, and whether it " +
-        "is the configuration running now. Permission config_history:read; available without a license.",
+        "is the configuration running now. Permission config_history:read.",
       operationId: "listConfigVersions",
       parameters: [
         { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 200, default: 50 } },
@@ -394,7 +394,6 @@ export const GOVERNANCE_OPENAPI_SCHEMAS = {
             doneBy: { type: ["string", "null"], enum: ["data", "manual", null] },
             markedAt: { type: ["string", "null"] },
             action: { type: ["object", "null"], properties: { label: { type: "string" }, route: { type: "string" } } },
-            paid: { type: ["object", "null"], properties: { features: { type: "array", items: { type: "string" } }, configurable: { type: "boolean" } } },
           },
         },
       },

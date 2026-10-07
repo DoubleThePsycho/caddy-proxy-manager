@@ -8,8 +8,7 @@
  *   up MFA, for readers of the users (users:read).
  *
  * Both cover every account and directory of this dashboard. Reads stored
- * state only and never
- * checks the license (the directory check is a runtime path).
+ * state only.
  */
 import { can } from "@/src/lib/permissions";
 import { getIdentityHealth } from "@/src/lib/identity-health";

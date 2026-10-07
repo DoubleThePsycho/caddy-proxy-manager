@@ -1,14 +1,12 @@
 /**
  * REST endpoints of configuration history and configuration export/import:
- * the license gate on every paid write path, read access without a license,
- * status codes and the file transfer formats.
+ * the write and read paths, status codes and the file transfer formats.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner, seedConfiguration, setSettingRow, type Fixture } from '../helpers/config-fixture';
+import { seedConfiguration, setSettingRow, type Fixture } from '../helpers/config-fixture';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
 
@@ -22,7 +20,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 import { requireApiAdmin, ApiAuthError } from '../../src/lib/api-auth';
 import { applyCaddyConfig } from '../../src/lib/caddy';
 import { CaddyApplyError } from '../../src/lib/caddy-apply-error';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { HISTORY_SETTING_KEY } from '../../ee/config-history/settings';
 import * as listRoute from '../../app/api/v1/config-history/route';
 import * as settingsRoute from '../../app/api/v1/config-history/settings/route';
@@ -40,12 +37,9 @@ beforeEach(async () => {
   ctx.db = createTestDb();
   vi.clearAllMocks();
   vi.mocked(applyCaddyConfig).mockResolvedValue(undefined as never);
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
   fx = await seedConfiguration(ctx.db);
   vi.mocked(requireApiAdmin).mockResolvedValue({ userId: fx.adminId, role: 'admin', authMethod: 'bearer' });
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 function req(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): NextRequest {
   const init: { method: string; headers: Record<string, string>; body?: string | FormData } = { method, headers: { ...headers } };
@@ -66,45 +60,15 @@ async function createSnapshot(): Promise<number> {
   return (await response.json()).id;
 }
 
-async function removeLicense() {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-}
-
-describe('license gate on paid write endpoints', () => {
-  it('POST /config-history, PUT /config-history/settings and POST /config-history/{id}/restore return 403 without a license', async () => {
-    await installLicense(ctx.db);
-    const id = await createSnapshot();
-    await removeLicense();
-
-    const responses = [
-      await listRoute.POST(req('POST', '/api/v1/config-history', {})),
-      await settingsRoute.PUT(req('PUT', '/api/v1/config-history/settings', { enabled: true })),
-      await restoreRoute.POST(req('POST', `/api/v1/config-history/${id}/restore`), params(id)),
-    ];
-    for (const response of responses) {
-      expect(response.status).toBe(403);
-      expect((await response.json()).error).toBe(
-        'Configuration history and rollback needs an active Ingressi Homelab license or higher'
-      );
-    }
-    expect(applyCaddyConfig).not.toHaveBeenCalled();
-    expect(await ctx.db.select().from(schema.configSnapshots)).toHaveLength(1);
-    expect(await first(ctx.db.select().from(schema.settings).where(eq(schema.settings.key, HISTORY_SETTING_KEY)).limit(1))).toBeUndefined();
-  });
-
-  it('lets PUT /config-history/settings turn recording off and DELETE snapshots without a license', async () => {
-    await installLicense(ctx.db);
+describe('write endpoints', () => {
+  it('lets PUT /config-history/settings turn recording off and DELETE snapshots', async () => {
     await settingsRoute.PUT(req('PUT', '/api/v1/config-history/settings', { enabled: true }));
     const id = await createSnapshot();
     await createSnapshot();
-    await removeLicense();
-
-    const stillOn = await settingsRoute.PUT(req('PUT', '/api/v1/config-history/settings', { retention: 10 }));
-    expect(stillOn.status).toBe(403);
 
     const off = await settingsRoute.PUT(req('PUT', '/api/v1/config-history/settings', { enabled: false }));
     expect(off.status).toBe(200);
-    expect(await off.json()).toEqual({ enabled: false, retention: 200, configurable: false });
+    expect(await off.json()).toEqual({ enabled: false, retention: 200 });
 
     const one = await detailRoute.DELETE(req('DELETE', `/api/v1/config-history/${id}`), params(id));
     expect(one.status).toBe(204);
@@ -121,11 +85,10 @@ describe('license gate on paid write endpoints', () => {
     expect(response.status).toBe(400);
   });
 
-  it('allows the write endpoints with a license', async () => {
-    await installLicense(ctx.db);
+  it('turns recording on, saves a snapshot and restores it', async () => {
     const settings = await settingsRoute.PUT(req('PUT', '/api/v1/config-history/settings', { enabled: true, retention: 50 }));
     expect(settings.status).toBe(200);
-    expect(await settings.json()).toEqual({ enabled: true, retention: 50, configurable: true });
+    expect(await settings.json()).toEqual({ enabled: true, retention: 50 });
 
     const id = await createSnapshot();
     const restore = await restoreRoute.POST(req('POST', `/api/v1/config-history/${id}/restore`), params(id));
@@ -149,18 +112,16 @@ describe('license gate on paid write endpoints', () => {
   });
 });
 
-describe('read endpoints without a license', () => {
-  it('list, settings, detail and diff stay available', async () => {
-    await installLicense(ctx.db);
+describe('read endpoints', () => {
+  it('list, settings, detail and diff', async () => {
     const id = await createSnapshot();
-    await removeLicense();
 
     const list = await listRoute.GET(req('GET', '/api/v1/config-history?limit=10&offset=0'));
     expect(list.status).toBe(200);
     expect(await list.json()).toMatchObject({ total: 1, limit: 10, offset: 0, snapshots: [{ id, reason: 'manual', summary: 'baseline' }] });
 
     const settings = await settingsRoute.GET(req('GET', '/api/v1/config-history/settings'));
-    expect(await settings.json()).toEqual({ enabled: false, retention: 200, configurable: false });
+    expect(await settings.json()).toEqual({ enabled: false, retention: 200 });
 
     const detail = await detailRoute.GET(req('GET', `/api/v1/config-history/${id}`), params(id));
     expect(detail.status).toBe(200);
@@ -184,7 +145,6 @@ describe('read endpoints without a license', () => {
 
 describe('restore endpoint', () => {
   it('answers 409 on a sync slave', async () => {
-    await installLicense(ctx.db);
     const id = await createSnapshot();
     await setSettingRow(ctx.db, 'instance_mode', 'slave');
     const response = await restoreRoute.POST(req('POST', `/api/v1/config-history/${id}/restore`), params(id));
@@ -193,7 +153,6 @@ describe('restore endpoint', () => {
   });
 
   it('answers 502 when Caddy rejects the restored configuration', async () => {
-    await installLicense(ctx.db);
     const id = await createSnapshot();
     vi.mocked(applyCaddyConfig).mockRejectedValueOnce(new CaddyApplyError('Caddy rejected configuration', 'CADDY_REJECTED'));
     const response = await restoreRoute.POST(req('POST', `/api/v1/config-history/${id}/restore`), params(id));
@@ -202,7 +161,7 @@ describe('restore endpoint', () => {
   });
 });
 
-describe('export and import endpoints (no license needed)', () => {
+describe('export and import endpoints', () => {
   it('exports a file attachment and imports it back as multipart and as JSON', async () => {
     const exported = await exportRoute.POST(req('POST', '/api/v1/config/export', { passphrase: PASSPHRASE }));
     expect(exported.status).toBe(200);

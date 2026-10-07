@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     if (policyError) {
       return NextResponse.json({ error: policyError }, { status: 400 });
     }
-    // Only roles the caller may grant; a custom role needs the license.
+    // Only roles the caller may grant.
     await assertCanAssignOnCreate(access, assignment);
 
     const bcrypt = await import("bcryptjs");

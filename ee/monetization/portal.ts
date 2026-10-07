@@ -5,8 +5,8 @@
  * key-based portal page (/api-portal, the consumer pastes an API key) and from
  * the consumer API (GET /api/monetization/me with the API key).
  *
- * None of these check the license or need a dashboard account. Portal tokens
- * are looked up by their SHA-256; API keys through the gate's in-memory index.
+ * None of these need a dashboard account. Portal tokens are looked up by
+ * their SHA-256; API keys through the gate's in-memory index.
  *
  * Postpaid consumers see their open amount, the cap, when the next charge
  * runs and their card (brand and last four digits only), and can save a card

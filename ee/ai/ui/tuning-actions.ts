@@ -14,7 +14,7 @@ import type { WafTuningResult, WafTuningSuggestionView } from "@/ee/ai/types";
 
 export type TuningActionResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
-/** The ee functions check the license (AI analyst) before generating or changing anything. */
+/** Runs a tuning action for a user with waf:write; client-safe errors come back as { ok: false }. */
 async function run<T>(operation: (userId: number) => Promise<T>, paths: string[]): Promise<TuningActionResult<T>> {
   const session = await requirePermission("waf:write");
   try {

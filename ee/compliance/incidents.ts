@@ -7,16 +7,12 @@
  * Nothing here sends anything anywhere: a person copies the text into the
  * CSIRT's or authority's channel (in Italy, CSIRT Italia at ACN) and records
  * the submission time and reference here.
- *
- * Licensing: creating a draft, changing it, refreshing its facts and
- * drafting a stage need "compliance_reports"; reading and deleting never do.
  */
 import { count, eq, inArray } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";
 import { alertEvents, complianceIncidents, proxyHosts, users } from "@/src/lib/db/schema";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import { collectIncidentFacts } from "./incident-facts";
 import { requestStageDraft, defaultAiDraftDependencies, type AiDraftDependencies } from "./incident-ai";
 import {
@@ -59,7 +55,6 @@ import {
 import { defaultAnalytics, type AnalyticsDependencies } from "./reports/shared";
 import {
   CHOICE_VALUES,
-  FEATURE,
   INCIDENT_LANGUAGES,
   INCIDENT_STATUSES,
   type IncidentFacts,
@@ -453,11 +448,10 @@ function templateStages(input: { title: string; detectedAt: string; language: In
   return stages;
 }
 
-// ── Changes (license required) ─────────────────────────────────────────
+// ── Changes ───────────────────────────────────────────────────────────
 
-/** Creates a draft with facts and a structured template. Needs the compliance_reports feature. */
+/** Creates a draft with facts and a structured template. */
 export async function createIncident(body: unknown, actorUserId: number, overrides: Partial<IncidentDependencies> = {}): Promise<IncidentView> {
-  await requireFeature(FEATURE);
   const deps = dependencies(overrides);
   const now = deps.now();
   const record = requireRecord(body);
@@ -599,11 +593,7 @@ function parseStageChanges(value: unknown, current: Stages, now: Date): { stages
   return { stages, changed };
 }
 
-/**
- * Changes a draft. Fields left out keep their values. Needs no license: an
- * incident under way must stay editable, and its submission recordable,
- * after a license lapses.
- */
+/** Changes a draft. Fields left out keep their values. */
 export async function updateIncident(id: number, body: unknown, actorUserId: number, overrides: Partial<IncidentDependencies> = {}): Promise<IncidentView> {
   const existing = await requireRow(id);
   const deps = dependencies(overrides);
@@ -726,10 +716,9 @@ export async function updateIncident(id: number, body: unknown, actorUserId: num
   return await toIncidentView(row, now);
 }
 
-/** Collects the facts again for the draft's period and hosts. Needs the compliance_reports feature. */
+/** Collects the facts again for the draft's period and hosts. */
 export async function refreshIncidentFacts(id: number, actorUserId: number, overrides: Partial<IncidentDependencies> = {}): Promise<IncidentView> {
   const existing = await requireRow(id);
-  await requireFeature(FEATURE);
   const deps = dependencies(overrides);
   const now = deps.now();
   const facts = await collectIncidentFacts(
@@ -764,11 +753,10 @@ export type DraftSource = (typeof DRAFT_SOURCES)[number];
 /**
  * Replaces a stage's text with the structured template or a first draft from
  * the configured AI provider. Choice fields and the submission record are
- * kept. Needs the compliance_reports feature.
+ * kept.
  */
 export async function draftIncidentStage(id: number, body: unknown, actorUserId: number, overrides: Partial<IncidentDependencies> = {}): Promise<IncidentView> {
   const existing = await requireRow(id);
-  await requireFeature(FEATURE);
   const deps = dependencies(overrides);
   const now = deps.now();
   const record = requireRecord(body);
@@ -827,7 +815,6 @@ export async function draftIncidentStage(id: number, body: unknown, actorUserId:
   return await toIncidentView(row, now);
 }
 
-/** Never needs a license. */
 export async function deleteIncident(id: number, actorUserId: number): Promise<void> {
   const existing = await requireRow(id);
   await appDb.delete(complianceIncidents).where(eq(complianceIncidents.id, id));

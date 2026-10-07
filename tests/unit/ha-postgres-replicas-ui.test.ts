@@ -2,9 +2,8 @@
  * Server-side render of the High availability page on PostgreSQL
  * (ee/high-availability/ui/PostgresReplicasSection.tsx through
  * ClusterSection): "PostgreSQL mode", the replicas with their role, last
- * heartbeat, version and schema, which one leads, read-only, the license
- * rule, and the warnings (refused, no leader, mixed versions, election
- * reconnecting). The SQLite cluster card is unchanged.
+ * heartbeat, version and schema, which one leads, read-only, and the
+ * warnings (refused, no leader, mixed versions, election reconnecting). The SQLite cluster card is unchanged.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -60,11 +59,11 @@ function postgres(overrides: Partial<PostgresReplicasView> = {}): PostgresReplic
   };
 }
 
-function view(pg: PostgresReplicasView | null, configurable = true): ClusterView {
-  return { enabled: false, configurable, error: null, node: null, lease: null, replication: null, lastRestore: null, nodes: [], config: null, postgres: pg };
+function view(pg: PostgresReplicasView | null): ClusterView {
+  return { enabled: false, error: null, node: null, lease: null, replication: null, lastRestore: null, nodes: [], config: null, postgres: pg };
 }
 
-const render = (v: ClusterView) => renderToStaticMarkup(createElement(ClusterSection, { view: v, editionLabel: 'Enterprise' }));
+const render = (v: ClusterView) => renderToStaticMarkup(createElement(ClusterSection, { view: v }));
 
 describe('High availability on PostgreSQL', () => {
   it('shows PostgreSQL mode: the replicas, who leads, heartbeats, versions and schema, read-only', () => {
@@ -78,15 +77,10 @@ describe('High availability on PostgreSQL', () => {
     expect(html).toContain('0053_cluster_nodes');
     expect(html).toContain('1.4.0');
     expect(html).toContain('Every 10 s');
-    expect(html).toContain('checked once, when it joins');
+    expect(html).not.toMatch(/license/i);
     expect(html).not.toContain('High availability is off on this node');
     expect(html).not.toMatch(/<(input|select|textarea)\b/);
     expect(html).not.toContain('No replica leads');
-  });
-
-  it('says when the license would refuse another replica, without touching the running ones', () => {
-    expect(render(view(postgres(), false))).toContain('Adding a replica needs an active Enterprise license.');
-    expect(render(view(postgres(), true))).not.toContain('Adding a replica needs');
   });
 
   it('warns about a refused replica, a missing leader, mixed versions and a reconnecting election', () => {

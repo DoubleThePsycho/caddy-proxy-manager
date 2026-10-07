@@ -14,7 +14,6 @@
  * failing (ldap_directory_unavailable) and one that works again
  * (ldap_directory_recovered).
  *
- * A runtime path: it never checks the license, like directory sign-in.
  * Directories are per dashboard (not synced), so each dashboard checks its own.
  */
 import { eq } from "drizzle-orm";

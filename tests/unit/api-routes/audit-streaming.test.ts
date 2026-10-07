@@ -1,7 +1,7 @@
 /**
  * REST endpoints of audit streaming, export, verification and retention:
- * the license gate on every write path, read access without a license,
- * validation, secret redaction and audit records of admin changes.
+ * the write paths, read access, validation, secret redaction and audit
+ * records of admin changes.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterAll } from 'vitest';
 import { createServer, type Server } from 'node:http';
@@ -30,9 +30,6 @@ import * as schema from '@/src/lib/db/schema';
 import { requireApiAdmin, ApiAuthError } from '@/src/lib/api-auth';
 import { logAuditEvent } from '@/src/lib/audit';
 import { insertAuditEvent } from '@/src/lib/audit-chain';
-import { setSetting } from '@/src/lib/settings';
-import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
-import { LICENSE_SETTING_KEY } from '@/ee/licensing/store';
 import { GET as listSinks, POST as createSink } from '@/app/api/v1/audit-sinks/route';
 import { GET as getSink, PUT as updateSink, DELETE as deleteSink } from '@/app/api/v1/audit-sinks/[id]/route';
 import { POST as testSink } from '@/app/api/v1/audit-sinks/[id]/test/route';
@@ -40,11 +37,8 @@ import { GET as getRetention, PUT as putRetention } from '@/app/api/v1/audit-log
 import { GET as exportLog } from '@/app/api/v1/audit-log/export/route';
 import { GET as verifyLog } from '@/app/api/v1/audit-log/verify/route';
 import { GET as getOpenApi } from '@/app/api/v1/openapi.json/route';
-import { createTestSigner, licensePayload, signLicense } from '../../helpers/license';
 
-const signer = createTestSigner();
 const SECRET = 'whsec-route-test-0123456789';
-const LICENSE_ERROR = 'Audit streaming and export needs an active Ingressi Business license or higher';
 
 let receiver: Server;
 let receiverUrl: string;
@@ -60,23 +54,15 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((resolve) => receiver.close(() => resolve()));
-  setTrustedLicenseKeysForTests(null);
 });
 
 beforeEach(async () => {
   vi.clearAllMocks();
   vi.mocked(requireApiAdmin).mockResolvedValue({ userId: 7, role: 'admin', authMethod: 'bearer' });
-  setTrustedLicenseKeysForTests(signer.keys);
   await ctx.db.delete(schema.auditSinks);
   await ctx.db.delete(schema.auditEvents);
   await ctx.db.delete(schema.settings);
 });
-
-async function installLicense(overrides: Record<string, unknown> = {}) {
-  await setSetting(LICENSE_SETTING_KEY, signLicense(signer, licensePayload(signer, {
-    iat: '2026-01-01T00:00:00.000Z', exp: '2099-01-01T00:00:00.000Z', ...overrides,
-  })));
-}
 
 function req(method: string, path: string, body?: unknown): NextRequest {
   return new NextRequest(`http://localhost${path}`, {
@@ -91,13 +77,10 @@ function webhookBody(extra: Record<string, unknown> = {}) {
   return { name: 'SIEM', type: 'webhook', config: { url: receiverUrl }, secret: SECRET, ...extra };
 }
 
-/** Creates a sink while licensed, for tests that then remove the license. */
 async function seedSink(): Promise<number> {
-  await installLicense();
   const response = await createSink(req('POST', '/api/v1/audit-sinks', webhookBody()));
   expect(response.status).toBe(201);
   const { id } = await response.json();
-  await ctx.db.delete(schema.settings);
   return id;
 }
 
@@ -105,113 +88,61 @@ async function sinkCount() {
   return (await ctx.db.select().from(schema.auditSinks)).length;
 }
 
-describe('license gate', () => {
-  it('POST /audit-sinks: 403 without a license, 201 with one', async () => {
-    const denied = await createSink(req('POST', '/api/v1/audit-sinks', webhookBody()));
-    expect(denied.status).toBe(403);
-    expect((await denied.json()).error).toBe(LICENSE_ERROR);
-    expect(await sinkCount()).toBe(0);
-
-    await installLicense();
+describe('administrator changes', () => {
+  it('POST /audit-sinks: 201', async () => {
     const created = await createSink(req('POST', '/api/v1/audit-sinks', webhookBody()));
     expect(created.status).toBe(201);
     expect(await sinkCount()).toBe(1);
   });
 
-  it('PUT /audit-sinks/{id}: 403 without a license, 200 with one', async () => {
+  it('PUT /audit-sinks/{id}: 200', async () => {
     const id = await seedSink();
-    const denied = await updateSink(req('PUT', `/api/v1/audit-sinks/${id}`, { name: 'Changed' }), params(id));
-    expect(denied.status).toBe(403);
-    expect((await (await getSink(req('GET', `/api/v1/audit-sinks/${id}`), params(id))).json()).name).toBe('SIEM');
-
-    await installLicense();
     const updated = await updateSink(req('PUT', `/api/v1/audit-sinks/${id}`, { name: 'Changed' }), params(id));
     expect(updated.status).toBe(200);
     expect((await updated.json()).name).toBe('Changed');
   });
 
-  it('DELETE /audit-sinks/{id}: works without a license, so a lapsed install can wind down', async () => {
+  it('DELETE /audit-sinks/{id}: 204', async () => {
     const id = await seedSink();
     expect((await deleteSink(req('DELETE', `/api/v1/audit-sinks/${id}`), params(id))).status).toBe(204);
     expect(await sinkCount()).toBe(0);
     expect(logAuditEvent).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'audit_sink_deleted', userId: 7 }));
   });
 
-  it('DELETE /audit-sinks/{id}: works with a license', async () => {
-    const id = await seedSink();
-    await installLicense();
-    expect((await deleteSink(req('DELETE', `/api/v1/audit-sinks/${id}`), params(id))).status).toBe(204);
-    expect(await sinkCount()).toBe(0);
-  });
-
-  it('PUT /audit-sinks/{id}: disabling works without a license, enabling does not', async () => {
+  it('PUT /audit-sinks/{id}: disables and enables a sink', async () => {
     const id = await seedSink();
     const disabled = await updateSink(req('PUT', `/api/v1/audit-sinks/${id}`, { enabled: false }), params(id));
     expect(disabled.status).toBe(200);
     expect((await disabled.json()).enabled).toBe(false);
     expect(logAuditEvent).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'audit_sink_updated', userId: 7 }));
 
-    // Repeating unchanged fields is still only a disable.
-    const again = await updateSink(req('PUT', `/api/v1/audit-sinks/${id}`, { enabled: false, name: 'SIEM', type: 'webhook' }), params(id));
-    expect(again.status).toBe(200);
-
     const enabled = await updateSink(req('PUT', `/api/v1/audit-sinks/${id}`, { enabled: true }), params(id));
-    expect(enabled.status).toBe(403);
-    expect((await enabled.json()).error).toBe(LICENSE_ERROR);
-    expect((await (await getSink(req('GET', `/api/v1/audit-sinks/${id}`), params(id))).json()).enabled).toBe(false);
+    expect(enabled.status).toBe(200);
+    expect((await (await getSink(req('GET', `/api/v1/audit-sinks/${id}`), params(id))).json()).enabled).toBe(true);
   });
 
-  it.each([
-    ['a rename', { enabled: false, name: 'Other' }],
-    ['a config change', { enabled: false, config: { url: 'https://other.example.com/' } }],
-    ['a new secret', { enabled: false, secret: 'another-secret-0123456789' }],
-    ['an invalid body', { enabled: false, bogus: 1 }],
-  ])('PUT /audit-sinks/{id}: disabling together with %s needs a license', async (_name, body) => {
+  it('POST /audit-sinks/{id}/test: 200', async () => {
     const id = await seedSink();
-    const response = await updateSink(req('PUT', `/api/v1/audit-sinks/${id}`, body), params(id));
-    expect(response.status).toBe(403);
-    expect((await (await getSink(req('GET', `/api/v1/audit-sinks/${id}`), params(id))).json())).toMatchObject({ name: 'SIEM', enabled: true });
-  });
-
-  it('POST /audit-sinks/{id}/test: 403 without a license, 200 with one', async () => {
-    const id = await seedSink();
-    expect((await testSink(req('POST', `/api/v1/audit-sinks/${id}/test`), params(id))).status).toBe(403);
-
-    await installLicense();
     const response = await testSink(req('POST', `/api/v1/audit-sinks/${id}/test`), params(id));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ ok: true, error: null });
   });
 
-  it('PUT /audit-log/retention: 0 (keep forever) works without a license', async () => {
-    // Retention set up while a license was installed.
-    await setSetting('audit_retention', { days: 30 });
+  it('PUT /audit-log/retention: sets the retention, 0 keeps events forever', async () => {
+    const saved = await putRetention(req('PUT', '/api/v1/audit-log/retention', { days: 90 }));
+    expect(saved.status).toBe(200);
+    expect((await saved.json()).days).toBe(90);
+    expect((await (await getRetention(req('GET', '/api/v1/audit-log/retention'))).json()).days).toBe(90);
 
-    expect((await putRetention(req('PUT', '/api/v1/audit-log/retention', { days: 7 }))).status).toBe(403);
-    expect((await putRetention(req('PUT', '/api/v1/audit-log/retention', { days: '0' }))).status).toBe(403);
+    expect((await putRetention(req('PUT', '/api/v1/audit-log/retention', { days: '0' }))).status).toBe(400);
     const off = await putRetention(req('PUT', '/api/v1/audit-log/retention', { days: 0 }));
     expect(off.status).toBe(200);
     expect((await off.json()).days).toBe(0);
     expect((await (await getRetention(req('GET', '/api/v1/audit-log/retention'))).json()).days).toBe(0);
   });
 
-  it('PUT /audit-log/retention: 403 without a license, 200 with one', async () => {
-    const denied = await putRetention(req('PUT', '/api/v1/audit-log/retention', { days: 90 }));
-    expect(denied.status).toBe(403);
-    expect((await (await getRetention(req('GET', '/api/v1/audit-log/retention'))).json()).days).toBe(0);
-
-    await installLicense();
-    const saved = await putRetention(req('PUT', '/api/v1/audit-log/retention', { days: 90 }));
-    expect(saved.status).toBe(200);
-    expect((await saved.json()).days).toBe(90);
-    expect((await (await getRetention(req('GET', '/api/v1/audit-log/retention'))).json()).days).toBe(90);
-  });
-
-  it('GET /audit-log/export: 403 without a license, a download with one', async () => {
+  it('GET /audit-log/export: a download', async () => {
     await insertAuditEvent({ action: 'proxy_host_created', entityType: 'proxy_host', summary: '=1+1' });
-    expect((await exportLog(req('GET', '/api/v1/audit-log/export?format=csv'))).status).toBe(403);
-
-    await installLicense();
     const response = await exportLog(req('GET', '/api/v1/audit-log/export?format=csv'));
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toBe('text/csv; charset=utf-8');
@@ -225,34 +156,15 @@ describe('license gate', () => {
     expect((await json.json()).events).toHaveLength(1);
   });
 
-  it('GET /audit-log/verify: 403 without a license, the result with one', async () => {
+  it('GET /audit-log/verify: the result', async () => {
     await insertAuditEvent({ action: 'a', entityType: 'b' });
-    expect((await verifyLog(req('GET', '/api/v1/audit-log/verify'))).status).toBe(403);
-
-    await installLicense();
     const response = await verifyLog(req('GET', '/api/v1/audit-log/verify'));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ ok: true, checked: 1, firstMismatchId: null, anchoredAt: expect.any(String) });
   });
-
-  it('refuses changes once an expired license is past its grace period', async () => {
-    await installLicense({ iat: '2020-01-01T00:00:00.000Z', exp: '2021-01-01T00:00:00.000Z' });
-    expect((await createSink(req('POST', '/api/v1/audit-sinks', webhookBody()))).status).toBe(403);
-  });
-
-  it('allows changes during the grace period', async () => {
-    const expired = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
-    await installLicense({ iat: '2020-01-01T00:00:00.000Z', exp: expired });
-    expect((await createSink(req('POST', '/api/v1/audit-sinks', webhookBody()))).status).toBe(201);
-  });
-
-  it('refuses a license of an edition without the feature', async () => {
-    await installLicense({ edition: 'homelab' });
-    expect((await putRetention(req('PUT', '/api/v1/audit-log/retention', { days: 1 }))).status).toBe(403);
-  });
 });
 
-describe('read-only access without a license', () => {
+describe('read access', () => {
   it('lists and shows existing sinks and the retention', async () => {
     const id = await seedSink();
     const list = await listSinks(req('GET', '/api/v1/audit-sinks'));
@@ -277,7 +189,6 @@ describe('read-only access without a license', () => {
 
 describe('secret redaction', () => {
   it('never returns the secret and reports hasSecret', async () => {
-    await installLicense();
     const created = await createSink(req('POST', '/api/v1/audit-sinks', webhookBody()));
     const text = await created.text();
     expect(text).not.toContain(SECRET);
@@ -295,7 +206,6 @@ describe('secret redaction', () => {
   });
 
   it('keeps secrets out of the audit log', async () => {
-    await installLicense();
     await createSink(req('POST', '/api/v1/audit-sinks', webhookBody()));
     expect(JSON.stringify(vi.mocked(logAuditEvent).mock.calls)).not.toContain(SECRET);
   });
@@ -303,7 +213,6 @@ describe('secret redaction', () => {
 
 describe('audit records', () => {
   it('records every administrator change', async () => {
-    await installLicense();
     const { id } = await (await createSink(req('POST', '/api/v1/audit-sinks', webhookBody()))).json();
     await updateSink(req('PUT', `/api/v1/audit-sinks/${id}`, { name: 'New name' }), params(id));
     await testSink(req('POST', `/api/v1/audit-sinks/${id}/test`), params(id));
@@ -326,7 +235,6 @@ describe('audit records', () => {
 
 describe('validation', () => {
   beforeEach(async () => {
-    await installLicense();
   });
 
   it.each([

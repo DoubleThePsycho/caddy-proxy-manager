@@ -12,17 +12,17 @@
  * refusing, or not enabled for crypto (a settled payment is never served
  * until Stripe confirms it, and the reconciliation records it with the same
  * idempotency key); the per-address, per-payer and per-second limits; key
- * holders paying with x402; and the settings, the license and the REST API.
+ * holders paying with x402; and the settings and the REST API.
  * Nothing calls the real facilitator, Stripe or a blockchain.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { generateKeyPairSync, verify as verifySignature } from 'node:crypto';
 import { NextRequest } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { decodePaymentRequiredHeader, decodePaymentResponseHeader, encodePaymentSignatureHeader } from '@x402/core/http';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner, setSettingRow } from '../helpers/config-fixture';
+import { setSettingRow } from '../helpers/config-fixture';
 import { insertConsumer, insertKey, insertMonetizedHost, insertPlan, insertProxyHost } from '../helpers/monetization';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -45,7 +45,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 });
 
 import { logAuditEvent } from '../../src/lib/audit';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
 import { reloadMonetization, resetMonetizationEngineForTests } from '../../ee/monetization/engine';
 import { handleGateRequest } from '../../ee/monetization/gate-response';
 import { monetizationAttentionProvider } from '../../ee/monetization/attention';
@@ -302,8 +301,6 @@ beforeEach(async () => {
   vi.stubGlobal('fetch', vi.fn(fakeFetch));
   vi.spyOn(Date, 'now').mockReturnValue(NOW);
   vi.mocked(logAuditEvent).mockClear();
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
-  await installLicense(ctx.db, 'enterprise');
 });
 
 afterEach(() => {
@@ -311,8 +308,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('the offer', () => {
   it('answers a request without a key with 402 and the SDK\'s PAYMENT-REQUIRED: USDC on Base, $0.01, to the Stripe deposit address', async () => {
@@ -1113,10 +1108,8 @@ describe('settings and the REST API', () => {
     expect(await (await x402Route.PUT(req('PUT', body))).json()).toMatchObject({ enabled: true, configured: true, notEnabledMessage: null, depositAddress: { accountId: null } });
   });
 
-  it('need the license to change, never to turn off or to pay', async () => {
+  it('turn x402 off and remove the CDP key secret', async () => {
     const world = await seed();
-    await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
-    expect((await x402Route.PUT(req('PUT', { priceCents: 5 }))).status).toBe(403);
     expect((await handleGateRequest(withPayment(world), NOW)).status).toBe(200);
     const off = await x402Route.DELETE(req('DELETE'));
     expect(off.status).toBe(200);

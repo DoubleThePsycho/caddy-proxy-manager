@@ -1,9 +1,8 @@
 /**
- * Server-side render of the Alerts page: the Community notice, firing alerts
- * and the last 7 days, dismissed alerts and muted rules, the rules table,
- * channels without credentials (paid ones read-only but deletable), labelled
- * AI text, the digest, read-only roles, and the page's pure helpers
- * (episodes, links, destinations).
+ * Server-side render of the Alerts page: firing alerts and the last 7 days,
+ * dismissed alerts and muted rules, the rules table, channels without
+ * credentials, labelled AI text, the digest, read-only roles, and the page's
+ * pure helpers (episodes, links, destinations).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -91,7 +90,7 @@ type Extra = {
   history?: { events: AlertEventView[]; total: number; page: number; perPage: number };
 };
 
-function render(tab: AlertsTab, license = { alerting: false, aiAnalyst: false }, extra: Extra = {}) {
+function render(tab: AlertsTab, extra: Extra = {}) {
   return renderToStaticMarkup(
     createElement(AlertsClient, {
       initialTab: tab,
@@ -102,7 +101,6 @@ function render(tab: AlertsTab, license = { alerting: false, aiAnalyst: false },
       history: extra.history ?? { events, total: 1, page: 1, perPage: 25 },
       ai: { enabled: true, provider: 'anthropic', model: 'claude-opus-5', baseUrl: null, hasApiKey: true, timeoutSeconds: 60, configured: true, defaultModel: 'claude-opus-5' },
       digest,
-      license,
       canWrite: extra.canWrite,
       proxyHosts: [{ id: 4, name: 'app.example.com' }],
       now,
@@ -111,16 +109,9 @@ function render(tab: AlertsTab, license = { alerting: false, aiAnalyst: false },
 }
 
 describe('Alerts page', () => {
-  it('explains the Community carve-out when unlicensed', () => {
-    const html = render('firing');
-    expect(html).toContain('Community includes e-mail channels');
-    expect(html).toContain('can still be disabled or deleted');
-    expect(html).toContain('href="/license"');
-    expect(render('firing', { alerting: true, aiAnalyst: true })).not.toContain('Community includes e-mail channels');
-  });
-
   it('shows the tabs with counts and the New rule button', () => {
     const html = render('firing');
+    expect(html).not.toContain('href="/license"');
     expect(html).toMatch(/role="tab"[^>]*>Firing <span[^>]*bg-warn-tint[^>]*>1<\/span>/);
     expect(html).toContain('New rule');
     expect(html).toMatch(/role="tab"[^>]*>AI</);
@@ -132,9 +123,8 @@ describe('Alerts page', () => {
     expect(html).toContain('Upstream 10.0.0.5:8080 is failing');
     expect(html).toContain('Critical');
     expect(html).toContain('Ops Slack: failed');
-    // The paid rule cannot be changed without the license; with it, the card offers its editor.
-    expect(html).not.toContain('Edit rule');
-    expect(render('firing', { alerting: true, aiAnalyst: true })).toContain('Edit rule');
+    // The card offers the rule's editor.
+    expect(html).toContain('Edit rule');
     expect(html).toContain('href="/proxy-hosts?search=10.0.0.5%3A8080"');
     expect(html).toContain('A resolve notice goes to the same channel');
     expect(html).toContain('Last 7 days');
@@ -144,17 +134,15 @@ describe('Alerts page', () => {
     expect(html).not.toContain('The backend stopped answering.');
   });
 
-  it('offers Dismiss to writers who may change the rule', () => {
-    const licensed = render('firing', { alerting: true, aiAnalyst: true });
-    expect(licensed).toContain('aria-label="Dismiss Upstream 10.0.0.5:8080 is failing"');
-    // A paid rule without the license, or a reader: no Dismiss.
-    expect(render('firing')).not.toContain('>Dismiss<');
-    expect(render('firing', { alerting: true, aiAnalyst: true }, { canWrite: false })).not.toContain('>Dismiss<');
+  it('offers Dismiss to writers', () => {
+    expect(render('firing')).toContain('aria-label="Dismiss Upstream 10.0.0.5:8080 is failing"');
+    // A reader: no Dismiss.
+    expect(render('firing', { canWrite: false })).not.toContain('>Dismiss<');
   });
 
   it('keeps dismissed and muted alerts listed, marked, with Undo for writers', () => {
     const quiet = [{ ...firing[0], dismissal, mute }];
-    const html = render('firing', { alerting: true, aiAnalyst: true }, { firing: quiet });
+    const html = render('firing', { firing: quiet });
     const text = html.replace(/<[^>]+>/g, '');
     expect(text).toContain('Dismissed · Alex Morgan');
     expect(text).toContain('Backend team is on it');
@@ -167,7 +155,7 @@ describe('Alerts page', () => {
     expect(html).not.toMatch(/role="tab"[^>]*>Firing <span[^>]*bg-warn-tint/);
     expect(html).toMatch(/role="tab"[^>]*>Firing <span[^>]*>1<\/span>/);
 
-    const reader = render('firing', { alerting: true, aiAnalyst: true }, { firing: quiet, canWrite: false });
+    const reader = render('firing', { firing: quiet, canWrite: false });
     expect(reader.replace(/<[^>]+>/g, '')).toContain('Dismissed · Alex Morgan');
     expect(reader).not.toContain('>Undo<');
     expect(reader).not.toContain('>Unmute<');
@@ -175,15 +163,15 @@ describe('Alerts page', () => {
 
   it('says why a firing notification was held back', () => {
     const muted = [{ ...firing[0], deliveries: [], silenced: 'muted' as const }];
-    expect(render('firing', undefined, { firing: muted })).toContain('Nobody (rule muted)');
-    const history = render('history', undefined, {
+    expect(render('firing', { firing: muted })).toContain('Nobody (rule muted)');
+    const history = render('history', {
       history: { events: [{ ...events[0], notified: false, deliveries: [], silenced: 'dismissed' }], total: 1, page: 1, perPage: 25 },
     });
     expect(history).toContain('Not sent (dismissed)');
   });
 
   it('says when nothing is firing', () => {
-    expect(render('firing', undefined, { firing: [] })).toContain('Nothing is firing');
+    expect(render('firing', { firing: [] })).toContain('Nothing is firing');
   });
 
   it('shows rules with scope, duration, severity, channels and when they fired', () => {
@@ -198,32 +186,28 @@ describe('Alerts page', () => {
     expect(html).toContain('AI explanation');
     expect(html).toContain('Firing (1) since');
     expect(html).toContain('Never');
-    // The paid rule is read-only without a license but can still be deleted.
-    expect(html).toMatch(/title="Needs a license with Alerting"[^>]*aria-label="Edit rule Upstreams"/);
+    expect(html).toContain('aria-label="Edit rule Upstreams"');
+    expect(html).not.toMatch(/disabled=""[^>]*aria-label="Edit rule Upstreams"/);
     expect(html.match(/title="Delete"/g)?.length).toBe(2);
   });
 
   it('offers Mute on rules and shows a muted rule with Unmute', () => {
-    const html = render('rules', { alerting: true, aiAnalyst: true });
+    const html = render('rules');
     expect(html).toContain('aria-label="Mute rule Certificates"');
     expect(html).toContain('aria-label="Mute rule Upstreams"');
-    // Without the license the paid rule cannot be muted; the Community one can.
-    const unlicensed = render('rules');
-    expect(unlicensed).toMatch(/title="Needs a license with Alerting"[^>]*aria-label="Mute rule Upstreams"/);
-    expect(unlicensed).not.toMatch(/title="Needs a license with Alerting"[^>]*aria-label="Mute rule Certificates"/);
+    expect(html).not.toMatch(/disabled=""[^>]*aria-label="Mute rule /);
 
-    const muted = render('rules', undefined, { rules: [rules[0], { ...rules[1], mute }] });
+    const muted = render('rules', { rules: [rules[0], { ...rules[1], mute }] });
     expect(muted.replace(/<[^>]+>/g, '')).toContain('Muted until 18:00');
-    // Unmuting never needs the license.
     expect(muted).toMatch(/aria-label="Unmute rule Upstreams"/);
     expect(muted).not.toMatch(/disabled=""[^>]*aria-label="Unmute rule Upstreams"/);
-    const reader = render('rules', undefined, { rules: [rules[0], { ...rules[1], mute }], canWrite: false });
+    const reader = render('rules', { rules: [rules[0], { ...rules[1], mute }], canWrite: false });
     expect(reader.replace(/<[^>]+>/g, '')).toMatch(/Muted until \d/);
     expect(reader).not.toContain('Unmute');
     expect(reader).not.toContain('Mute…');
   });
 
-  it('lists channels without credentials and keeps paid ones read-only but deletable', () => {
+  it('lists channels without credentials, with test, edit and delete', () => {
     const html = render('channels');
     expect(html).toContain('smtp.example.com:587');
     expect(html).toContain('STARTTLS when offered · to ops@example.com');
@@ -232,11 +216,10 @@ describe('Alerts page', () => {
     expect(html).toContain('The endpoint answered with HTTP 404');
     expect(html).toContain('Ops Slack could not deliver');
     expect(html).toContain('1 rule');
-    expect(html.match(/title="Needs a license with Alerting"/g)?.length).toBe(2); // test + edit of the Slack channel
     expect(html.match(/title="Delete"/g)?.length).toBe(2);
-    // The failing Slack channel is paid: its banner offers no Edit button without a license.
-    expect(html).not.toContain('Edit Ops Slack');
-    expect(render('channels', { alerting: true, aiAnalyst: true })).toContain('Edit Ops Slack');
+    expect(html.match(/Send test</g)?.length).toBe(2);
+    // The failing Slack channel's banner offers its editor.
+    expect(html).toContain('Edit Ops Slack');
     expect(html).not.toContain('hasPassword');
   });
 
@@ -252,7 +235,7 @@ describe('Alerts page', () => {
   });
 
   it('pages the history with the shared pager, linking each page', () => {
-    const html = render('history', undefined, { history: { events, total: 60, page: 2, perPage: 25 } });
+    const html = render('history', { history: { events, total: 60, page: 2, perPage: 25 } });
     expect(html).toContain('aria-label="Pages of alert history"');
     expect(html.replace(/<[^>]+>/g, '')).toContain('26–50 of 60 alerts');
     expect(html).toContain('href="/alerts?tab=history"');
@@ -261,51 +244,43 @@ describe('Alerts page', () => {
 
   it('searches and pages the rules and the channels', () => {
     const manyRules = Array.from({ length: 30 }, (_, i) => ({ ...rules[0], id: 100 + i, name: `Rule ${i}` }));
-    const rulesHtml = render('rules', { alerting: true, aiAnalyst: true }, { rules: manyRules });
+    const rulesHtml = render('rules', { rules: manyRules });
     expect(rulesHtml).toContain('aria-label="Search rules"');
     expect(rulesHtml).toContain('aria-label="Pages of rules"');
     expect(rulesHtml.replace(/<[^>]+>/g, '')).toContain('1–25 of 30 rules');
     expect(rulesHtml.match(/aria-label="Edit rule /g)?.length).toBe(25);
 
     const manyChannels = Array.from({ length: 27 }, (_, i) => ({ ...channels[0], id: 100 + i, name: `Mail ${i}` }));
-    const channelsHtml = render('channels', { alerting: true, aiAnalyst: true }, { channels: manyChannels });
+    const channelsHtml = render('channels', { channels: manyChannels });
     expect(channelsHtml).toContain('aria-label="Search channels"');
     expect(channelsHtml).toContain('aria-label="Pages of channels"');
     expect(channelsHtml.replace(/<[^>]+>/g, '')).toContain('1–25 of 27 channels');
   });
 
   it('is read-only without alerts:write', () => {
-    const html = render('rules', { alerting: true, aiAnalyst: true }, { canWrite: false });
+    const html = render('rules', { canWrite: false });
     expect(html).not.toContain('New rule');
     expect(html).not.toContain('title="Delete"');
-    const channelsHtml = render('channels', { alerting: true, aiAnalyst: true }, { canWrite: false });
+    const channelsHtml = render('channels', { canWrite: false });
     expect(channelsHtml).not.toContain('Add channel');
     expect(channelsHtml).not.toContain('Send test');
   });
 
-  it('offers to remove the AI provider without a license', () => {
+  it('offers to remove the AI provider', () => {
     const html = render('ai');
     expect(html).toContain('Remove provider');
-    expect(html).toContain('Setting up the AI analyst needs a license');
+    expect(html).not.toMatch(/license/i);
     expect(html).not.toContain('sk-');
   });
 
-  it('shows the digest read-only without a license, with a way to turn it off', () => {
+  it('lets an admin configure, preview and send the digest', () => {
     const html = render('ai');
     expect(html).toContain('Daily security digest');
-    expect(html).toContain('Setting up the digest needs a license');
-    expect(html).toContain('Turn off');
     expect(html).toContain('value="Europe/Rome"');
     expect(html).toContain('Ops Slack delivered');
     expect(html).toContain('with AI summary');
     // PagerDuty channels are never offered for digests; the e-mail and Slack channels are.
     expect(html).toContain('Ops mail');
-  });
-
-  it('lets a licensed admin configure, preview and send the digest', () => {
-    const html = render('ai', { alerting: true, aiAnalyst: true });
-    expect(html).not.toContain('Setting up the digest needs a license');
-    expect(html).not.toContain('Turn off');
     expect(html).toContain('Preview');
     expect(html).toContain('Send now');
   });

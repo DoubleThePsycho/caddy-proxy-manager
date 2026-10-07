@@ -3,8 +3,8 @@
  * responses signed in-process by a test identity provider: starting a
  * sign-in, the binding cookie and login CSRF, IdP-initiated responses,
  * replay, linking and provisioning, the account id, group-to-role mapping,
- * the required group, enforced SSO, MFA, disabled accounts, that no Better
- * Auth route manages providers, and that sign-in never needs a license.
+ * the required group, enforced SSO, MFA, disabled accounts, and that no
+ * Better Auth route manages providers.
  *
  * Like ldap-sign-in.test.ts, this boots the real db module and the real
  * auth-server against the application database: a SQLite file, or in the
@@ -96,7 +96,7 @@ let providerCounter = 0;
 
 type ProviderRow = typeof import('../../src/lib/db/schema').samlProviders.$inferInsert;
 
-/** A provider row as the administration code stores it (no license involved). */
+/** A provider row as the administration code stores it. */
 async function addProvider(overrides: Partial<ProviderRow> = {}, mappings: Array<{ group: string; role: string }> = []): Promise<number> {
   providerCounter += 1;
   const now = new Date().toISOString();
@@ -637,16 +637,5 @@ describe('provider management is not a Better Auth route', () => {
       .filter((path): path is string => typeof path === 'string' && (path.includes('saml') || path.startsWith('/sso')))
       .sort();
     expect(samlPaths).toEqual(['/saml/acs/:providerId', '/saml/metadata/:providerId', '/sign-in/saml']);
-  });
-});
-
-describe('licensing', () => {
-  it('signs in without any license installed', async () => {
-    const { eq } = await import('drizzle-orm');
-    expect(await dbFirst(app.db.select().from(app.schema.settings).where(eq(app.schema.settings.key, 'license')).limit(1))).toBeUndefined();
-    const id = await addProvider();
-    const who = person('nolicense');
-    const { browser: b, result } = await signIn(id, { ...who, attributes: { email: who.email } });
-    signedInOk(result, b);
   });
 });

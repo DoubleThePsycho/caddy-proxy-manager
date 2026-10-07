@@ -180,8 +180,8 @@ export function enforceSafeUserDefaults<T extends object>(user: T): T & { role: 
 
 /**
  * Drops a `customRoleId` from a user Better Auth is about to create. Custom
- * roles (ee/custom-roles) are only ever assigned by a user with users:write
- * (and, for a custom role, the license); an identity provider's claims can
+ * roles (ee/custom-roles) are only ever assigned by a user with users:write;
+ * an identity provider's claims can
  * never set one, not even with AUTH_ALLOW_OAUTH_ROLE_FROM_CLAIMS=true, which
  * maps claims to the built-in roles only.
  */

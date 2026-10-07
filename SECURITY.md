@@ -1,18 +1,15 @@
 # Security Policy
 
-## Supported versions and support period
-
-Ingressi receives security updates until at least **December 2032**.
+## Supported versions
 
 | Version | Security fixes |
 | ------- | -------------- |
 | Latest release | :white_check_mark: |
-| Long-term-support lines, within their 24 months once announced ([ee/docs/lts.md](ee/docs/lts.md); none yet) | :white_check_mark: |
 | Earlier releases | :x: |
 
 - Fixes ship as a new release of the latest version. A release that fixes a vulnerability contains only that fix and what it needs, where possible.
-- Security updates are free for every edition, and so is upgrading: `docker compose pull && docker compose up -d`. No security fix needs a license.
-- Earlier releases stay on GitHub and in the registry for reference, and every image that carried a security fix stays available for at least 10 years. They receive no fixes: running them is a security risk.
+- To upgrade: `docker compose pull && docker compose up -d`.
+- Earlier releases stay on GitHub and in the registry for reference. They get no fixes: running them is a security risk.
 
 ## Reporting a vulnerability
 
@@ -30,12 +27,7 @@ We answer within 48 hours, confirm or dismiss the issue within 5 working days, a
 - We follow coordinated disclosure. Keep the details private until a fix is released or 90 days have passed since your report, whichever comes first; if a fix needs more time, we agree it with you.
 - We fix the issue on the latest release and publish a GitHub Security Advisory, with a CVE when the issue warrants one: <https://github.com/ingres-si/ingressi/security/advisories>. Advisories also reach the GitHub Advisory Database and OSV in machine-readable form.
 - Reporters are credited in the advisory unless they prefer not to be.
-- Actively exploited vulnerabilities and severe incidents affecting the security of Ingressi are reported to CSIRT Italia and ENISA through the EU Single Reporting Platform, as Article 14 of the Cyber Resilience Act (Regulation (EU) 2024/2847) requires, and users are told what to do through the advisory, the release notes and, for license holders, by e-mail.
 - Testing must stay within installations you own or are authorised to test. Do not access other people's data or degrade services.
-
-## Information for users
-
-Manufacturer details, intended use, known risks, secure setup, updates and data removal: [documentation/cra/user-information.md](documentation/cra/user-information.md).
 
 ## Verifying release images
 

@@ -17,8 +17,6 @@ import {
   CHANNEL_TYPE_LABELS,
   DEFAULT_RULE_PARAMS,
   FOR_DURATION_RULE_TYPES,
-  FREE_CHANNEL_TYPES,
-  FREE_RULE_TYPES,
   MAX_SCOPE_HOSTS,
   RULE_TYPE_DESCRIPTIONS,
   RULE_TYPE_LABELS,
@@ -28,10 +26,7 @@ import {
   type AlertRuleView,
   type RuleType,
 } from "@/ee/alerting/types";
-import type { AlertingLicenseView } from "@/ee/alerting/gate";
 import { saveAlertRuleAction } from "./actions";
-
-export const LOCKED_HINT = "Needs a license with Alerting";
 
 export type HostChoice = { id: number; name: string };
 
@@ -65,7 +60,7 @@ function defaultForm(type: RuleType = "cert_expiring"): Form {
     name: "",
     type,
     enabled: true,
-    days: String(type === "license_expiring" ? DEFAULT_RULE_PARAMS.license_expiring.days : DEFAULT_RULE_PARAMS.cert_expiring.days),
+    days: String(DEFAULT_RULE_PARAMS.cert_expiring.days),
     includeClientCertificates: true,
     includeManagedCertificates: true,
     minFails: String(DEFAULT_RULE_PARAMS.upstream_down.minFails),
@@ -123,8 +118,6 @@ function paramsFromForm(form: Form): Record<string, unknown> {
       return { minFails: Number(form.minFails) };
     case "waf_spike":
       return { threshold: Number(form.threshold), windowMinutes: Number(form.windowMinutes) };
-    case "license_expiring":
-      return { days: Number(form.days) };
     case "backup_failed":
       return { minFailures: Number(form.minFailures) };
     default:
@@ -167,7 +160,6 @@ type Props = {
   onClose: () => void;
   channels: AlertChannelView[];
   proxyHosts: HostChoice[];
-  license: AlertingLicenseView;
   aiConfigured: boolean;
 };
 
@@ -176,7 +168,7 @@ type Props = {
  * duration, channels and notices. Mount it with a new key for each opening:
  * the form starts from `rule`.
  */
-export default function RuleEditor({ open, rule, onClose, channels, proxyHosts, license, aiConfigured }: Props) {
+export default function RuleEditor({ open, rule, onClose, channels, proxyHosts, aiConfigured }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState<Form>(() => (rule ? formFromRule(rule) : defaultForm()));
@@ -226,8 +218,7 @@ export default function RuleEditor({ open, rule, onClose, channels, proxyHosts, 
       ...(scoped ? { scope: form.scope === "hosts" ? { type: "hosts", proxyHostIds: form.proxyHostIds } : { type: "all" } } : {}),
       ...(forDuration ? { forMinutes: Number(form.forMinutes) } : {}),
       notifyOnResolve: form.notifyOnResolve,
-      // Only sent when it changes, so editing a rule never needs the AI license by accident.
-      ...(rule && rule.explain === form.explain ? {} : { explain: form.explain }),
+      explain: form.explain,
     };
     startTransition(async () => {
       const result = await saveAlertRuleAction(rule?.id ?? null, input);
@@ -264,22 +255,18 @@ export default function RuleEditor({ open, rule, onClose, channels, proxyHosts, 
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {RULE_TYPES.map((type) => {
-                const allowed = license.alerting || FREE_RULE_TYPES.includes(type);
-                return (
-                  <SelectItem key={type} value={type} disabled={!allowed}>
-                    {RULE_TYPE_LABELS[type]}
-                    {allowed ? "" : " (license)"}
-                  </SelectItem>
-                );
-              })}
+              {RULE_TYPES.map((type) => (
+                <SelectItem key={type} value={type}>
+                  {RULE_TYPE_LABELS[type]}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">{RULE_TYPE_DESCRIPTIONS[form.type]}</p>
           {rule && <p className="text-xs text-soft">The condition cannot be changed; create a new rule instead.</p>}
         </div>
 
-        {(form.type === "cert_expiring" || form.type === "license_expiring") && (
+        {form.type === "cert_expiring" && (
           <NumberField id="rule-days" label="Days before expiry" value={form.days} onChange={(value) => set("days", value)} suffix="days" />
         )}
         {form.type === "cert_expiring" && (
@@ -389,19 +376,12 @@ export default function RuleEditor({ open, rule, onClose, channels, proxyHosts, 
             <p className="text-[13px] text-muted-foreground">No channels yet: alerts are only recorded in the history.</p>
           ) : (
             <div className="flex flex-col gap-1.5">
-              {channels.map((channel) => {
-                const allowed = license.alerting || FREE_CHANNEL_TYPES.includes(channel.type) || form.channelIds.includes(channel.id);
-                return (
-                  <label key={channel.id} className="flex items-center gap-2 text-sm" title={allowed ? undefined : LOCKED_HINT}>
-                    <Checkbox
-                      checked={form.channelIds.includes(channel.id)}
-                      disabled={!allowed}
-                      onCheckedChange={(checked) => toggleChannel(channel.id, checked === true)}
-                    />
-                    {channel.name} <span className="text-xs text-muted-foreground">{CHANNEL_TYPE_LABELS[channel.type]}</span>
-                  </label>
-                );
-              })}
+              {channels.map((channel) => (
+                <label key={channel.id} className="flex items-center gap-2 text-sm">
+                  <Checkbox checked={form.channelIds.includes(channel.id)} onCheckedChange={(checked) => toggleChannel(channel.id, checked === true)} />
+                  {channel.name} <span className="text-xs text-muted-foreground">{CHANNEL_TYPE_LABELS[channel.type]}</span>
+                </label>
+              ))}
             </div>
           )}
         </div>
@@ -416,14 +396,10 @@ export default function RuleEditor({ open, rule, onClose, channels, proxyHosts, 
         </div>
 
         <div className="flex flex-col gap-1">
-          <SwitchRow id="rule-explain" checked={form.explain} disabled={!license.aiAnalyst} onChange={(checked) => set("explain", checked)}>
+          <SwitchRow id="rule-explain" checked={form.explain} onChange={(checked) => set("explain", checked)}>
             Add an AI-generated explanation
           </SwitchRow>
-          {(!license.aiAnalyst || !aiConfigured) && (
-            <p className="pl-[42px] text-xs text-muted-foreground">
-              {!license.aiAnalyst ? "Needs a license with the AI analyst." : "Set up a provider on the AI tab first."}
-            </p>
-          )}
+          {!aiConfigured && <p className="pl-[42px] text-xs text-muted-foreground">Set up a provider on the AI tab first.</p>}
         </div>
 
         <SwitchRow id="rule-enabled" checked={form.enabled} onChange={(checked) => set("enabled", checked)}>

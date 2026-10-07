@@ -38,8 +38,8 @@ export function presetPeriod(preset: Exclude<Preset, "custom">, now: Date): { fr
   return { from: isoDay(new Date(Date.UTC(year, 0, 1))), to: isoDay(now) };
 }
 
-/** Generates one report for a period, stores it with its SHA-256 and opens it. Needs the license. */
-export default function GenerateReportDialog({ open, onClose, configurable }: { open: boolean; onClose: () => void; configurable: boolean }) {
+/** Generates one report for a period, stores it with its SHA-256 and opens it. */
+export default function GenerateReportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [type, setType] = useState<SelectableReportType>("access_review");
@@ -72,7 +72,7 @@ export default function GenerateReportDialog({ open, onClose, configurable }: { 
   }
 
   return (
-    <AppDialog open={open} onClose={onClose} title="Generate a report" maxWidth="md" submitLabel={pending ? "Generating…" : "Generate"} onSubmit={configurable ? generate : undefined} isSubmitting={pending}>
+    <AppDialog open={open} onClose={onClose} title="Generate a report" maxWidth="md" submitLabel={pending ? "Generating…" : "Generate"} onSubmit={generate} isSubmitting={pending}>
       <div className="flex flex-col gap-4">
         <Field label="Report" htmlFor="report-type">
           <Select value={type} onValueChange={(value) => setType(value as SelectableReportType)}>

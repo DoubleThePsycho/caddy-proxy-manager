@@ -9,35 +9,28 @@
  * replicas silent for NODE_PRUNE_AFTER_MS. A replica that stops cleanly
  * records stoppedAt.
  *
- * Joining, the license rule (D6): a node id the table does not know joins as
- * a new replica. When another replica is live (a heartbeat within
- * NODE_GONE_AFTER_MS, not stopped), that needs a license that lets an
- * administrator set up high availability (the Enterprise high_availability
- * feature, active or in its grace period), read from the database at that
- * moment. Without it the node is refused: it is not added, it competes for
- * no lead, runs no job and serves nothing but its health check, and it tries
- * again every REPLICA_JOIN_RETRY_MS. A node id the table knows always joins,
- * whatever the license says, and a running replica never checks the license
- * again: a license that expires later changes nothing for replicas that are
- * running or restarting. A refusal changes nothing for the other replicas.
+ * Joining: a node id the table does not know joins as a new replica, the
+ * only one or next to live ones (a heartbeat within NODE_GONE_AFTER_MS, not
+ * stopped). A node id the table knows joins again.
  *
  * Node ids: INGRESSI_NODE_ID, or an id generated once and kept in the data
  * volume (<INGRESSI_DATA_DIR or ./data>/node-id). The host name is a label.
  *
  * One process per node id. Every process draws a random instance token when
  * it starts and writes it with its row. Two containers on one data volume,
- * or with a copied INGRESSI_NODE_ID, would otherwise count as one replica
- * (and the second would skip the license rule): a heartbeat that finds
- * another process's token on its row, written within NODE_GONE_AFTER_MS,
- * means a duplicate. The newer process (later start, the token breaking a
- * tie) refuses to run as a replica: like a refusal under the license rule it
- * stops leading, runs no job, answers 503, says why in its log and tries
- * again every REPLICA_JOIN_RETRY_MS, joining once the other process stopped
- * or went silent. The older one writes its row back and runs on. A process
- * that starts on a row another token wrote within that time takes the row
- * over but starts no job until its next heartbeat confirms that nobody wrote
- * it meanwhile: the other process may have crashed (a container restarted
- * after a crash), which must not be mistaken for a duplicate.
+ * or with a copied INGRESSI_NODE_ID, would otherwise count as one replica:
+ * a heartbeat that finds another process's token on its row, written within
+ * NODE_GONE_AFTER_MS, means a duplicate. The newer process (later start, the
+ * token breaking a tie) refuses to run as a replica: it is not admitted,
+ * competes for no lead, runs no job, serves nothing but its health check
+ * (503 for everything else), says why in its log and tries again every
+ * REPLICA_JOIN_RETRY_MS, joining once the other process stopped or went
+ * silent. The older one writes its row back and runs on; a refusal changes
+ * nothing for the other replicas. A process that starts on a row another
+ * token wrote within that time takes the row over but starts no job until
+ * its next heartbeat confirms that nobody wrote it meanwhile: the other
+ * process may have crashed (a container restarted after a crash), which
+ * must not be mistaken for a duplicate.
  *
  * On SQLite the table exists and stays empty.
  */
@@ -218,18 +211,16 @@ export type ClusterNode = {
 };
 
 /**
- * How a node joined: it was known, it was the only live replica, or the
- * license allowed another replica. `contested`: it took over a row another
+ * How a node joined: it was known, it was the only live replica, or it was
+ * added next to live replicas. `contested`: it took over a row another
  * process wrote within NODE_GONE_AFTER_MS (crashed, or a duplicate: the next
- * heartbeat tells). Refused: the license rule, or a duplicate node id.
+ * heartbeat tells). Refused: a duplicate node id.
  */
 export type JoinOutcome =
-  | { admitted: true; joined: "returning" | "first" | "licensed"; contested?: true }
-  | { admitted: false; reason: "license" | "duplicate" };
+  | { admitted: true; joined: "returning" | "first" | "added"; contested?: true }
+  | { admitted: false; reason: "duplicate" };
 
 export type JoinOptions = {
-  /** D6: whether the license lets a new replica join next to a live one, read at `now`. */
-  mayAddReplica: (now: Date) => Promise<boolean>;
   /**
    * When another live process wrote this node id's row: take it over (a
    * process that just started; the default) or refuse (a process already
@@ -288,7 +279,7 @@ const OWNER_COLUMNS = {
  * transaction: on PostgreSQL it holds the write lock, so two new replicas
  * that start together are decided one after the other.
  */
-export async function joinCluster(identity: NodeIdentity, options: JoinOptions): Promise<JoinOutcome> {
+export async function joinCluster(identity: NodeIdentity, options: JoinOptions = {}): Promise<JoinOutcome> {
   const now = options.now ?? new Date();
   const at = now.toISOString();
   const db = options.db ?? appDb;
@@ -314,13 +305,8 @@ export async function joinCluster(identity: NodeIdentity, options: JoinOptions):
     const live = await first(
       tx.select({ nodeId: clusterNodes.nodeId }).from(clusterNodes).where(liveNodes(now)).orderBy(asc(clusterNodes.nodeId)).limit(1)
     );
-    let joined: "first" | "licensed" = "first";
-    if (live) {
-      if (!(await options.mayAddReplica(now))) return { admitted: false, reason: "license" };
-      joined = "licensed";
-    }
     await tx.insert(clusterNodes).values({ nodeId: identity.nodeId, firstSeenAt: at, ...fields });
-    return { admitted: true, joined };
+    return { admitted: true, joined: live ? "added" : "first" };
   });
 }
 
@@ -335,7 +321,7 @@ export type HeartbeatOutcome = "recorded" | "reclaimed" | "duplicate";
 /**
  * Records a running replica's heartbeat, unless an older live process uses
  * its node id (see the module comment). A row that is gone (pruned, deleted
- * by hand) is written again: a running replica never checks the license.
+ * by hand) is written again.
  */
 export async function recordHeartbeat(
   identity: NodeIdentity,
@@ -473,16 +459,12 @@ export function currentReplicaIdentity(): NodeIdentity | null {
  */
 export type JoinAttempt = "admitted" | "pending" | "refused" | "error";
 
-/** Why this replica was refused: the license rule, or another process with its node id. */
-export type RefusalReason = "license" | "duplicate";
+/** Why this replica was refused: another process with its node id. */
+export type RefusalReason = "duplicate";
 
 export type ReplicaMembershipOptions = {
   /** Whether this replica leads now (for the heartbeat). */
   isLeader: () => boolean;
-  /** D6 (default: the high_availability feature of the installed license, ee/high-availability/replicas.ts). */
-  mayAddReplica?: (now: Date) => Promise<boolean>;
-  /** The message a replica refused under the license rule logs and answers requests with. */
-  refusalMessage?: () => Promise<string>;
   /**
    * Called each time this replica is admitted after it was not: a later
    * attempt to join, or a contested join confirmed (retryUntilAdmitted).
@@ -500,16 +482,6 @@ export type ReplicaMembershipOptions = {
   db?: DbExecutor;
 };
 
-async function defaultMayAddReplica(now: Date): Promise<boolean> {
-  const { replicaJoinAllowed } = await import("@/ee/high-availability/replicas");
-  return await replicaJoinAllowed(now);
-}
-
-async function defaultRefusalMessage(): Promise<string> {
-  const { replicaRefusedMessage } = await import("@/ee/high-availability/replicas");
-  return replicaRefusedMessage();
-}
-
 type MembershipState =
   /** Not joined yet. */
   | "new"
@@ -525,8 +497,6 @@ type MembershipState =
  * duplicate check (see the module comment), and the clean stop.
  */
 export class ReplicaMembership {
-  private readonly mayAddReplica: (now: Date) => Promise<boolean>;
-  private readonly refusalMessage: () => Promise<string>;
   private readonly heartbeatIntervalMs: number;
   private readonly joinRetryMs: number;
   private onAdmitted: (() => void) | undefined;
@@ -549,8 +519,6 @@ export class ReplicaMembership {
     readonly identity: NodeIdentity,
     private readonly options: ReplicaMembershipOptions
   ) {
-    this.mayAddReplica = options.mayAddReplica ?? defaultMayAddReplica;
-    this.refusalMessage = options.refusalMessage ?? defaultRefusalMessage;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs ?? NODE_HEARTBEAT_INTERVAL_MS;
     this.joinRetryMs = options.joinRetryMs ?? REPLICA_JOIN_RETRY_MS;
     this.onAdmitted = options.onAdmitted;
@@ -576,7 +544,6 @@ export class ReplicaMembership {
     let outcome: JoinOutcome;
     try {
       outcome = await joinCluster(this.identity, {
-        mayAddReplica: this.mayAddReplica,
         whenContested: this.refusedFor === "duplicate" ? "refuse" : "take-over",
         db: this.options.db,
       });
@@ -655,18 +622,18 @@ export class ReplicaMembership {
     return Math.round(this.heartbeatIntervalMs * 1.5);
   }
 
-  private async admit(joined: "returning" | "first" | "licensed" | "confirmed"): Promise<void> {
+  private async admit(joined: "returning" | "first" | "added" | "confirmed"): Promise<void> {
     this.state = "running";
     this.refusedFor = null;
     setReplicaRefusal(null);
     const how = {
       returning: "rejoined",
       first: "joined as the only running replica",
-      licensed: "joined next to running replicas",
+      added: "joined next to running replicas",
       confirmed: "rejoined: no other process uses its node id",
     }[joined];
     console.log(`[replicas] This replica (${this.identity.nodeId}) ${how}`);
-    if (joined === "first" || joined === "licensed") {
+    if (joined === "first" || joined === "added") {
       await logAuditEvent({
         userId: null,
         action: REPLICA_JOINED_ACTION,
@@ -674,7 +641,7 @@ export class ReplicaMembership {
         summary:
           joined === "first"
             ? `Replica ${this.identity.nodeId} joined the cluster as the only running replica`
-            : `Replica ${this.identity.nodeId} joined the cluster next to running replicas (license with high availability)`,
+            : `Replica ${this.identity.nodeId} joined the cluster next to running replicas`,
         data: { nodeId: this.identity.nodeId, hostname: this.identity.hostname, version: this.identity.version, joined },
       });
     }
@@ -684,13 +651,12 @@ export class ReplicaMembership {
     this.state = "refused";
     this.refusedFor = reason;
     this.stopHeartbeat();
-    const message = reason === "license" ? await this.refusalMessage() : DUPLICATE_NODE_MESSAGE;
-    setReplicaRefusal(message);
+    setReplicaRefusal(DUPLICATE_NODE_MESSAGE);
     const now = Date.now();
     if (reason !== this.lastRefusalLogged || now - this.lastRefusalLogAt >= REFUSAL_LOG_INTERVAL_MS) {
       this.lastRefusalLogged = reason;
       this.lastRefusalLogAt = now;
-      console.error(`[replicas] ${message}${reason === "duplicate" ? ` Node id: ${this.identity.nodeId}.` : ""}`);
+      console.error(`[replicas] ${DUPLICATE_NODE_MESSAGE} Node id: ${this.identity.nodeId}.`);
     }
     if (this.auditedRefusals.has(reason)) return;
     this.auditedRefusals.add(reason);
@@ -698,10 +664,7 @@ export class ReplicaMembership {
       userId: null,
       action: REPLICA_REFUSED_ACTION,
       entityType: "high_availability",
-      summary:
-        reason === "license"
-          ? `Replica ${this.identity.nodeId} was not admitted: another replica is running and the license does not include high availability`
-          : `Replica ${this.identity.nodeId} was not admitted: another process with the same node id is running`,
+      summary: `Replica ${this.identity.nodeId} was not admitted: another process with the same node id is running`,
       data: { nodeId: this.identity.nodeId, hostname: this.identity.hostname, version: this.identity.version, reason },
     });
   }

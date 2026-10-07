@@ -72,9 +72,7 @@ function render(overrides: Record<string, unknown> = {}) {
       oldest: { id: 13, createdAt: '2026-08-06T08:00:00.000Z' },
       backups: { destinations: [] },
       settings: { enabled: true, retention: 200 },
-      configurable: true,
       isSlave: false,
-      editionLabel: 'Homelab',
       limits: { minRetention: 1, maxRetention: 10000, minPassphraseLength: 12 },
       ...overrides,
     })
@@ -128,12 +126,10 @@ describe('Change history page', () => {
     expect(html).toContain('href="/approvals?request=13"');
   });
 
-  it('explains the license and what still works without one', () => {
-    const html = render({ configurable: false });
-    expect(html).toContain('Configuration history needs an active Ingressi Homelab license or higher');
-    expect(html).toContain('You can still turn recording off and delete versions');
-    expect(html).toContain('Export and import are free');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*title="Needs a license with configuration history"/);
+  it('explains that a sync slave records no history', () => {
+    const html = render({ isSlave: true });
+    expect(html).toContain('This instance is a sync slave');
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*title="A sync slave records no history"/);
   });
 
   it('has an empty state without versions', () => {

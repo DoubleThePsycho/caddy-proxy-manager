@@ -4,7 +4,7 @@ import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { createAlertSilence, listAlertSilences } from "@/ee/alerting/silences";
 import { NO_STORE, readJsonBody } from "@/ee/alerting/http";
 
-/** The mutes and dismissals in effect. Never needs a license. */
+/** The mutes and dismissals in effect. */
 export async function GET(request: NextRequest) {
   try {
     await requireApiPermission(request, "alerts:read");
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** Dismisses an alert or mutes a rule; licensed like changing that rule. */
+/** Dismisses an alert or mutes a rule. */
 export async function POST(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "alerts:write");

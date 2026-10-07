@@ -155,7 +155,7 @@ Upgrade as usual: pull the new image and recreate the web container. Its first s
 
 ## Several replicas
 
-Several web containers on one PostgreSQL database, for failover and load sharing, are an Enterprise feature: see [High availability](../ee/docs/high-availability.md#postgresql-replicas). `docker-compose.postgres.yml` starts a second one with the `replicas` profile. Each one needs its own data volume, or its own `INGRESSI_NODE_ID`: two containers with one node id do not run side by side.
+Several web containers on one PostgreSQL database, for failover and load sharing: see [High availability](../ee/docs/high-availability.md#postgresql-replicas). `docker-compose.postgres.yml` starts a second one with the `replicas` profile. Each one needs its own data volume, or its own `INGRESSI_NODE_ID`: two containers with one node id do not run side by side.
 
 ## Backups and deleted secrets
 

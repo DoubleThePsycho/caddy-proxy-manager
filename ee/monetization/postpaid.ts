@@ -32,9 +32,7 @@
  *    owe nothing and have no charge on its way.
  *
  * Receipts are Stripe's (the operator's Stripe settings); Ingressi issues no
- * invoices. Licensing: charging, saving cards, paying and the billing job
- * never check the license (a licence never touches traffic); resuming a
- * suspended consumer is a change and needs "api_monetization".
+ * invoices.
  */
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
@@ -44,7 +42,6 @@ import { first } from "@/src/lib/db/ops";
 import { tryWithClusterLock, withClusterLock } from "@/src/lib/db/locks";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiConflictError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import { refreshConsumer } from "./engine";
 import { monetizationBalanceStore, type LiveCounters } from "./balance-store";
 import {
@@ -61,7 +58,7 @@ import { formatMicros, microsToMinor, minorToMicros, MAX_AMOUNT_MICROS } from ".
 import { ensureGateSecret, readCurrency, readStoredPayments, readStripeSecrets } from "./settings";
 import { ID_PATTERNS, PaymentProviderError, errorSuffix, readCard, stripeId, stripeRequest, type StripeReply } from "./stripe-api";
 import { pendingChargeTotals } from "./stripe-payments";
-import { FEATURE, readSuspensionReason, type BillingMode, type CardView, type PostpaidView, type SuspensionReason } from "./types";
+import { readSuspensionReason, type BillingMode, type CardView, type PostpaidView, type SuspensionReason } from "./types";
 import { clearStripeKeyRejection, noteStripeKeyRejected, STRIPE_KEY_REJECTED } from "./stripe-status";
 
 type ConsumerRow = typeof monetizationConsumers.$inferSelect;
@@ -347,7 +344,7 @@ async function requirePostpaidConsumer(consumerId: number): Promise<{ row: Consu
 
 /**
  * A Checkout Session in setup mode that saves a card for off-session
- * charges, for the consumer's Stripe Customer. Never checks the license.
+ * charges, for the consumer's Stripe Customer.
  */
 export async function createCardSetupCheckout(consumerId: number, urls: { successUrl: string; cancelUrl: string }): Promise<string> {
   const { row } = await requirePostpaidConsumer(consumerId);
@@ -372,7 +369,7 @@ export async function createCardSetupCheckout(consumerId: number, urls: { succes
 /**
  * A Checkout Session paying the consumer's open amount (rounded up to the
  * smallest unit, less charges on their way), which also saves the card used
- * for later charges. Never checks the license.
+ * for later charges.
  */
 export async function createOpenAmountCheckout(consumerId: number, urls: { successUrl: string; cancelUrl: string }): Promise<string> {
   const { row } = await requirePostpaidConsumer(consumerId);
@@ -507,7 +504,7 @@ async function saveCard(context: StripeContext, consumerId: number, customerValu
   return { handled: true, consumerId };
 }
 
-/** Forgets the saved card (the consumer then needs a new one). Never needs a license. */
+/** Forgets the saved card (the consumer then needs a new one). */
 export async function forgetCard(consumerId: number, actorUserId: number): Promise<void> {
   const row = await readConsumer(consumerId);
   if (!row) throw new ApiClientError("Consumer not found", 404);
@@ -578,11 +575,10 @@ async function clearPaymentSuspension(consumerId: number): Promise<void> {
   }
 }
 
-/** An administrator ends a suspension (a dispute, say). Needs the license: it lets requests through again. */
+/** An administrator ends a suspension (a dispute, say). */
 export async function resumeConsumer(consumerId: number, actorUserId: number): Promise<void> {
   const row = await readConsumer(consumerId);
   if (!row) throw new ApiClientError("Consumer not found", 404);
-  await requireFeature(FEATURE);
   if (!row.suspendedAt) return;
   await appDb
     .update(monetizationConsumers)
@@ -612,7 +608,7 @@ const REASON_LABELS: Record<string, string> = {
  * Charges the consumer's saved card for its open amount (less charges on
  * their way), at most one charge at a time per consumer on any node. Skips
  * consumers that are not postpaid, have no usable card, are suspended, or
- * owe less than Stripe's minimum. Never checks the license.
+ * owe less than Stripe's minimum.
  */
 export async function chargeOpenAmount(consumerId: number, reason: ChargeReason, options: { period?: string; now?: number } = {}): Promise<ChargeOutcome> {
   return await withClusterLock(`monetization-charge:${consumerId}`, async () => {
@@ -871,7 +867,7 @@ async function findChargeIntent(context: StripeContext, payment: PaymentRow): Pr
  * PaymentIntent when Stripe answered before, by sending them again with the
  * same idempotency key within Stripe's 24 hours (Stripe answers with the
  * first outcome and charges once), and by their metadata after that. Runs at
- * start and every few minutes on the leader. Never checks the license.
+ * start and every few minutes on the leader.
  */
 export async function reconcilePendingCharges(now: number = Date.now()): Promise<{ checked: number }> {
   const cutoff = new Date(now - RECONCILE_AFTER_MS).toISOString();
@@ -921,8 +917,7 @@ export async function reconcilePendingCharges(now: number = Date.now()): Promise
  * One pass of postpaid billing (the leader, every minute): for every active
  * postpaid consumer with a usable card that is not suspended, charge the
  * open amount at the end of a billing period (once per period), when it
- * reaches the plan's threshold, and before the card expires. Never checks
- * the license.
+ * reaches the plan's threshold, and before the card expires.
  */
 export async function runPostpaidBilling(now: number = Date.now()): Promise<{ charged: number }> {
   let charged = 0;
@@ -982,7 +977,7 @@ export async function afterOpenAmountPaid(consumerId: number, paymentIntentId: s
   }
 }
 
-/** Charges the open amount now (an administrator). Needs no license: it collects what is owed. */
+/** Charges the open amount now (an administrator). */
 export async function chargeNow(consumerId: number, actorUserId: number): Promise<ChargeOutcome> {
   const row = await readConsumer(consumerId);
   if (!row) throw new ApiClientError("Consumer not found", 404);

@@ -30,10 +30,7 @@ import { buildCertificateOverview } from "./certificate-overview";
 import { getCaddyApplyStatus } from "./caddy-apply-status";
 import { getInstanceMode } from "./instance-sync";
 import { getSetupChecklist } from "./setup-checklist";
-import { shouldAskUsagePingQuestion } from "./usage-ping/store";
 import { listFleetInstances } from "@/ee/fleet/environments";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
 import type { FleetInstanceView } from "@/ee/fleet/types";
 import {
   HOST_BAD_ERROR_RATE,
@@ -100,7 +97,6 @@ export function overviewPermissions(access: Access): OverviewPermissions {
     readAuditLog: can(access, "audit_log:read"),
     readUsers: can(access, "users:read"),
     readSso: can(access, "sso:read"),
-    readLicense: can(access, "license:read"),
     writeSettings: can(access, "settings:write"),
   };
 }
@@ -329,7 +325,6 @@ export async function loadNodes(access: Access): Promise<OverviewNodes> {
 /** Whether the viewer may roll the configuration back from the overview (History's restore). */
 async function mayRollBack(access: Access): Promise<boolean> {
   if (!can(access, "config_history:restore")) return false;
-  if (!(await isFeatureConfigurable("config_history"))) return false;
   return (await getInstanceMode()) !== "slave";
 }
 
@@ -366,7 +361,7 @@ export async function loadFirstRun(access: Access): Promise<OverviewFirstRun | n
   if (!can(access, "settings:read")) return null;
   const checklist = await getSetupChecklist();
   if (checklist.complete || checklist.dismissed) return null;
-  return { checklist, ssoEdition: EDITION_LABELS[FEATURE_INFO.sso_saml.edition], ldapEdition: EDITION_LABELS[FEATURE_INFO.ldap.edition] };
+  return { checklist };
 }
 
 // ── The page ─────────────────────────────────────────────────────────────
@@ -385,7 +380,7 @@ export async function loadOverview(
   const readAnalytics = can(access, "analytics:read");
 
   const signals = readAnalytics ? within(() => cachedTrafficSignals(now.getTime()), null, SECTION_TIMEOUT_MS) : Promise.resolve(null);
-  const [attention, traffic, busiest, nodes, changes, firstRun, askUsagePing] = await Promise.all([
+  const [attention, traffic, busiest, nodes, changes, firstRun] = await Promise.all([
     within(() => collectAttention(access, { now, timeoutMs: ATTENTION_TIMEOUT_MS }), emptyAttention(now), ATTENTION_TIMEOUT_MS + 1_000),
     readAnalytics
       ? within(() => loadTraffic(range, nowSeconds), emptyTraffic(range, nowSeconds, "unavailable"), SECTION_TIMEOUT_MS)
@@ -400,7 +395,6 @@ export async function loadOverview(
     can(access, "fleet:read") || can(access, "instances:read") ? within(() => loadNodes(access), null, SECTION_TIMEOUT_MS) : Promise.resolve(null),
     can(access, "audit_log:read") ? within(() => loadRecentChanges(access), [], SECTION_TIMEOUT_MS) : Promise.resolve(null),
     within(() => loadFirstRun(access), null, SECTION_TIMEOUT_MS),
-    access.isAdmin ? within(() => shouldAskUsagePingQuestion(), false, SECTION_TIMEOUT_MS) : Promise.resolve(false),
   ]);
 
   return {
@@ -410,7 +404,6 @@ export async function loadOverview(
     version: APP_VERSION,
     permissions: overviewPermissions(access),
     firstRun,
-    askUsagePing,
     attention,
     traffic: traffic ? { ...traffic, topErrorHost: busiest?.topErrorHost ?? null } : null,
     hosts: busiest?.hosts ?? null,

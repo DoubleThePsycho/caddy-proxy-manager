@@ -2,7 +2,7 @@
  * Rule evaluators against an in-memory database, with Caddy's admin API and
  * ClickHouse mocked.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TestDb } from '../helpers/db';
 
 const ctx = vi.hoisted(() => ({
@@ -41,14 +41,10 @@ import {
   evaluateCaddyApplyFailed,
   evaluateCertExpiring,
   evaluateInstanceSyncFailed,
-  evaluateLicenseExpiring,
   evaluateUpstreamDown,
   evaluateWafSpike,
 } from '../../ee/alerting/evaluators';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
-import { LICENSE_SETTING_KEY } from '../../ee/licensing/store';
 import { createSelfSignedServerCertificate } from '../helpers/certs';
-import { createTestSigner, licensePayload, signLicense } from '../helpers/license';
 
 const DAY = 86400_000;
 let soon: string;
@@ -192,25 +188,5 @@ describe('caddy_apply_failed', () => {
     });
     await recordCaddyApplyResult({ ok: true });
     expect(await evaluateCaddyApplyFailed()).toEqual({ status: 'ok', findings: [] });
-  });
-});
-
-describe('license_expiring', () => {
-  const signer = createTestSigner();
-  beforeAll(() => setTrustedLicenseKeysForTests(signer.keys));
-  afterAll(() => setTrustedLicenseKeysForTests(null));
-
-  it('reports a license that expires within the window', async () => {
-    expect(await evaluateLicenseExpiring({ days: 30 }, now())).toEqual({ status: 'ok', findings: [] });
-    const exp = new Date(Date.now() + 10 * DAY).toISOString();
-    await setSetting(LICENSE_SETTING_KEY, signLicense(signer, licensePayload(signer, { iat: '2026-01-01T00:00:00.000Z', exp })));
-    expect(await evaluateLicenseExpiring({ days: 7 }, now())).toEqual({ status: 'ok', findings: [] });
-    const result = await evaluateLicenseExpiring({ days: 30 }, now());
-    expect(result.status === 'ok' && result.findings[0]).toMatchObject({
-      subjectKey: 'license:LIC-TEST',
-      severity: 'warning',
-      title: expect.stringMatching(/^The Business license expires in (9|10) days/),
-      facts: { edition: 'Business', status: 'active' },
-    });
   });
 });

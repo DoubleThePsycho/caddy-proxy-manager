@@ -9,8 +9,6 @@
  * suffix; see money.ts for conversions.
  */
 
-export const FEATURE = "api_monetization" as const;
-
 /** Header Caddy sets on the gate subrequest with the per-install gate token. */
 export const GATE_TOKEN_HEADER = "X-Ingressi-Gate-Token";
 /** Header Caddy sets on the gate subrequest: the proxy host whose route issued it. */

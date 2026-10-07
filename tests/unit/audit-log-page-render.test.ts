@@ -87,7 +87,6 @@ function render(overrides: Overrides = {}) {
       perPage: 50,
       filters: { ...EMPTY_FILTERS, range: '24h' },
       facets,
-      licensed: true,
       chain: chainOk,
       sinks,
       retentionDays: 365,
@@ -192,11 +191,10 @@ describe('Audit log page', () => {
     expect(html).not.toContain('Streaming and retention');
   });
 
-  it('keeps export and verification read-only without a license, and names ignored filters', () => {
-    const html = render({ licensed: false, invalidFilters: ['actor must be a user id or "system"'] });
-    expect(html).toContain('Export, integrity verification, streaming and retention need a Business license.');
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*title="Exporting needs a Business license"/);
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*title="Verifying needs a Business license"/);
+  it('names ignored filters', () => {
+    const html = render({ invalidFilters: ['actor must be a user id or "system"'] });
+    expect(html).toContain('Export CSV or JSON');
+    expect(html).toContain('Verify now');
     expect(html).toContain('Some filters were ignored.');
     expect(html).toContain('actor must be a user id or &quot;system&quot;');
   });
@@ -292,19 +290,18 @@ describe('Audit streaming page', () => {
     createdAt: '2026-07-14T00:00:00.000Z', updatedAt: '2026-07-14T00:00:00.000Z',
   };
 
-  function renderStreaming(licensed: boolean) {
+  function renderStreaming() {
     return renderToStaticMarkup(
       createElement(StreamingClient, {
         sinks: [sink],
         retention: { days: 365, lastRunAt: null, lastDeleted: null },
-        licensed,
         generatedAt: '2026-10-03T11:00:00.000Z',
       })
     );
   }
 
   it('shows each sink with its status, waiting events and lag, never a secret', () => {
-    const html = renderStreaming(true);
+    const html = renderStreaming();
     expect(html).toContain('Audit streaming');
     expect(html).toContain('href="/audit-log"');
     expect(html).toContain('Splunk HEC');
@@ -313,14 +310,7 @@ describe('Audit streaming page', () => {
     expect(html).toContain('30 s');
     expect(html).toContain('2 failed attempts in a row');
     expect(html).toContain('Add sink');
-    expect(html).not.toContain('hasSecret');
-  });
-
-  it('stays read-only without a license but can still wind down', () => {
-    const html = renderStreaming(false);
-    expect(html).toContain('Setting up, changing or enabling sinks and retention needs a Business license.');
-    expect(html).not.toContain('Add sink');
-    expect(html).toContain('Keep events forever');
     expect(html).toContain('title="Delete sink"');
+    expect(html).not.toContain('hasSecret');
   });
 });

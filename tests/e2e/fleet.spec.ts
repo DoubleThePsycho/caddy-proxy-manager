@@ -1,8 +1,7 @@
 /**
  * Fleet management on the master/slave pair of the test stack
- * (web-master:3002, web-slave:3003). The stack has no license, so this
- * covers what works without one: the page, the license refusal for setting
- * up environments, and drift detection against a slave running this release
+ * (web-master:3002, web-slave:3003): the page, creating and deleting an
+ * environment, and drift detection against a slave running this release
  * (the status reply of GET /api/instances/sync?status=1).
  */
 import { test, expect, type Browser, type BrowserContext } from '@playwright/test';
@@ -22,7 +21,7 @@ async function loginContext(browser: Browser, baseURL: string): Promise<BrowserC
   return context;
 }
 
-test.describe.serial('Fleet management (master → slave, unlicensed)', () => {
+test.describe.serial('Fleet management (master → slave)', () => {
   let master: BrowserContext;
   let instanceId: number | null = null;
 
@@ -37,28 +36,30 @@ test.describe.serial('Fleet management (master → slave, unlicensed)', () => {
     await master.close();
   });
 
-  test('shows the Fleet page with the license notice', async () => {
+  test('shows the Fleet page', async () => {
     const page = await master.newPage();
     await page.goto(`${MASTER}/fleet`);
     await expect(page.getByRole('heading', { name: 'Fleet', exact: true })).toBeVisible();
-    await expect(page.getByText(/Fleet management needs an active .* Enterprise license or higher/)).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Environments', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Nodes', exact: true })).toBeVisible();
-    // Without a license no environment can be created.
-    await expect(page.getByRole('button', { name: 'New environment' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'New environment' }).first()).toBeEnabled();
     await page.close();
   });
 
-  test('refuses to create an environment without a license', async () => {
+  test('creates an environment and deletes it', async () => {
     const response = await master.request.post(`${MASTER}/api/v1/fleet/environments`, {
       data: { name: 'e2e-production', promotionOnly: true },
       headers: { 'Content-Type': 'application/json', Origin: MASTER },
     });
-    expect(response.status()).toBe(403);
-    expect((await response.json()).error).toMatch(/Fleet management needs an active/);
+    expect(response.status()).toBe(201);
+    const environment = (await response.json()) as { id: number; name: string; promotionOnly: boolean };
+    expect(environment).toMatchObject({ name: 'e2e-production', promotionOnly: true });
+
+    const removed = await master.request.delete(`${MASTER}/api/v1/fleet/environments/${environment.id}`, { headers: { Origin: MASTER } });
+    expect(removed.status()).toBe(204);
   });
 
-  test('reports the slave in sync after a sync, without a license', async () => {
+  test('reports the slave in sync after a sync', async () => {
     const created = await master.request.post(`${MASTER}/api/v1/instances`, {
       data: { name: 'fleet-e2e-slave', baseUrl: 'http://web-slave:3000', apiToken: TOKEN },
       headers: { 'Content-Type': 'application/json', Origin: MASTER },

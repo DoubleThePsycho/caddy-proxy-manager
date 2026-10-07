@@ -3,8 +3,7 @@
  * sign-in path of Better Auth (username and email, through auth.api and over
  * HTTP) refuses accounts that are not break-glass accounts exactly as it
  * refuses a wrong password, self-registration is closed, and sessions are
- * only created by SSO endpoints or for break-glass accounts. None of it
- * depends on the license: these tests run with no key and with an expired one.
+ * only created by SSO endpoints or for break-glass accounts.
  *
  * Like auth-sign-in-username.test.ts, this boots the real db module and the
  * real auth-server against the application database: a SQLite file, or in the
@@ -13,7 +12,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import bcrypt from 'bcryptjs';
 import { runWithEndpointContext } from '@better-auth/core/context';
-import { createTestSigner, licensePayload, signLicense } from '../helpers/license';
 import { openAppDatabase, type AppDatabase } from '../helpers/app-database';
 
 let database: AppDatabase;
@@ -30,8 +28,6 @@ type App = {
   userModel: typeof import('../../src/lib/models/user');
   store: typeof import('../../ee/sso/enforcement-store');
   audit: typeof import('../../src/lib/audit');
-  licenseStore: typeof import('../../ee/licensing/store');
-  publicKeys: typeof import('../../ee/licensing/public-keys');
   ensureAdminUser: Awaited<typeof import('../../src/lib/init-db')>['ensureAdminUser'];
 };
 let app: App;
@@ -53,11 +49,9 @@ beforeAll(async () => {
   const userModel = await import('../../src/lib/models/user');
   const store = await import('../../ee/sso/enforcement-store');
   const audit = await import('../../src/lib/audit');
-  const licenseStore = await import('../../ee/licensing/store');
-  const publicKeys = await import('../../ee/licensing/public-keys');
   const { ensureAdminUser } = await import('../../src/lib/init-db');
   app = {
-    db: dbModule.default, schema, auth: getAuth(), userModel, store, audit, licenseStore, publicKeys, ensureAdminUser,
+    db: dbModule.default, schema, auth: getAuth(), userModel, store, audit, ensureAdminUser,
   };
 
   await ensureAdminUser();
@@ -70,7 +64,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  app.publicKeys.setTrustedLicenseKeysForTests(null);
   await database.close();
   for (const key of ['AUTH_RATE_LIMIT_ENABLED', 'AUTH_ALLOW_SELF_REGISTRATION', 'ADMIN_USERNAME', 'ADMIN_PASSWORD']) {
     delete process.env[key];
@@ -89,7 +82,6 @@ async function setStatus(userId: number, status: string) {
 
 beforeEach(async () => {
   await enforce(false);
-  await app.licenseStore.removeLicenseKey();
   await setStatus(ids.breakGlass, 'active');
   vi.mocked(app.audit.logAuditEvent).mockClear();
 });
@@ -191,22 +183,6 @@ describe('enforced SSO: password sign-in', () => {
       userId: ids.alice,
       action: 'sso_enforced_sign_in_refused',
     }));
-  });
-
-  it('keeps enforcing with no license and with an expired license', async () => {
-    await enforce(true);
-    expect((await app.licenseStore.getLicenseState()).status).toBe('unlicensed');
-    expect(await byUsername('alice', PASSWORD)).toMatchObject({ ok: false, statusCode: 401 });
-
-    const signer = createTestSigner();
-    app.publicKeys.setTrustedLicenseKeysForTests(signer.keys);
-    const { setSetting } = await import('../../src/lib/settings');
-    await setSetting(app.licenseStore.LICENSE_SETTING_KEY, signLicense(signer, licensePayload(signer, {
-      iat: '2020-01-01T00:00:00.000Z', exp: '2021-01-01T00:00:00.000Z',
-    })));
-    expect((await app.licenseStore.getLicenseState()).status).toBe('expired');
-    expect(await byUsername('alice', PASSWORD)).toMatchObject({ ok: false, statusCode: 401 });
-    expect(await byUsername('breakglass', PASSWORD)).toEqual({ ok: true, userId: String(ids.breakGlass) });
   });
 });
 

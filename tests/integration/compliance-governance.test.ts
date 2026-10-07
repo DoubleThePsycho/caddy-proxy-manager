@@ -2,14 +2,12 @@
  * Compliance additions (ee/compliance): report schedules and evidence packs,
  * recorded test restores, the live control status, and the incident register
  * (window, significance assessment, classification, cause, timeline), with
- * their license gates and validation.
+ * their validation.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 import { seedCompliance, type Seed } from '../helpers/compliance';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -23,8 +21,6 @@ vi.mock('../../src/lib/api-auth', async (importOriginal) => {
 
 import { requireApiAdmin } from '../../src/lib/api-auth';
 import { logAuditEvent } from '../../src/lib/audit';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
-import { LicenseRequiredError } from '../../ee/licensing/store';
 import {
   createReportSchedule,
   deleteReportSchedule,
@@ -48,16 +44,11 @@ import * as restoreRoute from '../../app/api/v1/compliance/restore-tests/route';
 import { first } from '@/src/lib/db/ops';
 
 const NOW = new Date('2026-10-03T11:36:00.000Z');
-const LICENSE_ERROR = 'Compliance reports needs an active Ingressi Enterprise license or higher';
 const noAnalytics: AnalyticsDependencies = { analyticsEnabled: () => false, query: async () => [] };
 let seed: Seed;
 
 function req(method: string, path: string, body?: unknown): NextRequest {
   return new NextRequest(`http://localhost${path}`, body === undefined ? { method } : { method, body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });
-}
-
-async function removeLicense(): Promise<void> {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, 'license'));
 }
 
 async function addEmailChannel(): Promise<number> {
@@ -71,13 +62,9 @@ async function addEmailChannel(): Promise<number> {
 beforeEach(async () => {
   ctx.db = createTestDb();
   vi.clearAllMocks();
-  setTrustedLicenseKeysForTests(licenseSigner.keys);
   seed = await seedCompliance(ctx.db, NOW);
-  await installLicense(ctx.db, 'enterprise');
   vi.mocked(requireApiAdmin).mockResolvedValue({ userId: seed.adminId, role: 'admin', authMethod: 'bearer' });
 });
-
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('report schedules', () => {
   it('runs monthly for the previous calendar month and weekly for the seven days before', () => {
@@ -93,10 +80,7 @@ describe('report schedules', () => {
     expect(periodOfRun(weekly, run)).toEqual({ from: new Date('2026-09-27T22:00:00.000Z'), to: new Date('2026-10-04T21:59:59.999Z') });
   });
 
-  it('needs the license to set one up or change it, never to disable or delete it', async () => {
-    await removeLicense();
-    await expect(createReportSchedule({ name: 'Monthly evidence' }, seed.adminId, NOW)).rejects.toThrow(LICENSE_ERROR);
-    await installLicense(ctx.db, 'enterprise');
+  it('sets one up, changes, disables and deletes it', async () => {
     const schedule = await createReportSchedule({ name: 'Monthly evidence' }, seed.adminId, NOW);
     expect(schedule).toMatchObject({
       enabled: true, frequency: 'monthly', dayOfMonth: 1, weekday: null, time: '06:00', timeZone: 'UTC',
@@ -105,10 +89,8 @@ describe('report schedules', () => {
       nextPeriod: { from: '2026-10-01T00:00:00.000Z', to: '2026-10-31T23:59:59.999Z' },
       lastReports: [],
     });
-    await removeLicense();
-    await expect(updateReportSchedule(schedule.id, { name: 'Renamed' }, seed.adminId)).rejects.toBeInstanceOf(LicenseRequiredError);
+    expect(await updateReportSchedule(schedule.id, { name: 'Renamed' }, seed.adminId)).toMatchObject({ name: 'Renamed' });
     expect(await updateReportSchedule(schedule.id, { enabled: false }, seed.adminId)).toMatchObject({ enabled: false, nextRunAt: null });
-    await expect(runReportScheduleNow(schedule.id, seed.adminId)).rejects.toBeInstanceOf(LicenseRequiredError);
     await deleteReportSchedule(schedule.id, seed.adminId);
     await expect(getReportSchedule(schedule.id)).rejects.toThrow('Report schedule not found');
     expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'compliance_schedule_deleted', entityId: schedule.id }));
@@ -188,7 +170,7 @@ describe('report schedules', () => {
 });
 
 describe('test restores', () => {
-  it('are recorded with the license, validated, listed and deleted without one', async () => {
+  it('are recorded, validated, listed and deleted', async () => {
     const recorded = await recordRestoreTest({ testedAt: '2026-10-01T10:00:00Z', source: 'backup', outcome: 'success', backupObjectKey: 'ingressi-config-2026-10-01T03-00-00Z.json', notes: 'Restored on the spare node.\nAll hosts answered.' }, seed.adminId, NOW);
     expect(recorded).toMatchObject({ testedAt: '2026-10-01T10:00:00.000Z', source: 'backup', outcome: 'success', backupDestination: null, recordedBy: { userId: seed.adminId, name: 'Alice Admin' } });
     expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'compliance_restore_test_recorded', entityId: recorded.id }));
@@ -201,8 +183,6 @@ describe('test restores', () => {
     const page = await (await restoreRoute.GET(req('GET', '/api/v1/compliance/restore-tests'))).json();
     expect(page).toMatchObject({ total: 1, tests: [{ id: recorded.id }] });
 
-    await removeLicense();
-    await expect(recordRestoreTest({ testedAt: '2026-10-01', source: 'other', outcome: 'failed' }, seed.adminId, NOW)).rejects.toBeInstanceOf(LicenseRequiredError);
     await deleteRestoreTest(recorded.id, seed.adminId);
     expect((await listRestoreTests({ page: 1, perPage: 25 })).total).toBe(0);
   });
@@ -262,8 +242,7 @@ describe('live control status', () => {
     expect(status.controls.find((control) => control.key === 'access_reviews')).toMatchObject({ status: 'not_met', statusLabel: 'Overdue' });
   });
 
-  it('is served over the REST API without a license', async () => {
-    await removeLicense();
+  it('is served over the REST API', async () => {
     const response = await statusRoute.GET(req('GET', '/api/v1/compliance/controls/status'));
     expect(response.status).toBe(200);
     expect((await response.json()).controls).toHaveLength(6);
@@ -310,10 +289,9 @@ describe('incident register', () => {
     expect(summary).toMatchObject({ classification: 'not_significant', notification: 'not_required', proxyHostCount: 1, startedAt: '2026-10-03T09:01:57.000Z' });
   });
 
-  it('records who reclassified an incident, closes it and keeps it editable without a license', async () => {
+  it('records who reclassified an incident, closes it and keeps it editable', async () => {
     const incident = await createIncident({ title: 'Credential stuffing', detectedAt: '2026-10-02T08:00:00Z' }, seed.adminId, deps);
     expect(incident).toMatchObject({ classification: 'undetermined', classifiedBy: null, notification: 'undetermined' });
-    await removeLicense();
     vi.mocked(logAuditEvent).mockClear();
     const updated = await updateIncident(incident.id, {
       assessment: { severeDisruption: { answer: 'yes', reason: 'logins failed for an hour' } },

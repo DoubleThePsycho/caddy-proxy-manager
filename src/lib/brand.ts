@@ -11,7 +11,7 @@ export const BRAND_TAGLINE = "Self-hosted reverse proxy built on Caddy";
 /** Shown where users of the old name need to recognise the product. */
 export const BRAND_FORMER_NAME = "Caddy Proxy Manager";
 
-/** Where people buy a license or read about the paid editions. */
+/** The project website. */
 export const BRAND_WEBSITE = "https://ingres.si";
 
 /**

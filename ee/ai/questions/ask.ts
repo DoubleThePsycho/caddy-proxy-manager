@@ -18,9 +18,8 @@
  * day per user, and ClickHouse's own 30 s limit per query.
  *
  * Every question is recorded in the audit log: who asked, the question, the
- * outcome and the query that ran. Asking needs the ai_analyst feature and
- * questions to be on in the AI settings; the caller's analytics:read is
- * checked by the route.
+ * outcome and the query that ran. Asking needs questions to be on in the AI
+ * settings; the caller's analytics:read is checked by the route.
  */
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
@@ -29,7 +28,6 @@ import { createRateLimiter, type RateLimiter } from "@/src/lib/rate-limit";
 import { scopeTagsFor, type Access } from "@/src/lib/permissions";
 import { listProxyHosts } from "@/src/lib/models/proxy-hosts";
 import { allProxyHostDomains } from "@/src/lib/analytics/service";
-import { requireFeature } from "@/ee/licensing/store";
 import { requestModelText, sanitizeExplanation } from "@/ee/ai/explain";
 import { getAiProviderConfig, type ResolvedAiProvider } from "@/ee/ai/settings";
 import { analyticsHrefFor, computedSummary, describeQuery, formatPeriod } from "./describe";
@@ -254,9 +252,9 @@ async function requireQuestionsOn(): Promise<QuestionSettingsView> {
 }
 
 /**
- * Asks a question ({question}) for `access`. Needs the ai_analyst feature,
- * questions turned on and an AI provider. Throws AiQuestionError (502) when
- * the provider fails to interpret it; every other outcome is an answer.
+ * Asks a question ({question}) for `access`. Needs questions turned on and
+ * an AI provider. Throws AiQuestionError (502) when the provider fails to
+ * interpret it; every other outcome is an answer.
  */
 export async function askQuestion(access: Access, body: unknown, overrides: Partial<AskDependencies> = {}): Promise<QuestionAnswer> {
   const deps = dependencies(overrides);
@@ -265,7 +263,6 @@ export async function askQuestion(access: Access, body: unknown, overrides: Part
     if (key !== "question") throw new ApiValidationError(`Unknown field "${key.slice(0, 40)}" in the question`);
   }
   const question = parseQuestionText((body as Record<string, unknown>).question);
-  await requireFeature("ai_analyst");
   const settings = await requireQuestionsOn();
   const provider = await deps.provider().catch(() => null);
   if (!provider) throw new ApiValidationError("Enable and configure an AI provider first (Alerts → AI)");
@@ -323,13 +320,11 @@ export async function askQuestion(access: Access, body: unknown, overrides: Part
 /**
  * Re-runs a saved question with fresh data, without asking the model to
  * interpret it again (the summary still comes from the model when the
- * settings allow and a provider is configured). Needs the ai_analyst
- * feature and questions turned on.
+ * settings allow and a provider is configured). Needs questions turned on.
  */
 export async function runSavedQuestion(access: Access, id: number, overrides: Partial<AskDependencies> = {}): Promise<QuestionAnswer> {
   const deps = dependencies(overrides);
   const { row, query } = await getSavedQuestionRow(access, id);
-  await requireFeature("ai_analyst");
   const settings = await requireQuestionsOn();
   const provider = settings.aiSummaries ? await deps.provider().catch(() => null) : null;
   const release = await admitQuestion(access.userId);

@@ -20,10 +20,9 @@ const TAG = "Change Approvals";
 export const APPROVALS_OPENAPI_TAG = {
   name: TAG,
   description:
-    "Four-eyes approval and change windows for protected proxy hosts and L4 proxy hosts (Enterprise edition). An approval policy " +
+    "Four-eyes approval and change windows for protected proxy hosts and L4 proxy hosts. An approval policy " +
     "names the hosts (all, or those with given tags) and operations it protects; a change to such a host made through the host " +
-    "endpoints answers 202 with a change request instead of applying it. Creating and changing policies needs the approvals " +
-    "feature; disabling and deleting them never do, and enforcement never checks the license.",
+    "endpoints answers 202 with a change request instead of applying it.",
 };
 
 /** Added to the descriptions of the host write endpoints. */
@@ -65,7 +64,7 @@ export const APPROVALS_OPENAPI_PATHS = {
     get: {
       tags: [TAG],
       summary: "List approval policies",
-      description: "Permission approvals:read. Available without a license.",
+      description: "Permission approvals:read.",
       operationId: "listApprovalPolicies",
       responses: { "200": { description: "Policies", content: json({ type: "array", items: ref("ApprovalPolicy") }) }, ...errors("401", "403") },
     },
@@ -73,7 +72,7 @@ export const APPROVALS_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Create an approval policy",
       description:
-        "Permission approvals:manage (administrator-level); needs the approvals feature (403 otherwise). 409 for a duplicate name.",
+        "Permission approvals:manage (administrator-level). 409 for a duplicate name.",
       operationId: "createApprovalPolicy",
       requestBody: { required: true, content: json(ref("ApprovalPolicyInput")) },
       responses: { "201": { description: "Created", content: json(ref("ApprovalPolicy")) }, ...errors("400", "401", "403", "409") },
@@ -92,8 +91,8 @@ export const APPROVALS_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Update an approval policy",
       description:
-        "Permission approvals:manage. Fields left out keep their values. Needs the approvals feature, except for {\"enabled\": false}, " +
-        "which turns the policy off without a license. Pending requests keep the approvals they need, or more if the policy now asks more.",
+        "Permission approvals:manage. Fields left out keep their values. " +
+        "Pending requests keep the approvals they need, or more if the policy now asks more.",
       operationId: "updateApprovalPolicy",
       parameters: [idParam],
       requestBody: { required: true, content: json(ref("ApprovalPolicyInput")) },
@@ -102,7 +101,7 @@ export const APPROVALS_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Delete an approval policy",
-      description: "Permission approvals:manage. Never needs a license. Requests made under it stay as they are.",
+      description: "Permission approvals:manage. Requests made under it stay as they are.",
       operationId: "deleteApprovalPolicy",
       parameters: [idParam],
       responses: { "204": { description: "Deleted" }, ...errors("401", "403", "404") },

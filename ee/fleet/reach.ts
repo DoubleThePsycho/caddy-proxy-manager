@@ -4,7 +4,7 @@
  * and on a master the enabled slave instances (pushed to or pulling) that
  * are not in a promotion-only environment. Instances in a promotion-only
  * environment get the change only when a revision is promoted to them.
- * Read-only, never checks the license.
+ * Read-only.
  */
 import { eq } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

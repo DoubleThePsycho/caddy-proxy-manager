@@ -9,7 +9,7 @@
  * Sources: the audit log (sign-ins, changes, forward-auth sign-ins), the
  * sign-in accounts, sessions and forward-auth sessions, API tokens'
  * lastUsedAt. Read when asked, never stored with the campaign; nothing here
- * changes anything or checks the license.
+ * changes anything.
  */
 import { and, eq, gte, inArray, isNotNull, max, notInArray } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";

@@ -2,9 +2,7 @@ import type { PermissionSession } from "@/src/lib/auth";
 import { can, PERMISSIONS } from "@/src/lib/permissions";
 import { listUsers } from "@/src/lib/models/user";
 import { getGroupsOverview, getUsersOverview } from "@/src/lib/users-overview";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { listRoles } from "@/ee/custom-roles/service";
-import { FEATURE as CUSTOM_ROLES_FEATURE } from "@/ee/custom-roles/store";
 import { RolesTabSection } from "@/ee/custom-roles/ui/RolesTabSection";
 import UsersAndGroupsClient, { type UsersAndGroupsTab } from "./UsersAndGroupsClient";
 
@@ -20,11 +18,10 @@ export async function renderUsersAndGroups(session: PermissionSession, requested
   const readGroups = can(access, "groups:read");
   const showRoles = readUsers;
 
-  const [usersOverview, groupsOverview, roles, licensed, allUsers] = await Promise.all([
+  const [usersOverview, groupsOverview, roles, allUsers] = await Promise.all([
     readUsers ? getUsersOverview(access) : Promise.resolve(null),
     readGroups ? getGroupsOverview(access) : Promise.resolve(null),
     showRoles ? listRoles() : Promise.resolve([]),
-    isFeatureConfigurable(CUSTOM_ROLES_FEATURE),
     // Role holders on the Roles tab: every account.
     showRoles ? listUsers() : Promise.resolve([]),
   ]);
@@ -52,14 +49,13 @@ export async function renderUsersAndGroups(session: PermissionSession, requested
         permissionCount: role.permissions.length,
         scopeTags: role.scopeTags,
       }))}
-      customRolesLicensed={licensed}
       totalPermissions={PERMISSIONS.length}
       canReadSignIn={can(access, "sso:read")}
       groups={groupsOverview?.groups ?? null}
       canWriteGroups={can(access, "groups:write")}
       rolesCount={showRoles ? roles.length + 3 : 0}
       rolesTab={
-        showRoles ? <RolesTabSection access={access} roles={roles} users={allUsers} canWrite={canWrite} licensed={licensed} /> : null
+        showRoles ? <RolesTabSection access={access} roles={roles} users={allUsers} canWrite={canWrite} /> : null
       }
     />
   );

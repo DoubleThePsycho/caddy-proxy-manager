@@ -1,7 +1,7 @@
 This license applies to every file in this repository except those under the
 ee/ directory, which are licensed under the Elastic License 2.0 (ee/LICENSE).
 Files outside ee/ that route to ee/ (pages and API routes in app/ that only
-re-export code from ee/) contain no paid functionality.
+re-export code from ee/) contain no code under the Elastic License 2.0.
 
 MIT License
 

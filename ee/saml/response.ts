@@ -31,7 +31,7 @@
  *
  * Replay protection (the assertion ID used once) and binding the response
  * to the browser are the caller's (plugin.ts, requests.ts). Nothing here
- * looks at the license or the database.
+ * reads the database.
  */
 import { SAML, SamlStatusError, ValidateInResponseTo, type CacheProvider } from "@node-saml/node-saml";
 import {

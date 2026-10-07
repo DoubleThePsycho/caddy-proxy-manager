@@ -2,7 +2,6 @@ import { requirePermission } from "@/src/lib/auth";
 import { can } from "@/src/lib/permissions";
 import { getAcmeSettings, getDnsProviderSettings, getDnsSettings, getGeneralSettings } from "@/src/lib/settings";
 import { DNS_PROVIDERS, redactDnsProviderSettingsForApi } from "@/src/lib/dns-providers";
-import { EDITION_LABELS, FEATURE_INFO } from "@/ee/licensing/features";
 import { getCertificateStorageView } from "@/ee/high-availability/service";
 import { loadReplicaOverrides } from "../../settings/load";
 import CertificateSettingsClient from "./CertificateSettingsClient";
@@ -31,15 +30,7 @@ export default async function CertificateSettingsPage() {
       dns={dns}
       isSlave={replica.isSlave}
       overrides={replica.overrides}
-      certificateStorage={
-        storageView
-          ? {
-              view: storageView,
-              canWrite: can(access, "high_availability:write"),
-              editionLabel: EDITION_LABELS[FEATURE_INFO.high_availability.edition],
-            }
-          : null
-      }
+      certificateStorage={storageView ? { view: storageView, canWrite: can(access, "high_availability:write") } : null}
       canSave={can(access, "settings:write")}
       canOpenCertificates={can(access, "certificates:read")}
     />

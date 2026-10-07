@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * Enforced SSO (feature "sso_enforce"): reading and changing the setting.
- *
- * Turning it on or changing it needs a license that includes the feature
- * (requireFeature). Turning it off, reading it, and enforcing it at sign-in
- * (ee/sso/sign-in.ts) never do.
+ * Enforced SSO: reading and changing the setting. Enforcing it at sign-in is
+ * in ee/sso/sign-in.ts.
  */
 import { and, eq, isNotNull, ne } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";
@@ -12,7 +9,6 @@ import { accounts, oauthProviders, samlProviders, users } from "@/src/lib/db/sch
 import { isUsableSignInUsername } from "@/src/lib/login-username";
 import { ApiValidationError } from "@/src/lib/api-errors";
 import { logAuditEvent } from "@/src/lib/audit";
-import { isFeatureConfigurable, requireFeature } from "@/ee/licensing/store";
 import { samlProviderId } from "@/ee/saml/constants";
 import {
   MAX_BREAK_GLASS_ACCOUNTS,
@@ -27,8 +23,6 @@ import {
 } from "./enforcement-store";
 import { asc, first } from "@/src/lib/db/ops";
 
-export const SSO_ENFORCE_FEATURE = "sso_enforce" as const;
-
 /** An enabled sign-in provider; SAML providers carry their accounts.providerId ("saml:<id>"). */
 export type SsoProviderSummary = { id: string; name: string; kind: "oidc" | "saml" };
 
@@ -41,8 +35,6 @@ export type SsoEnforcementView = {
   ssoProviders: SsoProviderSummary[];
   /** Problems with the current setting worth showing an administrator. */
   warnings: string[];
-  /** The license lets administrators change the setting now. */
-  configurable: boolean;
 };
 
 export type SsoEnforcementInput = {
@@ -96,7 +88,6 @@ export async function getSsoEnforcementView(): Promise<SsoEnforcementView> {
     breakGlassAccounts: accounts,
     ssoProviders: providers,
     warnings: buildWarnings(config, accounts, providers),
-    configurable: await isFeatureConfigurable(SSO_ENFORCE_FEATURE),
   };
 }
 
@@ -194,16 +185,9 @@ async function auditSummary(previous: SsoEnforcementConfig, next: SsoEnforcement
  * must exist and be able to sign in with a password. Without a break-glass
  * administrator, the way back in during an outage of the identity provider is
  * turning enforcement off from the host (scripts/db/break-glass.ts).
- * Turning it off is always allowed, with or without a license, so an install
- * whose license lapsed can always wind the feature down; it then keeps the
- * current break-glass list. The checks and the write share one transaction.
+ * The checks and the write share one transaction.
  */
 export async function updateSsoEnforcement(input: SsoEnforcementInput, actorUserId: number): Promise<SsoEnforcementView> {
-  const licensed = await isFeatureConfigurable(SSO_ENFORCE_FEATURE);
-  if (input.enabled && !licensed) await requireFeature(SSO_ENFORCE_FEATURE);
-  // Without a license only "turn it off" is accepted; the break-glass list stays as it is.
-  if (!licensed) input = { enabled: false };
-
   const { previous, next } = await appDb.transaction(async (tx) => {
     const current = await readSsoEnforcement(tx);
     const breakGlassUserIds = input.breakGlassUsernames === undefined

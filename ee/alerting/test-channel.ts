@@ -5,10 +5,7 @@ import { deliverToChannel, type DeliveryResult } from "./deliver";
 import { testNotification } from "./format";
 import { CHANNEL_TYPE_LABELS, isChannelType } from "./types";
 
-/**
- * Sends a test notification. Part of setting a channel up, so it needs the
- * license for paid channel types (e-mail channels are Community).
- */
+/** Sends a test notification. */
 export async function testAlertChannel(id: number, actorUserId: number): Promise<DeliveryResult> {
   const row = await getChannelRowForTest(id);
   let result: DeliveryResult;

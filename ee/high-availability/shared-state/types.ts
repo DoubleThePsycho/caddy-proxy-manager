@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * High availability (feature "high_availability", Enterprise), phase 3:
- * shared request-path state. Forward-auth sessions, exchange codes and
- * redirect intents, and API monetization balances and usage counters, kept
- * in Redis or Valkey instead of each web node's SQLite and memory, so every
- * web node serves forward auth and monetized hosts the same way.
+ * High availability, phase 3: shared request-path state. Forward-auth
+ * sessions, exchange codes and redirect intents, and API monetization
+ * balances and usage counters, kept in Redis or Valkey instead of each web
+ * node's SQLite and memory, so every web node serves forward auth and
+ * monetized hosts the same way.
  *
  * Shared types and constants. Safe to import from client components.
  */
@@ -70,8 +70,6 @@ export type SharedStateView = {
     tls: boolean;
   };
   updatedAt: string | null;
-  /** The license lets this instance turn shared state on or change it (turning it off never needs it). */
-  configurable: boolean;
   /** False on a sync slave: slaves keep their request-path state local. */
   editable: boolean;
   /** Set when shared state is on but cannot be used (no Redis settings, a secret that cannot be read). */

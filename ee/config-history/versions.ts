@@ -5,9 +5,8 @@
  * the change was, structured diffs between any two versions, and what
  * rolling back to a version would do.
  *
- * Read-only and never license-checked: viewing history keeps working when
- * the license lapses (restoring is gated in service.ts). Secrets are never
- * returned (diff.ts masks them).
+ * Read-only (restoring is in service.ts). Secrets are never returned
+ * (diff.ts masks them).
  */
 import { and, count, eq, gt, inArray, isNotNull, lt } from "drizzle-orm";
 import { appDb } from "@/src/lib/db";
@@ -29,7 +28,6 @@ import {
   type ConfigTableName,
 } from "@/src/lib/config-content";
 import { can, type Access } from "@/src/lib/permissions";
-import { isFeatureConfigurable } from "@/ee/licensing/store";
 import { protectedReplacementChanges } from "@/ee/approvals/guard";
 import { TARGET_LABELS } from "@/ee/approvals/types";
 import { getConfigurationReach } from "@/ee/fleet/reach";
@@ -41,8 +39,6 @@ import { getHistorySettings } from "./settings";
 import { getSnapshot, parseSnapshotContent, SNAPSHOT_REASONS, type SnapshotReason, type SnapshotView } from "./snapshots";
 import { desc } from "@/src/lib/db/ops";
 import { parseRowId } from "@/src/lib/row-ids";
-
-export const FEATURE = "config_history" as const;
 
 export type VersionActor = { userId: number; name: string | null };
 
@@ -526,7 +522,6 @@ export async function previewRollback(id: number, access?: Access): Promise<Roll
   const reach = await getConfigurationReach();
   const reasons: string[] = [];
   if ((await getInstanceMode()) === "slave") reasons.push("This instance is a sync slave: its configuration comes from the master.");
-  if (!(await isFeatureConfigurable(FEATURE))) reasons.push("Rolling back needs a license that includes configuration history.");
   if (access && !can(access, "config_history:restore")) reasons.push("Rolling back needs the config_history:restore permission.");
   if (blocked) reasons.push(`Protected by an approval policy: ${blocked.hosts.map((host) => `${TARGET_LABELS[host.type].toLowerCase()} "${host.name}"`).slice(0, 5).join(", ")}.`);
   const identical = comparison.groups.length === 0;

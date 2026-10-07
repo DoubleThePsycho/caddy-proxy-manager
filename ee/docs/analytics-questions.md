@@ -2,7 +2,7 @@
 
 Ask about your traffic in plain language, such as "Which countries were blocked most last week on the shop hosts?" or "Did 5xx errors on api hosts go up after Tuesday?", and get the numbers, a chart or a ranked table, a short summary and the query the question was read as.
 
-Part of the AI analyst, feature id `ai_analyst` (Homelab edition and up, so also Business and Enterprise). Code: `ee/ai/questions/`. Adding questions to compliance report schedules is part of [compliance reports](compliance-reports.md) (`compliance_reports`, Enterprise).
+Part of the AI analyst. Code: `ee/ai/questions/` (Elastic License 2.0). Adding questions to compliance report schedules is part of [compliance reports](compliance-reports.md).
 
 ## Asking
 
@@ -23,7 +23,7 @@ The answer shows:
 
 **Save question** keeps the question and the query it was read as (optionally shared with everyone who can read analytics). A saved question runs again with fresh data without asking the model to read it again: a relative range such as "the last 7 days" ends now. Saved questions are listed under the box, ten a page.
 
-The question goes to the AI provider, which turns it into a query; the query runs on your analytics, and only aggregated figures are used for the summary (see [What the model sees](#what-the-model-sees) and [Audit](#audit)). Without a license that includes the AI analyst the box is read-only: saved questions stay listed and can be deleted.
+The question goes to the AI provider, which turns it into a query; the query runs on your analytics, and only aggregated figures are used for the summary (see [What the model sees](#what-the-model-sees) and [Audit](#audit)).
 
 A question that is ambiguous gets a short question back ("For which period and hosts?"). One that traffic data cannot answer (configuration, users, certificates, predictions) says so. Neither runs anything.
 
@@ -96,24 +96,20 @@ A report schedule can include up to 10 saved questions (`questionIds`, see [comp
 
 ## REST API
 
-| Method and path | Permission | License | |
-| --- | --- | --- | --- |
-| `POST /api/v1/analytics/questions` | `analytics:read` | yes | `{question}`; the answer. `400` without a provider, `409` when questions are off, `429` over the limits, `502` when the provider fails |
-| `GET /api/v1/analytics/questions/saved` | `analytics:read` | no | Your saved questions and the shared ones |
-| `POST /api/v1/analytics/questions/saved` | `analytics:read` | yes | `{question, query, shared?}`; the query is validated again; `201` |
-| `GET /api/v1/analytics/questions/saved/{id}` | `analytics:read` | no | |
-| `PATCH /api/v1/analytics/questions/saved/{id}` | `analytics:read` | yes, unless only `{"shared": false}` | Owner only |
-| `DELETE /api/v1/analytics/questions/saved/{id}` | `analytics:read` | no | Owner, or an administrator for a shared one; `204` |
-| `POST /api/v1/analytics/questions/saved/{id}/run` | `analytics:read` | yes | Fresh data, no interpretation call |
-| `GET /api/v1/ai/question-settings` | `ai:read` | no | |
-| `PUT /api/v1/ai/question-settings` | `ai:write` | yes, unless it only turns settings off | |
+| Method and path | Permission | |
+| --- | --- | --- |
+| `POST /api/v1/analytics/questions` | `analytics:read` | `{question}`; the answer. `400` without a provider, `409` when questions are off, `429` over the limits, `502` when the provider fails |
+| `GET /api/v1/analytics/questions/saved` | `analytics:read` | Your saved questions and the shared ones |
+| `POST /api/v1/analytics/questions/saved` | `analytics:read` | `{question, query, shared?}`; the query is validated again; `201` |
+| `GET /api/v1/analytics/questions/saved/{id}` | `analytics:read` | |
+| `PATCH /api/v1/analytics/questions/saved/{id}` | `analytics:read` | Owner only |
+| `DELETE /api/v1/analytics/questions/saved/{id}` | `analytics:read` | Owner, or an administrator for a shared one; `204` |
+| `POST /api/v1/analytics/questions/saved/{id}/run` | `analytics:read` | Fresh data, no interpretation call |
+| `GET /api/v1/ai/question-settings` | `ai:read` | |
+| `PUT /api/v1/ai/question-settings` | `ai:write` | |
 
 ```bash
 curl -X POST https://ingressi.example.com/api/v1/analytics/questions \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"question":"Which countries were blocked most in the last 7 days on the shop hosts?"}'
 ```
-
-## Licensing
-
-Asking, saving, changing and running saved questions need a license that includes the AI analyst; listing and deleting saved questions and turning questions or their options off never do. Adding questions to a report schedule needs the compliance reports license like any change to a schedule; schedules that include questions keep generating their reports when a license lapses.

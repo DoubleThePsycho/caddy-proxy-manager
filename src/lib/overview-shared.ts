@@ -48,8 +48,6 @@ export type OverviewPermissions = {
   readUsers: boolean;
   /** sso:read: the setup checklist's single sign-on step. */
   readSso: boolean;
-  /** license:read: "Compare editions". */
-  readLicense: boolean;
   /** settings:write: marking setup steps done and hiding the checklist. */
   writeSettings: boolean;
 };
@@ -143,9 +141,6 @@ export type OverviewChange = {
 
 export type OverviewFirstRun = {
   checklist: SetupChecklistView;
-  /** The editions SAML single sign-on ("Business") and LDAP directories come with. */
-  ssoEdition: string;
-  ldapEdition: string;
 };
 
 export type OverviewData = {
@@ -156,8 +151,6 @@ export type OverviewData = {
   permissions: OverviewPermissions;
   /** The setup checklist, while the install is fresh (not complete, not hidden) and the viewer reads settings. */
   firstRun: OverviewFirstRun | null;
-  /** Ask the usage ping question (administrators, until someone answers). */
-  askUsagePing: boolean;
   attention: AttentionView;
   /** null: the viewer does not read analytics. */
   traffic: OverviewTraffic | null;

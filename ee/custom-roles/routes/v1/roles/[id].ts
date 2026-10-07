@@ -22,7 +22,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
-/** Changes a custom role (needs the custom_roles license feature). */
+/** Changes a custom role. */
 export async function PUT(request: NextRequest, { params }: Params) {
   try {
     const { access } = await requireApiPermission(request, "users:write");
@@ -39,7 +39,7 @@ export async function PUT(request: NextRequest, { params }: Params) {
   }
 }
 
-/** Deletes a custom role; its users fall back to the built-in viewer role. Never needs a license. */
+/** Deletes a custom role; its users fall back to the built-in viewer role. */
 export async function DELETE(request: NextRequest, { params }: Params) {
   try {
     const { access } = await requireApiPermission(request, "users:write");

@@ -33,7 +33,6 @@ export const RULE_SEVERITY: Record<RuleType, { severity: Severity; note: string 
   error_rate: { severity: "critical", note: null },
   instance_sync_failed: { severity: "warning", note: null },
   caddy_apply_failed: { severity: "critical", note: null },
-  license_expiring: { severity: "warning", note: "critical once in the grace period" },
   backup_failed: { severity: "warning", note: "critical from 3 failures" },
   approval_pending: { severity: "info", note: null },
   access_review_started: { severity: "info", note: null },
@@ -78,8 +77,6 @@ export function paramsSummary(rule: AlertRuleView): string {
       return `${params.threshold ?? 100}+ blocked in ${params.windowMinutes ?? 15} min`;
     case "error_rate":
       return `5xx above ${params.thresholdPercent ?? 5}% in ${params.windowMinutes ?? 5} min, at least ${params.minRequests ?? 20} requests`;
-    case "license_expiring":
-      return `Within ${params.days ?? 30} days`;
     case "backup_failed":
       return `${params.minFailures ?? 1}+ failures in a row`;
     default:
@@ -126,8 +123,6 @@ export function subjectLink(subjectKey: string, hostNames: ReadonlyMap<number, s
     case "instance":
     case "rollout":
       return { label: "Fleet", description: "Instances, drift and rollouts", href: "/fleet", action: "Open the fleet" };
-    case "license":
-      return { label: "License", description: "Expiry and the installed key", href: "/license", action: "Open the license" };
     case "backup_destination":
       return { label: "Backups", description: "Destinations and recent runs", href: "/backups", action: "Open backups" };
     case "change_request":

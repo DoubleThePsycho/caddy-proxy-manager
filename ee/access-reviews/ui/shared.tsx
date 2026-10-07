@@ -6,8 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import type { CampaignStatus, CampaignSummary, ItemOutcome, ReviewScope } from "../types";
 
-export const LOCKED_HINT = "Needs a license with access reviews";
-
 async function readError(response: Response): Promise<string> {
   try {
     const data = await response.json();

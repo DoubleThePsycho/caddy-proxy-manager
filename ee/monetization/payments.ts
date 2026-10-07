@@ -13,9 +13,6 @@
  *    timestamp within five minutes), as Stripe documents for manual
  *    verification. Only sessions carrying this install's id in their metadata
  *    are credited, once each (ledger reference "stripe:<session id>").
- *
- * Licensing: saving the settings needs "api_monetization"; removing them
- * never does. Creating sessions and crediting payments never check it.
  */
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { ID_PATTERNS, PaymentProviderError, STRIPE_API_BASE, stripeId, stripeRequest, type StripeReply } from "./stripe-api";
@@ -34,7 +31,6 @@ import { logAuditEvent } from "@/src/lib/audit";
 import { config } from "@/src/lib/config";
 import { encryptSecret } from "@/src/lib/secret";
 import { ApiConflictError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import { reloadMonetization } from "./engine";
 import { monetizationBalanceStore } from "./balance-store";
 import { formatMicros, isCurrencyCode, microsToMinor, minorToMicros, MAX_AMOUNT_MICROS } from "./money";
@@ -49,7 +45,7 @@ import {
   writeSettingRow,
   type StoredPayments,
 } from "./settings";
-import { FEATURE, STRIPE_WEBHOOK_EVENTS, WEBHOOK_PATH, type StripeSettingsView } from "./types";
+import { STRIPE_WEBHOOK_EVENTS, WEBHOOK_PATH, type StripeSettingsView } from "./types";
 import { clearStripeKeyRejection } from "./stripe-status";
 import { detachX402FromStripe } from "./x402/settings";
 import { first } from "@/src/lib/db/ops";
@@ -123,7 +119,6 @@ function parseTopUpAmounts(value: unknown, currency: string): number[] {
  * while any consumer has a non-zero balance (balances and prices are in it).
  */
 export async function saveStripeSettings(body: unknown, actorUserId: number): Promise<StripeSettingsView> {
-  await requireFeature(FEATURE);
   const record = requireRecord(body);
   rejectUnknownKeys(record, ["secretKey", "webhookSecret", "currency", "topUpAmountsMicros", "topUpUrl", "automaticTax"]);
   const stored = await readStoredPayments();
@@ -192,7 +187,7 @@ export async function saveStripeSettings(body: unknown, actorUserId: number): Pr
 
 /**
  * Removes the Stripe secrets (top-ups stop; balances and metering are
- * unaffected). The currency and amounts are kept. Never needs a license.
+ * unaffected). The currency and amounts are kept.
  */
 export async function removeStripeSettings(actorUserId: number): Promise<StripeSettingsView> {
   const stored = await readStoredPayments();
@@ -222,7 +217,7 @@ export type CheckoutConsumer = { id: number; name: string; email: string | null 
 
 /**
  * Creates a Stripe Checkout Session for a top-up of `amountMicros` (one of the
- * configured amounts) and returns its URL. Never checks the license.
+ * configured amounts) and returns its URL.
  */
 export async function createTopUpCheckout(
   consumer: CheckoutConsumer,

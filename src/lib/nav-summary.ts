@@ -1,6 +1,6 @@
 /**
- * What the sidebar shows besides its links: the counters next to entries,
- * the edition, and the instance's place in the fleet. Read on every full
+ * What the sidebar shows besides its links: the counters next to entries
+ * and the instance's place in the fleet. Read on every full
  * page load of the dashboard, so each part is a small query, guarded by the
  * read permission of the page it points to, and never throws: a counter
  * that fails is left out.
@@ -14,8 +14,6 @@ import type { NavBadge, NavBadges } from "./navigation";
 import { getInstanceMode, type InstanceMode } from "./instance-sync";
 import { certificateIdsInScope } from "./access-scope";
 import { countPendingChangeRequests } from "@/ee/approvals/requests";
-import { getLicenseState, countManagedNodes } from "@/ee/licensing/store";
-import { EDITION_LABELS } from "@/ee/licensing/features";
 import { listEnvironmentRows, listFleetInstances } from "@/ee/fleet/environments";
 import { countFiringAlertsNeedingAttention } from "@/ee/alerting/events";
 
@@ -40,8 +38,6 @@ export type NavEnvironment = {
 
 export type NavSummary = {
   badges: NavBadges;
-  /** The licensed edition ("Enterprise"), or null without a valid license. */
-  edition: string | null;
   environment: NavEnvironment | null;
 };
 
@@ -120,23 +116,6 @@ export function reviewsBadge(reviews: ReviewSummary, now: number): NavBadge | nu
   };
 }
 
-async function licenseInfo(access: Access): Promise<{ edition: string | null; badge: NavBadge | null }> {
-  const state = await getLicenseState();
-  const valid = (state.status === "active" || state.status === "grace") && state.license !== null;
-  const edition = valid ? EDITION_LABELS[state.license!.edition] ?? null : null;
-  if (!valid || !can(access, "license:read")) return { edition, badge: null };
-  const nodes = await countManagedNodes();
-  const licensed = state.license!.nodes;
-  return {
-    edition,
-    badge: {
-      text: `${nodes} of ${licensed} nodes`,
-      tone: nodes > licensed ? "warn" : "neutral",
-      label: `${nodes} of ${licensed} licensed nodes in use`,
-    },
-  };
-}
-
 const ATTENTION = new Set(["drifted", "unreachable", "older_version"]);
 
 async function environmentSummary(access: Access): Promise<NavEnvironment | null> {
@@ -175,11 +154,10 @@ async function environmentSummary(access: Access): Promise<NavEnvironment | null
 /** Everything the sidebar shows for `access` besides its links. */
 export async function getNavSummary(access: Access, reviews: ReviewSummary, now: Date = new Date()): Promise<NavSummary> {
   const at = now.getTime();
-  const [alertsFiring, certificatesExpiring, approvalsPending, license, environment] = await Promise.all([
+  const [alertsFiring, certificatesExpiring, approvalsPending, environment] = await Promise.all([
     safely(async () => await alertsBadge(access), null),
     safely(() => certificatesBadge(access, at), null),
     safely(async () => await approvalsBadge(access), null),
-    safely(() => licenseInfo(access), { edition: null, badge: null }),
     safely(() => environmentSummary(access), null),
   ]);
   return {
@@ -188,9 +166,7 @@ export async function getNavSummary(access: Access, reviews: ReviewSummary, now:
       certificatesExpiring,
       approvalsPending,
       reviewsDue: reviewsBadge(reviews, at),
-      licenseNodes: license.badge,
     },
-    edition: license.edition,
     environment,
   };
 }

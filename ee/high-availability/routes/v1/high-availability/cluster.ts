@@ -7,8 +7,7 @@ import { getClusterView } from "@/ee/high-availability/cluster/view";
 /**
  * The dashboard cluster: this node's role, the lease holder and its fencing
  * epoch, replication and the last restore, the nodes, and the configuration
- * without secrets. Configured by environment variables only; reading never
- * needs a license.
+ * without secrets. Configured by environment variables only.
  */
 export async function GET(request: NextRequest) {
   try {

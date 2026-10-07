@@ -508,7 +508,7 @@ export async function saveDefaultResponseSettings(value: DefaultResponseSettings
   await setSetting("default_response", normalizeDefaultResponseSettings(value));
 }
 
-// Rate limiting defaults (Community): rules that hosts inherit, merge or
+// Rate limiting defaults: rules that hosts inherit, merge or
 // override, and the client ranges no rule limits. See caddy-rate-limit.ts.
 export async function getRateLimitSettings(): Promise<RateLimitSettings | null> {
   return readStoredRateLimitSettings(await getEffectiveSetting<unknown>("rate_limit"));

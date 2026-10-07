@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Resolves what a user may do, on every guarded request. This is the runtime
- * path of custom roles: it never checks the license, so roles and their
- * assignments keep working when the license lapses.
+ * path of custom roles.
  */
 import { appDb } from "@/src/lib/db";
 import { builtInAccess, type Access } from "@/src/lib/permissions";

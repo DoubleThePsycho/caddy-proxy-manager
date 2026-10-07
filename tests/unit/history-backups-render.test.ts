@@ -1,7 +1,6 @@
 /**
- * Server-side render of the Backups page (its destinations and runs, the
- * license notice, what stays possible without a license) and of the backups
- * line on the Change history page, which links to it.
+ * Server-side render of the Backups page (its destinations and runs) and of
+ * the backups line on the Change history page, which links to it.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -30,14 +29,12 @@ const run: BackupRunView = {
   objectKey: 'prod/ingressi-config-2026-10-02T03-00-00.000Z.json', sizeBytes: 2048, sha256: 'ab'.repeat(32), prunedCount: 1, error: null, warning: null,
 };
 
-function renderBackups(configurable: boolean) {
+function renderBackups(isSlave = false) {
   return renderToStaticMarkup(
     createElement(BackupsTab, {
       destinations: [destination],
       runs: { runs: [run], total: 1, page: 1, perPage: 25 },
-      configurable,
-      isSlave: false,
-      editionLabel: 'Business',
+      isSlave,
       minPassphraseLength: 12,
       paginateRuns: true,
     })
@@ -54,9 +51,7 @@ function renderHistory(destinations: BackupDestinationView[]) {
       page: 1,
       perPage: 25,
       settings: { enabled: false, retention: 200 },
-      configurable: true,
       isSlave: false,
-      editionLabel: 'Homelab',
       limits: { minRetention: 1, maxRetention: 10000, minPassphraseLength: 12 },
     })
   ).replace(/<!-- -->/g, '');
@@ -64,19 +59,18 @@ function renderHistory(destinations: BackupDestinationView[]) {
 
 describe('Backups page', () => {
   it('shows destinations, their schedule, failures and recent runs', () => {
-    const html = renderBackups(true);
+    const html = renderBackups();
     expect(html).toContain('Offsite R2');
     expect(html).toContain('Mondays at 03:00 (Europe/Rome)');
     expect(html).toContain('Upload failed: HTTP 403 (AccessDenied) from the storage');
     expect(html).toContain('ingressi-config-2026-10-02T03-00-00.000Z.json');
-    expect(html).not.toContain('needs a');
+    expect(html).toMatch(/<button(?:(?!disabled="")[^>])*>(?:(?!<\/button>).)*Add destination/s);
   });
 
-  it('explains what works without a license', () => {
-    const html = renderBackups(false);
-    expect(html).toContain('Scheduled backups need an active Ingressi Business license or higher');
-    expect(html).toContain('Enabled destinations keep backing up on schedule; you can still disable and delete them.');
-    expect(html).toContain('free import');
+  it('leaves adding destinations and backing up to the master on a sync slave', () => {
+    const html = renderBackups(true);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>(?:(?!<\/button>).)*Add destination/s);
+    expect(html).toMatch(/<button[^>]*aria-label="Back up to &quot;Offsite R2&quot; now"[^>]*disabled=""/);
   });
 });
 

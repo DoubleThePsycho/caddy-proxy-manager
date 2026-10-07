@@ -10,10 +10,7 @@ import type { DigestPreview, DigestSendResult } from "@/ee/ai/types";
 
 export type DigestActionResult<T = undefined> = { ok: true; value: T } | { ok: false; error: string };
 
-/**
- * The ee functions check the license: configuring the digest, previewing and
- * sending it need the AI analyst; turning it off never does.
- */
+/** Runs a digest action for a user with ai:write; client-safe errors come back as { ok: false }. */
 async function run<T>(operation: (userId: number) => Promise<T>): Promise<DigestActionResult<T>> {
   const session = await requirePermission("ai:write");
   try {

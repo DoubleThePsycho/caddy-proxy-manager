@@ -6,9 +6,6 @@
  * read analytics, as saved views are. Only the owner changes a question; the owner, or an
  * administrator for a shared one, deletes it. A question outside what the
  * caller can see answers 404 like a missing one.
- *
- * Licensing: saving a question and changing one need the ai_analyst
- * feature, except making it private again; listing and deleting never do.
  */
 import { and, count, eq, inArray, or } from "drizzle-orm";
 import { appDb, nowIso, toIso } from "@/src/lib/db";
@@ -16,8 +13,6 @@ import { analyticsQuestions, users } from "@/src/lib/db/schema";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
 import type { Access } from "@/src/lib/permissions";
-import { requireFeature } from "@/ee/licensing/store";
-import { isWindDownOnly } from "@/ee/alerting/gate";
 import { describeQuery, describeRange } from "./describe";
 import { parseQuestionQuery, parseQuestionText } from "./schema";
 import type { QuestionQuery, SavedQuestionView } from "./types";
@@ -124,11 +119,10 @@ function rejectUnknown(record: Record<string, unknown>, allowed: readonly string
   }
 }
 
-/** Saves a question with its query (validated again). Needs the ai_analyst feature. */
+/** Saves a question with its query (validated again). */
 export async function createSavedQuestion(access: Access, body: unknown): Promise<SavedQuestionView> {
   const record = requireRecord(body);
   rejectUnknown(record, ["question", "query", "shared"]);
-  await requireFeature("ai_analyst");
   const question = parseQuestionText(record.question);
   const query = parseQuestionQuery(record.query);
   const shared = record.shared === undefined ? false : parseShared(record.shared);
@@ -155,13 +149,12 @@ export async function createSavedQuestion(access: Access, body: unknown): Promis
   return getSavedQuestion(access, row.id);
 }
 
-/** The owner changes the text, the query or sharing. Making it private needs no license. */
+/** The owner changes the text, the query or sharing. */
 export async function updateSavedQuestion(access: Access, id: number, body: unknown): Promise<SavedQuestionView> {
   const record = requireRecord(body);
   rejectUnknown(record, ["question", "query", "shared"]);
   const row = await findVisibleRow(access, id);
   if (row.userId !== access.userId) throw new ApiClientError("Only the user who saved this question can change it", 403);
-  if (!isWindDownOnly(record, { shared: false })) await requireFeature("ai_analyst");
   const set: Partial<typeof analyticsQuestions.$inferInsert> = {};
   if (record.question !== undefined) set.question = parseQuestionText(record.question);
   if (record.query !== undefined) set.query = JSON.stringify(parseQuestionQuery(record.query));
@@ -180,7 +173,7 @@ export async function updateSavedQuestion(access: Access, id: number, body: unkn
   return getSavedQuestion(access, row.id);
 }
 
-/** The owner, or an administrator for a shared question. Never needs a license. Report schedules keep their copies. */
+/** The owner, or an administrator for a shared question. Report schedules keep their copies. */
 export async function deleteSavedQuestion(access: Access, id: number): Promise<void> {
   const row = await findVisibleRow(access, id);
   const mayDelete = row.userId === access.userId || (access.isAdmin && row.shared);

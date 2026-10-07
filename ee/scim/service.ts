@@ -3,12 +3,6 @@
  * SCIM provisioning: the administrator actions, shared by the REST API and
  * the dashboard.
  *
- * License (feature "scim"): turning SCIM on, changing its settings, creating
- * tokens (tokens.ts), adding or changing group-to-role mappings and handing
- * users or groups to SCIM need it. Turning SCIM off, revoking tokens,
- * deleting mappings and releasing users or groups never do. A mapping to a
- * custom role also needs "custom_roles", as assigning one does.
- *
  * Mappings are role grants: an actor may only map a role they could assign
  * themselves (assertCanGrant, ee/custom-roles/escalation.ts).
  */
@@ -30,9 +24,8 @@ import {
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiValidationError } from "@/src/lib/api-errors";
 import { isBuiltInRole, type Access } from "@/src/lib/permissions";
-import { isFeatureConfigurable, requireFeature } from "@/ee/licensing/store";
 import { assertCanGrant, grantOfBuiltInRole, grantOfRole } from "@/ee/custom-roles/escalation";
-import { readCustomRole, FEATURE as CUSTOM_ROLES_FEATURE } from "@/ee/custom-roles/store";
+import { readCustomRole } from "@/ee/custom-roles/store";
 import { assertCanManageUserId } from "@/ee/custom-roles/service";
 import { parseSamlProviderId, samlProviderId } from "@/ee/saml/constants";
 import type { ScimAuditEvent } from "./audit";
@@ -40,7 +33,6 @@ import { scimEndpointUrl } from "./protocol";
 import { syncAllUserRoles } from "./role-sync";
 import { isProtectedUser, readScimSettings, userNameKey, writeScimSettings, type ScimWriter } from "./store";
 import {
-  FEATURE,
   SCIM_DEFAULT_ROLES,
   SCIM_DELETE_MODES,
   type ScimManagedGroupView,
@@ -138,7 +130,6 @@ export async function getScimSettingsView(): Promise<ScimSettingsView> {
   return {
     ...settings,
     endpointUrl: scimEndpointUrl(),
-    configurable: await isFeatureConfigurable(FEATURE),
     providers,
     counts: {
       users: countOf(await appDb.select({ value: count() }).from(scimUsers).where(isNull(scimUsers.deletedAt))),
@@ -192,14 +183,7 @@ async function readSettingsChange(input: unknown, current: ScimSettings): Promis
   return next;
 }
 
-/** Only turning SCIM off: the one change that never needs a license. */
-function isTurnOffOnly(input: unknown): boolean {
-  return isRecord(input) && Object.keys(input).length > 0 &&
-    Object.entries(input).every(([key, value]) => key === "enabled" && value === false);
-}
-
 export async function updateScimSettings(input: unknown, actorUserId: number): Promise<ScimSettingsView> {
-  if (!isTurnOffOnly(input)) await requireFeature(FEATURE);
   const { before, after, events } = await appDb.transaction(async (tx) => {
     const before = await readScimSettings(tx);
     const after = await readSettingsChange(input, before);
@@ -275,7 +259,6 @@ async function checkMappingGrant(actor: Access, fields: MappingFields): Promise<
   if (fields.customRoleId !== null) {
     const role = await readCustomRole(appDb, fields.customRoleId);
     if (!role) throw new ApiValidationError("Unknown custom role");
-    await requireFeature(CUSTOM_ROLES_FEATURE);
     assertCanGrant(actor, grantOfRole(role));
   } else {
     assertCanGrant(actor, grantOfBuiltInRole(fields.role));
@@ -300,7 +283,6 @@ function describeMapping(fields: MappingFields): string {
 }
 
 export async function createRoleMapping(actor: Access, input: unknown): Promise<ScimRoleMappingView> {
-  await requireFeature(FEATURE);
   const fields = readMappingFields(input, null);
   await checkMappingGrant(actor, fields);
   const now = nowIso();
@@ -324,7 +306,6 @@ export async function createRoleMapping(actor: Access, input: unknown): Promise<
 export async function updateRoleMapping(actor: Access, id: number, input: unknown): Promise<ScimRoleMappingView> {
   const existing = await first(appDb.select().from(scimRoleMappings).where(eq(scimRoleMappings.id, id)).limit(1));
   if (!existing) throw new ApiClientError("Role mapping not found", 404);
-  await requireFeature(FEATURE);
   const before: MappingFields = {
     groupId: existing.groupId,
     role: (isBuiltInRole(existing.role) ? existing.role : "viewer") as MappingFields["role"],
@@ -350,7 +331,7 @@ export async function updateRoleMapping(actor: Access, id: number, input: unknow
   return (await listRoleMappings()).find((mapping) => mapping.id === id)!;
 }
 
-/** Deletes a mapping (never needs a license); with managed roles its users get their next mapping or the default role. */
+/** Deletes a mapping; with managed roles its users get their next mapping or the default role. */
 export async function deleteRoleMapping(actor: Access, id: number): Promise<void> {
   const existing = await first(appDb.select().from(scimRoleMappings).where(eq(scimRoleMappings.id, id)).limit(1));
   if (!existing) throw new ApiClientError("Role mapping not found", 404);
@@ -417,7 +398,6 @@ export async function adoptUser(actor: Access, input: unknown): Promise<ScimMana
     }
     externalId = body.externalId;
   }
-  await requireFeature(FEATURE);
   await assertCanManageUserId(actor, userId);
   const now = nowIso();
   await appDb.transaction(async (tx) => {
@@ -458,7 +438,7 @@ export async function adoptUser(actor: Access, input: unknown): Promise<ScimMana
   return (await listManagedUsers()).find((user) => user.userId === userId)!;
 }
 
-/** Stops SCIM managing a user; the account itself is not changed. Never needs a license. */
+/** Stops SCIM managing a user; the account itself is not changed. */
 export async function releaseUser(actor: Access, userId: number): Promise<void> {
   const existing = await first(appDb.select().from(scimUsers).where(eq(scimUsers.userId, userId)).limit(1));
   if (!existing) throw new ApiClientError("SCIM does not manage this user", 404);
@@ -514,7 +494,6 @@ export async function adoptGroup(actor: Access, input: unknown): Promise<ScimMan
     }
     externalId = body.externalId;
   }
-  await requireFeature(FEATURE);
   const now = nowIso();
   const group = await appDb.transaction(async (tx) => {
     const group = await first(tx.select().from(groups).where(eq(groups.id, groupId)).limit(1));
@@ -535,7 +514,7 @@ export async function adoptGroup(actor: Access, input: unknown): Promise<ScimMan
   return (await listManagedGroups()).find((item) => item.groupId === groupId)!;
 }
 
-/** Stops SCIM managing a group; members and the group stay. Its role mapping is deleted. Never needs a license. */
+/** Stops SCIM managing a group; members and the group stay. Its role mapping is deleted. */
 export async function releaseGroup(actor: Access, groupId: number): Promise<void> {
   const existing = await first(appDb.select().from(scimGroups).where(eq(scimGroups.groupId, groupId)).limit(1));
   if (!existing) throw new ApiClientError("SCIM does not manage this group", 404);

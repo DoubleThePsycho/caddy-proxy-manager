@@ -3,7 +3,6 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { toast } from "sonner";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
@@ -14,20 +13,16 @@ import { saveQuestionSettingsAction } from "@/ee/alerting/ui/actions";
 
 type Props = {
   settings: QuestionSettingsView;
-  /** The license includes the AI analyst; without it only turning things off works. */
-  canConfigure: boolean;
   aiConfigured: boolean;
 };
 
 /** Settings of plain-language analytics questions (ee/ai/questions), on Alerts → AI. */
-export default function QuestionSettingsSection({ settings, canConfigure, aiConfigured }: Props) {
+export default function QuestionSettingsSection({ settings, aiConfigured }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState<QuestionSettingsView>(settings);
   const [error, setError] = useState<string | null>(null);
   const changed = (Object.keys(form) as (keyof QuestionSettingsView)[]).some((key) => form[key] !== settings[key]);
-  // Without a license, a change may only turn settings off.
-  const onlyOff = (Object.keys(form) as (keyof QuestionSettingsView)[]).every((key) => form[key] === settings[key] || form[key] === false);
 
   function save() {
     setError(null);
@@ -49,7 +44,7 @@ export default function QuestionSettingsSection({ settings, canConfigure, aiConf
         className="mt-0.5"
         checked={form[key]}
         onCheckedChange={(checked) => setForm({ ...form, [key]: checked })}
-        disabled={pending || (!canConfigure && !form[key])}
+        disabled={pending}
         aria-label={label}
       />
       <span className="flex flex-col gap-0.5">
@@ -65,14 +60,6 @@ export default function QuestionSettingsSection({ settings, canConfigure, aiConf
       padded
       contentClassName="flex flex-col gap-4"
     >
-      {!canConfigure && (
-        <Banner tone="info">
-          Turning questions on needs a license with the AI analyst.{" "}
-          <Link href="/license" className="text-brand underline underline-offset-2">
-            Manage the license
-          </Link>
-        </Banner>
-      )}
       {!aiConfigured && <p className="m-0 text-[13px] text-muted-foreground">Set up the AI provider first.</p>}
       {toggle("enabled", "Let users ask questions", "Questions are recorded in the audit log.")}
       {toggle("aiSummaries", "AI-written summaries", "Off, the result is never sent to the model.")}
@@ -87,7 +74,7 @@ export default function QuestionSettingsSection({ settings, canConfigure, aiConf
         </Banner>
       )}
       <div>
-        <Button onClick={save} disabled={pending || !changed || (!canConfigure && !onlyOff)}>
+        <Button onClick={save} disabled={pending || !changed}>
           Save
         </Button>
       </div>

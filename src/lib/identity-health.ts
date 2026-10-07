@@ -3,7 +3,7 @@
  * attention" list: LDAP directories that fail their periodic connection
  * check (ee/ldap/health.ts) and accounts the MFA policy has locked out of the
  * dashboard until they set up MFA. Reads stored state only; it never
- * connects to anything and never checks the license.
+ * connects to anything.
  */
 import { eq } from "drizzle-orm";
 import { appDb } from "./db";

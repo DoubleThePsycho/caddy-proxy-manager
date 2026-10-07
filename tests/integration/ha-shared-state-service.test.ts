@@ -1,18 +1,16 @@
 /**
  * High availability, phase 3 (ee/high-availability/shared-state): the shared
- * state switch over REST and dashboard actions, the license gate (turning on
- * and changing need it; turning off, removing, reading and the status never
- * do), the check that this web container reaches the server, writing the
+ * state switch over REST and dashboard actions, the check that this web
+ * container reaches the server, writing the
  * balances back before turning off, slaves, the status, the certificate
  * storage guard and the OpenAPI entries.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { NextRequest } from 'next/server';
 import RedisMock from 'ioredis-mock';
 import type Redis from 'ioredis';
 import { createTestDb, type TestDb } from '../helpers/db';
-import { createTestSigner, licensePayload, signLicense } from '../helpers/license';
 import { insertConsumer, insertKey, insertMonetizedHost, insertPlan, insertProxyHost } from '../helpers/monetization';
 import * as schema from '../../src/lib/db/schema';
 
@@ -40,8 +38,6 @@ import { removeSharedStateAction, saveSharedStateAction, sharedStateStatusAction
 import { requireApiPermission } from '@/src/lib/api-auth';
 import { requirePermission } from '@/src/lib/auth';
 import { logAuditEvent } from '@/src/lib/audit';
-import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
-import { LICENSE_SETTING_KEY } from '@/ee/licensing/store';
 import { invalidateSharedState, setSharedRedisClientFactoryForTests, getSharedState } from '@/ee/high-availability/shared-state/connection';
 import { createRedisMonetizationStore } from '@/ee/high-availability/shared-state/monetization-store';
 import { reloadMonetization, resetMonetizationEngineForTests } from '@/ee/monetization/engine';
@@ -49,21 +45,11 @@ import { ensureGateSecret } from '@/ee/monetization/settings';
 import type { SharedStateStatus, SharedStateView } from '@/ee/high-availability/shared-state/types';
 import { first } from '@/src/lib/db/ops';
 
-const signer = createTestSigner();
-
 async function setRow(key: string, value: unknown) {
   const json = JSON.stringify(value);
   const updatedAt = new Date().toISOString();
   await ctx.db.insert(schema.settings).values({ key, value: json, updatedAt })
     .onConflictDoUpdate({ target: schema.settings.key, set: { value: json, updatedAt } });
-}
-
-async function installLicense() {
-  await setRow(LICENSE_SETTING_KEY, signLicense(signer, licensePayload(signer, { edition: 'enterprise', iat: '2026-01-01T00:00:00.000Z', exp: '2099-01-01T00:00:00.000Z' })));
-}
-
-async function removeLicense() {
-  await ctx.db.delete(schema.settings).where(eq(schema.settings.key, LICENSE_SETTING_KEY));
 }
 
 /** Redis settings saved for the certificate storage, not enabled (phase 1 "save without enabling"). */
@@ -95,7 +81,6 @@ beforeEach(async () => {
   ctx.db = createTestDb();
   vi.mocked(logAuditEvent).mockClear();
   delete process.env.INSTANCE_MODE;
-  setTrustedLicenseKeysForTests(signer.keys);
   resetMonetizationEngineForTests();
   server = new RedisMock() as unknown as Redis;
   await server.flushall();
@@ -116,18 +101,14 @@ afterEach(() => {
   invalidateSharedState();
 });
 
-afterAll(() => {
-  setTrustedLicenseKeysForTests(null);
-});
-
 describe('GET /api/v1/high-availability/shared-state', () => {
-  it('reads without a license and names the permission', async () => {
+  it('reads and names the permission', async () => {
     const { status, data } = await call(GET, 'GET');
     expect(status).toBe(200);
+    expect(data).not.toHaveProperty('configurable');
     expect(data as SharedStateView).toMatchObject({
       enabled: false,
       backend: 'local',
-      configurable: false,
       editable: true,
       connection: { source: 'certificate_storage', configured: false },
     });
@@ -136,22 +117,13 @@ describe('GET /api/v1/high-availability/shared-state', () => {
 });
 
 describe('PUT /api/v1/high-availability/shared-state', () => {
-  it('needs the license to turn on', async () => {
-    await saveConnection();
-    const { status } = await call(PUT, 'PUT', { enabled: true });
-    expect(status).toBe(403);
-    expect(await stored()).toBeNull();
-  });
-
   it('needs the certificate storage connection', async () => {
-    await installLicense();
     const { status, data } = await call(PUT, 'PUT', { enabled: true });
     expect(status).toBe(400);
     expect(data.error).toMatch(/certificate storage/);
   });
 
   it('refuses (502) when this web container cannot reach the server, and stores nothing', async () => {
-    await installLicense();
     await saveConnection();
     reachable = false;
     const { status, data } = await call(PUT, 'PUT', { enabled: true });
@@ -161,7 +133,6 @@ describe('PUT /api/v1/high-availability/shared-state', () => {
   });
 
   it('turns on with a new generation, audits, and validates the prefix', async () => {
-    await installLicense();
     await saveConnection();
     expect((await call(PUT, 'PUT', { enabled: true, keyPrefix: 'bad prefix' })).status).toBe(400);
     expect((await call(PUT, 'PUT', { enabled: true, unknown: 1 })).status).toBe(400);
@@ -175,15 +146,13 @@ describe('PUT /api/v1/high-availability/shared-state', () => {
   });
 
   it('refuses on a sync slave', async () => {
-    await installLicense();
     await saveConnection();
     process.env.INSTANCE_MODE = 'slave';
     expect((await call(PUT, 'PUT', { enabled: true })).status).toBe(409);
     expect((await call(GET, 'GET')).data.editable).toBe(false);
   });
 
-  it('writes the shared balances to the ledger before turning off, without a license', async () => {
-    await installLicense();
+  it('writes the shared balances to the ledger before turning off', async () => {
     await saveConnection();
     expect((await call(PUT, 'PUT', { enabled: true })).status).toBe(200);
     const plan = await insertPlan(ctx.db, { pricePerRequestMicros: 100 });
@@ -199,7 +168,6 @@ describe('PUT /api/v1/high-availability/shared-state', () => {
     for (let index = 0; index < 3; index++) {
       expect(await store.decide({ gateToken: token, hostId: String(host.id), header: (name) => headers.get(name) })).toMatchObject({ allow: true });
     }
-    await removeLicense();
     const { status, data } = await call(PUT, 'PUT', { enabled: false });
     expect(status).toBe(200);
     expect(data).toMatchObject({ enabled: false, backend: 'local' });
@@ -208,7 +176,6 @@ describe('PUT /api/v1/high-availability/shared-state', () => {
   });
 
   it('keeps shared state on (502) when the balances cannot be written back', async () => {
-    await installLicense();
     await saveConnection();
     expect((await call(PUT, 'PUT', { enabled: true })).status).toBe(200);
     await insertConsumer(ctx.db, { balanceMicros: 1 });
@@ -236,7 +203,6 @@ describe('PUT /api/v1/high-availability/shared-state', () => {
 describe('status', () => {
   it('reports off, then the keys, the drain and the leader', async () => {
     expect((await call(STATUS, 'GET')).data as SharedStateStatus).toMatchObject({ backend: 'local', reachable: null, keys: null });
-    await installLicense();
     await saveConnection();
     await call(PUT, 'PUT', { enabled: true });
     const { status, data } = await call(STATUS, 'GET');
@@ -252,11 +218,10 @@ describe('status', () => {
 
 describe('dashboard actions', () => {
   it('return client-safe refusals and name their permissions', async () => {
-    await saveConnection();
     const refused = await saveSharedStateAction({ enabled: true });
-    expect(refused).toMatchObject({ ok: false });
+    expect(refused).toMatchObject({ ok: false, error: expect.stringMatching(/certificate storage/) });
     expect(vi.mocked(requirePermission).mock.calls.at(-1)?.[0]).toBe('high_availability:write');
-    await installLicense();
+    await saveConnection();
     expect(await saveSharedStateAction({ enabled: true })).toMatchObject({ ok: true, view: { enabled: true } });
     expect(await sharedStateStatusAction()).toMatchObject({ ok: true, status: { backend: 'redis' } });
     expect(vi.mocked(requirePermission).mock.calls.at(-1)?.[0]).toBe('high_availability:read');
@@ -266,7 +231,6 @@ describe('dashboard actions', () => {
 
 describe('certificate storage while shared state is on', () => {
   it('refuses moving to another server or removing the settings, allows other changes', async () => {
-    await installLicense();
     await saveConnection();
     await call(PUT, 'PUT', { enabled: true });
     const moved = await call(PUT_STORAGE, 'PUT', { backend: 'local', redis: { mode: 'standalone', addresses: ['valkey-2.example.com:6379'], keyPrefix: 'caddy' } });

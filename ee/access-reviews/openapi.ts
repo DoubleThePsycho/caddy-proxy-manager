@@ -9,11 +9,9 @@ const TAG = "Access Reviews";
 export const ACCESS_REVIEWS_OPENAPI_TAG = {
   name: TAG,
   description:
-    "Periodic access recertification (Enterprise edition): campaigns over the users in a scope, whose reviewers keep or revoke " +
-    "each account, role, group membership and API token, with a CSV/JSON record. Starting a campaign and creating, enabling or " +
-    "changing a schedule need the access_reviews feature; completing, cancelling and deleting campaigns, disabling and deleting " +
-    "schedules, and reviewers' decisions never do. access_reviews:write is administrator-level. Reviewers need no permission: " +
-    "being named on a campaign lets them use the /api/v1/access-review-assignments endpoints for it.",
+    "Periodic access recertification: campaigns over the users in a scope, whose reviewers keep or revoke each account, role, " +
+    "group membership and API token, with a CSV/JSON record. access_reviews:write is administrator-level. Reviewers need no " +
+    "permission: being named on a campaign lets them use the /api/v1/access-review-assignments endpoints for it.",
 };
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
@@ -43,7 +41,7 @@ export const ACCESS_REVIEWS_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Start an access review",
       description:
-        "Permission access_reviews:write (administrator-level); needs the access_reviews feature. Snapshots every access of the " +
+        "Permission access_reviews:write (administrator-level). Snapshots every access of the " +
         "active users in scope. 400 when nobody is in scope or a user in scope is the only reviewer.",
       operationId: "startAccessReview",
       requestBody: { required: true, content: json(ref("AccessReviewInput")) },
@@ -62,7 +60,7 @@ export const ACCESS_REVIEWS_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Delete an access review",
-      description: "Permission access_reviews:write. Deletes the campaign and its record (the audit log keeps the events). Never needs a license.",
+      description: "Permission access_reviews:write. Deletes the campaign and its record (the audit log keeps the events).",
       operationId: "deleteAccessReview",
       parameters: [idParam],
       responses: { "204": { description: "Deleted" }, ...errors("401", "403", "404") },
@@ -72,7 +70,7 @@ export const ACCESS_REVIEWS_OPENAPI_PATHS = {
     post: {
       tags: [TAG],
       summary: "Complete an access review now",
-      description: "Permission access_reviews:write. Items nobody confirmed are recorded as not_reviewed. Never needs a license.",
+      description: "Permission access_reviews:write. Items nobody confirmed are recorded as not_reviewed.",
       operationId: "completeAccessReview",
       parameters: [idParam],
       responses: { "200": { description: "Campaign", content: json(ref("AccessReview")) }, ...errors("401", "403", "404", "409") },
@@ -82,7 +80,7 @@ export const ACCESS_REVIEWS_OPENAPI_PATHS = {
     post: {
       tags: [TAG],
       summary: "Cancel an access review",
-      description: "Permission access_reviews:write. Never needs a license.",
+      description: "Permission access_reviews:write.",
       operationId: "cancelAccessReview",
       parameters: [idParam],
       responses: { "200": { description: "Campaign", content: json(ref("AccessReview")) }, ...errors("401", "403", "404", "409") },
@@ -139,7 +137,7 @@ export const ACCESS_REVIEWS_OPENAPI_PATHS = {
       tags: [TAG],
       summary: "Create a schedule",
       description:
-        "Permission access_reviews:write; needs the access_reviews feature. Starts a campaign every intervalMonths, due durationDays " +
+        "Permission access_reviews:write. Starts a campaign every intervalMonths, due durationDays " +
         "later. When firstRunAt is now or earlier (the default) the first campaign starts right away.",
       operationId: "createAccessReviewSchedule",
       requestBody: { required: true, content: json(ref("AccessReviewScheduleInput")) },
@@ -158,7 +156,7 @@ export const ACCESS_REVIEWS_OPENAPI_PATHS = {
     put: {
       tags: [TAG],
       summary: "Change a schedule",
-      description: "Permission access_reviews:write. Needs the access_reviews feature unless the body is only {\"enabled\": false}.",
+      description: "Permission access_reviews:write. Fields left out keep their values.",
       operationId: "updateAccessReviewSchedule",
       parameters: [idParam],
       requestBody: { required: true, content: json(ref("AccessReviewScheduleInput")) },
@@ -167,7 +165,7 @@ export const ACCESS_REVIEWS_OPENAPI_PATHS = {
     delete: {
       tags: [TAG],
       summary: "Delete a schedule",
-      description: "Permission access_reviews:write. Campaigns it started stay. Never needs a license.",
+      description: "Permission access_reviews:write. Campaigns it started stay.",
       operationId: "deleteAccessReviewSchedule",
       parameters: [idParam],
       responses: { "204": { description: "Deleted" }, ...errors("401", "403", "404") },

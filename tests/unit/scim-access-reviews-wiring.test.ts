@@ -2,9 +2,8 @@
  * Wiring of SCIM provisioning and access reviews: the middleware lets
  * /scim/v2 through to its route handlers (which authenticate the SCIM token
  * themselves) without a dashboard session, the OpenAPI document describes
- * every endpoint and every reference resolves, the features are listed as
- * Enterprise, and the navigation shows the pages to the permissions their
- * page guards check.
+ * every endpoint and every reference resolves, and the navigation shows the
+ * pages to the permissions their page guards check.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
@@ -18,7 +17,6 @@ vi.mock('@/src/lib/api-auth', () => ({
 
 import middleware from '@/proxy';
 import { GET } from '@/app/api/v1/openapi.json/route';
-import { EDITION_FEATURES, FEATURE_INFO } from '@/ee/licensing/features';
 import { NAV_PAGES } from '@/src/lib/navigation';
 
 async function spec() {
@@ -112,15 +110,7 @@ describe('OpenAPI', () => {
   });
 });
 
-describe('licensing and navigation', () => {
-  it('lists SCIM and access reviews as shipped Enterprise features', () => {
-    for (const feature of ['scim', 'access_reviews'] as const) {
-      expect(FEATURE_INFO[feature]).toMatchObject({ edition: 'enterprise' });
-      expect(EDITION_FEATURES.enterprise).toContain(feature);
-      expect(EDITION_FEATURES.business).not.toContain(feature);
-    }
-  });
-
+describe('navigation', () => {
   it('shows Provisioning and Access Reviews to the read permissions', () => {
     expect(NAV_PAGES.find((page) => page.href === '/scim')?.permission).toBe('scim:read');
     expect(NAV_PAGES.find((page) => page.href === '/access-reviews')?.permission).toBe('access_reviews:read');

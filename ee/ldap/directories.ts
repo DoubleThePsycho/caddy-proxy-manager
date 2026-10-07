@@ -3,11 +3,6 @@
  * LDAP / Active Directory directories: validation, storage and the
  * administrator actions on them.
  *
- * Licensing: creating a directory, and any change that leaves it enabled or
- * changes its settings, needs "ldap". Disabling and deleting a directory
- * never do, and neither do viewing and testing one. Sign-in through a
- * directory that is already enabled never checks the license (sign-in.ts).
- *
  * Directories are per dashboard, like the users and accounts they sign in:
  * they are not synced to slaves.
  */
@@ -18,11 +13,9 @@ import { accounts, ldapDirectories } from "@/src/lib/db/schema";
 import { encryptSecret } from "@/src/lib/secret";
 import { logAuditEvent } from "@/src/lib/audit";
 import { ApiClientError, ApiConflictError, ApiValidationError } from "@/src/lib/api-errors";
-import { requireFeature } from "@/ee/licensing/store";
 import {
   GROUP_MODES,
   LDAP_DEFAULT_ROLES,
-  LDAP_FEATURE,
   LDAP_ROLES,
   LIMITS,
   ldapProviderId,
@@ -345,8 +338,8 @@ export function parseDirectoryUpdate(body: unknown, existing: LdapDirectoryRow):
 
 /**
  * Whether an update only turns the directory off: `enabled: false`, with any
- * other field repeating its stored value and no new password. It needs no
- * license.
+ * other field repeating its stored value and no new password. Nothing
+ * stored is validated again, so a directory can always be turned off.
  */
 export function isDisableOnlyUpdate(body: unknown, existing: LdapDirectoryRow): boolean {
   if (!isRecord(body) || body.enabled !== false) return false;
@@ -488,7 +481,6 @@ function columns(input: ParsedDirectory) {
 // ── Administrator actions ────────────────────────────────────────────
 
 export async function createDirectory(body: unknown, actorUserId: number): Promise<LdapDirectoryView> {
-  await requireFeature(LDAP_FEATURE);
   const input = parseDirectoryCreate(body);
   const bindPassword = encryptSecret(input.bindPassword);
   const stamp = nowIso();
@@ -514,7 +506,7 @@ export async function createDirectory(body: unknown, actorUserId: number): Promi
 export async function updateDirectory(id: number, body: unknown, actorUserId: number): Promise<LdapDirectoryView> {
   const existing = await requireDirectoryRow(id);
   if (isDisableOnlyUpdate(body, existing)) {
-    // Winding down: no license, and nothing stored is validated again.
+    // Turning off: nothing stored is validated again.
     const row = (await first(appDb
       .update(ldapDirectories)
       .set({ enabled: false, updatedAt: nowIso() })
@@ -530,7 +522,6 @@ export async function updateDirectory(id: number, body: unknown, actorUserId: nu
     });
     return await toDirectoryView(row);
   }
-  await requireFeature(LDAP_FEATURE);
   const input = parseDirectoryUpdate(body, existing);
   const row = await appDb.transaction(async (tx) => {
     await assertNameAvailable(input.name, id);
@@ -572,7 +563,7 @@ export async function updateDirectory(id: number, body: unknown, actorUserId: nu
 }
 
 /**
- * Needs no license. The accounts signed in through the directory are
+ * The accounts signed in through the directory are
  * unlinked in the same transaction (foreign keys are not enforced); the
  * users themselves are kept, and those without another way to sign in can
  * no longer sign in until an administrator gives them one.

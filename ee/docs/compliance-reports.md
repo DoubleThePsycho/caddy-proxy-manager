@@ -1,6 +1,6 @@
 # Compliance reports
 
-Feature id `compliance_reports`, included in the **Enterprise** edition. Code: `ee/compliance/` (Elastic License 2.0).
+Code: `ee/compliance/` (Elastic License 2.0).
 
 Reports that turn the configuration and the audit log into audit evidence for NIS2 and ISO/IEC 27001, and drafts of NIS2 incident notifications:
 
@@ -240,32 +240,32 @@ Asking for an AI draft is recorded in the audit log (stage, provider, model, suc
 
 All endpoints accept a Bearer token or the dashboard session. OpenAPI tag **Compliance**.
 
-| Method and path | Permission | License | Notes |
-| --- | --- | --- | --- |
-| `GET /api/v1/compliance/controls` | `compliance:read` | no | The control mapping |
-| `GET /api/v1/compliance/controls/status` | `compliance:read` | no | Live control status |
-| `GET /api/v1/compliance/schedules` | `compliance:read` | no | Schedules with their next run and last evidence pack |
-| `POST /api/v1/compliance/schedules` | `compliance:write` | yes | `{name, frequency, weekday?, dayOfMonth?, time?, timeZone?, reportTypes?, questionIds?, channelIds?, enabled?}`; `201` |
-| `GET /api/v1/compliance/schedules/{id}` | `compliance:read` | no | |
-| `PUT /api/v1/compliance/schedules/{id}` | `compliance:write` | yes, unless it only disables | Partial |
-| `DELETE /api/v1/compliance/schedules/{id}` | `compliance:write` | no | `204`; the reports are kept |
-| `POST /api/v1/compliance/schedules/{id}/run` | `compliance:write` | yes | Generates the pack for the week or month that ended |
-| `GET /api/v1/compliance/packs` | `compliance:read` | no | Evidence packs, newest first |
-| `GET /api/v1/compliance/restore-tests` | `compliance:read` | no | `?page=&perPage=` |
-| `POST /api/v1/compliance/restore-tests` | `compliance:write` | yes | `{testedAt, source, outcome, backupDestinationId?, backupObjectKey?, notes?}`; `201` |
-| `DELETE /api/v1/compliance/restore-tests/{id}` | `compliance:write` | no | `204` |
-| `GET /api/v1/compliance/reports` | `compliance:read` | no | `?type=&packId=&page=&perPage=`, without content |
-| `POST /api/v1/compliance/reports` | `compliance:write` | yes | `{type, from?, to?, format?}` (not `traffic_questions`); `201` with the report, or its first table with `format: "csv"` |
-| `GET /api/v1/compliance/reports/{id}` | `compliance:read` | no | The report with the integrity check |
-| `DELETE /api/v1/compliance/reports/{id}` | `compliance:write` | no | `204` |
-| `GET /api/v1/compliance/reports/{id}/export` | `compliance:read` | no | `?format=json` (with `integrity`) or `?format=csv&section=` |
-| `GET /api/v1/compliance/incidents` | `compliance:read` | no | The register: `?status=open\|closed&page=&perPage=`, with window, classification, notification status and the next stage due |
-| `POST /api/v1/compliance/incidents` | `compliance:write` | yes | `{title?, detectedAt?, from?, to?, alertEventId?, proxyHostIds?, language?, startedAt?, endedAt?, assessment?, classification?, cause?, timeline?}`; `201` |
-| `GET /api/v1/compliance/incidents/{id}` | `compliance:read` | no | With facts, stages and deadlines |
-| `PUT /api/v1/compliance/incidents/{id}` | `compliance:write` | no | Partial: `title`, `status` (`open`/`closed`), `language` (`en`/`it`), `detectedAt`, `from`, `to`, `proxyHostIds`, `stages.<stage>.{fields, submittedAt, reference}`, `startedAt`, `endedAt`, `assessment.<question>.{answer, reason}`, `classification`, `cause`, `timeline` (replaces the entries people added) |
-| `DELETE /api/v1/compliance/incidents/{id}` | `compliance:write` | no | `204` |
-| `POST /api/v1/compliance/incidents/{id}/facts` | `compliance:write` | yes | Collect the facts again |
-| `POST /api/v1/compliance/incidents/{id}/draft` | `compliance:write` | yes | `{stage, source: "template" \| "ai"}`; `400` without an AI provider, `502` when the provider fails |
+| Method and path | Permission | Notes |
+| --- | --- | --- |
+| `GET /api/v1/compliance/controls` | `compliance:read` | The control mapping |
+| `GET /api/v1/compliance/controls/status` | `compliance:read` | Live control status |
+| `GET /api/v1/compliance/schedules` | `compliance:read` | Schedules with their next run and last evidence pack |
+| `POST /api/v1/compliance/schedules` | `compliance:write` | `{name, frequency, weekday?, dayOfMonth?, time?, timeZone?, reportTypes?, questionIds?, channelIds?, enabled?}`; `201` |
+| `GET /api/v1/compliance/schedules/{id}` | `compliance:read` | |
+| `PUT /api/v1/compliance/schedules/{id}` | `compliance:write` | Partial |
+| `DELETE /api/v1/compliance/schedules/{id}` | `compliance:write` | `204`; the reports are kept |
+| `POST /api/v1/compliance/schedules/{id}/run` | `compliance:write` | Generates the pack for the week or month that ended |
+| `GET /api/v1/compliance/packs` | `compliance:read` | Evidence packs, newest first |
+| `GET /api/v1/compliance/restore-tests` | `compliance:read` | `?page=&perPage=` |
+| `POST /api/v1/compliance/restore-tests` | `compliance:write` | `{testedAt, source, outcome, backupDestinationId?, backupObjectKey?, notes?}`; `201` |
+| `DELETE /api/v1/compliance/restore-tests/{id}` | `compliance:write` | `204` |
+| `GET /api/v1/compliance/reports` | `compliance:read` | `?type=&packId=&page=&perPage=`, without content |
+| `POST /api/v1/compliance/reports` | `compliance:write` | `{type, from?, to?, format?}` (not `traffic_questions`); `201` with the report, or its first table with `format: "csv"` |
+| `GET /api/v1/compliance/reports/{id}` | `compliance:read` | The report with the integrity check |
+| `DELETE /api/v1/compliance/reports/{id}` | `compliance:write` | `204` |
+| `GET /api/v1/compliance/reports/{id}/export` | `compliance:read` | `?format=json` (with `integrity`) or `?format=csv&section=` |
+| `GET /api/v1/compliance/incidents` | `compliance:read` | The register: `?status=open\|closed&page=&perPage=`, with window, classification, notification status and the next stage due |
+| `POST /api/v1/compliance/incidents` | `compliance:write` | `{title?, detectedAt?, from?, to?, alertEventId?, proxyHostIds?, language?, startedAt?, endedAt?, assessment?, classification?, cause?, timeline?}`; `201` |
+| `GET /api/v1/compliance/incidents/{id}` | `compliance:read` | With facts, stages and deadlines |
+| `PUT /api/v1/compliance/incidents/{id}` | `compliance:write` | Partial: `title`, `status` (`open`/`closed`), `language` (`en`/`it`), `detectedAt`, `from`, `to`, `proxyHostIds`, `stages.<stage>.{fields, submittedAt, reference}`, `startedAt`, `endedAt`, `assessment.<question>.{answer, reason}`, `classification`, `cause`, `timeline` (replaces the entries people added) |
+| `DELETE /api/v1/compliance/incidents/{id}` | `compliance:write` | `204` |
+| `POST /api/v1/compliance/incidents/{id}/facts` | `compliance:write` | Collect the facts again |
+| `POST /api/v1/compliance/incidents/{id}/draft` | `compliance:write` | `{stage, source: "template" \| "ai"}`; `400` without an AI provider, `502` when the provider fails |
 
 `from` and `to` are ISO 8601 dates (`2026-09-01`; a bare `to` date means the end of that day) or date-times with a time zone. `to` defaults to now and is capped at now; for reports `from` defaults to 30 days before `to`.
 
@@ -281,11 +281,9 @@ curl -X PUT https://dash.example.com/api/v1/compliance/incidents/3 -H "Authoriza
   -d '{"stages":{"early_warning":{"submittedAt":"2026-09-30T07:40:00Z","reference":"CSIRT-2026-0042"}}}'
 ```
 
-## License and permissions
+## Permissions
 
-Generating reports, setting up, changing or running a schedule, recording a test restore, recording an incident, collecting its facts again and drafting a stage from the template or the AI need a license with compliance reports (`403` otherwise). Reading, downloading, printing and deleting stored reports, schedules, test restores and incidents never do, so evidence stays available when a license lapses; nor do disabling a schedule or reading the control status. Schedules that were set up keep running. Editing an existing incident, classifying, closing it and recording a submission never do either: an incident under way must not be held up by a lapsed license.
-
-The permission area is `compliance` (`read`, `write`), a paid area that covers every host. Reports list every user, API token name and host, and the change log every audit event of the period: grant `compliance:read` as you would `users:read` and `audit_log:read` together. A role's tag scope does not limit it. `compliance:write` lets a role generate reports and edit incident drafts, and shows it recent alert titles and proxy host names to start a draft from; it does not change anything else. With it a role can also add the saved analytics questions it can see to a schedule, without the AI analyst license or `analytics:read`; their figures then cover every host, like every report. Asking questions and saving them needs `analytics:read` ([analytics-questions.md](analytics-questions.md)).
+The permission area is `compliance` (`read`, `write`), and it covers every host. Reports list every user, API token name and host, and the change log every audit event of the period: grant `compliance:read` as you would `users:read` and `audit_log:read` together. A role's tag scope does not limit it. `compliance:write` lets a role generate reports and edit incident drafts, and shows it recent alert titles and proxy host names to start a draft from; it does not change anything else. With it a role can also add the saved analytics questions it can see to a schedule, without `analytics:read`; their figures then cover every host, like every report. Asking questions and saving them needs `analytics:read` ([analytics-questions.md](analytics-questions.md)).
 
 ## Security notes
 

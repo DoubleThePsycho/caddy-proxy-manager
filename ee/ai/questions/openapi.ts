@@ -37,7 +37,6 @@ const errors = (...codes: string[]) => {
 const idParam = { name: "id", in: "path", required: true, schema: { type: "integer", minimum: 1 } };
 const ANALYTICS = "Analytics";
 const AI = "AI";
-const LICENSE = "Needs a license that includes the AI analyst (ai_analyst).";
 
 export const QUESTIONS_OPENAPI_PATHS = {
   "/api/v1/analytics/questions": {
@@ -45,7 +44,7 @@ export const QUESTIONS_OPENAPI_PATHS = {
       tags: [ANALYTICS],
       summary: "Ask a question about traffic",
       description:
-        `Permission analytics:read. ${LICENSE} The configured AI provider turns the question into a structured query ` +
+        `Permission analytics:read. The configured AI provider turns the question into a structured query ` +
         "(AnalyticsQuestionQuery); the query is validated against fixed lists and run here with bound parameters, " +
         "with host tags limited to the proxy hosts the caller's role can see. The model never writes SQL. The provider receives " +
         "the question and the query schema; for the summary, the question, the query in words and the aggregated result, with client " +
@@ -81,7 +80,7 @@ export const QUESTIONS_OPENAPI_PATHS = {
       tags: [ANALYTICS],
       summary: "Save a question",
       description:
-        `Permission analytics:read. ${LICENSE} The query (usually the one an answer returned) is validated again. At most 100 per user (409). ` +
+        `Permission analytics:read. The query (usually the one an answer returned) is validated again. At most 100 per user (409). ` +
         "Recorded in the audit log.",
       operationId: "createSavedAnalyticsQuestion",
       requestBody: { required: true, content: json(ref("AnalyticsSavedQuestionInput")) },
@@ -99,7 +98,7 @@ export const QUESTIONS_OPENAPI_PATHS = {
     patch: {
       tags: [ANALYTICS],
       summary: "Change a saved question",
-      description: `Only the user who saved it. ${LICENSE} {"shared": false} works without one.`,
+      description: "Only the user who saved it.",
       operationId: "updateSavedAnalyticsQuestion",
       parameters: [idParam],
       requestBody: { required: true, content: json(ref("AnalyticsSavedQuestionInput")) },
@@ -108,7 +107,7 @@ export const QUESTIONS_OPENAPI_PATHS = {
     delete: {
       tags: [ANALYTICS],
       summary: "Delete a saved question",
-      description: "The user who saved it, or an administrator for a shared one. Works without a license. Report schedules keep their copies.",
+      description: "The user who saved it, or an administrator for a shared one. Report schedules keep their copies.",
       operationId: "deleteSavedAnalyticsQuestion",
       parameters: [idParam],
       responses: { "204": { description: "Deleted" }, ...errors("400", "401", "403", "404") },
@@ -119,7 +118,7 @@ export const QUESTIONS_OPENAPI_PATHS = {
       tags: [ANALYTICS],
       summary: "Run a saved question again",
       description:
-        `Permission analytics:read. ${LICENSE} Runs the stored query with fresh data (a relative range such as the last 7 days ends now); ` +
+        `Permission analytics:read. Runs the stored query with fresh data (a relative range such as the last 7 days ends now); ` +
         "the model is not asked to interpret it again, only to write the summary when the question settings allow and a provider is configured. " +
         "Same limits and audit as asking.",
       operationId: "runSavedAnalyticsQuestion",
@@ -138,7 +137,7 @@ export const QUESTIONS_OPENAPI_PATHS = {
     put: {
       tags: [AI],
       summary: "Change the analytics question settings",
-      description: `Permission ai:write. Partial. ${LICENSE} A body that only turns settings off works without one. Recorded in the audit log.`,
+      description: "Permission ai:write. Partial. Recorded in the audit log.",
       operationId: "updateAiQuestionSettings",
       requestBody: { required: true, content: json(ref("AiQuestionSettings")) },
       responses: { "200": { description: "Saved", content: json(ref("AiQuestionSettings")) }, ...errors("400", "401", "403") },

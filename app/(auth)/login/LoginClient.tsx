@@ -52,16 +52,16 @@ type SamlProvider = { id: number; name: string; host?: string | null };
 
 interface LoginClientProps {
   enabledProviders: Provider[];
-  /** Enforced SSO (paid feature): only break-glass accounts may use a password. */
+  /** Enforced SSO: only break-glass accounts may use a password. */
   ssoEnforced?: boolean;
   /**
    * With SSO enforced: some break-glass account can sign in with a password.
    * Without one, no password or passkey sign-in is offered for local accounts.
    */
   breakGlassSignIn?: boolean;
-  /** LDAP / Active Directory directories open for sign-in (paid feature). */
+  /** LDAP / Active Directory directories open for sign-in. */
   directories?: Array<{ id: number; name: string }>;
-  /** Enabled SAML identity providers (paid feature). */
+  /** Enabled SAML identity providers. */
   samlProviders?: SamlProvider[];
   /** Some account has a passkey, so passkey sign-in is offered. */
   passkeysAvailable?: boolean;

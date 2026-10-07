@@ -4,13 +4,12 @@
  * permission guards (mocked session or real API tokens) and Caddy's admin API
  * mocked.
  */
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
 import { apiRequest, idParams, insertRole, insertToken, insertUser, json, nowIso } from '../helpers/custom-roles';
 import { insertPolicy } from '../helpers/approvals';
-import { installLicense, licenseSigner } from '../helpers/config-fixture';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb, sessionUserId: 0 }));
 
@@ -37,7 +36,6 @@ import * as healthRoute from '@/app/api/v1/proxy-hosts/[id]/health/route';
 import { applyCaddyConfig } from '@/src/lib/caddy';
 import { logAuditEvent } from '@/src/lib/audit';
 import { fetchCaddyUpstreams } from '@/src/lib/caddy-upstreams';
-import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
 import { deferCaddyApplyToBatch, inChangeBatch } from '@/src/lib/change-batch';
 import type { HostListRow } from '@/src/lib/proxy-host-view';
 import type { HostDetail } from '@/src/lib/proxy-host-detail';
@@ -114,7 +112,6 @@ beforeEach(async () => {
   ctx.sessionUserId = ADMIN;
 });
 
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('proxy hosts list', () => {
   it('shows every host with its status, protections and counts', async () => {
@@ -298,8 +295,6 @@ describe('bulk actions', () => {
   });
 
   it('submits changes to protected hosts for approval instead', async () => {
-    setTrustedLicenseKeysForTests(licenseSigner.keys);
-    await installLicense(ctx.db, 'enterprise');
     await insertPolicy(ctx.db, { name: 'Web', hostTags: '["web"]' });
     const result = await bulkProxyHostsAction([hosts.a, hosts.b], { type: 'disable' });
     expect(result).toMatchObject({ ok: true, changed: 1, submitted: 1 });

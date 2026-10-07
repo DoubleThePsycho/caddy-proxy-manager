@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * Whether this process was refused as a PostgreSQL replica (src/lib/cluster-nodes.ts,
- * D6): a new replica that another live replica is running next to, without
- * a license that includes high availability. A refused replica serves
- * nothing but its health check (proxy.ts answers everything else with 503
- * and the reason) until it is admitted; it tries again on its own.
+ * Whether this process was refused as a PostgreSQL replica
+ * (src/lib/cluster-nodes.ts): another process already runs with its node id.
+ * A refused replica serves nothing but its health check (proxy.ts answers
+ * everything else with 503 and the reason) until it is admitted; it tries
+ * again on its own.
  *
  * Kept on globalThis: proxy.ts, the routes and instrumentation load their
  * own copies of modules in one process. No imports beyond next/server, so

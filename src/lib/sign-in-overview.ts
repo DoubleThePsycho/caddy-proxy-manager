@@ -6,8 +6,8 @@
  * directories with their health, SCIM provisioning), each with the accounts
  * that come from it, its group-to-role mappings and its last activity.
  *
- * Reads stored state only: it never connects to a directory or provider and
- * never checks the license. LDAP directories need ldap:read and SCIM
+ * Reads stored state only: it never connects to a directory or provider.
+ * LDAP directories need ldap:read and SCIM
  * scim:read; without them those parts are null. No client secret, bind
  * password, key or token value is read into the result.
  */
@@ -132,7 +132,6 @@ export type LdapSourceView = {
 
 export type ScimSourceView = {
   enabled: boolean;
-  configurable: boolean;
   endpointUrl: string;
   /** The OAuth/OIDC or SAML provider SCIM users sign in with. */
   signInProvider: string | null;
@@ -151,7 +150,6 @@ export type SignInOverview = {
   generatedAt: string;
   enforcement: {
     enabled: boolean;
-    configurable: boolean;
     warnings: string[];
     /** The last change of the setting, from the audit log. */
     changedAt: string | null;
@@ -422,7 +420,6 @@ export async function getSignInOverview(access: Access, now: Date = new Date()):
       .where(isNull(scimUsers.deletedAt));
     scim = {
       enabled: settings.enabled,
-      configurable: settings.configurable,
       endpointUrl: settings.endpointUrl,
       signInProvider: settings.providers.find((provider) => provider.id === settings.providerId)?.name ?? null,
       deleteMode: settings.deleteMode,
@@ -478,7 +475,6 @@ export async function getSignInOverview(access: Access, now: Date = new Date()):
     generatedAt: now.toISOString(),
     enforcement: {
       enabled: view.enabled,
-      configurable: view.configurable,
       warnings: view.warnings,
       changedAt: change.at,
       changedBy: change.by,

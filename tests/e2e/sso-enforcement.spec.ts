@@ -1,12 +1,10 @@
 /**
  * E2E tests: enforced SSO (ee/sso) with and without break-glass accounts.
  *
- * The E2E stack has no license, and enforcement never checks one, so the
- * setting is written straight into the database (as an administrator would
- * have saved it while licensed); the OAuth provider it needs comes from the
- * REST API. Existing sessions stay valid under enforcement, so the admin's
- * stored session keeps working. Turning enforcement off needs no license and
- * is done through the dashboard. Everything is removed afterwards, so the
+ * The setting is written straight into the database; the OAuth provider it
+ * needs comes from the REST API. Existing sessions stay valid under
+ * enforcement, so the admin's stored session keeps working. Turning
+ * enforcement off is done through the dashboard. Everything is removed afterwards, so the
  * login page of later specs is the usual one.
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';

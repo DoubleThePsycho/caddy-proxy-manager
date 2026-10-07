@@ -1,9 +1,8 @@
 /**
- * Alerting and AI analyst REST API: license gate on every write path, the
- * Community carve-out (e-mail channels, certificate-expiry rules), validation
- * and secret redaction.
+ * Alerting and AI analyst REST API: channels, rules, history and the AI
+ * provider, validation and secret redaction.
  */
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TestDb } from '../helpers/db';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb }));
@@ -36,12 +35,8 @@ import { requireApiAdmin } from '../../src/lib/api-auth';
 import { logAuditEvent } from '../../src/lib/audit';
 import { setSetting, getSetting } from '../../src/lib/settings';
 import { decryptSecret, isEncryptedSecret } from '../../src/lib/secret';
-import { setTrustedLicenseKeysForTests } from '../../ee/licensing/public-keys';
-import { LICENSE_SETTING_KEY } from '../../ee/licensing/store';
 import { AI_SETTINGS_KEY } from '../../ee/ai/settings';
-import { createTestSigner, licensePayload, signLicense } from '../helpers/license';
 
-const signer = createTestSigner();
 const SLACK_URL = 'https://hooks.slack.com/services/T000/B000/slack-token-sentinel';
 const SMTP_PASSWORD = 'smtp-password-sentinel';
 const ROUTING_KEY = 'pagerdutyroutingkeysentinel0001';
@@ -60,13 +55,6 @@ function request(method: string, body?: unknown, search = ''): any {
 
 const params = (id: number | string) => ({ params: Promise.resolve({ id: String(id) }) });
 
-function installLicense(overrides: Record<string, unknown> = {}) {
-  return setSetting(
-    LICENSE_SETTING_KEY,
-    signLicense(signer, licensePayload(signer, { edition: 'homelab', iat: '2026-01-01T00:00:00.000Z', exp: '2099-01-01T00:00:00.000Z', ...overrides }))
-  );
-}
-
 const emailChannel = {
   name: 'Ops mail',
   type: 'email',
@@ -84,14 +72,12 @@ beforeEach(async () => {
     await ctx.db.delete(table);
   }
   vi.mocked(logAuditEvent).mockClear();
-  setTrustedLicenseKeysForTests(signer.keys);
 });
 
 afterEach(() => vi.restoreAllMocks());
-afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('alert channels', () => {
-  it('creates an e-mail channel without a license and never returns the password', async () => {
+  it('creates an e-mail channel and never returns the password', async () => {
     const { status, data } = await create(createChannel, emailChannel);
     expect(status).toBe(201);
     expect(data).toMatchObject({ name: 'Ops mail', type: 'email', enabled: true, config: { host: 'smtp.example.com', user: 'alerts', hasPassword: true, to: ['ops@example.com'] } });
@@ -112,21 +98,14 @@ describe('alert channels', () => {
     ['webhook', { url: 'https://hooks.example.com/alerts' }],
     ['pagerduty', { routingKey: ROUTING_KEY }],
     ['ntfy', { topic: 'ops-alerts' }],
-  ])('refuses a %s channel without a license (403) and creates it with one', async (type, config) => {
+  ])('creates a %s channel', async (type, config) => {
     const body = { name: `${type} channel`, type, config };
-    const denied = await create(createChannel, body);
-    expect(denied.status).toBe(403);
-    expect(denied.data.error).toMatch(/Alerting needs an active Ingressi Homelab license/);
-    expect(await ctx.db.select().from(schema.alertChannels)).toHaveLength(0);
-
-    await installLicense();
     const created = await create(createChannel, body);
     expect(created.status).toBe(201);
     expect(created.data.type).toBe(type);
   });
 
   it('redacts webhook URLs to scheme and host', async () => {
-    await installLicense();
     const { data } = await create(createChannel, slackChannel);
     expect(data.config).toEqual({ hasWebhookUrl: true, webhookUrlHint: 'https://hooks.slack.com' });
     const listed = await (await listChannels(request('GET'))).json();
@@ -136,39 +115,25 @@ describe('alert channels', () => {
     }
   });
 
-  it('keeps paid channels readable, not changeable, but disableable and deletable once the license is gone', async () => {
-    await installLicense();
+  it('renames, disables, enables and deletes a channel', async () => {
     const { data } = await create(createChannel, slackChannel);
-    await setSetting(LICENSE_SETTING_KEY, null);
+    const renamed = await updateChannel(request('PUT', { name: 'Renamed' }), params(data.id));
+    expect(renamed.status).toBe(200);
+    expect((await renamed.json()).name).toBe('Renamed');
 
-    expect((await listChannels(request('GET'))).status).toBe(200);
-    expect((await getChannel(request('GET'), params(data.id))).status).toBe(200);
-    expect((await updateChannel(request('PUT', { name: 'Renamed' }), params(data.id))).status).toBe(403);
-    expect((await updateChannel(request('PUT', { enabled: false, name: 'Renamed' }), params(data.id))).status).toBe(403);
-    expect((await testChannel(request('POST'), params(data.id))).status).toBe(403);
-    let [row] = await ctx.db.select().from(schema.alertChannels);
-    expect(row.name).toBe('Ops Slack');
-
-    // Winding down never needs a license.
     const disabled = await updateChannel(request('PUT', { enabled: false }), params(data.id));
     expect(disabled.status).toBe(200);
     expect((await disabled.json()).enabled).toBe(false);
-    expect((await updateChannel(request('PUT', { enabled: true }), params(data.id))).status).toBe(403);
-    [row] = await ctx.db.select().from(schema.alertChannels);
-    expect(row.enabled).toBe(false);
+    const enabled = await updateChannel(request('PUT', { enabled: true }), params(data.id));
+    expect(enabled.status).toBe(200);
+    expect((await enabled.json()).enabled).toBe(true);
+
     expect((await deleteChannel(request('DELETE'), params(data.id))).status).toBe(204);
     expect(await ctx.db.select().from(schema.alertChannels)).toHaveLength(0);
     expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'alert_channel_deleted' }));
   });
 
-  it('allows paid changes during the grace period and refuses them after it', async () => {
-    await installLicense({ iat: '2025-01-01T00:00:00.000Z', exp: new Date(Date.now() - 5 * 86400_000).toISOString() });
-    expect((await create(createChannel, slackChannel)).status).toBe(201);
-    await installLicense({ iat: '2025-01-01T00:00:00.000Z', exp: new Date(Date.now() - 40 * 86400_000).toISOString() });
-    expect((await create(createChannel, { ...slackChannel, name: 'Second' })).status).toBe(403);
-  });
-
-  it('updates an e-mail channel without a license, keeping or replacing the password', async () => {
+  it('updates an e-mail channel, keeping or replacing the password', async () => {
     const { data } = await create(createChannel, emailChannel);
     const renamed = await updateChannel(request('PUT', { name: 'Renamed', config: { to: ['a@example.com', 'b@example.com'] } }), params(data.id));
     expect(renamed.status).toBe(200);
@@ -212,8 +177,7 @@ describe('alert channels', () => {
     ['a missing webhook URL', 'webhook', {}],
     ['a malformed routing key', 'pagerduty', { routingKey: 'bad key!' }],
     ['a bad ntfy topic', 'ntfy', { topic: 'no spaces allowed' }],
-  ])('validates %s (400 with a license)', async (_label, type, config) => {
-    await installLicense();
+  ])('validates %s (400)', async (_label, type, config) => {
     const { status, data } = await create(createChannel, { name: 'x', type, config });
     expect(status).toBe(400);
     expect(JSON.stringify(data)).not.toContain('user:pass');
@@ -238,7 +202,6 @@ describe('alert channels', () => {
   });
 
   it('sends a test notification and reports failures without the URL', async () => {
-    await installLicense();
     const { data } = await create(createChannel, slackChannel);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('ok', { status: 200 }));
     const ok = await (await testChannel(request('POST'), params(data.id))).json();
@@ -271,7 +234,7 @@ describe('alert rules', () => {
     return (await create(createChannel, emailChannel)).data.id;
   }
 
-  it('creates a certificate-expiry rule that notifies e-mail without a license', async () => {
+  it('creates a certificate-expiry rule that notifies e-mail', async () => {
     const channelId = await emailChannelId();
     const { status, data } = await create(createRule, { name: 'Certs', type: 'cert_expiring', params: { days: 21 }, channelIds: [channelId] });
     expect(status).toBe(201);
@@ -287,47 +250,34 @@ describe('alert rules', () => {
     expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'alert_rule_created' }));
   });
 
-  it('needs the license for a certificate rule that notifies a paid channel', async () => {
-    await installLicense();
-    const { data: slack } = await create(createChannel, slackChannel);
-    await setSetting(LICENSE_SETTING_KEY, null);
-    expect((await create(createRule, { name: 'Certs', type: 'cert_expiring', channelIds: [slack.id] })).status).toBe(403);
+  it.each(['upstream_down', 'waf_spike', 'instance_sync_failed', 'caddy_apply_failed', 'backup_failed'])('creates a %s rule', async (type) => {
+    const created = await create(createRule, { name: type, type });
+    expect(created.status).toBe(201);
+    expect(created.data.type).toBe(type);
   });
 
-  it.each(['upstream_down', 'waf_spike', 'instance_sync_failed', 'caddy_apply_failed', 'license_expiring'])(
-    'refuses a %s rule without a license and creates it with one',
-    async (type) => {
-      expect((await create(createRule, { name: type, type })).status).toBe(403);
-      await installLicense();
-      const created = await create(createRule, { name: type, type });
-      expect(created.status).toBe(201);
-    }
-  );
-
-  it('needs the AI analyst license for explanations, on create and when changed', async () => {
+  it('turns explanations on, on create and when changed', async () => {
     const channelId = await emailChannelId();
-    expect((await create(createRule, { name: 'Certs', type: 'cert_expiring', channelIds: [channelId], explain: true })).status).toBe(403);
+    const { status, data: explainedAtOnce } = await create(createRule, { name: 'Certs now', type: 'cert_expiring', channelIds: [channelId], explain: true });
+    expect(status).toBe(201);
+    expect(explainedAtOnce.explain).toBe(true);
     const { data: rule } = await create(createRule, { name: 'Certs', type: 'cert_expiring', channelIds: [channelId] });
-    expect((await updateRule(request('PUT', { explain: true }), params(rule.id))).status).toBe(403);
-    // Other changes to a free rule stay possible.
     const renamed = await updateRule(request('PUT', { name: 'Certificates', params: { days: 7 } }), params(rule.id));
     expect(renamed.status).toBe(200);
     expect(await renamed.json()).toMatchObject({ name: 'Certificates', params: { days: 7, includeClientCertificates: true } });
 
-    await installLicense();
     const explained = await updateRule(request('PUT', { explain: true }), params(rule.id));
     expect(explained.status).toBe(200);
     expect((await explained.json()).explain).toBe(true);
   });
 
-  it('keeps paid rules readable, not changeable, but disableable and deletable without a license', async () => {
-    await installLicense();
+  it('changes, disables, enables and deletes a rule', async () => {
     const { data: rule } = await create(createRule, { name: 'WAF', type: 'waf_spike', params: { threshold: 10, windowMinutes: 5 }, explain: true });
-    await setSetting(LICENSE_SETTING_KEY, null);
     expect((await listRules(request('GET'))).status).toBe(200);
     expect((await getRule(request('GET'), params(rule.id))).status).toBe(200);
-    expect((await updateRule(request('PUT', { params: { threshold: 20 } }), params(rule.id))).status).toBe(403);
-    expect((await updateRule(request('PUT', { enabled: false, name: 'x' }), params(rule.id))).status).toBe(403);
+    const changed = await updateRule(request('PUT', { params: { threshold: 20 } }), params(rule.id));
+    expect(changed.status).toBe(200);
+    expect((await changed.json()).params).toEqual({ threshold: 20, windowMinutes: 5 });
 
     const quiet = await updateRule(request('PUT', { explain: false }), params(rule.id));
     expect(quiet.status).toBe(200);
@@ -335,26 +285,35 @@ describe('alert rules', () => {
     const disabled = await updateRule(request('PUT', { enabled: false }), params(rule.id));
     expect(disabled.status).toBe(200);
     expect((await disabled.json()).enabled).toBe(false);
-    expect((await updateRule(request('PUT', { enabled: true }), params(rule.id))).status).toBe(403);
-    expect((await updateRule(request('PUT', { explain: true }), params(rule.id))).status).toBe(403);
+    const enabled = await updateRule(request('PUT', { enabled: true }), params(rule.id));
+    expect(enabled.status).toBe(200);
+    expect((await enabled.json()).enabled).toBe(true);
     expect((await deleteRule(request('DELETE'), params(rule.id))).status).toBe(204);
     expect(await ctx.db.select().from(schema.alertRules)).toHaveLength(0);
   });
 
-  it('lets a lapsed install unwind a certificate rule that notifies a paid channel', async () => {
-    await installLicense();
+  it('frees a channel once no rule notifies it', async () => {
     const { data: slack } = await create(createChannel, slackChannel);
     const { data: rule } = await create(createRule, { name: 'Certs', type: 'cert_expiring', channelIds: [slack.id] });
-    await setSetting(LICENSE_SETTING_KEY, null);
-    // Removing the paid channel from the rule is a change to paid configuration...
-    expect((await updateRule(request('PUT', { channelIds: [] }), params(rule.id))).status).toBe(403);
-    // ...but deleting the rule, then the channel, always works.
     expect((await deleteChannel(request('DELETE'), params(slack.id))).status).toBe(409);
-    expect((await deleteRule(request('DELETE'), params(rule.id))).status).toBe(204);
+    expect((await updateRule(request('PUT', { channelIds: [] }), params(rule.id))).status).toBe(200);
     expect((await deleteChannel(request('DELETE'), params(slack.id))).status).toBe(204);
   });
 
-  it('deletes a free rule without a license, with its state but not its history', async () => {
+  it('ignores stored rules of a type that no longer exists, but lets them be deleted', async () => {
+    const now = new Date().toISOString();
+    const [row] = await ctx.db
+      .insert(schema.alertRules)
+      .values({ name: 'Old rule', type: 'license_expiring', enabled: true, params: '{"days":30}', channelIds: '[]', createdAt: now, updatedAt: now })
+      .returning();
+    expect(await (await listRules(request('GET'))).json()).toEqual([]);
+    expect((await getRule(request('GET'), params(row.id))).status).toBe(404);
+    expect((await updateRule(request('PUT', { name: 'x' }), params(row.id))).status).toBe(404);
+    expect((await deleteRule(request('DELETE'), params(row.id))).status).toBe(204);
+    expect(await ctx.db.select().from(schema.alertRules)).toHaveLength(0);
+  });
+
+  it('deletes a rule with its state but not its history', async () => {
     const channelId = await emailChannelId();
     const { data: rule } = await create(createRule, { name: 'Certs', type: 'cert_expiring', channelIds: [channelId] });
     const now = new Date().toISOString();
@@ -381,8 +340,7 @@ describe('alert rules', () => {
     expect((await create(createRule, body)).status).toBe(400);
   });
 
-  it('validates paid rule parameters once licensed', async () => {
-    await installLicense();
+  it('validates rule parameters', async () => {
     expect((await create(createRule, { name: 'x', type: 'waf_spike', params: { threshold: 10, windowMinutes: 2000 } })).status).toBe(400);
     const { data: rule } = await create(createRule, { name: 'x', type: 'waf_spike' });
     expect(rule.params).toEqual({ threshold: 100, windowMinutes: 15 });
@@ -413,25 +371,18 @@ describe('alert history', () => {
 describe('AI settings', () => {
   const API_KEY = 'sk-ant-api-key-sentinel';
 
-  it('is readable without a license and redacted', async () => {
+  it('is readable and redacted', async () => {
     const response = await getAiSettings(request('GET'));
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ enabled: false, provider: null, hasApiKey: false, timeoutSeconds: 60, configured: false, defaultModel: 'claude-opus-5' });
   });
 
-  it('refuses changes and tests without a license', async () => {
-    expect((await putAiSettings(request('PUT', { provider: 'anthropic', apiKey: API_KEY }))).status).toBe(403);
-    expect((await testAi(request('POST'))).status).toBe(403);
+  it('can be switched off and removed', async () => {
+    // Switching off a provider that was never set up changes nothing.
+    expect(await (await putAiSettings(request('PUT', { enabled: false }))).json()).toMatchObject({ provider: null, configured: false });
     expect(await getSetting(AI_SETTINGS_KEY)).toBeNull();
-  });
 
-  it('can be switched off and removed without a license', async () => {
-    await installLicense();
     await putAiSettings(request('PUT', { provider: 'anthropic', apiKey: API_KEY }));
-    await setSetting(LICENSE_SETTING_KEY, null);
-
-    expect((await putAiSettings(request('PUT', { model: 'claude-sonnet-5' }))).status).toBe(403);
-    expect((await putAiSettings(request('PUT', { enabled: true }))).status).toBe(403);
     const off = await putAiSettings(request('PUT', { enabled: false, apiKey: null }));
     expect(off.status).toBe(200);
     expect(await off.json()).toMatchObject({ enabled: false, hasApiKey: false, configured: false });
@@ -444,10 +395,8 @@ describe('AI settings', () => {
     expect(await getSetting(AI_SETTINGS_KEY)).toBeNull();
   });
 
-  it('is removed by DELETE without a license', async () => {
-    await installLicense();
+  it('is removed by DELETE', async () => {
     await putAiSettings(request('PUT', { provider: 'anthropic', apiKey: API_KEY }));
-    await setSetting(LICENSE_SETTING_KEY, null);
     expect((await deleteAiSettings(request('DELETE'))).status).toBe(204);
     expect(await getSetting(AI_SETTINGS_KEY)).toBeNull();
     expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'ai_settings_removed' }));
@@ -455,7 +404,6 @@ describe('AI settings', () => {
   });
 
   it('stores the key encrypted, never returns it and defaults the Anthropic model', async () => {
-    await installLicense();
     const response = await putAiSettings(request('PUT', { provider: 'anthropic', apiKey: API_KEY }));
     expect(response.status).toBe(200);
     const data = await response.json();
@@ -468,7 +416,6 @@ describe('AI settings', () => {
   });
 
   it('never moves a stored key to another provider or base URL', async () => {
-    await installLicense();
     await putAiSettings(request('PUT', { provider: 'anthropic', apiKey: API_KEY }));
     const moved = await putAiSettings(request('PUT', { provider: 'openai_compatible', model: 'llama3.1', baseUrl: 'http://ollama:11434/v1' }));
     expect(moved.status).toBe(400);
@@ -496,12 +443,10 @@ describe('AI settings', () => {
     ['a fractional timeout', { provider: 'anthropic', apiKey: 'x', timeoutSeconds: 30.5 }],
     ['a timeout as text', { provider: 'anthropic', apiKey: 'x', timeoutSeconds: '60' }],
   ])('rejects %s', async (_label, body) => {
-    await installLicense();
     expect((await putAiSettings(request('PUT', body))).status).toBe(400);
   });
 
   it('stores the timeout, keeps it when omitted and reads 60 for settings saved without one', async () => {
-    await installLicense();
     const saved = await putAiSettings(request('PUT', { provider: 'openai_compatible', model: 'qwen3', baseUrl: 'http://llm.example.com/v1', timeoutSeconds: 240 }));
     expect(saved.status).toBe(200);
     expect(await saved.json()).toMatchObject({ timeoutSeconds: 240 });
@@ -519,7 +464,6 @@ describe('AI settings', () => {
   });
 
   it('reports a test that runs out of time with the timeout and where to raise it', async () => {
-    await installLicense();
     await putAiSettings(request('PUT', { provider: 'openai_compatible', model: 'qwen3', baseUrl: 'http://llm.example.com/v1', timeoutSeconds: 90 }));
     vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new DOMException('The operation timed out.', 'TimeoutError'));
     expect(await (await testAi(request('POST'))).json()).toEqual({
@@ -530,7 +474,6 @@ describe('AI settings', () => {
   });
 
   it('tests the configured provider with a sample alert', async () => {
-    await installLicense();
     expect((await testAi(request('POST'))).status).toBe(400);
     await putAiSettings(request('PUT', { provider: 'openai_compatible', model: 'llama3.1', baseUrl: 'http://ollama:11434/v1' }));
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(

@@ -5,7 +5,7 @@ import { ApiValidationError } from "@/src/lib/api-errors";
 import { NO_STORE, storageErrorResponse } from "@/ee/high-availability/http";
 import { getCertificateStorageView, removeCertificateStorage, saveCertificateStorage } from "@/ee/high-availability/service";
 
-/** Where the Caddy nodes keep certificates. Readable without a license; secrets are never returned. */
+/** Where the Caddy nodes keep certificates. Secrets are never returned. */
 export async function GET(request: NextRequest) {
   try {
     await requireApiPermission(request, "high_availability:read");
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/** Sets or changes the storage. Enabling or changing shared storage needs the license; going back to local does not. */
+/** Sets or changes the storage. */
 export async function PUT(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "high_availability:write");
@@ -31,7 +31,7 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-/** Back to local storage, forgetting the Redis settings. Never needs a license. */
+/** Back to local storage, forgetting the Redis settings. */
 export async function DELETE(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "high_availability:write");

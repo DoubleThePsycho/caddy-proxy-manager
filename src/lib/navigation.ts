@@ -12,7 +12,7 @@
 import type { Permission } from "./permissions";
 
 /** The counters the sidebar shows next to entries (see src/lib/nav-summary.ts). */
-export type NavBadgeKey = "alertsFiring" | "certificatesExpiring" | "approvalsPending" | "reviewsDue" | "licenseNodes";
+export type NavBadgeKey = "alertsFiring" | "certificatesExpiring" | "approvalsPending" | "reviewsDue";
 
 export type NavPage = {
   href: string;
@@ -45,7 +45,6 @@ export type NavEntryKey =
   | "monetization"
   | "settings"
   | "branding"
-  | "license"
   | "profile"
   | "api-docs";
 
@@ -198,7 +197,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 export const NAV_FOOTER: readonly NavEntry[] = [
   { key: "settings", label: "Settings", pages: [{ href: "/settings", label: "Settings", permission: "settings:read" }] },
   { key: "branding", label: "Branding", pages: [{ href: "/branding", label: "Branding", permission: "branding:read" }] },
-  { key: "license", label: "License", pages: [{ href: "/license", label: "License", permission: "license:read" }], badge: "licenseNodes" },
 ];
 
 /** The user menu's pages. */

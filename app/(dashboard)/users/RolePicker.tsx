@@ -6,7 +6,6 @@ import type { CustomRoleOption } from "./user-format";
 export type RoleOptionsProps = {
   customRoles: CustomRoleOption[];
   canAssignAdmin: boolean;
-  customRolesLicensed: boolean;
 };
 
 /** The role picker's value for a user: a built-in role or "custom:<id>". */
@@ -17,13 +16,11 @@ export function roleChoice(user: { role: string; customRoleId: number | null }):
 /**
  * The roles a picker offers. Roles the signed-in user may not grant stay
  * listed but disabled (the server checks again): the admin role and
- * administrator-level custom roles for non-administrators, custom roles
- * without a license.
+ * administrator-level custom roles for non-administrators.
  */
 export function RoleOptions({
   customRoles,
   canAssignAdmin,
-  customRolesLicensed,
   current,
 }: RoleOptionsProps & { current?: string }) {
   return (
@@ -37,7 +34,7 @@ export function RoleOptions({
           <SelectItem
             key={role.id}
             value={value}
-            disabled={value !== current && (!customRolesLicensed || (role.adminLevel && !canAssignAdmin))}
+            disabled={value !== current && role.adminLevel && !canAssignAdmin}
           >
             {role.name}
           </SelectItem>

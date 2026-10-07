@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Runs due report schedules every few minutes. Started from
- * src/instrumentation.ts (never in tests). Never checks the license: a
- * schedule that was set up keeps generating reports after it lapses.
+ * src/instrumentation.ts (never in tests).
  */
 import { runDueReportSchedules } from "./schedules";
 import { onShutdown } from "@/src/lib/shutdown";

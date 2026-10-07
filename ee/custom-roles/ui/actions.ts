@@ -16,7 +16,7 @@ function failure(error: unknown, action: string): UserActionResult {
   return { ok: false, error: `Failed to ${action}` };
 }
 
-/** Creates (id null) or changes a custom role, as POST/PUT /api/v1/roles do. Needs the custom_roles license feature. */
+/** Creates (id null) or changes a custom role, as POST/PUT /api/v1/roles do. */
 export async function saveRoleAction(id: number | null, input: unknown): Promise<UserActionResult> {
   const session = await requirePermission("users:write");
   try {
@@ -29,7 +29,7 @@ export async function saveRoleAction(id: number | null, input: unknown): Promise
   return { ok: true };
 }
 
-/** Deletes a custom role; its users fall back to the viewer role. Never needs a license. */
+/** Deletes a custom role; its users fall back to the viewer role. */
 export async function deleteRoleAction(id: number): Promise<UserActionResult> {
   const session = await requirePermission("users:write");
   try {

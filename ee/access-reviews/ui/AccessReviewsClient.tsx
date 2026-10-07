@@ -21,7 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AppDialog } from "@/components/ui/AppDialog";
 import { paginate } from "@/src/lib/pagination";
 import type { CampaignSummary, ReviewScope, ScheduleView } from "../types";
-import { callApi, CampaignStatusPill, describeScope, Field, formatDateTime, formatDay, LOCKED_HINT } from "./shared";
+import { callApi, CampaignStatusPill, describeScope, Field, formatDateTime, formatDay } from "./shared";
 
 type Option = { id: number; name: string };
 type UserOption = { id: number; email: string; name: string | null };
@@ -32,9 +32,7 @@ type Props = {
   users: UserOption[];
   customRoles: Option[];
   groups: Option[];
-  configurable: boolean;
   canWrite: boolean;
-  editionLabel: string;
   /** Items the signed-in user has to decide. */
   myPending: number;
   /** When the page was rendered, for "due in N days". */
@@ -126,7 +124,6 @@ export default function AccessReviewsClient(props: Props) {
   const [deletingSchedule, setDeletingSchedule] = useState<ScheduleView | null>(null);
   const { page, hrefFor } = useUrlPage();
   const campaigns = paginate(props.campaigns, page);
-  const editable = props.canWrite && props.configurable;
   const names = useMemo(() => ({
     customRoles: new Map(props.customRoles.map((role) => [role.id, role.name])),
     groups: new Map(props.groups.map((group) => [group.id, group.name])),
@@ -211,19 +208,11 @@ export default function AccessReviewsClient(props: Props) {
         title="Access reviews"
         description="Reviewers keep or revoke each user's account, role, group memberships and API tokens."
         actions={props.canWrite ? (
-          <Button onClick={openForm} disabled={!props.configurable} title={props.configurable ? undefined : LOCKED_HINT}>
+          <Button onClick={openForm}>
             <Plus /> Start review
           </Button>
         ) : undefined}
       />
-
-      {!props.configurable && (
-        <Banner tone="info" title="Read-only without a license.">
-          Starting and scheduling access reviews needs a license with access reviews ({props.editionLabel} edition). Open reviews can
-          still be decided, completed, cancelled and deleted.{" "}
-          <Link href="/license" className="text-brand underline-offset-4 hover:underline">Licensing</Link>
-        </Banner>
-      )}
 
       {props.myPending > 0 && (
         <Banner
@@ -252,7 +241,7 @@ export default function AccessReviewsClient(props: Props) {
             compact
             icon={ClipboardCheck}
             title="No access review yet"
-            action={props.canWrite && props.configurable ? <Button size="sm" onClick={openForm}><Plus /> Start review</Button> : undefined}
+            action={props.canWrite ? <Button size="sm" onClick={openForm}><Plus /> Start review</Button> : undefined}
           />
         ) : (
           <Table className="min-w-[900px]">
@@ -333,7 +322,7 @@ export default function AccessReviewsClient(props: Props) {
                     <Switch
                       checked={schedule.enabled}
                       onCheckedChange={(checked) => setScheduleEnabled(schedule, checked)}
-                      disabled={!props.canWrite || pending || (!props.configurable && !schedule.enabled)}
+                      disabled={!props.canWrite || pending}
                       aria-label={`${schedule.name} enabled`}
                     />
                   </TableCell>
@@ -404,7 +393,6 @@ export default function AccessReviewsClient(props: Props) {
               <Input id="review-due" type="date" value={form.dueDate} min={inDays(1)} onChange={(event) => set("dueDate", event.target.value)} />
             </Field>
           )}
-          {!editable && <p className="text-xs text-muted-foreground">{LOCKED_HINT}</p>}
         </div>
       </AppDialog>
 

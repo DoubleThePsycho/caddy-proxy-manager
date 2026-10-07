@@ -75,7 +75,6 @@ const ENTITY_AREAS: Record<string, string> = {
   instance: "Instances",
   oauth_provider: "Authentication (SSO and MFA)",
   sso_enforcement: "Authentication (SSO and MFA)",
-  license: "License",
   configuration: "Configuration, history and backups",
   config_snapshot: "Configuration, history and backups",
   config_history: "Configuration, history and backups",

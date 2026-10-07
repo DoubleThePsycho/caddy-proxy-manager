@@ -1,29 +1,19 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * White-label (feature "white_label", Enterprise edition): reading and
- * changing the branding.
- *
- * Setting a field to a value of your own and uploading a logo or favicon
- * need a license that includes the feature (requireFeature). Restoring a
- * field to its default, removing an asset, resetting everything and reading
- * never do, and nothing on the request path checks the license, so branding
- * that is already configured keeps showing when a license lapses.
+ * White-label: reading and changing the branding.
  */
 import { ApiValidationError } from "@/src/lib/api-errors";
 import { appDb } from "@/src/lib/db";
 import { logAuditEvent } from "@/src/lib/audit";
 import { syncInstances } from "@/src/lib/instance-sync";
 import { BRAND_NAME } from "@/src/lib/brand";
-import { isFeatureConfigurable, requireFeature } from "@/ee/licensing/store";
 import { checkDeclaredFile, sanitizeImage } from "./images";
-import { fieldsNeedingLicense } from "./validation";
 import { assetUrl, clearBranding, getBranding, loadBranding, loadedAsset, writeBranding, type Branding } from "./store";
 import {
   ASSET_KINDS,
   ASSET_LABELS,
   ASSET_LIMITS,
   MAX_ASSET_BYTES,
-  WHITE_LABEL_FEATURE,
   type AssetKind,
   type AssetView,
   type BrandingInput,
@@ -42,7 +32,7 @@ function assetViews(branding: Branding): Record<AssetKind, AssetView | null> {
   return views;
 }
 
-export function toBrandingView(branding: Branding, configurable: boolean): BrandingView {
+export function toBrandingView(branding: Branding): BrandingView {
   return {
     settings: { ...branding.settings },
     effective: {
@@ -57,12 +47,11 @@ export function toBrandingView(branding: Branding, configurable: boolean): Brand
     updatedAt: branding.updatedAt,
     defaultProductName: BRAND_NAME,
     limits: { maxBytes: MAX_ASSET_BYTES, assets: ASSET_LIMITS },
-    configurable,
   };
 }
 
 export async function getBrandingView(): Promise<BrandingView> {
-  return toBrandingView(getBranding(), await isFeatureConfigurable(WHITE_LABEL_FEATURE));
+  return toBrandingView(getBranding());
 }
 
 /** After every change: replicas get the new branding (sync is best effort, like settings). */
@@ -74,10 +63,7 @@ async function propagate(): Promise<void> {
   }
 }
 
-/**
- * Applies a partial update. Fields restored to their defaults never need a
- * license; any other change does (403 otherwise).
- */
+/** Applies a partial update. */
 export async function updateBranding(input: BrandingInput, actorUserId: number): Promise<BrandingView> {
   // Read, check and write in one transaction: a concurrent change is never lost.
   const updated = await appDb.transaction(async () => {
@@ -88,7 +74,6 @@ export async function updateBranding(input: BrandingInput, actorUserId: number):
     }
     const changed = (Object.keys(next) as (keyof BrandingSettings)[]).filter((field) => next[field] !== current.settings[field]);
     if (changed.length === 0) return false;
-    if (fieldsNeedingLicense(current.settings, next).length > 0) await requireFeature(WHITE_LABEL_FEATURE);
 
     await writeBranding(next, current.assets);
     await logAuditEvent({
@@ -114,9 +99,8 @@ export type BrandingUpload = {
   declaredType?: string | null;
 };
 
-/** Stores a logo or favicon after the checks in images.ts. Needs a license. */
+/** Stores a logo or favicon after the checks in images.ts. */
 export async function uploadBrandingAsset(kind: AssetKind, upload: BrandingUpload, actorUserId: number): Promise<BrandingView> {
-  await requireFeature(WHITE_LABEL_FEATURE);
   const image = sanitizeImage(upload.data, { ...ASSET_LIMITS[kind], maxBytes: MAX_ASSET_BYTES });
   checkDeclaredFile(image.type, upload.fileName ?? null, upload.declaredType ?? null);
   const asset = loadedAsset(image);
@@ -136,7 +120,7 @@ export async function uploadBrandingAsset(kind: AssetKind, upload: BrandingUploa
   return getBrandingView();
 }
 
-/** Removes a logo or favicon; never needs a license. Removing one that is not set changes nothing. */
+/** Removes a logo or favicon. Removing one that is not set changes nothing. */
 export async function deleteBrandingAsset(kind: AssetKind, actorUserId: number): Promise<BrandingView> {
   const removed = await appDb.transaction(async () => {
     const current = await loadBranding();
@@ -157,8 +141,8 @@ export async function deleteBrandingAsset(kind: AssetKind, actorUserId: number):
 }
 
 /**
- * Restores the default branding on this instance; never needs a license. On
- * a sync slave the master's branding applies again.
+ * Restores the default branding on this instance. On a sync slave the
+ * master's branding applies again.
  */
 export async function resetBranding(actorUserId: number): Promise<BrandingView> {
   await appDb.transaction(async () => {
