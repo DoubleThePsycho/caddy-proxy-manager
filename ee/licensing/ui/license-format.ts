@@ -77,9 +77,16 @@ export function featureRows(license: LicenseView, usage: Partial<Record<Feature,
   });
 }
 
-/** Why a feature cannot be set up: "Not in Enterprise", "License expired" or "Not licensed". */
+/** A key that verifies is installed, whatever its dates or confirmation (mirrors hasVerifiedKey of license.ts). */
+export function isVerifiedStatus(status: LicenseView["status"]): boolean {
+  return status !== "unlicensed" && status !== "invalid";
+}
+
+/** Why a feature cannot be set up: "Not in Enterprise", "License expired", "License revoked" or "Not licensed". */
 export function outLabel(license: LicenseView): string {
   if (license.status === "expired") return "License expired";
+  if (license.status === "revoked") return "License revoked";
+  if (license.status === "unconfirmed") return "License not confirmed";
   if ((license.status === "active" || license.status === "grace") && license.editionLabel) return `Not in ${license.editionLabel}`;
   return "Not licensed";
 }

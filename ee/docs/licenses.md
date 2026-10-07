@@ -38,7 +38,24 @@ A trial is one-time only: one per e-mail address and per company domain, ever (f
 
 With the REST API: `POST /api/v1/license/verify` checks a key without installing it, and `PUT /api/v1/license` with `{"key": "<license key>"}` installs it. Both need `license:write`.
 
-Keys are verified offline against the public keys built into each release, so air-gapped installs work the same way. There is no environment variable for the key; install it through the page or the API.
+Every key's signature is verified on the install, against the public keys built into each release. A key bought online is also confirmed with the license server once a day (below); an install that must never call out, such as an air-gapped one, needs an offline key: ask [sales@ingres.si](mailto:sales@ingres.si). There is no environment variable for the key; install it through the page or the API.
+
+## Online confirmation
+
+Keys bought online are online keys: the License page shows **Online key** next to the status. The install confirms such a key with the license server once a day. Offline keys (trials, and keys issued on request for air-gapped installs) are never checked online.
+
+- **What is sent.** The leader node (a standalone install, or the instance sync master; replicas never ask) sends one request to `https://license.ingres.si` (or `LICENSE_SERVER_URL`): `POST /v1/licenses/<license id>/status` with `{"keySha256": "<SHA-256 of the installed key>"}`. Nothing else about the install is sent. The license server records when the license was last confirmed, at most once an hour.
+- **What comes back.** A statement signed by the license server, saying the license is active (for the next 14 days) or revoked. It counts only if its signature verifies with the public keys built into the release and it is about the installed license.
+- **When.** Right after an online key is installed, then once a day. After a failed attempt the install tries again within the hour. **Check now** on the License page, or `POST /api/v1/license/check` (`license:write`), asks right away, at most once a minute.
+
+| Online check | Meaning |
+| --- | --- |
+| Confirmed | A current confirmation. Each one counts for 14 days, so paid settings stay editable through 14 days without an answer. |
+| Not confirmed yet | A new online key has no confirmation yet. It works for 7 days after the install first saw the license; removing and reinstalling the key does not restart them. |
+| Not confirmed | No current confirmation: paid settings are read-only until the license server confirms the license again. Allow outbound HTTPS to `license.ingres.si`, or ask for an offline key. |
+| Revoked | The license server reports the license as revoked, after a refund or a chargeback. Paid settings are read-only at once, with no grace period. |
+
+Whatever the confirmation says, traffic is never touched: proxying, certificates, the WAF, sign-in and every paid feature already configured keep running, as with an expired license. A revoked license confirmed again later (for example after a chargeback decided in the customer's favour) is editable again from the next check. The overview's **Needs attention** lists a license that is revoked, not confirmed, or not confirmed for more than a day after it was installed. The audit log records `license_revoked` and `license_reinstated` when the license server's answer changes.
 
 ## Keeping the license up to date automatically
 
@@ -66,7 +83,7 @@ The card shows the last check, its result, the next check and the last time a ke
 | Token for another license | A different license was installed since; enter that license's refresh token. |
 | No license to update | No valid key is installed. |
 
-If a check says the license was revoked (after a refund, for example), the installed key keeps working until it expires; keys are verified offline, so an issued key cannot be withdrawn.
+Automatic updates are separate from the online confirmation above, which runs whether they are on or not. If an update check says the license was revoked (after a refund, for example), no renewed key is installed; for an online key, the online confirmation makes paid settings read-only.
 
 The refresh token is stored encrypted, is never shown again or returned by the API (`hasRefreshToken` says whether one is stored), and is deleted when the setting is turned off. The setting is per install and is not synced to replicas or included in configuration exports. Lost the token? Reply to a license e-mail for a new one.
 
@@ -74,8 +91,8 @@ REST API: `GET /api/v1/license/auto-update` (`license:read`), `PUT /api/v1/licen
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `LICENSE_AUTO_UPDATE_DISABLED` | `false` | `true` forbids automatic updates: the license server is never contacted. Air-gapped bundles set it. |
-| `LICENSE_SERVER_URL` | `https://license.ingres.si` | Another license server (https only; an invalid value means nothing is sent). |
+| `LICENSE_AUTO_UPDATE_DISABLED` | `false` | `true` forbids automatic updates: renewed keys are never fetched. It does not stop the online confirmation of a key bought online. Air-gapped bundles set it. |
+| `LICENSE_SERVER_URL` | `https://license.ingres.si` | Another license server for the online confirmation and automatic updates (https only; an invalid value means nothing is sent). |
 
 ## Lost the key
 
@@ -88,6 +105,7 @@ The key is in the license e-mail, also as a `.lic` file. If that e-mail is gone,
 | Until the expiry | Everything works and can be changed. |
 | 30 days after the expiry (grace period) | Paid features stay editable. Renew before it ends. |
 | After the grace period | Paid features keep running but are read-only. Deleting or turning them off still works. |
+| Revoked, or an online key not confirmed | The same as after the grace period, at once. |
 
 Installing a renewed key ends the grace period or the read-only state at once.
 

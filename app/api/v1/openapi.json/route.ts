@@ -1833,7 +1833,10 @@ const spec = {
       put: {
         tags: ["License"],
         summary: "Install or replace the license key",
-        description: "Keys are verified offline. Invalid keys, and keys past their 30-day grace period, are refused.",
+        description:
+          "The key's signature is verified on this install. Invalid keys, and keys past their 30-day grace period, are refused. " +
+          "An online key (bought online) is then confirmed with the license server right away; a failed confirmation does not " +
+          "undo the install (see onlineCheck).",
         operationId: "installLicense",
         requestBody: {
           required: true,
@@ -1869,12 +1872,37 @@ const spec = {
         },
       },
     },
+    "/api/v1/license/check": {
+      post: {
+        tags: ["License"],
+        summary: "Confirm the installed online key with the license server now",
+        description:
+          "Permission license:write. An online key (bought online) is confirmed with the license server once a day; this asks now. " +
+          "It sends one request, POST /v1/licenses/{licenseId}/status with the SHA-256 of the installed key, and nothing else. " +
+          "Answers with the license status, whatever the license server said (see onlineCheck.lastError). 409 with an offline key, " +
+          "without a key, or on an instance sync replica; 429 when the license server was asked less than a minute ago.",
+        operationId: "checkLicense",
+        responses: {
+          "200": {
+            description: "License status after the check",
+            content: { "application/json": { schema: { $ref: "#/components/schemas/License" } } },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "409": { $ref: "#/components/responses/Conflict" },
+          "429": {
+            description: "The license server was asked less than a minute ago",
+            content: { "application/json": { schema: { type: "object", properties: { error: { type: "string" } }, required: ["error"] } } },
+          },
+        },
+      },
+    },
     "/api/v1/license/verify": {
       post: {
         tags: ["License"],
         summary: "Check a license key without installing it",
         description:
-          "Permission license:write. Verifies the key's signature offline and says what it would grant and whether it can be installed. " +
+          "Permission license:write. Verifies the key's signature on this install and says what it would grant and whether it can be installed. " +
           "Stores nothing and changes nothing; the key is never returned. A key that cannot be installed (invalid, not valid yet, or past " +
           "its 30-day grace period) is still a 200, with installable false and the reason in error.",
         operationId: "verifyLicense",
@@ -4551,7 +4579,13 @@ const spec = {
       License: {
         type: "object",
         properties: {
-          status: { type: "string", enum: ["unlicensed", "active", "grace", "expired", "invalid"] },
+          status: {
+            type: "string",
+            enum: ["unlicensed", "active", "grace", "expired", "invalid", "revoked", "unconfirmed"],
+            description:
+              "revoked: the license server reports the license as revoked (a refund or a chargeback); unconfirmed: an online key " +
+              "without a current confirmation from the license server. Both leave paid settings read-only; nothing stops running.",
+          },
           edition: { type: ["string", "null"], enum: ["homelab", "business", "enterprise", null] },
           editionLabel: { type: ["string", "null"] },
           customer: { type: ["string", "null"] },
@@ -4571,6 +4605,29 @@ const spec = {
             },
           },
           error: { type: ["string", "null"], description: "Why an installed key is invalid" },
+          onlineCheck: {
+            type: "object",
+            description: "The daily confirmation of an online key with the license server; required is false for offline keys",
+            properties: {
+              required: { type: "boolean", description: "The installed key is an online key (bought online)" },
+              state: {
+                type: ["string", "null"],
+                enum: ["confirmed", "pending", "unconfirmed", "revoked", null],
+                description:
+                  "confirmed: a current confirmation; pending: none yet, within 7 days of this install first seeing the license; " +
+                  "unconfirmed: neither, so paid settings are read-only; revoked: the license server says so. null when not required.",
+              },
+              confirmedAt: { type: ["string", "null"], format: "date-time", description: "When the license server last confirmed the license" },
+              validUntil: {
+                type: ["string", "null"],
+                format: "date-time",
+                description: "Until when paid settings stay editable without a newer confirmation",
+              },
+              lastAttemptAt: { type: ["string", "null"], format: "date-time" },
+              lastError: { type: ["string", "null"], description: "Why the last attempt failed; null after a success" },
+            },
+            required: ["required", "state", "confirmedAt", "validUntil", "lastAttemptAt", "lastError"],
+          },
           features: {
             type: "array",
             items: {
@@ -4593,9 +4650,10 @@ const spec = {
         description: "What a license key would grant if it were installed now. Never includes the key.",
         properties: {
           installable: { type: "boolean", description: "Installing the key (PUT /api/v1/license) would succeed" },
+          online: { type: "boolean", description: "An online key: once installed, it is confirmed daily with the license server" },
           status: {
             type: "string",
-            enum: ["active", "grace", "expired", "invalid"],
+            enum: ["active", "grace", "expired", "invalid", "revoked", "unconfirmed"],
             description: "The key's state if it were installed now; invalid covers malformed, wrongly signed and not-yet-valid keys",
           },
           error: { type: ["string", "null"], description: "Why the key cannot be installed" },
@@ -4612,7 +4670,7 @@ const spec = {
           nodes: { type: ["integer", "null"], description: "Nodes the key covers" },
           features: { type: "array", items: { type: "string" }, description: "Paid feature ids the key grants" },
         },
-        required: ["installable", "status", "error", "features"],
+        required: ["installable", "online", "status", "error", "features"],
       },
       SsoEnforcementInput: {
         type: "object",

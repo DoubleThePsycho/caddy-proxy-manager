@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
  * Automatic license updates: keep the installed license up to date from the
- * license server. Off by default, so air-gapped installs never call out.
+ * license server. Off by default. Separate from the daily confirmation of
+ * online keys (online-check.ts), which runs whether this is on or not.
  *
  * While it is on, the leader node (a standalone install or the instance sync
  * master; never a replica) asks the license server once a day, at a random
@@ -27,7 +28,7 @@ import { ApiClientError, ApiConflictError, ApiValidationError } from "@/src/lib/
 import { getInstanceMode, type InstanceMode } from "@/src/lib/instance-sync";
 import { isMinuteOfDay, nextDailyAttempt, randomMinuteOfDay } from "@/src/lib/usage-ping/schedule";
 import { EDITION_LABELS } from "./features";
-import { LicenseKeyError, verifyLicenseKey, type LicensePayload, type LicenseState } from "./license";
+import { hasVerifiedKey, LicenseKeyError, verifyLicenseKey, type LicensePayload, type LicenseState } from "./license";
 import { getTrustedLicenseKeys } from "./public-keys";
 import { checkLicenseKey, getLicenseState, installLicenseKey } from "./store";
 import { currentLicenseUrl, isLicenseAutoUpdateDisabledByEnv, resolveLicenseServer } from "./auto-update-env";
@@ -166,9 +167,9 @@ export async function writeLicenseAutoUpdateState(state: LicenseAutoUpdateState)
   await setSetting(LICENSE_AUTO_UPDATE_STATE_KEY, state);
 }
 
-/** The installed license, when there is one to keep up to date (valid, possibly expired). */
+/** The installed license, when there is one to keep up to date (verified, possibly expired, revoked or unconfirmed). */
 function installedLicense(state: LicenseState): LicensePayload | null {
-  return state.status === "active" || state.status === "grace" || state.status === "expired" ? state.license : null;
+  return hasVerifiedKey(state) ? state.license : null;
 }
 
 function statusOf(
@@ -256,7 +257,7 @@ async function applyAnswer(
   if (answer.kind === "revoked") {
     return {
       result: "revoked",
-      error: "the license server says this license was revoked; the installed key keeps working until it expires",
+      error: "the license server says this license was revoked",
       answered: false,
     };
   }
@@ -273,7 +274,7 @@ async function applyAnswer(
     return { result: "failed", error: `the returned key is for license ${payload.id.slice(0, 64)}, not ${installed.id}`, answered: true };
   }
   if (Date.parse(payload.iat) <= Date.parse(installed.iat)) return { result: "current", error: null, answered: true };
-  const check = checkLicenseKey(answer.key, now);
+  const check = await checkLicenseKey(answer.key, now);
   if (!check.installable) {
     return { result: "failed", error: `the returned key was refused: ${check.error ?? "The license key is not valid"}`, answered: true };
   }

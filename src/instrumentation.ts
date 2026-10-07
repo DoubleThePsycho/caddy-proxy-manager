@@ -550,6 +550,22 @@ const SERVER_JOBS: readonly BackgroundJob[] = [
     },
   },
 
+  // Online license check (ee/licensing/online-check.ts): confirms an online
+  // key (bought online) with the license server once a day. Does nothing
+  // with an offline key or without a key, and never on a slave.
+  {
+    name: "online license check",
+    skipInTests: true,
+    start: async () => {
+      const { startOnlineLicenseCheckScheduler } = await import("../ee/licensing/online-check-scheduler");
+      startOnlineLicenseCheckScheduler();
+    },
+    stop: async () => {
+      const { stopOnlineLicenseCheckScheduler } = await import("../ee/licensing/online-check-scheduler");
+      stopOnlineLicenseCheckScheduler();
+    },
+  },
+
   // High availability shared state (ee/high-availability/shared-state): the
   // leader writes the API balances and credits the nodes counted in Redis or
   // Valkey back to the ledger. Does nothing while shared state is off.

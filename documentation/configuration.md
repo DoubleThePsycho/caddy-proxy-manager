@@ -58,8 +58,8 @@ The web container is configured with environment variables. Copy `.env.example` 
 | `USAGE_PING_ENABLED` | `true` answers yes to the anonymous [usage ping](usage-ping.md) question at start-up, for installs nobody signs in to; never overrides an answer already given | (unset) | No |
 | `USAGE_PING_DISABLED` | `true` turns the anonymous [usage ping](usage-ping.md) off entirely and hides its question | `false` | No |
 | `USAGE_PING_URL` | Endpoint of the usage ping (https only) | `https://ping.ingres.si/v1/ping` | No |
-| `LICENSE_AUTO_UPDATE_DISABLED` | `true` forbids automatic license updates: the license server is never contacted and the setting cannot be turned on | `false` | No |
-| `LICENSE_SERVER_URL` | License server for automatic license updates (https only) | `https://license.ingres.si` | No |
+| `LICENSE_AUTO_UPDATE_DISABLED` | `true` forbids automatic license updates: renewed keys are never fetched and the setting cannot be turned on. It does not stop the daily confirmation of a key bought online; installs that must not call out use an offline key | `false` | No |
+| `LICENSE_SERVER_URL` | License server for the daily confirmation of keys bought online and for automatic license updates (https only) | `https://license.ingres.si` | No |
 
 With the stock `docker-compose.yml`, the web container only receives the variables listed in the `web` service's `environment`; a value in `.env` for any other variable in this table has no effect until you add it there (for example `INSTANCE_MODE: ${INSTANCE_MODE:-}`; an empty value leaves the mode to the Instance sync page). Give numeric variables their documented default rather than an empty one, e.g. `LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}`: an empty value is read as 0.
 

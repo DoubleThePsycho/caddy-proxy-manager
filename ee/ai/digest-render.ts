@@ -65,6 +65,10 @@ function licenseLine(license: DigestFacts["license"]): string {
       return `${edition} expired on ${license.expiresAt ? day(license.expiresAt) : "?"}; configured paid features keep working but can no longer be changed.`;
     case "invalid":
       return "The installed license key is not valid.";
+    case "revoked":
+      return `${edition} was revoked by the license server; configured paid features keep working but can no longer be changed.`;
+    case "unconfirmed":
+      return `${edition} could not be confirmed with the license server; paid settings are read-only until it is.`;
   }
 }
 

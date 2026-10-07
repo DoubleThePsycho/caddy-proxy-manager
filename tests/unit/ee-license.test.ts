@@ -64,8 +64,12 @@ describe('verifyLicenseKey', () => {
   });
 
   it('asks for a newer version when the payload version is unknown', () => {
-    const token = signLicense(signer, licensePayload(signer, { v: 2 }));
+    const token = signLicense(signer, licensePayload(signer, { v: 3 }));
     expect(() => verifyLicenseKey(token, signer.keys)).toThrow(/newer version/);
+  });
+
+  it('accepts an online key (payload v2) with the same fields', () => {
+    expect(verifyLicenseKey(signLicense(signer, licensePayload(signer, { v: 2 })), signer.keys)).toMatchObject({ v: 2, id: 'LIC-TEST' });
   });
 });
 

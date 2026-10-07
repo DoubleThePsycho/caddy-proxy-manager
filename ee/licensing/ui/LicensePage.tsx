@@ -2,9 +2,8 @@
 import { requirePermission } from "@/src/lib/auth";
 import { can } from "@/src/lib/permissions";
 import { APP_VERSION } from "@/src/lib/app-version";
-import { countManagedNodes, getLicenseState } from "@/ee/licensing/store";
 import { getFeatureUsage } from "@/ee/licensing/usage";
-import { toLicenseView } from "@/ee/licensing/view";
+import { getLicenseView } from "@/ee/licensing/online-check";
 import { getLicenseAutoUpdateView } from "@/ee/licensing/auto-update";
 import LicenseClient from "./LicenseClient";
 
@@ -12,15 +11,10 @@ export const metadata = { title: "License" };
 
 export default async function LicensePage() {
   const { access } = await requirePermission("license:read");
-  const [state, nodes, usage, autoUpdate] = await Promise.all([
-    getLicenseState(),
-    countManagedNodes(),
-    getFeatureUsage(access),
-    getLicenseAutoUpdateView(),
-  ]);
+  const [license, usage, autoUpdate] = await Promise.all([getLicenseView(), getFeatureUsage(access), getLicenseAutoUpdateView()]);
   return (
     <LicenseClient
-      license={toLicenseView(state, nodes)}
+      license={license}
       usage={usage}
       version={APP_VERSION}
       canWrite={can(access, "license:write")}

@@ -45,7 +45,7 @@ An API token can also carry **scopes**: a list of permissions from the catalogue
 | `sso` | read, write | OAuth/OIDC providers, SAML providers (`/api/v1/saml-providers`) and enforced SSO. `write` is administrator-level. |
 | `mfa_policy` | read, write | The MFA policy. |
 | `ldap` | read, write | LDAP / Active Directory directories for dashboard sign-in, their group-to-role mapping, testing them. `write` is administrator-level. |
-| `license` | read, write | The license key and its automatic updates from the license server. |
+| `license` | read, write | The license key, its confirmation with the license server and its automatic updates. |
 | `compliance` | read, write | Compliance reports, report schedules (evidence packs), the live control status, recorded test restores and the incident register with NIS2 notification drafts: `read` lists, views, downloads and prints them; `write` generates reports, sets up, changes, runs and deletes schedules (including which saved analytics questions they re-run), records and deletes test restores, records, classifies, edits and AI-drafts incidents, and deletes reports and incidents. Reports list every user, API token name and host, so grant `compliance:read` like `users:read` and `audit_log:read` together. Every host. |
 | `scim` | read, write | SCIM provisioning: settings, SCIM tokens, group-to-role mappings, which users and groups SCIM manages. `write` is administrator-level: its tokens create users and its mappings grant roles. |
 | `access_reviews` | read, write | Access review campaigns and schedules, their records and the evidence for their items (sign-ins, last changes, last use). `write` (start, schedule, complete, cancel, delete) is administrator-level: a campaign's reviewers can take access away from every user. Reviewers need no permission to decide the items of a campaign that names them, or to read their evidence. |
@@ -543,6 +543,7 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/api/v1/license/auto-update/check/route.ts` | `POST` | `license:write` |
 | `app/api/v1/license/auto-update/route.ts` | `GET` | `license:read` |
 | `app/api/v1/license/auto-update/route.ts` | `PUT` | `license:write` |
+| `app/api/v1/license/check/route.ts` | `POST` | `license:write` |
 | `app/api/v1/license/route.ts` | `GET` | `license:read` |
 | `app/api/v1/license/route.ts` | `PUT` | `license:write` |
 | `app/api/v1/license/route.ts` | `DELETE` | `license:write` |
@@ -709,6 +710,7 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `ee/licensing/ui/actions.ts` | `removeLicenseAction` | `license:write` |
 | `ee/licensing/ui/actions.ts` | `setLicenseAutoUpdateAction` | `license:write` |
 | `ee/licensing/ui/actions.ts` | `checkLicenseServerNowAction` | `license:write` |
+| `ee/licensing/ui/actions.ts` | `checkLicenseNowAction` | `license:write` |
 | `ee/sso/ui/actions.ts` | `saveSsoEnforcementAction` | `sso:write` |
 | `ee/white-label/ui/actions.ts` | `saveBrandingAction` | `branding:write` |
 | `ee/white-label/ui/actions.ts` | `uploadBrandingAssetAction` | `branding:write` |

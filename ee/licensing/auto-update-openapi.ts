@@ -110,7 +110,7 @@ export const LICENSE_AUTO_UPDATE_OPENAPI_SCHEMAS = {
         enum: ["updated", "current", "failed", "revoked", null],
         description:
           "updated: a newer key was installed; current: the installed key is the newest; failed: see lastError; revoked: the " +
-          "license server says the license was revoked (the installed key keeps working until it expires)",
+          "license server says the license was revoked",
       },
       lastError: { type: ["string", "null"] },
       lastUpdatedAt: { ...nullableDate, description: "The last time a newer key was installed" },

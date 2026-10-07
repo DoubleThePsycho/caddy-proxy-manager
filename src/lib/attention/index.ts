@@ -14,6 +14,7 @@ import { accessReviewsAttentionProvider, myReviewsAttentionProvider } from "@/ee
 import { fleetAttentionProvider } from "@/ee/fleet/attention";
 import { backupsAttentionProvider } from "@/ee/backups/attention";
 import { monetizationAttentionProvider } from "@/ee/monetization/attention";
+import { licenseAttentionProvider } from "@/ee/licensing/attention";
 
 for (const provider of [
   certificatesProvider,
@@ -28,6 +29,7 @@ for (const provider of [
   fleetAttentionProvider,
   backupsAttentionProvider,
   monetizationAttentionProvider,
+  licenseAttentionProvider,
 ]) {
   registerAttentionProvider(provider);
 }

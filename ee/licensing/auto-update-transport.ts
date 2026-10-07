@@ -17,9 +17,11 @@ export type CurrentLicenseResult =
   | { kind: "revoked" }
   | { kind: "error"; error: string };
 
-class TooLarge extends Error {}
+/** Raised by readLimitedBody for an answer over MAX_LICENSE_RESPONSE_BYTES. */
+export class TooLarge extends Error {}
 
-async function readLimited(response: Response): Promise<string> {
+/** The body as text, up to MAX_LICENSE_RESPONSE_BYTES (a missing or false Content-Length does not get around it). */
+export async function readLimitedBody(response: Response): Promise<string> {
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_LICENSE_RESPONSE_BYTES) {
     await response.body?.cancel().catch(() => undefined);
@@ -42,7 +44,7 @@ async function readLimited(response: Response): Promise<string> {
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
-async function discard(response: Response): Promise<void> {
+export async function discardBody(response: Response): Promise<void> {
   await response.body?.cancel().catch(() => undefined);
 }
 
@@ -70,29 +72,29 @@ export async function fetchCurrentLicenseKey(
   }
 
   if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
-    await discard(response);
+    await discardBody(response);
     return { kind: "error", error: "the license server answered with a redirect, which is not followed" };
   }
   if (response.status === 401 || response.status === 403) {
-    await discard(response);
+    await discardBody(response);
     return { kind: "unauthorized" };
   }
   if (response.status === 410) {
-    await discard(response);
+    await discardBody(response);
     return { kind: "revoked" };
   }
   if (response.status === 429) {
-    await discard(response);
+    await discardBody(response);
     return { kind: "error", error: "the license server is limiting requests (HTTP 429)" };
   }
   if (response.status !== 200) {
-    await discard(response);
+    await discardBody(response);
     return { kind: "error", error: `the license server answered HTTP ${response.status}` };
   }
 
   let text: string;
   try {
-    text = await readLimited(response);
+    text = await readLimitedBody(response);
   } catch (error) {
     if (error instanceof TooLarge) return { kind: "error", error: "the license server's answer is too large" };
     const name = error instanceof Error ? error.name : "";

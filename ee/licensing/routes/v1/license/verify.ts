@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   try {
     await requireApiPermission(request, "license:write");
     const key = await readLicenseKeyBody(request);
-    const { state, installable, error } = checkLicenseKey(key);
+    const { state, installable, error } = await checkLicenseKey(key);
     return NextResponse.json(toLicenseKeyCheck(state, installable, error), { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return apiErrorResponse(error);

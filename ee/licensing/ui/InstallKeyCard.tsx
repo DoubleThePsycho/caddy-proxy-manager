@@ -84,7 +84,26 @@ export function describeCheck(
       `This dashboard manages ${plural(context.nodesUsed, "node", "nodes")}; the key covers ${check.nodes}. Nothing is blocked; the difference is invoiced at renewal.`
     );
   }
+  if (check.online) {
+    notes.push("Bought online: confirmed with the license server once a day.");
+  }
   const replaces = context.hasLicense ? "Installing it replaces the current key at once." : "Installing it unlocks its paid features at once.";
+  if (check.status === "revoked") {
+    return {
+      tone: "bad",
+      title: "The license server reports this license as revoked",
+      body: `${summary}. Installed, its paid settings stay read-only. Questions: sales@ingres.si.`,
+      notes,
+    };
+  }
+  if (check.status === "unconfirmed") {
+    return {
+      tone: "warn",
+      title: `Signature verified${check.keyId ? ` with public key ${check.keyId}` : ""}, but the license is not confirmed`,
+      body: `${summary}. This install has not had a confirmation from the license server for it; paid settings stay read-only until it does. ${replaces}`,
+      notes,
+    };
+  }
   if (check.status === "grace" && check.graceEndsAt) {
     return {
       tone: "warn",

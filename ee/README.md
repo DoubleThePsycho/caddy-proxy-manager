@@ -13,7 +13,7 @@ All paid functionality lives here. Next.js only finds pages and API routes under
 
 ## License keys
 
-Keys are Ed25519-signed JSON verified offline (`licensing/license.ts`), so air-gapped installs work. Trusted public keys live in `licensing/public-keys.ts`.
+Keys are Ed25519-signed JSON verified on the install (`licensing/license.ts`). Keys bought online (payload `v: 2`) are also confirmed with the license server once a day (`licensing/online-check.ts`); air-gapped installs use an offline key (`v: 1`), issued on request. Trusted public keys live in `licensing/public-keys.ts`.
 
 ```bash
 # once per signing key; the private key stays outside the repository

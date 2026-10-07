@@ -38,7 +38,7 @@ export function describeLastResult(view: Pick<LicenseAutoUpdateView, "lastResult
     case "current":
       return "The installed key is the newest";
     case "revoked":
-      return "The license server says this license was revoked; the installed key keeps working until it expires";
+      return "The license server says this license was revoked";
     case "failed":
       return `Failed: ${view.lastError ?? "no answer"}`;
     default:

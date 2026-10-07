@@ -1,14 +1,33 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * Offline license keys: a JSON payload signed with Ed25519.
+ * License keys: a JSON payload signed with Ed25519.
  *
  *   v1.<base64url(payload JSON)>.<base64url(signature)>
  *
  * The signature covers "ingressi-license:v1.<payload part>", so a signature
- * made for anything else cannot be replayed as a license. Verification needs
- * no network access, which keeps air-gapped installs working.
+ * made for anything else cannot be replayed as a license. Verifying a key
+ * needs no network access.
  *
- * This module is pure: callers pass the trusted keys and the current time.
+ * The payload's `v` says how the key is checked:
+ * - 1: an offline key. Checked on this server only; air-gapped installs and
+ *   trials use these.
+ * - 2: an online key (bought online). Same fields; this install must also
+ *   hold a current confirmation from the license server, a status statement
+ *   (below) asked for once a day. Releases before 2.0.1 refuse v2 keys
+ *   ("needs a newer version"), so an older release cannot skip the check.
+ *
+ * Status statements, from POST /v1/licenses/{id}/status on the license
+ * server:
+ *
+ *   s1.<base64url(payload JSON)>.<base64url(signature)>
+ *
+ * signed over "ingressi-license-status:s1.<payload part>" (its own context:
+ * a statement can never pass as a key, nor a key as a statement) by a
+ * trusted key. The payload is {v: 1, kid, id, status: "active" | "revoked",
+ * iat, exp}.
+ *
+ * This module is pure: callers pass the trusted keys, the stored statements
+ * and the current time.
  */
 import { createPublicKey, verify, type KeyObject } from "node:crypto";
 import {
@@ -22,12 +41,19 @@ import {
 export const LICENSE_VERSION = "v1";
 const SIGNING_CONTEXT = "ingressi-license:";
 export const GRACE_PERIOD_DAYS = 30;
+export const STATEMENT_VERSION = "s1";
+const STATEMENT_CONTEXT = "ingressi-license-status:";
+/** A statement may cover at most this long (the server issues 14 days). */
+export const STATEMENT_MAX_VALIDITY_DAYS = 31;
+/** An online key works this long after this install first saw it, before any confirmation. */
+export const FIRST_CHECK_ALLOWANCE_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_TOKEN_LENGTH = 8192;
 const MAX_TEXT_LENGTH = 200;
 
 export type LicensePayload = {
-  v: 1;
+  /** 1: offline key; 2: online key, confirmed daily with the license server. */
+  v: 1 | 2;
   /** Id of the signing key, so keys can be rotated. */
   kid: string;
   /** License id, quoted in invoices and support. */
@@ -45,7 +71,27 @@ export type LicensePayload = {
   exp: string;
 };
 
-export type LicenseStatus = "unlicensed" | "active" | "grace" | "expired" | "invalid";
+/**
+ * revoked: the license server says the license was revoked (a refund or a
+ * chargeback). unconfirmed: an online key without a current confirmation
+ * from the license server. Both leave paid settings read-only at once.
+ */
+export type LicenseStatus = "unlicensed" | "active" | "grace" | "expired" | "invalid" | "revoked" | "unconfirmed";
+
+/**
+ * Where an online key stands with the license server. confirmed: a current
+ * confirmation; pending: none yet, within the first days after this install
+ * first saw the license; unconfirmed: neither; revoked: the server says so.
+ */
+export type OnlineCheckStatus = "confirmed" | "pending" | "unconfirmed" | "revoked";
+
+export type OnlineCheckState = {
+  state: OnlineCheckStatus;
+  /** When the license server last confirmed the license (the statement's iat). */
+  confirmedAt: string | null;
+  /** Until when paid settings stay editable without a newer confirmation (statement exp, or end of the first days). */
+  validUntil: string | null;
+};
 
 export type LicenseState = {
   status: LicenseStatus;
@@ -56,6 +102,28 @@ export type LicenseState = {
   graceEndsAt: string | null;
   /** Why an installed key is not valid; safe to show to administrators. */
   error: string | null;
+  /** Online keys only (v2); null for offline keys and without a key. */
+  onlineCheck: OnlineCheckState | null;
+};
+
+/**
+ * What this install has stored about online keys, by license id: the
+ * latest status statement from the license server, and when the license
+ * was first seen here.
+ */
+export type LicenseCheckInput = {
+  statements?: Readonly<Record<string, string>>;
+  firstSeen?: Readonly<Record<string, string>>;
+};
+
+export type LicenseStatement = {
+  v: 1;
+  kid: string;
+  /** License id. */
+  id: string;
+  status: "active" | "revoked";
+  iat: string;
+  exp: string;
 };
 
 /** Raised for keys that fail to parse or verify; the message is safe to show. */
@@ -63,6 +131,14 @@ export class LicenseKeyError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "LicenseKeyError";
+  }
+}
+
+/** Raised for status statements that fail to parse or verify. */
+export class LicenseStatementError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LicenseStatementError";
   }
 }
 
@@ -75,6 +151,10 @@ export function ed25519PublicKey(rawBase64Url: string): KeyObject {
 
 export function signingInput(payloadPart: string): Buffer {
   return Buffer.from(`${SIGNING_CONTEXT}${LICENSE_VERSION}.${payloadPart}`, "utf8");
+}
+
+export function statementSigningInput(payloadPart: string): Buffer {
+  return Buffer.from(`${STATEMENT_CONTEXT}${STATEMENT_VERSION}.${payloadPart}`, "utf8");
 }
 
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
@@ -98,7 +178,7 @@ export function parseLicensePayload(raw: unknown): LicensePayload {
     if (!allowed.has(key)) throw new LicenseKeyError("The license key is not valid");
   }
   const { v, kid, id, customer, email, edition, nodes, features, trial, iat, exp } = record;
-  if (v !== 1) throw new LicenseKeyError("This license key needs a newer version of Ingressi");
+  if (v !== 1 && v !== 2) throw new LicenseKeyError("This license key needs a newer version of Ingressi");
   if (!isShortText(kid, 64) || !isShortText(id, 64) || !isShortText(customer)) {
     throw new LicenseKeyError("The license key is not valid");
   }
@@ -117,7 +197,7 @@ export function parseLicensePayload(raw: unknown): LicensePayload {
     throw new LicenseKeyError("The license key is not valid");
   }
   return {
-    v: 1,
+    v,
     kid,
     id,
     customer,
@@ -165,29 +245,138 @@ export function licenseFeatures(payload: LicensePayload): Feature[] {
   return [...new Set([...EDITION_FEATURES[payload.edition], ...(payload.features ?? [])])];
 }
 
+/** The key must be confirmed with the license server (an online key). */
+export function requiresOnlineCheck(payload: LicensePayload): boolean {
+  return payload.v === 2;
+}
+
 export function graceEnd(payload: LicensePayload): Date {
   return new Date(Date.parse(payload.exp) + GRACE_PERIOD_DAYS * DAY_MS);
 }
 
-const UNLICENSED: LicenseState = { status: "unlicensed", license: null, features: [], graceEndsAt: null, error: null };
+/** Validates a statement payload field by field; unknown fields are rejected. */
+export function parseLicenseStatementPayload(raw: unknown): LicenseStatement {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new LicenseStatementError("The status statement is not valid");
+  }
+  const allowed = new Set(["v", "kid", "id", "status", "iat", "exp"]);
+  const record = raw as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (!allowed.has(key)) throw new LicenseStatementError("The status statement is not valid");
+  }
+  const { v, kid, id, status, iat, exp } = record;
+  if (v !== 1) throw new LicenseStatementError("The status statement needs a newer version of Ingressi");
+  if (!isShortText(kid, 64) || !isShortText(id, 64)) throw new LicenseStatementError("The status statement is not valid");
+  if (status !== "active" && status !== "revoked") throw new LicenseStatementError("The status statement is not valid");
+  if (!isIsoInstant(iat) || !isIsoInstant(exp)) throw new LicenseStatementError("The status statement is not valid");
+  const from = Date.parse(iat);
+  const to = Date.parse(exp);
+  if (to <= from || to - from > STATEMENT_MAX_VALIDITY_DAYS * DAY_MS) {
+    throw new LicenseStatementError("The status statement is not valid");
+  }
+  return { v: 1, kid, id, status, iat, exp };
+}
+
+/**
+ * Parses a status statement and checks its signature and issue time (at
+ * most a day ahead of `now`, for clock skew). Does not look at the license
+ * id or the expiry: evaluateLicense does.
+ */
+export function verifyLicenseStatement(token: string, keys: TrustedKeys, now: Date): LicenseStatement {
+  const trimmed = typeof token === "string" ? token.trim() : "";
+  if (trimmed.length === 0 || trimmed.length > MAX_TOKEN_LENGTH) {
+    throw new LicenseStatementError("The status statement is not valid");
+  }
+  const parts = trimmed.split(".");
+  if (parts.length !== 3 || parts[0] !== STATEMENT_VERSION) {
+    throw new LicenseStatementError("The status statement is not valid");
+  }
+  const [, payloadPart, signaturePart] = parts;
+  if (!BASE64URL.test(payloadPart) || !BASE64URL.test(signaturePart)) {
+    throw new LicenseStatementError("The status statement is not valid");
+  }
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(Buffer.from(payloadPart, "base64url").toString("utf8"));
+  } catch {
+    throw new LicenseStatementError("The status statement is not valid");
+  }
+  const statement = parseLicenseStatementPayload(decoded);
+  const key = keys.get(statement.kid);
+  if (!key) throw new LicenseStatementError("The status statement was signed by an unknown key");
+  const signature = Buffer.from(signaturePart, "base64url");
+  if (signature.length !== 64 || !verify(null, statementSigningInput(payloadPart), key, signature)) {
+    throw new LicenseStatementError("The status statement's signature does not match");
+  }
+  if (Date.parse(statement.iat) > now.getTime() + DAY_MS) {
+    throw new LicenseStatementError("The status statement is dated in the future");
+  }
+  return statement;
+}
+
+/** The statement for `licenseId` when it verifies; null for anything else (never throws). */
+export function validStatementFor(token: string | null | undefined, licenseId: string, keys: TrustedKeys, now: Date): LicenseStatement | null {
+  if (!token) return null;
+  try {
+    const statement = verifyLicenseStatement(token, keys, now);
+    return statement.id === licenseId ? statement : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Where an online key stands at `now`: the latest statement decides
+ * (revoked stays revoked whatever its expiry, until a newer active one);
+ * an active one counts until its expiry; without one, the key works for
+ * FIRST_CHECK_ALLOWANCE_DAYS after this install first saw the license (a
+ * key never seen counts as seen now).
+ */
+export function evaluateOnlineCheck(
+  payload: LicensePayload,
+  keys: TrustedKeys,
+  now: Date,
+  check: LicenseCheckInput = {}
+): OnlineCheckState {
+  const statement = validStatementFor(check.statements?.[payload.id], payload.id, keys, now);
+  if (statement?.status === "revoked") {
+    return { state: "revoked", confirmedAt: null, validUntil: null };
+  }
+  const nowMs = now.getTime();
+  if (statement && nowMs <= Date.parse(statement.exp)) {
+    return { state: "confirmed", confirmedAt: statement.iat, validUntil: statement.exp };
+  }
+  const seenRaw = check.firstSeen?.[payload.id];
+  const seen = typeof seenRaw === "string" && !Number.isNaN(Date.parse(seenRaw)) ? Math.min(Date.parse(seenRaw), nowMs) : nowMs;
+  const allowanceEnd = seen + FIRST_CHECK_ALLOWANCE_DAYS * DAY_MS;
+  const confirmedAt = statement?.iat ?? null;
+  if (!statement && nowMs < allowanceEnd) {
+    return { state: "pending", confirmedAt: null, validUntil: new Date(allowanceEnd).toISOString() };
+  }
+  return { state: "unconfirmed", confirmedAt, validUntil: statement?.exp ?? new Date(allowanceEnd).toISOString() };
+}
+
+const UNLICENSED: LicenseState = { status: "unlicensed", license: null, features: [], graceEndsAt: null, error: null, onlineCheck: null };
 
 /**
  * The state of an installed key at `now`. An expired license keeps its
  * features during the grace period; after it, they stay visible but can no
- * longer be changed (see `canConfigure`).
+ * longer be changed (see `canConfigure`). An online key (v2) also needs a
+ * current confirmation from the license server (`check`): without one, or
+ * when it says the license was revoked, paid settings are read-only at once.
  */
-export function evaluateLicense(token: string | null, keys: TrustedKeys, now: Date): LicenseState {
+export function evaluateLicense(token: string | null, keys: TrustedKeys, now: Date, check?: LicenseCheckInput): LicenseState {
   if (!token) return UNLICENSED;
   let payload: LicensePayload;
   try {
     payload = verifyLicenseKey(token, keys);
   } catch (error) {
     const message = error instanceof LicenseKeyError ? error.message : "The license key is not valid";
-    return { status: "invalid", license: null, features: [], graceEndsAt: null, error: message };
+    return { status: "invalid", license: null, features: [], graceEndsAt: null, error: message, onlineCheck: null };
   }
   const grace = graceEnd(payload);
   const nowMs = now.getTime();
-  const status: LicenseStatus =
+  const dated: LicenseStatus =
     nowMs < Date.parse(payload.iat) - DAY_MS
       ? "invalid"
       : nowMs <= Date.parse(payload.exp)
@@ -195,10 +384,24 @@ export function evaluateLicense(token: string | null, keys: TrustedKeys, now: Da
         : nowMs <= grace.getTime()
           ? "grace"
           : "expired";
-  if (status === "invalid") {
-    return { status, license: null, features: [], graceEndsAt: null, error: "The license key is not valid yet" };
+  if (dated === "invalid") {
+    return { status: dated, license: null, features: [], graceEndsAt: null, error: "The license key is not valid yet", onlineCheck: null };
   }
-  return { status, license: payload, features: licenseFeatures(payload), graceEndsAt: grace.toISOString(), error: null };
+  const onlineCheck = requiresOnlineCheck(payload) ? evaluateOnlineCheck(payload, keys, now, check) : null;
+  const status: LicenseStatus =
+    dated === "expired" || !onlineCheck
+      ? dated
+      : onlineCheck.state === "revoked"
+        ? "revoked"
+        : onlineCheck.state === "unconfirmed"
+          ? "unconfirmed"
+          : dated;
+  return { status, license: payload, features: licenseFeatures(payload), graceEndsAt: grace.toISOString(), error: null, onlineCheck };
+}
+
+/** A key that verifies is installed, whatever its dates or confirmation (not "unlicensed" or "invalid"). */
+export function hasVerifiedKey(state: Pick<LicenseState, "status">): boolean {
+  return state.status !== "unlicensed" && state.status !== "invalid";
 }
 
 /** Whether an administrator may set up or change a paid feature. */

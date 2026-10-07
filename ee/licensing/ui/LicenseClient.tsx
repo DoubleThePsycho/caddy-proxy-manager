@@ -3,22 +3,33 @@
 
 import { useEffect, useId, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ExternalLink } from "lucide-react";
+import { Check, ExternalLink, RefreshCw } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { BRAND_NAME, BRAND_WEBSITE, documentationUrl } from "@/src/lib/brand";
 import { formatAppVersion } from "@/src/lib/app-version";
+import { formatDateTimeUtc } from "@/src/lib/date-format";
 import type { Feature } from "@/ee/licensing/features";
 import type { FeatureUsage } from "@/ee/licensing/usage";
 import type { LicenseView } from "@/ee/licensing/view";
 import type { LicenseAutoUpdateView } from "@/ee/licensing/auto-update";
-import { removeLicenseAction } from "./actions";
+import { checkLicenseNowAction, removeLicenseAction } from "./actions";
 import { EditionMatrix } from "./EditionMatrix";
 import { InstallKeyCard } from "./InstallKeyCard";
 import { AutoUpdateCard } from "./AutoUpdateCard";
-import { GRACE_PERIOD_DAYS, daysUntil, featureRows, formatDay, formatDayRange, nextDay, plural, releaseLine } from "./license-format";
+import {
+  GRACE_PERIOD_DAYS,
+  daysUntil,
+  featureRows,
+  formatDay,
+  formatDayRange,
+  isVerifiedStatus,
+  nextDay,
+  plural,
+  releaseLine,
+} from "./license-format";
 
 export type LicenseClientProps = {
   license: LicenseView;
@@ -42,6 +53,8 @@ const STATUS: Record<LicenseView["status"], { label: string; tone: Tone }> = {
   grace: { label: "Grace period", tone: "warn" },
   expired: { label: "Expired", tone: "bad" },
   invalid: { label: "Invalid key", tone: "bad" },
+  revoked: { label: "Revoked", tone: "bad" },
+  unconfirmed: { label: "Not confirmed", tone: "bad" },
 };
 
 const PILL: Record<Tone, { box: string; dot: string }> = {
@@ -125,7 +138,118 @@ function DaysNote({ days, issuedAt }: { days: number; issuedAt: string | null })
   );
 }
 
-function CurrentLicenseCard({ license, now, canWrite }: { license: LicenseView; now: string; canWrite: boolean }) {
+/** The host of the license server URL, for the copy; license.ingres.si by default. */
+function serverHost(endpoint: string | null | undefined): string {
+  if (!endpoint) return "license.ingres.si";
+  try {
+    return new URL(endpoint).host;
+  } catch {
+    return endpoint;
+  }
+}
+
+/** An online key's confirmation with the license server: one line, or a banner when paid settings are (about to be) read-only. */
+function OnlineCheckStatus({ license, canWrite, host }: { license: LicenseView; canWrite: boolean; host: string }) {
+  const router = useRouter();
+  const [message, setMessage] = useState<{ tone: "ok" | "bad"; text: string } | null>(null);
+  const [pending, startTransition] = useTransition();
+  const check = license.onlineCheck;
+  if (!check.required || !check.state) return null;
+
+  function checkNow() {
+    setMessage(null);
+    startTransition(async () => {
+      const result = await checkLicenseNowAction();
+      if (!result.ok) {
+        setMessage({ tone: "bad", text: result.error });
+        return;
+      }
+      const next = result.view.onlineCheck;
+      setMessage(
+        next.lastError
+          ? { tone: "bad", text: `No confirmation: ${next.lastError}.` }
+          : { tone: "ok", text: next.state === "revoked" ? "The license server reports this license as revoked." : "Confirmed." }
+      );
+      router.refresh();
+    });
+  }
+
+  const failure = check.lastError ? ` Last attempt${check.lastAttemptAt ? ` ${formatDateTimeUtc(check.lastAttemptAt)}` : ""}: ${check.lastError}.` : "";
+  const action = canWrite && (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <Button type="button" variant="outline" size="sm" onClick={checkNow} disabled={pending}>
+        <RefreshCw aria-hidden="true" />
+        {pending ? "Checking…" : "Check now"}
+      </Button>
+      <span role="status" aria-live="polite" className="text-[13px]">
+        {message && <span className={cn("font-medium", message.tone === "ok" ? "text-ok" : "text-bad")}>{message.text}</span>}
+      </span>
+    </div>
+  );
+
+  if (check.state === "revoked") {
+    return (
+      <Banner tone="bad" title="The license server reports this license as revoked, after a refund or a chargeback.">
+        <span className="flex flex-col gap-2.5">
+          <span>Paid features already set up keep running; their settings are read-only. Questions: sales@ingres.si.</span>
+          {action}
+        </span>
+      </Banner>
+    );
+  }
+  if (check.state === "unconfirmed") {
+    return (
+      <Banner
+        tone="bad"
+        title={`Ingressi could not confirm this license with ${host}${check.confirmedAt ? ` since ${formatDay(check.confirmedAt)}` : ""}.`}
+      >
+        <span className="flex flex-col gap-2.5">
+          <span>
+            Paid settings are read-only until it can. Allow outbound HTTPS to {host}, or ask sales@ingres.si for an offline key.{failure}
+          </span>
+          {action}
+        </span>
+      </Banner>
+    );
+  }
+  if (check.state === "pending") {
+    return (
+      <Banner tone="warn" title={`Not confirmed with ${host} yet.`}>
+        <span className="flex flex-col gap-2.5">
+          <span>
+            Paid settings stay editable until {check.validUntil ? formatDay(check.validUntil) : "the seventh day"}. Allow outbound HTTPS to {host}.
+            {failure}
+          </span>
+          {action}
+        </span>
+      </Banner>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="m-0 text-[13px] text-muted-foreground">
+        Confirmed with {host}
+        {check.confirmedAt ? ` on ${formatDateTimeUtc(check.confirmedAt)}` : ""}.
+        {check.lastError && check.validUntil
+          ? ` The last attempt failed (${check.lastError}); paid settings stay editable until ${formatDay(check.validUntil)}.`
+          : ""}
+      </p>
+      {action}
+    </div>
+  );
+}
+
+function CurrentLicenseCard({
+  license,
+  now,
+  canWrite,
+  host,
+}: {
+  license: LicenseView;
+  now: string;
+  canWrite: boolean;
+  host: string;
+}) {
   const router = useRouter();
   const headingId = useId();
   const confirmTitleId = useId();
@@ -134,7 +258,7 @@ function CurrentLicenseCard({ license, now, canWrite }: { license: LicenseView; 
   const [pending, startTransition] = useTransition();
   const cancelRef = useRef<HTMLButtonElement>(null);
   const removeRef = useRef<HTMLButtonElement>(null);
-  const valid = license.status === "active" || license.status === "grace" || license.status === "expired";
+  const valid = isVerifiedStatus(license.status);
   const hasKey = license.status !== "unlicensed";
 
   useEffect(() => {
@@ -172,7 +296,7 @@ function CurrentLicenseCard({ license, now, canWrite }: { license: LicenseView; 
         {valid && (
           <span className="inline-flex h-6 items-center gap-1.5 rounded-full border border-line2 px-2.5 text-xs text-muted-foreground">
             <Check aria-hidden="true" className="h-3 w-3" />
-            Verified offline
+            {license.onlineCheck.required ? "Online key" : "Verified offline"}
           </span>
         )}
         {license.trial && (
@@ -206,6 +330,8 @@ function CurrentLicenseCard({ license, now, canWrite }: { license: LicenseView; 
           </span>
         )}
       </div>
+
+      <OnlineCheckStatus license={license} canWrite={canWrite} host={host} />
 
       {license.status === "invalid" && license.error && (
         <Banner tone="bad" title={license.error}>
@@ -342,7 +468,7 @@ export type LicensePhase = { when: string; text: string; tone: "ok" | "warn" | "
 export function licenseEndPhases(license: LicenseView): LicensePhase[] {
   const status = license.status;
   const dates =
-    license.expiresAt && license.graceEndsAt && (status === "active" || status === "grace" || status === "expired")
+    license.expiresAt && license.graceEndsAt && isVerifiedStatus(status)
       ? { expires: license.expiresAt, graceEnds: license.graceEndsAt }
       : null;
   return [
@@ -420,7 +546,8 @@ export default function LicenseClient({
   const [now] = useState(() => nowProp ?? new Date().toISOString());
   const rows = useMemo(() => featureRows(license, usage), [license, usage]);
   const inUse = useMemo(() => rows.filter((row) => row.install === "use").map((row) => row.id), [rows]);
-  const valid = license.status === "active" || license.status === "grace" || license.status === "expired";
+  const valid = isVerifiedStatus(license.status);
+  const host = serverHost(autoUpdate?.endpoint);
   const ltsIncluded = license.features.some((feature) => feature.id === "air_gap" && feature.configurable);
 
   return (
@@ -440,7 +567,7 @@ export default function LicenseClient({
       />
 
       <div className="flex flex-wrap items-start gap-5">
-        <CurrentLicenseCard license={license} now={now} canWrite={canWrite} />
+        <CurrentLicenseCard license={license} now={now} canWrite={canWrite} host={host} />
         {canWrite ? (
           <InstallKeyCard hasLicense={license.status !== "unlicensed"} nodesUsed={license.nodes.used} inUse={inUse} />
         ) : (

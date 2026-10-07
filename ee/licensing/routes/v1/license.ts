@@ -3,21 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { ApiValidationError } from "@/src/lib/api-errors";
 import { logAuditEvent } from "@/src/lib/audit";
-import {
-  countManagedNodes,
-  getLicenseState,
-  installLicenseKey,
-  removeLicenseKey,
-} from "@/ee/licensing/store";
-import { toLicenseView } from "@/ee/licensing/view";
+import { getLicenseState, installLicenseKey, removeLicenseKey } from "@/ee/licensing/store";
+import { afterLicenseInstalled, getLicenseView } from "@/ee/licensing/online-check";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
 export async function GET(request: NextRequest) {
   try {
     await requireApiPermission(request, "license:read");
-    const [state, nodes] = await Promise.all([getLicenseState(), countManagedNodes()]);
-    return NextResponse.json(toLicenseView(state, nodes), { headers: NO_STORE });
+    return NextResponse.json(await getLicenseView(), { headers: NO_STORE });
   } catch (error) {
     return apiErrorResponse(error);
   }
@@ -44,7 +38,8 @@ export async function PUT(request: NextRequest) {
       summary: `Installed ${state.license?.edition} license ${state.license?.id} for ${state.license?.customer}`,
       data: { licenseId: state.license?.id, edition: state.license?.edition, expiresAt: state.license?.exp },
     });
-    return NextResponse.json(toLicenseView(state, await countManagedNodes()), { headers: NO_STORE });
+    await afterLicenseInstalled(state, { actorUserId: userId });
+    return NextResponse.json(await getLicenseView(), { headers: NO_STORE });
   } catch (error) {
     return apiErrorResponse(error);
   }

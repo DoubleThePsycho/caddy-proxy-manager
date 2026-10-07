@@ -305,7 +305,7 @@ describe('the check', () => {
     expect((await readLicenseAutoUpdateState()).lastError).toBe('the license server did not accept the refresh token');
     expect(await check(server({ status: 410 }))).toBe('revoked');
     expect(await getLicenseAutoUpdateView(new Date('2026-10-05T12:00:00.000Z'))).toMatchObject({
-      status: 'on', lastResult: 'revoked', lastError: expect.stringContaining('keeps working until it expires'),
+      status: 'on', lastResult: 'revoked', lastError: 'the license server says this license was revoked',
     });
     expect(await check(server({ status: 503 }))).toBe('failed');
     expect((await readLicenseAutoUpdateState()).lastError).toBe('the license server answered HTTP 503');

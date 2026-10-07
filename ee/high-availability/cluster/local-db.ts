@@ -8,13 +8,15 @@
 import { Database } from "bun:sqlite";
 import { closeSync, existsSync, fsyncSync, openSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname } from "node:path";
-import { canConfigure, evaluateLicense } from "@/ee/licensing/license";
+import { canConfigure, evaluateLicense, type LicenseCheckInput } from "@/ee/licensing/license";
 import { getTrustedLicenseKeys } from "@/ee/licensing/public-keys";
 import { HIGH_AVAILABILITY_FEATURE } from "../types";
 import { databaseFiles, litestreamMetaPath } from "./litestream";
 
 /** The settings key the license is stored under (ee/licensing/store.ts). */
 const LICENSE_SETTING_KEY = "license";
+/** LICENSE_CHECK_SETTING_KEY of ee/licensing/online-check-state.ts (not imported: it pulls in the app database). */
+const LICENSE_CHECK_SETTING_KEY = "license_check";
 
 export interface LocalDatabase {
   /** A database file with content exists at `path`. */
@@ -41,6 +43,20 @@ function fsyncDirectory(path: string) {
   }
 }
 
+/** The online key's stored statements and first-seen times (evaluateLicense validates every entry itself). */
+function storedCheckInput(value: unknown): LicenseCheckInput {
+  try {
+    const parsed = typeof value === "string" ? (JSON.parse(value) as unknown) : null;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+    const record = parsed as { statements?: unknown; firstSeen?: unknown };
+    const map = (entry: unknown) =>
+      typeof entry === "object" && entry !== null && !Array.isArray(entry) ? (entry as Record<string, string>) : undefined;
+    return { statements: map(record.statements), firstSeen: map(record.firstSeen) };
+  } catch {
+    return {};
+  }
+}
+
 export const localDatabase: LocalDatabase = {
   exists(path) {
     try {
@@ -56,7 +72,13 @@ export const localDatabase: LocalDatabase = {
       db = new Database(path, { readonly: true });
       const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(LICENSE_SETTING_KEY) as { value?: unknown } | null;
       const key = typeof row?.value === "string" ? (JSON.parse(row.value) as unknown) : null;
-      const state = evaluateLicense(typeof key === "string" && key.length > 0 ? key : null, getTrustedLicenseKeys(), now);
+      const checkRow = db.prepare("SELECT value FROM settings WHERE key = ?").get(LICENSE_CHECK_SETTING_KEY) as { value?: unknown } | null;
+      const state = evaluateLicense(
+        typeof key === "string" && key.length > 0 ? key : null,
+        getTrustedLicenseKeys(),
+        now,
+        storedCheckInput(checkRow?.value)
+      );
       return canConfigure(state, HIGH_AVAILABILITY_FEATURE);
     } catch {
       return false;

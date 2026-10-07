@@ -7,7 +7,8 @@ import { ApiClientError } from "@/src/lib/api-errors";
 import { logAuditEvent } from "@/src/lib/audit";
 import { MAX_LICENSE_BODY_BYTES } from "@/ee/licensing/http";
 import { checkLicenseKey, getLicenseState, installLicenseKey, removeLicenseKey } from "@/ee/licensing/store";
-import { toLicenseKeyCheck, type LicenseKeyCheck } from "@/ee/licensing/view";
+import { toLicenseKeyCheck, type LicenseKeyCheck, type LicenseView } from "@/ee/licensing/view";
+import { afterLicenseInstalled, checkLicenseNow } from "@/ee/licensing/online-check";
 import {
   checkLicenseServerNow,
   parseLicenseAutoUpdateInput,
@@ -28,7 +29,7 @@ export async function verifyLicenseAction(key: string): Promise<{ ok: true; chec
   if (trimmed.length > MAX_LICENSE_BODY_BYTES) {
     return { error: "That is too long for a license key" };
   }
-  const { state, installable, error } = checkLicenseKey(trimmed);
+  const { state, installable, error } = await checkLicenseKey(trimmed);
   return { ok: true, check: toLicenseKeyCheck(state, installable, error) };
 }
 
@@ -47,6 +48,7 @@ export async function installLicenseAction(formData: FormData): Promise<{ ok: tr
       summary: `Installed ${state.license?.edition} license ${state.license?.id} for ${state.license?.customer}`,
       data: { licenseId: state.license?.id, edition: state.license?.edition, expiresAt: state.license?.exp },
     });
+    await afterLicenseInstalled(state, { actorUserId: Number(session.user.id) });
   } catch (error) {
     if (error instanceof ApiClientError) {
       return { error: error.message };
@@ -100,4 +102,19 @@ export async function setLicenseAutoUpdateAction(enabled: boolean, refreshToken?
 export async function checkLicenseServerNowAction(): Promise<LicenseAutoUpdateActionResult> {
   const session = await requirePermission("license:write");
   return settleAutoUpdate(() => checkLicenseServerNow(Number(session.user.id)));
+}
+
+export type LicenseCheckActionResult = { ok: true; view: LicenseView } | { ok: false; error: string };
+
+/** "Check now" on the License page: confirms the installed online key with the license server. */
+export async function checkLicenseNowAction(): Promise<LicenseCheckActionResult> {
+  const session = await requirePermission("license:write");
+  try {
+    const view = await checkLicenseNow(Number(session.user.id));
+    revalidatePath("/license");
+    return { ok: true, view };
+  } catch (error) {
+    if (error instanceof ApiClientError) return { ok: false, error: error.message };
+    throw error;
+  }
 }
