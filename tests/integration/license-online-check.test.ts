@@ -12,7 +12,14 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { eq } from 'drizzle-orm';
 import { createTestDb, type TestDb } from '../helpers/db';
 import * as schema from '../../src/lib/db/schema';
-import { createTestSigner, licensePayload, signLicense, signStatement, statementPayload } from '../helpers/license';
+import {
+  createTestSigner,
+  licensePayload,
+  signLicense,
+  signStatement,
+  statementPayload,
+  TEST_INSTALL_ID,
+} from '../helpers/license';
 
 const ctx = vi.hoisted(() => ({ db: null as unknown as TestDb, permissions: new Set<string>() }));
 
@@ -43,15 +50,17 @@ import { logAuditEvent } from '@/src/lib/audit';
 import { adminAccess } from '@/src/lib/permissions';
 import { setTrustedLicenseKeysForTests } from '@/ee/licensing/public-keys';
 import { getLicenseState, LICENSE_SETTING_KEY } from '@/ee/licensing/store';
-import { LICENSE_CHECK_SETTING_KEY, readLicenseCheck } from '@/ee/licensing/online-check-state';
-import { checkLicenseNow, getLicenseView, keyFingerprint, runOnlineLicenseCheck } from '@/ee/licensing/online-check';
+import { LICENSE_CHECK_SETTING_KEY, LICENSE_INSTALL_ID_SETTING_KEY, readLicenseCheck } from '@/ee/licensing/online-check-state';
+import { checkLicenseNow, deactivateLicenseHere, getLicenseView, keyFingerprint, runOnlineLicenseCheck } from '@/ee/licensing/online-check';
+import { installIdHash } from '@/ee/licensing/license';
 import { resetOnlineLicenseCheckSchedulerForTests, runOnlineLicenseCheckTick } from '@/ee/licensing/online-check-scheduler';
 import { licenseAttentionProvider } from '@/ee/licensing/attention';
 import { buildSyncPayload } from '@/src/lib/instance-sync';
 import { CONFIG_SETTING_KEYS } from '@/src/lib/config-content';
 import * as licenseRoute from '@/app/api/v1/license/route';
 import * as checkRoute from '@/app/api/v1/license/check/route';
-import { checkLicenseNowAction, installLicenseAction } from '@/ee/licensing/ui/actions';
+import * as deactivateRoute from '@/app/api/v1/license/deactivate/route';
+import { checkLicenseNowAction, deactivateLicenseAction, installLicenseAction } from '@/ee/licensing/ui/actions';
 import LicensePage from '@/app/(dashboard)/license/page';
 import { first } from '@/src/lib/db/ops';
 
@@ -107,6 +116,7 @@ beforeEach(async () => {
   delete process.env.INSTANCE_MODE;
   delete process.env.INSTANCE_SLAVES;
   await setRow(LICENSE_SETTING_KEY, onlineKey());
+  await setRow(LICENSE_INSTALL_ID_SETTING_KEY, TEST_INSTALL_ID);
 });
 
 afterEach(() => {
@@ -118,12 +128,12 @@ afterEach(() => {
 afterAll(() => setTrustedLicenseKeysForTests(null));
 
 describe('one check', () => {
-  it('sends the license id and the key fingerprint only, and stores a verified confirmation', async () => {
+  it('sends the license id, the key fingerprint and the install id only, and stores a verified confirmation', async () => {
     const fetchImpl = server({ statement: statement() });
     expect(await runOnlineLicenseCheck({ now: NOW, fetchImpl: fetchImpl as never })).toBe('confirmed');
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://license.ingres.si/v1/licenses/LIC-ON/status');
-    expect(JSON.parse(String(init.body))).toEqual({ keySha256: keyFingerprint(onlineKey()) });
+    expect(JSON.parse(String(init.body))).toEqual({ keySha256: keyFingerprint(onlineKey()), installId: TEST_INSTALL_ID });
 
     const view = await getLicenseView(NOW);
     expect(view.status).toBe('active');
@@ -164,6 +174,7 @@ describe('one check', () => {
   it.each([
     ['a statement about another license', { statement: statement({ id: 'LIC-OTHER' }) }, "the license server's answer could not be verified"],
     ['a statement signed by an unknown key', { statement: signStatement(createTestSigner('online-test'), statementPayload(signer, { id: 'LIC-ON', iat: NOW.toISOString() })) }, "the license server's answer could not be verified"],
+    ['a statement issued to another install', { statement: statement({ install: installIdHash('another-install-id-0123456789abcdefghijklmn') }) }, "the license server's answer could not be verified"],
     ['404', { status: 404 }, 'the license server does not know this license key'],
     ['503', { status: 503 }, 'the license server answered HTTP 503'],
   ])('records %s as a failed attempt and stores nothing', async (_name, answer, error) => {
@@ -195,11 +206,46 @@ describe('one check', () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it('keeps the check out of instance sync and the configuration export', async () => {
+  it('keeps the check and the install id out of instance sync and the configuration export', async () => {
     await runOnlineLicenseCheck({ now: NOW, fetchImpl: server({ statement: statement() }) as never });
     expect(await rawRow(LICENSE_CHECK_SETTING_KEY)).toContain('s1.');
     expect(CONFIG_SETTING_KEYS).not.toContain(LICENSE_CHECK_SETTING_KEY);
-    expect(JSON.stringify(await buildSyncPayload())).not.toContain('s1.');
+    expect(CONFIG_SETTING_KEYS).not.toContain(LICENSE_INSTALL_ID_SETTING_KEY);
+    const synced = JSON.stringify(await buildSyncPayload());
+    expect(synced).not.toContain('s1.');
+    expect(synced).not.toContain(TEST_INSTALL_ID);
+  });
+
+  it('creates the install id on the first check, once, and sends the same one afterwards', async () => {
+    await clearRow(LICENSE_INSTALL_ID_SETTING_KEY);
+    const sent: string[] = [];
+    const echo = vi.fn(async (_url: string, init: RequestInit) => {
+      const { installId } = JSON.parse(String(init.body)) as { installId: string };
+      sent.push(installId);
+      const token = signStatement(signer, statementPayload(signer, { id: 'LIC-ON', iat: NOW.toISOString(), install: installIdHash(installId) }));
+      return new Response(JSON.stringify({ statement: token }), { status: 200 });
+    });
+    expect(await runOnlineLicenseCheck({ now: NOW, fetchImpl: echo as never })).toBe('confirmed');
+    expect(await runOnlineLicenseCheck({ now: new Date(NOW.getTime() + DAY), fetchImpl: echo as never })).toBe('confirmed');
+    expect(sent[0]).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(sent[1]).toBe(sent[0]);
+    expect(JSON.parse((await rawRow(LICENSE_INSTALL_ID_SETTING_KEY))!)).toBe(sent[0]);
+    expect((await getLicenseState(NOW)).status).toBe('active');
+  });
+
+  it('is read-only while the license is active on another install, and editable again once released there', async () => {
+    expect(await runOnlineLicenseCheck({ now: NOW, fetchImpl: server({ statement: statement({ status: 'in_use' }) }) as never })).toBe('in_use');
+    const state = await getLicenseState(NOW);
+    expect(state.status).toBe('in_use');
+    expect((await getLicenseView(NOW)).features.every((feature) => !feature.configurable)).toBe(true);
+    expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'license_in_use', entityType: 'license' }));
+    // Still in use after the statement's own expiry, until a newer answer.
+    expect((await getLicenseState(new Date(NOW.getTime() + 60 * DAY))).status).toBe('in_use');
+
+    const later = new Date(NOW.getTime() + DAY);
+    expect(await runOnlineLicenseCheck({ now: later, fetchImpl: server({ statement: statement({ iat: later.toISOString() }) }) as never })).toBe('confirmed');
+    expect((await getLicenseState(later)).status).toBe('active');
+    expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'license_in_use_ended' }));
   });
 });
 
@@ -271,6 +317,85 @@ describe('POST /api/v1/license/check', () => {
   });
 });
 
+describe('deactivation', () => {
+  /** The license server's deactivate endpoint, answering `status` (200 confirms). */
+  const releaseServer = (status = 200) =>
+    vi.fn(async () => (status === 200 ? new Response('{"deactivated":true}', { status: 200 }) : new Response(null, { status })));
+
+  it('needs license:write', async () => {
+    ctx.permissions = new Set(['license:read']);
+    expect((await deactivateRoute.POST(request('/api/v1/license/deactivate', 'POST'))).status).toBe(403);
+  });
+
+  it('releases the license on the license server, then removes the key and its statement', async () => {
+    await runOnlineLicenseCheck({ now: NOW, fetchImpl: server({ statement: statement() }) as never });
+    const fetchImpl = releaseServer();
+    vi.stubGlobal('fetch', fetchImpl);
+    const response = await deactivateRoute.POST(request('/api/v1/license/deactivate', 'POST'));
+    expect(response.status).toBe(200);
+    expect((await response.json()).status).toBe('unlicensed');
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe('https://license.ingres.si/v1/licenses/LIC-ON/deactivate');
+    expect(JSON.parse(String(init.body))).toEqual({ keySha256: keyFingerprint(onlineKey()), installId: TEST_INSTALL_ID });
+    expect(await rawRow(LICENSE_SETTING_KEY)).toBeNull();
+    expect((await readLicenseCheck()).statements).toEqual({});
+    expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'license_deactivated', data: expect.objectContaining({ released: true }) }));
+  });
+
+  it('counts a key the license server does not know (404) as released', async () => {
+    vi.stubGlobal('fetch', releaseServer(404));
+    expect((await deactivateRoute.POST(request('/api/v1/license/deactivate', 'POST'))).status).toBe(200);
+    expect(await rawRow(LICENSE_SETTING_KEY)).toBeNull();
+  });
+
+  it('keeps the key when the license server cannot be reached, unless forced', async () => {
+    vi.stubGlobal('fetch', releaseServer(503));
+    const refused = await deactivateRoute.POST(request('/api/v1/license/deactivate', 'POST'));
+    expect(refused.status).toBe(502);
+    expect((await refused.json()).error).toContain('remove the key anyway');
+    expect(await rawRow(LICENSE_SETTING_KEY)).not.toBeNull();
+
+    const action = await deactivateLicenseAction(false);
+    expect(action).toMatchObject({ ok: false, canForce: true });
+
+    const forced = await deactivateRoute.POST(request('/api/v1/license/deactivate', 'POST', { force: true }));
+    expect(forced.status).toBe(200);
+    expect(await rawRow(LICENSE_SETTING_KEY)).toBeNull();
+    expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'license_removed', data: expect.objectContaining({ released: false }) }));
+  });
+
+  it('refuses a malformed body, an offline key, no key, and a replica', async () => {
+    expect((await deactivateRoute.POST(request('/api/v1/license/deactivate', 'POST', { force: 'yes' }))).status).toBe(400);
+    await setRow(LICENSE_SETTING_KEY, offlineKey());
+    expect(await deactivateLicenseHere(1, { fetchImpl: releaseServer() as never }).catch((error) => error)).toMatchObject({ status: 409 });
+    await clearRow(LICENSE_SETTING_KEY);
+    expect(await deactivateLicenseHere(1, { fetchImpl: releaseServer() as never }).catch((error) => error)).toMatchObject({ status: 409, message: 'No license key is installed' });
+    await setRow(LICENSE_SETTING_KEY, onlineKey());
+    process.env.INSTANCE_MODE = 'slave';
+    expect((await deactivateRoute.POST(request('/api/v1/license/deactivate', 'POST'))).status).toBe(409);
+  });
+
+  it('an install that never checked holds nothing: the key is removed without asking', async () => {
+    await clearRow(LICENSE_INSTALL_ID_SETTING_KEY);
+    const fetchImpl = releaseServer();
+    expect((await deactivateLicenseHere(1, { fetchImpl: fetchImpl as never })).status).toBe('unlicensed');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('removing the key releases an online key first, and still removes it when the license server is down', async () => {
+    const ok = releaseServer();
+    vi.stubGlobal('fetch', ok);
+    expect((await licenseRoute.DELETE(request('/api/v1/license', 'DELETE'))).status).toBe(204);
+    expect(ok).toHaveBeenCalledTimes(1);
+    expect(logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: 'license_removed', data: { licenseId: 'LIC-ON', released: true } }));
+
+    await setRow(LICENSE_SETTING_KEY, onlineKey());
+    vi.stubGlobal('fetch', releaseServer(503));
+    expect((await licenseRoute.DELETE(request('/api/v1/license', 'DELETE'))).status).toBe(204);
+    expect(await rawRow(LICENSE_SETTING_KEY)).toBeNull();
+  });
+});
+
 describe('the scheduler', () => {
   it('asks when there is no confirmation, then waits a day; after a failure, an hour', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -322,6 +447,11 @@ describe('needs attention', () => {
     ]);
   });
 
+  it('is critical for a license active on another install', async () => {
+    await runOnlineLicenseCheck({ now: NOW, fetchImpl: server({ statement: statement({ status: 'in_use' }) }) as never });
+    expect(await collect(NOW)).toEqual([expect.objectContaining({ severity: 'critical', title: 'License LIC-ON is active on another install' })]);
+  });
+
   it('is critical for a revoked license', async () => {
     await runOnlineLicenseCheck({ now: NOW, fetchImpl: server({ statement: statement({ status: 'revoked' }) }) as never });
     expect(await collect(NOW)).toEqual([expect.objectContaining({ severity: 'critical', title: 'License LIC-ON is revoked' })]);
@@ -355,6 +485,24 @@ describe('the License page', () => {
     expect(html).toContain('Revoked');
     expect(html).toContain('This license is revoked.');
     expect(html).toContain('Paid features already set up keep running; their settings are read-only.');
+  });
+
+  it('says a license in use on another install is read-only here, and how to move it', async () => {
+    await runOnlineLicenseCheck({ now: new Date(), fetchImpl: server({ statement: signStatement(signer, statementPayload(signer, { id: 'LIC-ON', status: 'in_use', iat: new Date().toISOString() })) }) as never });
+    const html = renderToStaticMarkup(await LicensePage());
+    expect(html).toContain('In use elsewhere');
+    expect(html).toContain('This license is active on another install.');
+    expect(html).toContain('deactivate it on the other');
+  });
+
+  it('offers to deactivate an online key, and to remove an offline one', async () => {
+    let html = renderToStaticMarkup(await LicensePage());
+    expect(html).toContain('Deactivate on this install');
+    expect(html).not.toContain('Remove key');
+    await setRow(LICENSE_SETTING_KEY, offlineKey());
+    html = renderToStaticMarkup(await LicensePage());
+    expect(html).toContain('Remove key');
+    expect(html).not.toContain('Deactivate on this install');
   });
 
   it('says how to fix an unconfirmed license', async () => {

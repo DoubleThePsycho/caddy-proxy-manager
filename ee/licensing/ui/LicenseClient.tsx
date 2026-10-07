@@ -15,7 +15,7 @@ import type { Feature } from "@/ee/licensing/features";
 import type { FeatureUsage } from "@/ee/licensing/usage";
 import type { LicenseView } from "@/ee/licensing/view";
 import type { LicenseAutoUpdateView } from "@/ee/licensing/auto-update";
-import { checkLicenseNowAction, removeLicenseAction } from "./actions";
+import { checkLicenseNowAction, deactivateLicenseAction, removeLicenseAction } from "./actions";
 import { EditionMatrix } from "./EditionMatrix";
 import { InstallKeyCard } from "./InstallKeyCard";
 import { AutoUpdateCard } from "./AutoUpdateCard";
@@ -55,6 +55,7 @@ const STATUS: Record<LicenseView["status"], { label: string; tone: Tone }> = {
   invalid: { label: "Invalid key", tone: "bad" },
   revoked: { label: "Revoked", tone: "bad" },
   unconfirmed: { label: "Not confirmed", tone: "bad" },
+  in_use: { label: "In use elsewhere", tone: "bad" },
 };
 
 const PILL: Record<Tone, { box: string; dot: string }> = {
@@ -168,7 +169,10 @@ function OnlineCheckStatus({ license, canWrite, host }: { license: LicenseView; 
       setMessage(
         next.lastError
           ? { tone: "bad", text: `No confirmation: ${next.lastError}.` }
-          : { tone: "ok", text: next.state === "revoked" ? "The license is revoked." : "Confirmed." }
+          : {
+              tone: "ok",
+              text: next.state === "revoked" ? "The license is revoked." : next.state === "in_use" ? "The license is active on another install." : "Confirmed.",
+            }
       );
       router.refresh();
     });
@@ -192,6 +196,19 @@ function OnlineCheckStatus({ license, canWrite, host }: { license: LicenseView; 
       <Banner tone="bad" title="This license is revoked.">
         <span className="flex flex-col gap-2.5">
           <span>Paid features already set up keep running; their settings are read-only. Questions: sales@ingres.si.</span>
+          {action}
+        </span>
+      </Banner>
+    );
+  }
+  if (check.state === "in_use") {
+    return (
+      <Banner tone="bad" title="This license is active on another install.">
+        <span className="flex flex-col gap-2.5">
+          <span>
+            Paid settings are read-only here; features already set up keep running. To move the license, deactivate it on the other
+            install. An install that stops checking for 14 days releases it. Questions: sales@ingres.si.
+          </span>
           {action}
         </span>
       </Banner>
@@ -255,11 +272,14 @@ function CurrentLicenseCard({
   const confirmTitleId = useId();
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [canForce, setCanForce] = useState(false);
   const [pending, startTransition] = useTransition();
   const cancelRef = useRef<HTMLButtonElement>(null);
   const removeRef = useRef<HTMLButtonElement>(null);
   const valid = isVerifiedStatus(license.status);
   const hasKey = license.status !== "unlicensed";
+  // An online key is deactivated (released on the license server, then removed); any other key is removed.
+  const online = license.onlineCheck.required;
 
   useEffect(() => {
     if (confirming) cancelRef.current?.focus();
@@ -268,6 +288,7 @@ function CurrentLicenseCard({
   function closeConfirm() {
     setConfirming(false);
     setError(null);
+    setCanForce(false);
     removeRef.current?.focus();
   }
 
@@ -280,6 +301,25 @@ function CurrentLicenseCard({
         router.refresh();
       } catch {
         setError("The key could not be removed. Try again.");
+      }
+    });
+  }
+
+  function deactivate(force: boolean) {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await deactivateLicenseAction(force);
+        if (!result.ok) {
+          setError(result.error);
+          setCanForce(result.canForce);
+          return;
+        }
+        setConfirming(false);
+        setCanForce(false);
+        router.refresh();
+      } catch {
+        setError("The license could not be deactivated. Try again.");
       }
     });
   }
@@ -389,7 +429,7 @@ function CurrentLicenseCard({
             onClick={() => (confirming ? closeConfirm() : setConfirming(true))}
             disabled={pending}
           >
-            Remove key
+            {online ? "Deactivate on this install" : "Remove key"}
           </Button>
         </div>
       )}
@@ -404,16 +444,29 @@ function CurrentLicenseCard({
         >
           <span className="min-w-0 flex-[1_1_320px] text-[13px]">
             <span id={confirmTitleId} className="font-semibold">
-              Remove the license key?
+              {online ? "Deactivate the license on this install?" : "Remove the license key?"}
             </span>{" "}
-            Paid features you set up keep running, but cannot be changed until a key is installed again.
+            {online
+              ? "The key is removed here, and the license can then be activated on another install. Paid features you set up keep running, but cannot be changed until a key is installed again."
+              : "Paid features you set up keep running, but cannot be changed until a key is installed again."}
             {error && <span className="mt-1 block font-medium text-bad">{error}</span>}
           </span>
           <Button ref={cancelRef} type="button" variant="outline" size="sm" onClick={closeConfirm} disabled={pending}>
             Cancel
           </Button>
-          <Button type="button" size="sm" className="bg-bad font-semibold text-background hover:bg-bad/90" onClick={remove} disabled={pending}>
-            {pending ? "Removing…" : "Remove"}
+          {online && canForce && (
+            <Button type="button" variant="outline" size="sm" onClick={() => deactivate(true)} disabled={pending}>
+              Remove the key anyway
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            className="bg-bad font-semibold text-background hover:bg-bad/90"
+            onClick={online ? () => deactivate(false) : remove}
+            disabled={pending}
+          >
+            {pending ? (online ? "Deactivating…" : "Removing…") : online ? "Deactivate" : "Remove"}
           </Button>
         </div>
       )}

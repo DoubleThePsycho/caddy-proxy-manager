@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiPermission, apiErrorResponse } from "@/src/lib/api-auth";
 import { ApiValidationError } from "@/src/lib/api-errors";
 import { logAuditEvent } from "@/src/lib/audit";
-import { getLicenseState, installLicenseKey, removeLicenseKey } from "@/ee/licensing/store";
-import { afterLicenseInstalled, getLicenseView } from "@/ee/licensing/online-check";
+import { getLicenseState, installLicenseKey } from "@/ee/licensing/store";
+import { afterLicenseInstalled, getLicenseView, removeLicenseHere } from "@/ee/licensing/online-check";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
@@ -49,12 +49,14 @@ export async function DELETE(request: NextRequest) {
   try {
     const { userId } = await requireApiPermission(request, "license:write");
     const previous = await getLicenseState();
-    await removeLicenseKey();
+    // An online key is released on the license server first, best-effort.
+    const release = await removeLicenseHere();
     await logAuditEvent({
       userId,
       action: "license_removed",
       entityType: "license",
       summary: previous.license ? `Removed license ${previous.license.id}` : "Removed license key",
+      ...(release.licenseId ? { data: { licenseId: release.licenseId, released: release.released } } : {}),
     });
     return new NextResponse(null, { status: 204 });
   } catch (error) {

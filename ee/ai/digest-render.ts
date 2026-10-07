@@ -69,6 +69,8 @@ function licenseLine(license: DigestFacts["license"]): string {
       return `${edition} was revoked by the license server; configured paid features keep working but can no longer be changed.`;
     case "unconfirmed":
       return `${edition} could not be confirmed with the license server; paid settings are read-only until it is.`;
+    case "in_use":
+      return `${edition} is active on another install; paid settings are read-only here.`;
   }
 }
 

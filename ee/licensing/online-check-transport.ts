@@ -1,8 +1,15 @@
 // SPDX-License-Identifier: Elastic-2.0
 /**
- * The one request of the online license check: POST the SHA-256 of the
- * installed key to the license server's status endpoint for its license
- * id. Nothing else is sent. One request with a 10 second time limit, no
+ * The requests of the online license check, to the license server's
+ * endpoints for one license id:
+ *
+ * - POST …/status with {"keySha256", "installId"}: the SHA-256 of the
+ *   installed key and this install's license install id. The answer is a
+ *   status statement.
+ * - POST …/deactivate with the same body: releases the license on this
+ *   install, so another install can take it.
+ *
+ * Nothing else is sent. One request with a 10 second time limit, no
  * redirects followed, no cookies, and a response body read up to 16 KiB.
  * Never throws; errors are short, written here, and never contain a
  * response body.
@@ -15,6 +22,8 @@ export type LicenseStatusResult =
   | { kind: "unknown" }
   | { kind: "error"; error: string };
 
+export type LicenseDeactivateResult = { kind: "ok" } | { kind: "unknown" } | { kind: "error"; error: string };
+
 const TIMED_OUT = `no answer within ${LICENSE_SERVER_TIMEOUT_MS / 1000} seconds`;
 
 function isTimeout(error: unknown): boolean {
@@ -22,13 +31,16 @@ function isTimeout(error: unknown): boolean {
   return name === "TimeoutError" || name === "AbortError";
 }
 
-export async function postLicenseStatus(url: string, keySha256: string, fetchImpl: typeof fetch = fetch): Promise<LicenseStatusResult> {
+type Sent = { kind: "response"; response: Response } | { kind: "unknown" } | { kind: "error"; error: string };
+
+/** One POST of `body`; the 200 response is left unread, every other answer is mapped here. */
+async function post(url: string, body: Record<string, string>, fetchImpl: typeof fetch): Promise<Sent> {
   let response: Response;
   try {
     response = await fetchImpl(url, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ keySha256 }),
+      body: JSON.stringify(body),
       redirect: "manual",
       credentials: "omit",
       cache: "no-store",
@@ -54,24 +66,57 @@ export async function postLicenseStatus(url: string, keySha256: string, fetchImp
     await discardBody(response);
     return { kind: "error", error: `the license server answered HTTP ${response.status}` };
   }
+  return { kind: "response", response };
+}
 
+/** Reads a 200 answer as a JSON object. */
+async function readJsonObject(response: Response): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; error: string }> {
   let text: string;
   try {
     text = await readLimitedBody(response);
   } catch (error) {
-    if (error instanceof TooLarge) return { kind: "error", error: "the license server's answer is too large" };
-    return { kind: "error", error: isTimeout(error) ? TIMED_OUT : "the license server's answer could not be read" };
+    if (error instanceof TooLarge) return { ok: false, error: "the license server's answer is too large" };
+    return { ok: false, error: isTimeout(error) ? TIMED_OUT : "the license server's answer could not be read" };
   }
   let body: unknown;
   try {
     body = JSON.parse(text);
   } catch {
-    return { kind: "error", error: "the license server's answer is not JSON" };
+    return { ok: false, error: "the license server's answer is not JSON" };
   }
-  const statement =
-    typeof body === "object" && body !== null && !Array.isArray(body) ? (body as { statement?: unknown }).statement : undefined;
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return { ok: false, error: "the license server's answer is not JSON" };
+  }
+  return { ok: true, body: body as Record<string, unknown> };
+}
+
+export async function postLicenseStatus(
+  url: string,
+  keySha256: string,
+  installId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<LicenseStatusResult> {
+  const sent = await post(url, { keySha256, installId }, fetchImpl);
+  if (sent.kind !== "response") return sent;
+  const read = await readJsonObject(sent.response);
+  if (!read.ok) return { kind: "error", error: read.error };
+  const statement = read.body.statement;
   if (typeof statement !== "string" || statement.trim().length === 0 || statement.length > MAX_LICENSE_RESPONSE_BYTES) {
     return { kind: "error", error: "the license server's answer has no status statement" };
   }
   return { kind: "ok", statement: statement.trim() };
+}
+
+export async function postLicenseDeactivate(
+  url: string,
+  keySha256: string,
+  installId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<LicenseDeactivateResult> {
+  const sent = await post(url, { keySha256, installId }, fetchImpl);
+  if (sent.kind !== "response") return sent;
+  const read = await readJsonObject(sent.response);
+  if (!read.ok) return { kind: "error", error: read.error };
+  if (read.body.deactivated !== true) return { kind: "error", error: "the license server did not confirm the deactivation" };
+  return { kind: "ok" };
 }

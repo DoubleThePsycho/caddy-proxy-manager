@@ -8,7 +8,7 @@
 import { Database } from "bun:sqlite";
 import { closeSync, existsSync, fsyncSync, openSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname } from "node:path";
-import { canConfigure, evaluateLicense, type LicenseCheckInput } from "@/ee/licensing/license";
+import { canConfigure, evaluateLicense, installIdHash, type LicenseCheckInput } from "@/ee/licensing/license";
 import { getTrustedLicenseKeys } from "@/ee/licensing/public-keys";
 import { HIGH_AVAILABILITY_FEATURE } from "../types";
 import { databaseFiles, litestreamMetaPath } from "./litestream";
@@ -17,6 +17,8 @@ import { databaseFiles, litestreamMetaPath } from "./litestream";
 const LICENSE_SETTING_KEY = "license";
 /** LICENSE_CHECK_SETTING_KEY of ee/licensing/online-check-state.ts (not imported: it pulls in the app database). */
 const LICENSE_CHECK_SETTING_KEY = "license_check";
+/** LICENSE_INSTALL_ID_SETTING_KEY of ee/licensing/online-check-state.ts (not imported, as above). */
+const LICENSE_INSTALL_ID_SETTING_KEY = "license_install_id";
 
 export interface LocalDatabase {
   /** A database file with content exists at `path`. */
@@ -43,17 +45,28 @@ function fsyncDirectory(path: string) {
   }
 }
 
-/** The online key's stored statements and first-seen times (evaluateLicense validates every entry itself). */
-function storedCheckInput(value: unknown): LicenseCheckInput {
+/**
+ * The online key's stored statements and first-seen times, and the hash of
+ * this install's license install id the statements must name
+ * (evaluateLicense validates every entry itself).
+ */
+function storedCheckInput(value: unknown, installIdValue: unknown): LicenseCheckInput {
+  let installHash: string | null = null;
+  try {
+    const installId = typeof installIdValue === "string" ? (JSON.parse(installIdValue) as unknown) : null;
+    if (typeof installId === "string" && installId.length > 0) installHash = installIdHash(installId);
+  } catch {
+    installHash = null;
+  }
   try {
     const parsed = typeof value === "string" ? (JSON.parse(value) as unknown) : null;
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return { installHash };
     const record = parsed as { statements?: unknown; firstSeen?: unknown };
     const map = (entry: unknown) =>
       typeof entry === "object" && entry !== null && !Array.isArray(entry) ? (entry as Record<string, string>) : undefined;
-    return { statements: map(record.statements), firstSeen: map(record.firstSeen) };
+    return { statements: map(record.statements), firstSeen: map(record.firstSeen), installHash };
   } catch {
-    return {};
+    return { installHash };
   }
 }
 
@@ -73,11 +86,12 @@ export const localDatabase: LocalDatabase = {
       const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(LICENSE_SETTING_KEY) as { value?: unknown } | null;
       const key = typeof row?.value === "string" ? (JSON.parse(row.value) as unknown) : null;
       const checkRow = db.prepare("SELECT value FROM settings WHERE key = ?").get(LICENSE_CHECK_SETTING_KEY) as { value?: unknown } | null;
+      const installRow = db.prepare("SELECT value FROM settings WHERE key = ?").get(LICENSE_INSTALL_ID_SETTING_KEY) as { value?: unknown } | null;
       const state = evaluateLicense(
         typeof key === "string" && key.length > 0 ? key : null,
         getTrustedLicenseKeys(),
         now,
-        storedCheckInput(checkRow?.value)
+        storedCheckInput(checkRow?.value, installRow?.value)
       );
       return canConfigure(state, HIGH_AVAILABILITY_FEATURE);
     } catch {

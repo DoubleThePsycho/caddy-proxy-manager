@@ -6,9 +6,9 @@ import { requirePermission } from "@/src/lib/auth";
 import { ApiClientError } from "@/src/lib/api-errors";
 import { logAuditEvent } from "@/src/lib/audit";
 import { MAX_LICENSE_BODY_BYTES } from "@/ee/licensing/http";
-import { checkLicenseKey, getLicenseState, installLicenseKey, removeLicenseKey } from "@/ee/licensing/store";
+import { checkLicenseKey, getLicenseState, installLicenseKey } from "@/ee/licensing/store";
 import { toLicenseKeyCheck, type LicenseKeyCheck, type LicenseView } from "@/ee/licensing/view";
-import { afterLicenseInstalled, checkLicenseNow } from "@/ee/licensing/online-check";
+import { afterLicenseInstalled, checkLicenseNow, deactivateLicenseHere, LicenseReleaseError, removeLicenseHere } from "@/ee/licensing/online-check";
 import {
   checkLicenseServerNow,
   parseLicenseAutoUpdateInput,
@@ -62,14 +62,39 @@ export async function installLicenseAction(formData: FormData): Promise<{ ok: tr
 export async function removeLicenseAction(): Promise<void> {
   const session = await requirePermission("license:write");
   const previous = await getLicenseState();
-  await removeLicenseKey();
+  // An online key is released on the license server first, best-effort.
+  const release = await removeLicenseHere();
   await logAuditEvent({
     userId: Number(session.user.id),
     action: "license_removed",
     entityType: "license",
     summary: previous.license ? `Removed license ${previous.license.id}` : "Removed license key",
+    ...(release.licenseId ? { data: { licenseId: release.licenseId, released: release.released } } : {}),
   });
   revalidatePath("/license");
+}
+
+export type LicenseDeactivateActionResult =
+  | { ok: true; view: LicenseView }
+  /** `canForce`: the license server could not be reached; the key can still be removed. */
+  | { ok: false; error: string; canForce: boolean };
+
+/**
+ * "Deactivate on this install": releases the license on the license server
+ * and removes the key here. With `force`, removes the key even when the
+ * license server cannot be reached.
+ */
+export async function deactivateLicenseAction(force: boolean = false): Promise<LicenseDeactivateActionResult> {
+  const session = await requirePermission("license:write");
+  try {
+    const view = await deactivateLicenseHere(Number(session.user.id), { force: force === true });
+    revalidatePath("/license");
+    return { ok: true, view };
+  } catch (error) {
+    if (error instanceof LicenseReleaseError) return { ok: false, error: error.message, canForce: true };
+    if (error instanceof ApiClientError) return { ok: false, error: error.message, canForce: false };
+    throw error;
+  }
 }
 
 export type LicenseAutoUpdateActionResult = { ok: true; view: LicenseAutoUpdateView } | { ok: false; error: string };

@@ -55,3 +55,8 @@ export function currentLicenseUrl(base: string, licenseId: string): string {
 export function licenseStatusUrl(base: string, licenseId: string): string {
   return `${base}/v1/licenses/${encodeURIComponent(licenseId)}/status`;
 }
+
+/** Where an online key is released on this install. */
+export function licenseDeactivateUrl(base: string, licenseId: string): string {
+  return `${base}/v1/licenses/${encodeURIComponent(licenseId)}/deactivate`;
+}

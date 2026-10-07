@@ -78,6 +78,11 @@ test.describe('License', () => {
     const check = await page.request.post('/api/v1/license/check', { headers: { Origin: 'http://localhost:3000' } });
     expect(check.status()).toBe(409);
     expect((await check.json()).error).toBe('No license key is installed');
+
+    // Nor anything to deactivate.
+    const deactivate = await page.request.post('/api/v1/license/deactivate', { headers: { Origin: 'http://localhost:3000' } });
+    expect(deactivate.status()).toBe(409);
+    expect((await deactivate.json()).error).toBe('No license key is installed');
   });
 
   test('automatic updates are off by default and never return a refresh token', async ({ page }) => {

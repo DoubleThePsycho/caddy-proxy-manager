@@ -663,11 +663,13 @@ export async function evaluateLicenseExpiring(params: LicenseExpiringParams, now
             ? "It is revoked: paid features keep working, and their settings are read-only."
             : state.status === "unconfirmed"
               ? "The license server has not confirmed it: paid settings are read-only until it does."
-              : state.status === "expired"
-                ? "Paid features keep working but can no longer be changed until it is renewed."
-                : state.status === "grace"
-                  ? `Paid features stay editable until ${state.graceEndsAt?.slice(0, 10)}; renew it before then.`
-                  : "Renew it to keep changing paid features after it expires."),
+              : state.status === "in_use"
+                ? "It is active on another install: paid settings are read-only here until it is deactivated there."
+                : state.status === "expired"
+                  ? "Paid features keep working but can no longer be changed until it is renewed."
+                  : state.status === "grace"
+                    ? `Paid features stay editable until ${state.graceEndsAt?.slice(0, 10)}; renew it before then.`
+                    : "Renew it to keep changing paid features after it expires."),
         severity: state.status === "active" ? "warning" : "critical",
         facts: { edition, expiresAt: license.exp, daysLeft: phrase.daysLeft, status: state.status, trial: license.trial === true },
       },

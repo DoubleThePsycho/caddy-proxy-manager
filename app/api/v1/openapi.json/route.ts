@@ -1863,7 +1863,9 @@ const spec = {
       delete: {
         tags: ["License"],
         summary: "Remove the license key",
-        description: "Paid features already set up keep working; they can no longer be changed.",
+        description:
+          "Paid features already set up keep working; they can no longer be changed. An online key is first released on the license server " +
+          "(as POST /api/v1/license/deactivate does), on a best-effort basis: the key is removed even when the license server cannot be reached.",
         operationId: "removeLicense",
         responses: {
           "204": { description: "Removed" },
@@ -1878,7 +1880,7 @@ const spec = {
         summary: "Confirm the installed online key with the license server now",
         description:
           "Permission license:write. An online key (purchases and trials from ingres.si) is confirmed with the license server once a day; this asks now. " +
-          "It sends one request, POST /v1/licenses/{licenseId}/status with the SHA-256 of the installed key, and nothing else. " +
+          "It sends one request, POST /v1/licenses/{licenseId}/status with the SHA-256 of the installed key and this install's random license install id, and nothing else. " +
           "Answers with the license status, whatever the license server said (see onlineCheck.lastError). 409 with an offline key, " +
           "without a key, or on an instance sync replica; 429 when the license server was asked less than a minute ago.",
         operationId: "checkLicense",
@@ -1892,6 +1894,41 @@ const spec = {
           "409": { $ref: "#/components/responses/Conflict" },
           "429": {
             description: "The license server was asked less than a minute ago",
+            content: { "application/json": { schema: { type: "object", properties: { error: { type: "string" } }, required: ["error"] } } },
+          },
+        },
+      },
+    },
+    "/api/v1/license/deactivate": {
+      post: {
+        tags: ["License"],
+        summary: "Deactivate the license on this install",
+        description:
+          "Permission license:write. A license is active on one install at a time. This releases the installed online key on the license server " +
+          "(POST /v1/licenses/{licenseId}/deactivate with the SHA-256 of the key and this install's license install id), then removes the key here, " +
+          "so another install can use the license. Body: empty, or {\"force\": true} to remove the key even when the license server cannot be reached " +
+          "(it then releases the license after 14 days without checks from this install). Answers with the license status after the removal. " +
+          "409 with an offline key, without a key, or on an instance sync replica; 502 when the license server cannot be reached and force is not set.",
+        operationId: "deactivateLicense",
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: { type: "object", properties: { force: { type: "boolean", default: false } } },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description: "Deactivated and removed",
+            content: { "application/json": { schema: { $ref: "#/components/schemas/License" } } },
+          },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/Forbidden" },
+          "409": { $ref: "#/components/responses/Conflict" },
+          "502": {
+            description: "The license server could not be reached; nothing was removed",
             content: { "application/json": { schema: { type: "object", properties: { error: { type: "string" } }, required: ["error"] } } },
           },
         },
@@ -4581,10 +4618,10 @@ const spec = {
         properties: {
           status: {
             type: "string",
-            enum: ["unlicensed", "active", "grace", "expired", "invalid", "revoked", "unconfirmed"],
+            enum: ["unlicensed", "active", "grace", "expired", "invalid", "revoked", "unconfirmed", "in_use"],
             description:
-              "revoked: the license server reports the license as revoked (a refund or a chargeback); unconfirmed: an online key " +
-              "without a current confirmation from the license server. Both leave paid settings read-only; nothing stops running.",
+              "revoked: the license server reports the license as revoked; unconfirmed: an online key without a current confirmation " +
+              "from the license server; in_use: the license is active on another install. All three leave paid settings read-only; nothing stops running.",
           },
           edition: { type: ["string", "null"], enum: ["homelab", "business", "enterprise", null] },
           editionLabel: { type: ["string", "null"] },
@@ -4612,10 +4649,11 @@ const spec = {
               required: { type: "boolean", description: "The installed key is an online key (purchases and trials from ingres.si)" },
               state: {
                 type: ["string", "null"],
-                enum: ["confirmed", "pending", "unconfirmed", "revoked", null],
+                enum: ["confirmed", "pending", "unconfirmed", "revoked", "in_use", null],
                 description:
                   "confirmed: a current confirmation; pending: none yet, within 7 days of this install first seeing the license; " +
-                  "unconfirmed: neither, so paid settings are read-only; revoked: the license server says so. null when not required.",
+                  "unconfirmed: neither, so paid settings are read-only; revoked: the license server says so; in_use: the license is " +
+                  "active on another install. null when not required.",
               },
               confirmedAt: { type: ["string", "null"], format: "date-time", description: "When the license server last confirmed the license" },
               validUntil: {
@@ -4653,7 +4691,7 @@ const spec = {
           online: { type: "boolean", description: "An online key: once installed, it is confirmed daily with the license server" },
           status: {
             type: "string",
-            enum: ["active", "grace", "expired", "invalid", "revoked", "unconfirmed"],
+            enum: ["active", "grace", "expired", "invalid", "revoked", "unconfirmed", "in_use"],
             description: "The key's state if it were installed now; invalid covers malformed, wrongly signed and not-yet-valid keys",
           },
           error: { type: ["string", "null"], description: "Why the key cannot be installed" },

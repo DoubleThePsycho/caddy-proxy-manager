@@ -96,6 +96,14 @@ export function describeCheck(
       notes,
     };
   }
+  if (check.status === "in_use") {
+    return {
+      tone: "warn",
+      title: "The license server reports this license as active on another install",
+      body: `${summary}. Installed here, its paid settings stay read-only until it is deactivated on the other install. ${replaces}`,
+      notes,
+    };
+  }
   if (check.status === "unconfirmed") {
     return {
       tone: "warn",

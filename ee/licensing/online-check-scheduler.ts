@@ -12,7 +12,8 @@ import { onShutdown } from "@/src/lib/shutdown";
 import { requiresOnlineCheck, verifyLicenseKey } from "./license";
 import { getTrustedLicenseKeys } from "./public-keys";
 import { getLicenseKey } from "./store";
-import { readLicenseCheck, writeLicenseCheck } from "./online-check-state";
+import { readLicenseCheck, readLicenseInstallId, writeLicenseCheck } from "./online-check-state";
+import { installIdHash } from "./license";
 import { isOnlineCheckDue, ONLINE_CHECK_RETRY_MS, runOnlineLicenseCheck, type OnlineCheckOutcome } from "./online-check";
 
 export const ONLINE_CHECK_TICK_MS = 5 * 60_000;
@@ -60,7 +61,8 @@ export async function runOnlineLicenseCheckTick(now: Date = new Date(), fetchImp
       return "not_required";
     }
 
-    if (!isOnlineCheckDue(await readLicenseCheck(), licenseId, now)) return "not_due";
+    const installId = await readLicenseInstallId();
+    if (!isOnlineCheckDue(await readLicenseCheck(), licenseId, now, installId ? installIdHash(installId) : null)) return "not_due";
     const previous = scheduler.lastAttempt;
     if (previous?.licenseId === licenseId && now.getTime() >= previous.at && now.getTime() - previous.at < ONLINE_CHECK_RETRY_MS) {
       return "not_due";

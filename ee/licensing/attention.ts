@@ -2,7 +2,7 @@
 /**
  * Attention provider: an online key the license server has not confirmed
  * (not yet after a day, failing for days, or no longer), or a license it
- * reports as revoked.
+ * reports as revoked or as active on another install.
  */
 import type { AttentionItem, AttentionProvider } from "@/src/lib/attention/types";
 import { readLicenseCheck } from "./online-check-state";
@@ -42,6 +42,15 @@ export const licenseAttentionProvider: AttentionProvider = {
             "critical",
             `License ${license.id} is revoked`,
             "Paid features already set up keep running; their settings are read-only. Questions: sales@ingres.si."
+          ),
+        ];
+      case "in_use":
+        return [
+          item(
+            "critical",
+            `License ${license.id} is active on another install`,
+            "Paid settings are read-only here; features already set up keep running. Deactivate the license on the other install " +
+              "to move it here. An install that stops checking for 14 days releases it."
           ),
         ];
       case "unconfirmed":

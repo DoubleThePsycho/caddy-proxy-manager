@@ -544,6 +544,7 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `app/api/v1/license/auto-update/route.ts` | `GET` | `license:read` |
 | `app/api/v1/license/auto-update/route.ts` | `PUT` | `license:write` |
 | `app/api/v1/license/check/route.ts` | `POST` | `license:write` |
+| `app/api/v1/license/deactivate/route.ts` | `POST` | `license:write` |
 | `app/api/v1/license/route.ts` | `GET` | `license:read` |
 | `app/api/v1/license/route.ts` | `PUT` | `license:write` |
 | `app/api/v1/license/route.ts` | `DELETE` | `license:write` |
@@ -711,6 +712,7 @@ Every guard of a route, page or server action and the permission it checks. Rout
 | `ee/licensing/ui/actions.ts` | `setLicenseAutoUpdateAction` | `license:write` |
 | `ee/licensing/ui/actions.ts` | `checkLicenseServerNowAction` | `license:write` |
 | `ee/licensing/ui/actions.ts` | `checkLicenseNowAction` | `license:write` |
+| `ee/licensing/ui/actions.ts` | `deactivateLicenseAction` | `license:write` |
 | `ee/sso/ui/actions.ts` | `saveSsoEnforcementAction` | `sso:write` |
 | `ee/white-label/ui/actions.ts` | `saveBrandingAction` | `branding:write` |
 | `ee/white-label/ui/actions.ts` | `uploadBrandingAssetAction` | `branding:write` |

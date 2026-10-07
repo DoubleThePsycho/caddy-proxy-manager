@@ -82,11 +82,12 @@ export function isVerifiedStatus(status: LicenseView["status"]): boolean {
   return status !== "unlicensed" && status !== "invalid";
 }
 
-/** Why a feature cannot be set up: "Not in Enterprise", "License expired", "License revoked" or "Not licensed". */
+/** Why a feature cannot be set up: "Not in Enterprise", "License expired", "License revoked", "License in use elsewhere" or "Not licensed". */
 export function outLabel(license: LicenseView): string {
   if (license.status === "expired") return "License expired";
   if (license.status === "revoked") return "License revoked";
   if (license.status === "unconfirmed") return "License not confirmed";
+  if (license.status === "in_use") return "License in use elsewhere";
   if ((license.status === "active" || license.status === "grace") && license.editionLabel) return `Not in ${license.editionLabel}`;
   return "Not licensed";
 }

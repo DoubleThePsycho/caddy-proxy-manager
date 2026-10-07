@@ -44,8 +44,8 @@ Every key's signature is verified on the install, against the public keys built 
 
 Keys from ingres.si (purchases and trials) are online keys: the License page shows **Online key** next to the status. The install confirms such a key with the license server once a day. Offline keys (issued on request for air-gapped installs) are never checked online.
 
-- **What is sent.** The leader node (a standalone install, or the instance sync master; replicas never ask) sends one request to `https://license.ingres.si` (or `LICENSE_SERVER_URL`): `POST /v1/licenses/<license id>/status` with `{"keySha256": "<SHA-256 of the installed key>"}`. Nothing else about the install is sent. The license server records when the license was last confirmed, at most once an hour.
-- **What comes back.** A statement signed by the license server, saying the license is active (for the next 14 days) or revoked. It counts only if its signature verifies with the public keys built into the release and it is about the installed license.
+- **What is sent.** The leader node (a standalone install, or the instance sync master; replicas never ask) sends one request to `https://license.ingres.si` (or `LICENSE_SERVER_URL`): `POST /v1/licenses/<license id>/status` with `{"keySha256": "<SHA-256 of the installed key>", "installId": "<this install's license install id>"}`. Nothing else about the install is sent. The license server records when the license was last confirmed, at most once an hour.
+- **What comes back.** A statement signed by the license server, saying the license is active (for the next 14 days), revoked, or in use on another install. It counts only if its signature verifies with the public keys built into the release, it is about the installed license, and it was issued to this install.
 - **When.** Right after an online key is installed, then once a day. After a failed attempt the install tries again within the hour. **Check now** on the License page, or `POST /api/v1/license/check` (`license:write`), asks right away, at most once a minute.
 
 | Online check | Meaning |
@@ -54,8 +54,21 @@ Keys from ingres.si (purchases and trials) are online keys: the License page sho
 | Not confirmed yet | A new online key has no confirmation yet. It works for 7 days after the install first saw the license; removing and reinstalling the key does not restart them. |
 | Not confirmed | No current confirmation: paid settings are read-only until the license server confirms the license again. Allow outbound HTTPS to `license.ingres.si`, or ask for an offline key. |
 | Revoked | The license was revoked: after a refund, a chargeback, or a key shared beyond the license. Paid settings are read-only at once, with no grace period. |
+| In use elsewhere | The license is active on another install (below). Paid settings are read-only here until it is deactivated there. |
 
-Whatever the confirmation says, traffic is never touched: proxying, certificates, the WAF, sign-in and every paid feature already configured keep running, as with an expired license. A revoked license that is reinstated (for example after a chargeback decided in the customer's favour) is editable again from the next check. The overview's **Needs attention** lists a license that is revoked, not confirmed, or not confirmed for more than a day after it was installed. The audit log records `license_revoked` and `license_reinstated` when the license server's answer changes.
+Whatever the confirmation says, traffic is never touched: proxying, certificates, the WAF, sign-in and every paid feature already configured keep running, as with an expired license. A revoked license that is reinstated (for example after a chargeback decided in the customer's favour) is editable again from the next check. The overview's **Needs attention** lists a license that is revoked, not confirmed, or not confirmed for more than a day after it was installed. The audit log records `license_revoked`, `license_reinstated`, `license_in_use` and `license_in_use_ended` when the license server's answer changes.
+
+## One install per license
+
+A license is active on one install at a time: a standalone install, a master with its instance sync replicas, or dashboard replicas sharing one database. Nodes are still counted inside that install.
+
+- **Install id.** On its first check, the install creates a random license install id, stores it in its database and sends it with every check. Dashboard replicas sharing the database share it. The license server keeps only a keyed hash of it, with when the install was first and last seen.
+- **A second install.** When another install checks while the license is active elsewhere, the license server answers that the license is in use: paid settings on that install are read-only and its License page says so.
+- **Moving a license.** On the old install, open the License page and select **Deactivate on this install**, or call `POST /api/v1/license/deactivate` (`license:write`). The license server releases the license and the key is removed. Then install the key on the new install. If the old install is gone, the license server releases it after 14 days without checks from it.
+- **Removing the key** (**Remove key**, or `DELETE /api/v1/license`) also releases an online key when the license server can be reached.
+- **Restoring a backup** on another machine carries the install id with the database. Deactivate the license on the old machine, or stop it, before starting the restored one.
+
+The audit log records `license_deactivated`. If the license server cannot be reached, **Deactivate on this install** offers to remove the key anyway (logged as `license_removed`).
 
 ## Keeping the license up to date automatically
 

@@ -11,12 +11,22 @@
  *   Removing and reinstalling a key does not reset it;
  * - the last attempt for the installed license and what came of it.
  *
+ * And, in its own row ("license_install_id"), this install's license install
+ * id: 32 random bytes, base64url, created on the first online check and
+ * sent with every check and deactivation. The license server keeps a license
+ * active on one install at a time and binds its statements to the id's
+ * SHA-256. Dashboard replicas sharing the database share it; instance sync
+ * replicas never check.
+ *
  * Imports nothing from the license store, which reads it.
  */
-import { getSetting, setSetting } from "@/src/lib/settings";
-import type { LicenseCheckInput } from "./license";
+import { randomBytes } from "node:crypto";
+import { getSetting, setSetting, setSettingIfAbsent } from "@/src/lib/settings";
+import { installIdHash, type LicenseCheckInput } from "./license";
 
 export const LICENSE_CHECK_SETTING_KEY = "license_check";
+export const LICENSE_INSTALL_ID_SETTING_KEY = "license_install_id";
+const INSTALL_ID = /^[A-Za-z0-9_-]{43}$/;
 
 /** At most this many license ids are remembered in each map; the oldest go first. */
 const MAX_REMEMBERED_LICENSES = 20;
@@ -89,9 +99,32 @@ export async function writeLicenseCheck(check: StoredLicenseCheck): Promise<void
   await setSetting(LICENSE_CHECK_SETTING_KEY, check);
 }
 
-/** The part evaluateLicense needs. */
-export function toCheckInput(check: StoredLicenseCheck): LicenseCheckInput {
-  return { statements: check.statements, firstSeen: check.firstSeen };
+/** A license install id as created here: 43 base64url characters. */
+export function isLicenseInstallId(value: unknown): value is string {
+  return typeof value === "string" && INSTALL_ID.test(value);
+}
+
+/** This install's license install id, or null before the first online check. */
+export async function readLicenseInstallId(): Promise<string | null> {
+  const stored = await getSetting<unknown>(LICENSE_INSTALL_ID_SETTING_KEY);
+  return isLicenseInstallId(stored) ? stored : null;
+}
+
+/** This install's license install id, created once (the first writer wins when replicas race). */
+export async function ensureLicenseInstallId(): Promise<string> {
+  const existing = await readLicenseInstallId();
+  if (existing) return existing;
+  const fresh = randomBytes(32).toString("base64url");
+  const stored = await setSettingIfAbsent(LICENSE_INSTALL_ID_SETTING_KEY, fresh);
+  if (isLicenseInstallId(stored)) return stored;
+  // A malformed row: replace it.
+  await setSetting(LICENSE_INSTALL_ID_SETTING_KEY, fresh);
+  return fresh;
+}
+
+/** The part evaluateLicense needs; statements count only with this install's id. */
+export function toCheckInput(check: StoredLicenseCheck, installId: string | null): LicenseCheckInput {
+  return { statements: check.statements, firstSeen: check.firstSeen, installHash: installId ? installIdHash(installId) : null };
 }
 
 /** Keeps `keep` and the most recent other entries, MAX_REMEMBERED_LICENSES in all, ordered by `rank`. */
@@ -118,6 +151,14 @@ export function withStatement(
   rank: (statement: string) => number
 ): StoredLicenseCheck {
   const statements = pruneMap({ ...check.statements, [licenseId]: statement }, licenseId, rank);
+  return { ...check, statements };
+}
+
+/** `check` without a stored statement for `licenseId` (after the license was deactivated here). */
+export function withoutStatement(check: StoredLicenseCheck, licenseId: string): StoredLicenseCheck {
+  if (!(licenseId in check.statements)) return check;
+  const statements = { ...check.statements };
+  delete statements[licenseId];
   return { ...check, statements };
 }
 

@@ -23,13 +23,16 @@
  *
  * signed over "ingressi-license-status:s1.<payload part>" (its own context:
  * a statement can never pass as a key, nor a key as a statement) by a
- * trusted key. The payload is {v: 1, kid, id, status: "active" | "revoked",
- * iat, exp}.
+ * trusted key. The payload is {v: 1, kid, id, status: "active" | "revoked" |
+ * "in_use", install, iat, exp}. `install` is the SHA-256 (hex) of the asking
+ * install's license install id: a statement only counts on the install it
+ * was issued to. A license is active on one install at a time; "in_use"
+ * says another install holds it.
  *
  * This module is pure: callers pass the trusted keys, the stored statements
  * and the current time.
  */
-import { createPublicKey, verify, type KeyObject } from "node:crypto";
+import { createHash, createPublicKey, verify, type KeyObject } from "node:crypto";
 import {
   EDITION_FEATURES,
   isEdition,
@@ -72,18 +75,20 @@ export type LicensePayload = {
 };
 
 /**
- * revoked: the license server says the license was revoked (a refund or a
- * chargeback). unconfirmed: an online key without a current confirmation
- * from the license server. Both leave paid settings read-only at once.
+ * revoked: the license server says the license was revoked. unconfirmed: an
+ * online key without a current confirmation from the license server.
+ * in_use: the license is active on another install. All three leave paid
+ * settings read-only at once.
  */
-export type LicenseStatus = "unlicensed" | "active" | "grace" | "expired" | "invalid" | "revoked" | "unconfirmed";
+export type LicenseStatus = "unlicensed" | "active" | "grace" | "expired" | "invalid" | "revoked" | "unconfirmed" | "in_use";
 
 /**
  * Where an online key stands with the license server. confirmed: a current
  * confirmation; pending: none yet, within the first days after this install
- * first saw the license; unconfirmed: neither; revoked: the server says so.
+ * first saw the license; unconfirmed: neither; revoked: the server says so;
+ * in_use: the server says another install holds the license.
  */
-export type OnlineCheckStatus = "confirmed" | "pending" | "unconfirmed" | "revoked";
+export type OnlineCheckStatus = "confirmed" | "pending" | "unconfirmed" | "revoked" | "in_use";
 
 export type OnlineCheckState = {
   state: OnlineCheckStatus;
@@ -109,19 +114,26 @@ export type LicenseState = {
 /**
  * What this install has stored about online keys, by license id: the
  * latest status statement from the license server, and when the license
- * was first seen here.
+ * was first seen here; and the SHA-256 (hex) of this install's license
+ * install id, which a statement must name to count. Without it no
+ * statement counts.
  */
 export type LicenseCheckInput = {
   statements?: Readonly<Record<string, string>>;
   firstSeen?: Readonly<Record<string, string>>;
+  installHash?: string | null;
 };
+
+export type LicenseStatementStatus = "active" | "revoked" | "in_use";
 
 export type LicenseStatement = {
   v: 1;
   kid: string;
   /** License id. */
   id: string;
-  status: "active" | "revoked";
+  status: LicenseStatementStatus;
+  /** SHA-256 (lowercase hex) of the license install id of the install the statement was issued to. */
+  install: string;
   iat: string;
   exp: string;
 };
@@ -158,6 +170,7 @@ export function statementSigningInput(payloadPart: string): Buffer {
 }
 
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
+const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 function isIsoInstant(value: unknown): value is string {
   return typeof value === "string" && value.length <= 40 && !Number.isNaN(Date.parse(value));
@@ -254,33 +267,39 @@ export function graceEnd(payload: LicensePayload): Date {
   return new Date(Date.parse(payload.exp) + GRACE_PERIOD_DAYS * DAY_MS);
 }
 
+/** The SHA-256 (lowercase hex) of a license install id: what a status statement names in `install`. */
+export function installIdHash(installId: string): string {
+  return createHash("sha256").update(installId, "utf8").digest("hex");
+}
+
 /** Validates a statement payload field by field; unknown fields are rejected. */
 export function parseLicenseStatementPayload(raw: unknown): LicenseStatement {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new LicenseStatementError("The status statement is not valid");
   }
-  const allowed = new Set(["v", "kid", "id", "status", "iat", "exp"]);
+  const allowed = new Set(["v", "kid", "id", "status", "install", "iat", "exp"]);
   const record = raw as Record<string, unknown>;
   for (const key of Object.keys(record)) {
     if (!allowed.has(key)) throw new LicenseStatementError("The status statement is not valid");
   }
-  const { v, kid, id, status, iat, exp } = record;
+  const { v, kid, id, status, install, iat, exp } = record;
   if (v !== 1) throw new LicenseStatementError("The status statement needs a newer version of Ingressi");
   if (!isShortText(kid, 64) || !isShortText(id, 64)) throw new LicenseStatementError("The status statement is not valid");
-  if (status !== "active" && status !== "revoked") throw new LicenseStatementError("The status statement is not valid");
+  if (status !== "active" && status !== "revoked" && status !== "in_use") throw new LicenseStatementError("The status statement is not valid");
+  if (typeof install !== "string" || !SHA256_HEX.test(install)) throw new LicenseStatementError("The status statement is not valid");
   if (!isIsoInstant(iat) || !isIsoInstant(exp)) throw new LicenseStatementError("The status statement is not valid");
   const from = Date.parse(iat);
   const to = Date.parse(exp);
   if (to <= from || to - from > STATEMENT_MAX_VALIDITY_DAYS * DAY_MS) {
     throw new LicenseStatementError("The status statement is not valid");
   }
-  return { v: 1, kid, id, status, iat, exp };
+  return { v: 1, kid, id, status, install, iat, exp };
 }
 
 /**
  * Parses a status statement and checks its signature and issue time (at
  * most a day ahead of `now`, for clock skew). Does not look at the license
- * id or the expiry: evaluateLicense does.
+ * id, the install or the expiry: validStatementFor and evaluateLicense do.
  */
 export function verifyLicenseStatement(token: string, keys: TrustedKeys, now: Date): LicenseStatement {
   const trimmed = typeof token === "string" ? token.trim() : "";
@@ -314,23 +333,33 @@ export function verifyLicenseStatement(token: string, keys: TrustedKeys, now: Da
   return statement;
 }
 
-/** The statement for `licenseId` when it verifies; null for anything else (never throws). */
-export function validStatementFor(token: string | null | undefined, licenseId: string, keys: TrustedKeys, now: Date): LicenseStatement | null {
-  if (!token) return null;
+/**
+ * The statement for `licenseId` issued to this install (`installHash`, see
+ * installIdHash) when it verifies; null for anything else, and always null
+ * without an install hash (never throws).
+ */
+export function validStatementFor(
+  token: string | null | undefined,
+  licenseId: string,
+  keys: TrustedKeys,
+  now: Date,
+  installHash: string | null | undefined
+): LicenseStatement | null {
+  if (!token || !installHash) return null;
   try {
     const statement = verifyLicenseStatement(token, keys, now);
-    return statement.id === licenseId ? statement : null;
+    return statement.id === licenseId && statement.install === installHash ? statement : null;
   } catch {
     return null;
   }
 }
 
 /**
- * Where an online key stands at `now`: the latest statement decides
- * (revoked stays revoked whatever its expiry, until a newer active one);
- * an active one counts until its expiry; without one, the key works for
- * FIRST_CHECK_ALLOWANCE_DAYS after this install first saw the license (a
- * key never seen counts as seen now).
+ * Where an online key stands at `now`: the latest statement issued to this
+ * install decides (revoked and in_use hold whatever their expiry, until a
+ * newer statement); an active one counts until its expiry; without one, the
+ * key works for FIRST_CHECK_ALLOWANCE_DAYS after this install first saw the
+ * license (a key never seen counts as seen now).
  */
 export function evaluateOnlineCheck(
   payload: LicensePayload,
@@ -338,9 +367,12 @@ export function evaluateOnlineCheck(
   now: Date,
   check: LicenseCheckInput = {}
 ): OnlineCheckState {
-  const statement = validStatementFor(check.statements?.[payload.id], payload.id, keys, now);
+  const statement = validStatementFor(check.statements?.[payload.id], payload.id, keys, now, check.installHash);
   if (statement?.status === "revoked") {
     return { state: "revoked", confirmedAt: null, validUntil: null };
+  }
+  if (statement?.status === "in_use") {
+    return { state: "in_use", confirmedAt: null, validUntil: null };
   }
   const nowMs = now.getTime();
   if (statement && nowMs <= Date.parse(statement.exp)) {
@@ -363,7 +395,8 @@ const UNLICENSED: LicenseState = { status: "unlicensed", license: null, features
  * features during the grace period; after it, they stay visible but can no
  * longer be changed (see `canConfigure`). An online key (v2) also needs a
  * current confirmation from the license server (`check`): without one, or
- * when it says the license was revoked, paid settings are read-only at once.
+ * when it says the license was revoked or is active on another install,
+ * paid settings are read-only at once.
  */
 export function evaluateLicense(token: string | null, keys: TrustedKeys, now: Date, check?: LicenseCheckInput): LicenseState {
   if (!token) return UNLICENSED;
@@ -393,9 +426,11 @@ export function evaluateLicense(token: string | null, keys: TrustedKeys, now: Da
       ? dated
       : onlineCheck.state === "revoked"
         ? "revoked"
-        : onlineCheck.state === "unconfirmed"
-          ? "unconfirmed"
-          : dated;
+        : onlineCheck.state === "in_use"
+          ? "in_use"
+          : onlineCheck.state === "unconfirmed"
+            ? "unconfirmed"
+            : dated;
   return { status, license: payload, features: licenseFeatures(payload), graceEndsAt: grace.toISOString(), error: null, onlineCheck };
 }
 

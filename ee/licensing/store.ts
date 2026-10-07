@@ -5,11 +5,12 @@
  * Gating rule: a license only decides whether paid features can be set up or
  * changed. Nothing here is consulted on the request path: proxying, TLS, the
  * WAF, sign-in (SSO included) and every paid feature already configured keep
- * working with an expired, removed, invalid, revoked or unconfirmed key.
+ * working with an expired, removed, invalid, revoked or unconfirmed key, or
+ * one that is active on another install.
  *
  * An online key (v2) is evaluated with what the online check stored
- * (online-check-state.ts): the license server's latest statement and when
- * the license was first seen here.
+ * (online-check-state.ts): the license server's latest statement for this
+ * install and when the license was first seen here.
  */
 import { clearSetting, getSetting, setSetting } from "@/src/lib/settings";
 import { ApiClientError } from "@/src/lib/api-errors";
@@ -19,7 +20,7 @@ import { BRAND_NAME } from "@/src/lib/brand";
 import { EDITION_LABELS, FEATURE_INFO, type Feature } from "./features";
 import { canConfigure, evaluateLicense, LicenseKeyError, requiresOnlineCheck, type LicenseState } from "./license";
 import { getTrustedLicenseKeys } from "./public-keys";
-import { readLicenseCheck, recordFirstSeen, toCheckInput } from "./online-check-state";
+import { readLicenseCheck, readLicenseInstallId, recordFirstSeen, toCheckInput } from "./online-check-state";
 
 export const LICENSE_SETTING_KEY = "license";
 
@@ -42,8 +43,8 @@ export async function getLicenseKey(): Promise<string | null> {
 }
 
 export async function getLicenseState(now: Date = new Date()): Promise<LicenseState> {
-  const [key, check] = await Promise.all([getLicenseKey(), readLicenseCheck()]);
-  const state = evaluateLicense(key, getTrustedLicenseKeys(), now, toCheckInput(check));
+  const [key, check, installId] = await Promise.all([getLicenseKey(), readLicenseCheck(), readLicenseInstallId()]);
+  const state = evaluateLicense(key, getTrustedLicenseKeys(), now, toCheckInput(check, installId));
   // An online key installed before this release, or whose row was lost: its first days start now.
   if (state.license && requiresOnlineCheck(state.license) && !check.firstSeen[state.license.id]) {
     await recordFirstSeen(state.license.id, now);
@@ -66,7 +67,8 @@ export type LicenseKeyCheckResult = {
  * their grace period are not installable.
  */
 export async function checkLicenseKey(key: string, now: Date = new Date()): Promise<LicenseKeyCheckResult> {
-  const state = evaluateLicense(key.trim(), getTrustedLicenseKeys(), now, toCheckInput(await readLicenseCheck()));
+  const [check, installId] = await Promise.all([readLicenseCheck(), readLicenseInstallId()]);
+  const state = evaluateLicense(key.trim(), getTrustedLicenseKeys(), now, toCheckInput(check, installId));
   if (state.status === "invalid" || state.status === "unlicensed") {
     return { state, installable: false, error: state.error ?? "The license key is not valid" };
   }

@@ -17,6 +17,7 @@ vi.mock('@/src/lib/models/instances', () => ({
 
 vi.mock('@/src/lib/instance-sync', () => ({
   getEnvSlaveInstances: vi.fn(() => [{ name: 'env', url: 'https://replica.example.com', token: 'x' }]),
+  getInstanceMode: vi.fn(async () => 'standalone'),
 }));
 
 vi.mock('@/src/lib/audit', () => ({ logAuditEvent: vi.fn() }));
