@@ -4,7 +4,7 @@ Pull the new images and recreate the containers with `docker compose pull && doc
 
 ## Upgrading to Ingressi
 
-Caddy Proxy Manager is now Ingressi, and the rename reaches header, cookie, file, image and container names. Old names keep working, so nothing has to be done; [upgrading-to-ingressi.md](upgrading-to-ingressi.md) lists every rename. Two things to check:
+Caddy Proxy Manager is now Ingressi, and the rename reaches header, cookie, file, image and container names. Most old names keep working; point your compose file at the `ghcr.io/ingres-si/ingressi-*` images, and see [upgrading-to-ingressi.md](upgrading-to-ingressi.md) for every rename. Two things to check:
 
 - **Upstreams behind Ingressi forward auth** receive `X-Ingressi-User`, `X-Ingressi-Email`, `X-Ingressi-Groups` and `X-Ingressi-User-Id`. The `X-CPM-*` headers are still sent with the same values but are deprecated; move upstream configuration to the new names.
 - **Prometheus metrics** label the main Caddy server `server="ingressi"` instead of `server="cpm"`.

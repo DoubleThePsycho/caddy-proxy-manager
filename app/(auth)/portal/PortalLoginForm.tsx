@@ -226,6 +226,9 @@ export default function PortalLoginForm({
                     </Button>
                   );
                 })}
+                <p className="m-0 text-center text-xs text-muted-foreground">
+                  Signing in to the dashboard with your identity provider also signs you in to the apps you're granted.
+                </p>
               </div>
               <div className="relative">
                 <Separator />

@@ -41,7 +41,7 @@ type Props = {
 const FAMILIES: { title: string; areas: readonly string[] }[] = [
   { title: "Traffic", areas: ["proxy_hosts", "l4_proxy_hosts", "certificates", "access_lists"] },
   { title: "Observe", areas: ["analytics", "waf", "alerts", "audit_log", "audit_streaming", "ai"] },
-  { title: "Identity", areas: ["users", "groups", "sso", "mfa_policy", "ldap", "scim", "access_reviews"] },
+  { title: "Users and sign-in", areas: ["users", "groups", "sso", "mfa_policy", "ldap", "scim", "access_reviews"] },
   { title: "Govern", areas: ["approvals", "config_history", "compliance"] },
   {
     title: "Platform",

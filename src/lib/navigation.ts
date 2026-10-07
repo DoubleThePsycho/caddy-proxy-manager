@@ -125,7 +125,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     ],
   },
   {
-    title: "Identity",
+    title: "Users and sign-in",
     entries: [
       {
         key: "users",

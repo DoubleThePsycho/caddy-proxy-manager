@@ -19,7 +19,7 @@ export default async function OAuthProvidersPage() {
     <div className="flex flex-col gap-5">
       <PageHeader
         className="mb-0"
-        breadcrumb={["Identity", canRead ? { label: "Sign-in and directories", href: "/sign-in" } : "Sign-in and directories", "OAuth providers"]}
+        breadcrumb={["Users and sign-in", canRead ? { label: "Sign-in and directories", href: "/sign-in" } : "Sign-in and directories", "OAuth providers"]}
         title="OAuth providers"
       />
       {canRead ? (

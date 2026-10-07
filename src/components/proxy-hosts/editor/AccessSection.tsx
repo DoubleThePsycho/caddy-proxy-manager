@@ -169,6 +169,7 @@ function IngressiSignIn() {
           </div>
         )}
         {nobody && (data.canChooseGroups || data.canChooseUsers) && <p className="m-0 text-xs text-warn">Nobody is chosen yet, so nobody can sign in to this host.</p>}
+        <p className="m-0 text-xs text-muted-foreground">People signed in to the dashboard through an identity provider get in without signing in again; everyone else signs in at the portal.</p>
         <FieldError id="f-sign-in-who" />
       </fieldset>
       <PathsFields prefix="f-fi" protectedPaths={ingressi.protectedPaths} excludedPaths={ingressi.excludedPaths} onChange={set} />

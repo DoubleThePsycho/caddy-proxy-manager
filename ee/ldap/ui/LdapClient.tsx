@@ -391,7 +391,7 @@ export default function LdapClient({ directories, configurable, canWrite, ssoEnf
     <div className="flex w-full min-w-0 flex-col gap-5">
       <PageHeader
         className="mb-0"
-        breadcrumb={["Identity", canReadSignIn ? { label: "Sign-in and directories", href: "/sign-in" } : "Sign-in and directories", "LDAP directories"]}
+        breadcrumb={["Users and sign-in", canReadSignIn ? { label: "Sign-in and directories", href: "/sign-in" } : "Sign-in and directories", "LDAP directories"]}
         title="LDAP directories"
         description={`Sign in to ${productName} with an LDAP or Active Directory account. The forward-auth portal is not affected.`}
         actions={canWrite ? (

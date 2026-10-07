@@ -13,7 +13,11 @@ const fa = vi.hoisted(() => ({
   getDisallowedForwardAuthPort: vi.fn(),
 }));
 
-vi.mock('@/src/lib/auth', () => ({ auth: vi.fn().mockResolvedValue(null) }));
+const authLib = vi.hoisted(() => ({
+  auth: vi.fn(),
+  portalMayReuseSession: vi.fn(),
+}));
+vi.mock('@/src/lib/auth', () => authLib);
 vi.mock('@/src/lib/models/oauth-providers', () => ({ getProviderDisplayList: vi.fn().mockResolvedValue([]) }));
 vi.mock('@/src/lib/models/forward-auth', () => fa);
 vi.mock('@/src/lib/auth-client', () => ({ authClient: { signIn: { social: vi.fn() } } }));
@@ -30,6 +34,8 @@ async function renderPortal(searchParams: Record<string, string | string[]>) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  authLib.auth.mockResolvedValue(null);
+  authLib.portalMayReuseSession.mockResolvedValue(false);
   fa.isForwardAuthDomain.mockResolvedValue(true);
   fa.getDisallowedForwardAuthPort.mockResolvedValue(null);
   fa.createRedirectIntent.mockResolvedValue('rid-from-intent');
@@ -74,5 +80,24 @@ describe('portal page', () => {
     const { props } = await renderPortal({ rid: 'c'.repeat(32) });
     expect(props.rid).toBe('c'.repeat(32));
     expect(props.errorMessage).toBeNull();
+  });
+
+  describe('a visitor already signed in to the dashboard', () => {
+    const session = { user: { id: '7', email: 'ada@example.com', name: 'Ada', role: 'user' } };
+
+    it('is signed in to the app when an identity provider created the session', async () => {
+      authLib.auth.mockResolvedValue(session);
+      authLib.portalMayReuseSession.mockResolvedValue(true);
+      const { props } = await renderPortal({ rd: 'https://app.example.com/' });
+      expect(props.existingSession).toEqual({ userId: '7', name: 'Ada', email: 'ada@example.com' });
+    });
+
+    it('signs in at the portal when the session came from a password or a passkey', async () => {
+      authLib.auth.mockResolvedValue(session);
+      authLib.portalMayReuseSession.mockResolvedValue(false);
+      const { props, html } = await renderPortal({ rd: 'https://app.example.com/' });
+      expect(props.existingSession).toBeNull();
+      expect(html).toContain('type="password"');
+    });
   });
 });

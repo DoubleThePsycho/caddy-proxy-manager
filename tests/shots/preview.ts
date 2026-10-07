@@ -94,8 +94,8 @@ p { margin-top: 22px; font-size: 20px; line-height: 1.5; color: #a3aab8; }
 <div class="grid"></div>
 <div class="copy">
   <div class="brand">${MARK}<span>Ingressi</span></div>
-  <h1>Reverse proxy, WAF and access control for Caddy</h1>
-  <p>Automatic HTTPS, the OWASP Core Rule Set, <span class="nowrap">sign-in</span> in front of your apps and analytics of every request. Self-hosted, with an MIT core.</p>
+  <h1>Self-hosted reverse proxy, built on Caddy</h1>
+  <p>Automatic HTTPS, load balancing, TCP and UDP streams and analytics of every request, with an optional WAF and <span class="nowrap">sign-in</span> per host. MIT core.</p>
 </div>
 <div class="url">ingres.si</div>
 <div class="shot"><img src="${shot}" alt=""></div>

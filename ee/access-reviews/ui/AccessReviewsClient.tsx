@@ -207,7 +207,7 @@ export default function AccessReviewsClient(props: Props) {
     <div className="flex w-full min-w-0 flex-col gap-5">
       <PageHeader
         className="mb-0"
-        breadcrumb={["Identity", "Access reviews"]}
+        breadcrumb={["Users and sign-in", "Access reviews"]}
         title="Access reviews"
         description="Reviewers keep or revoke each user's account, role, group memberships and API tokens."
         actions={props.canWrite ? (

@@ -72,7 +72,13 @@ export const sessions = sqliteTable(
     ipAddress: text("ipAddress"),
     userAgent: text("userAgent"),
     createdAt: text("createdAt").notNull(),
-    updatedAt: text("updatedAt").notNull()
+    updatedAt: text("updatedAt").notNull(),
+    /**
+     * How the sign-in that created the session was made (SignInMethod in
+     * src/lib/sign-in-activity.ts); null when unknown. The forward-auth
+     * portal reuses only sessions from an identity provider (sso, saml, ldap).
+     */
+    signInMethod: text("signInMethod")
   },
   (table) => ({
     tokenUnique: uniqueIndex("sessions_token_unique").on(table.token),

@@ -6,7 +6,7 @@
  */
 export const BRAND_NAME = "Ingressi";
 
-export const BRAND_TAGLINE = "Reverse proxy and access management for Caddy";
+export const BRAND_TAGLINE = "Self-hosted reverse proxy built on Caddy";
 
 /** Shown where users of the old name need to recognise the product. */
 export const BRAND_FORMER_NAME = "Caddy Proxy Manager";

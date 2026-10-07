@@ -288,7 +288,7 @@ export default function SamlClient({ providers, configurable, canWrite, secureBa
     <div className="flex w-full min-w-0 flex-col gap-5">
       <PageHeader
         className="mb-0"
-        breadcrumb={["Identity", { label: "Sign-in and directories", href: "/sign-in" }, "SAML"]}
+        breadcrumb={["Users and sign-in", { label: "Sign-in and directories", href: "/sign-in" }, "SAML"]}
         title="SAML"
         description={`Sign in to ${productName} through a SAML 2.0 identity provider. The forward-auth portal is not affected.`}
         actions={canWrite ? (

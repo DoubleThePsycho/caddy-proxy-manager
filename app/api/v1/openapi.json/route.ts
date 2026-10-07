@@ -62,7 +62,7 @@ const spec = {
     title: `${BRAND_NAME} API`,
     version: APP_VERSION,
     description:
-      "The Ingressi REST API: proxy hosts, certificates, access lists, users and every other dashboard setting. " +
+      "The REST API of Ingressi, a self-hosted reverse proxy built on Caddy: proxy hosts, certificates, access lists, users and every other dashboard setting. " +
       "Each administrative endpoint needs one permission from the catalogue " +
       "(GET /api/v1/permissions; the endpoint-to-permission table is in ee/docs/custom-roles.md). The built-in admin role " +
       "holds every permission; the built-in user and viewer roles hold none of them; a custom role holds the permissions it " +

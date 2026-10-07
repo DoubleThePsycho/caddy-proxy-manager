@@ -18,17 +18,23 @@ The coordinated vulnerability disclosure policy is in [SECURITY.md](../../SECURI
 
 ## 3. Product identification
 
-Ingressi, a reverse proxy, web application firewall and access control product for Caddy. It is distributed as three container images, identified by their release tag (for example `2.0.1`) and digest:
+Ingressi, a self-hosted reverse proxy built on Caddy. It is distributed as three container images, identified by their release tag (for example `2.0.1`) and digest:
 
-- `ghcr.io/ingres-si/ingressi-web` (dashboard, REST API, background jobs)
-- `ghcr.io/ingres-si/ingressi-caddy` (Caddy with the WAF and the other modules)
+- `ghcr.io/ingres-si/ingressi-web` (the dashboard and REST API that configure the reverse proxy, and background jobs)
+- `ghcr.io/ingres-si/ingressi-caddy` (the reverse proxy engine: Caddy with Ingressi's modules for L4 proxying, the WAF, rate limiting and geo blocking, each off until configured)
 - `ghcr.io/ingres-si/ingressi-l4-port-manager` (publishes L4 ports)
 
 The dashboard shows the version in the account menu. Each release is on https://github.com/ingres-si/ingressi/releases.
 
 ## 4. Intended purpose, security environment and security properties
 
-**Intended purpose:** to run in front of web applications and TCP/UDP services, on a Linux server with Docker, and to: route requests to them with automatic HTTPS; filter attacks with a web application firewall (OWASP Core Rule Set); limit request rates; allow access only to signed-in users or groups (forward-auth portal, single sign-on, multi-factor authentication); record what happens (analytics, security events, audit log).
+**Intended purpose:** Ingressi is a self-hosted reverse proxy built on Caddy, run on a Linux server with Docker. It receives HTTP(S), TCP and UDP traffic for the domains and ports an administrator configures, terminates TLS with certificates it obtains automatically, and forwards the traffic to upstream services, with load balancing and health checks. A web dashboard and a REST API configure it, and it records traffic analytics and an audit log. Optional features are off until an administrator turns them on, for one host or for all hosts:
+
+- a web application firewall (Coraza with the OWASP Core Rule Set);
+- access lists, geo blocking and rate limiting;
+- a sign-in portal in front of proxied apps. It signs people in with their Ingressi account (a password or OAuth). Single sign-on across apps comes from the operator's identity provider (OIDC, SAML or LDAP): the portal reuses a dashboard session only when that provider created it. Ingressi is not an identity provider for other applications. It passes the user's identity to the app in `X-Ingressi-*` headers, and takes its access rules from Ingressi's users and groups, which SCIM provisioning and access reviews can manage;
+- client certificates (mutual TLS) from a built-in CA;
+- instance sync, which copies the configuration to other Ingressi installs.
 
 **Security environment the product expects:**
 
@@ -50,7 +56,7 @@ The dashboard shows the version in the account menu. Each release is on https://
 
 - **Dashboard over plain HTTP.** The example `docker-compose.yml` publishes the dashboard on port 3000 without TLS. Anyone on the network path can read passwords and session cookies. See 8(a).
 - **Not updating.** Fixes ship only in new releases. Running an old release leaves known vulnerabilities open.
-- **WAF in "Detection only".** Attacks are logged, not blocked.
+- **WAF left in "Detection only"** on a host where you turned it on: attacks are logged, not blocked.
 - **Upstreams over plain HTTP or with TLS verification turned off** expose the traffic between Ingressi and your application.
 - **Leaked `SESSION_SECRET` or `.env`.** It decrypts the stored secrets and can forge sessions.
 - **Exposed L4 ports and the Docker socket.** L4 hosts publish ports directly; the L4 port manager reaches Docker only through the socket proxy of the compose file — do not mount `/var/run/docker.sock` into other services.
@@ -75,7 +81,7 @@ Not issued yet. It will be published at https://ingres.si/security/ once the con
 2. Do not publish the dashboard port to untrusted networks: change `"3000:3000"` to `"127.0.0.1:3000:3000"` and reach the dashboard through a proxy host with HTTPS, a VPN or an SSH tunnel.
 3. Turn on multi-factor authentication for every administrator, and set the MFA policy on the Users page to require it.
 4. Give each person their own account and the smallest role they need; give API tokens only the permissions they use.
-5. Set the WAF to blocking once its events look right; keep the Needs attention list empty.
+5. If you turn on the WAF for a host, set it to blocking once its events look right. Keep the Needs attention list empty.
 6. Back up the data volumes and `.env` regularly, encrypted, and test a restore.
 7. Verify image signatures before running new releases (see [SECURITY.md](../../SECURITY.md#verifying-release-images)).
 

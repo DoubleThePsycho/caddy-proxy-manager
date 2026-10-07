@@ -98,7 +98,7 @@ export default function SsoClient({ enforcement, candidates, saveEnforcement, ca
     <div className="flex w-full min-w-0 flex-col gap-5">
       <PageHeader
         className="mb-0"
-        breadcrumb={["Identity", { label: "Sign-in and directories", href: "/sign-in" }, "Single sign-on"]}
+        breadcrumb={["Users and sign-in", { label: "Sign-in and directories", href: "/sign-in" }, "Single sign-on"]}
         title="Single sign-on"
         description={`Require sign-in to ${productName} through your identity provider. The forward-auth portal is not affected.`}
       />

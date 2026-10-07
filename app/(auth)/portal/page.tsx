@@ -1,4 +1,4 @@
-import { auth } from "@/src/lib/auth";
+import { auth, portalMayReuseSession } from "@/src/lib/auth";
 import { getProviderDisplayList } from "@/src/lib/models/oauth-providers";
 import {
   isForwardAuthDomain,
@@ -55,7 +55,10 @@ export default async function PortalPage({ searchParams }: PortalPageProps) {
     }
   }
 
+  // A dashboard session signs the visitor in here only when an identity
+  // provider created it (portalMayReuseSession); otherwise they sign in below.
   const session = await auth();
+  const reusableSession = session && (await portalMayReuseSession()) ? session : null;
   const enabledProviders = await getProviderDisplayList();
 
   return (
@@ -65,7 +68,7 @@ export default async function PortalPage({ searchParams }: PortalPageProps) {
       targetDomain={targetDomain}
       errorMessage={errorMessage}
       enabledProviders={enabledProviders}
-      existingSession={session ? { userId: session.user.id, name: session.user.name ?? null, email: session.user.email ?? null } : null}
+      existingSession={reusableSession ? { userId: reusableSession.user.id, name: reusableSession.user.name ?? null, email: reusableSession.user.email ?? null } : null}
     />
   );
 }

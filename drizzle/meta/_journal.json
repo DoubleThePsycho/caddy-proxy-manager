@@ -407,6 +407,13 @@
       "when": 1791310000000,
       "tag": "0059_drop_multi_tenancy",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "6",
+      "when": 1791320000000,
+      "tag": "0060_session_sign_in_method",
+      "breakpoints": true
     }
   ]
 }

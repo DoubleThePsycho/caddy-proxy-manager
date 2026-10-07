@@ -47,7 +47,7 @@ export const REQUEST_PATH_ROUTES: readonly RequestPathRoute[] = [
   {
     path: "/api/forward-auth/session-login",
     match: "exact",
-    reason: "the portal's sign-in for a visitor already signed in to the dashboard",
+    reason: "the portal's sign-in for a visitor signed in to the dashboard through an identity provider",
   },
   {
     path: "/api/branding",

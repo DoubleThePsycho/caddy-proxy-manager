@@ -1,6 +1,6 @@
 # Users and groups
 
-**Users and groups** (Identity in the sidebar) has three tabs: **Users**, **Groups** and **Roles**. `/users` opens the first, `/groups` the second and `/users?tab=roles` the third; `/users?user=<id>` opens a user's panel. Each tab needs its own permission: Users `users:read`, Groups `groups:read`, Roles `users:read`. It is part of the Community edition; custom roles need a license.
+**Users and groups** (Users and sign-in in the sidebar) has three tabs: **Users**, **Groups** and **Roles**. `/users` opens the first, `/groups` the second and `/users?tab=roles` the third; `/users?user=<id>` opens a user's panel. Each tab needs its own permission: Users `users:read`, Groups `groups:read`, Roles `users:read`. It is part of the Community edition; custom roles need a license.
 
 ## Users
 

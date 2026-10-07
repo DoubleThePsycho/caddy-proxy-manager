@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/src/lib/auth";
+import { auth, portalMayReuseSession } from "@/src/lib/auth";
 import { config } from "@/src/lib/config";
 import { FORWARD_AUTH_CALLBACK_PATH } from "@/src/lib/forward-auth-trust";
 import {
@@ -11,9 +11,12 @@ import {
 import { logAuditEvent } from "@/src/lib/audit";
 
 /**
- * Forward auth session login — uses an existing NextAuth session to create
- * a forward auth session. Called automatically when the portal detects the
- * user is already logged in (e.g. after OAuth).
+ * Forward auth session login: signs the visitor in to the protected app with
+ * their dashboard session. Only a session an identity provider created (OIDC,
+ * SAML or LDAP sign-in) qualifies, so single sign-on across apps comes from
+ * that provider; a password or passkey session gets 401 and the visitor signs
+ * in at the portal. Called by the portal when it finds such a session
+ * (e.g. after the OAuth return).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -27,6 +30,9 @@ export async function POST(request: NextRequest) {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
+    if (!(await portalMayReuseSession())) {
+      return NextResponse.json({ error: "Sign in to continue." }, { status: 401 });
     }
 
     const body = await request.json();

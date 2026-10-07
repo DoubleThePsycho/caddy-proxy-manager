@@ -13,7 +13,7 @@ An account has MFA on when it has an authenticator app, at least one passkey, or
 - **Passkey sign-in** (`/api/auth/passkey/verify-authentication`) is a sign-in of its own: the passkey proves both factors, so it asks for nothing else. See [Passkeys](#passkeys).
 - **Not covered:**
   - **OAuth/OIDC and SAML sign-in.** The identity provider is responsible for MFA, so sign-ins through it are never asked for a local code, even by an account that has MFA turned on (it applies to that account's password sign-in). SAML sign-in (a paid feature, `ee/docs/sso-saml.md`) does not ask the identity provider for a particular authentication method either; require MFA there.
-  - **The forward-auth portal** (`/portal`, where end users of protected applications sign in). It is unchanged and does not ask for a second factor.
+  - **The forward-auth portal** (`/portal`, where end users of protected applications sign in). It is unchanged and does not ask for a second factor. A dashboard session from a password and a second factor does not sign anyone in to protected apps: the portal asks for the username and password. Sign-ins through an identity provider are reused, and the second factor is then the provider's.
   - **API tokens.** They are separate credentials and keep working. New tokens can only be created from an interactive session, which means after the second step.
 
 ## Setting it up

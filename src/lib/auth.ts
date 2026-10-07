@@ -5,7 +5,7 @@ import { MFA_SETUP_PATH, mfaEnrolmentRequired } from "./mfa";
 import { can, permissionDeniedMessage, type Access, type Permission } from "./permissions";
 import { ApiClientError } from "./api-errors";
 import { accessForUser } from "@/ee/custom-roles/access";
-import { touchSessionLastSeen } from "./models/sessions";
+import { getSessionSignInMethod, isPortalReusableSignInMethod, touchSessionLastSeen } from "./models/sessions";
 
 export type Session = {
   user: {
@@ -131,6 +131,24 @@ export async function getCurrentSessionInfo(
     return { id: Number(session.id), createdAt: new Date(session.createdAt) };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Whether the forward-auth portal may sign the caller in to a protected app
+ * with their dashboard session: only when an identity provider created that
+ * session (OIDC, SAML or LDAP sign-in). Single sign-on across apps then comes
+ * from the customer's identity provider; a password or passkey session (and
+ * one from before the sign-in method was recorded) is not reused, and the
+ * user signs in at the portal instead.
+ */
+export async function portalMayReuseSession(req?: NextRequest): Promise<boolean> {
+  const info = await getCurrentSessionInfo(req);
+  if (!info) return false;
+  try {
+    return isPortalReusableSignInMethod(await getSessionSignInMethod(info.id));
+  } catch {
+    return false;
   }
 }
 

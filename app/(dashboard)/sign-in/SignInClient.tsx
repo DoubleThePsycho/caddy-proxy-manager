@@ -101,7 +101,7 @@ export default function SignInClient({ overview, can, turnOffEnforcement }: Prop
     <div className="flex w-full min-w-0 flex-col gap-5">
       <PageHeader
         className="mb-0"
-        breadcrumb={["Identity", "Sign-in and directories"]}
+        breadcrumb={["Users and sign-in", "Sign-in and directories"]}
         title="Sign-in and directories"
         actions={
           <>

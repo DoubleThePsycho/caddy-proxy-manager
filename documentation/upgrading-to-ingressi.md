@@ -1,6 +1,6 @@
 # Upgrading from Caddy Proxy Manager to Ingressi
 
-Caddy Proxy Manager is now called Ingressi. The rename reaches the names the product uses on the wire and on disk too. Every old name keeps working for existing installs, so an upgrade needs no action. The table lists what changed and how long the old name keeps working.
+Caddy Proxy Manager is now called Ingressi, and the rename reaches the names the product uses on the wire and on disk. Most old names keep working for existing installs. The table lists what changed, what to update and how long each old name keeps working.
 
 | What | Old name | New name | Old name after the upgrade |
 | --- | --- | --- | --- |
@@ -11,6 +11,7 @@ Caddy Proxy Manager is now called Ingressi. The rename reaches the names the pro
 | REST field for Ingressi forward auth on proxy hosts | `cpmForwardAuth` | `ingressiForwardAuth` | Accepted on input when `ingressiForwardAuth` is absent, and returned next to it. Deprecated. Sending both with different values is refused. |
 | SQLite database file | `caddy-proxy-manager.db` | `ingressi.db` | When `DATABASE_URL` names `ingressi.db`, the file does not exist and `caddy-proxy-manager.db` is in the same directory, the old file and its `-wal`/`-shm`/`-journal` files are renamed on start. A compose file that still names the old file keeps using it. |
 | GitHub repository | `fuomag9/caddy-proxy-manager`, then `ingres-si/caddy-proxy-manager` | `ingres-si/ingressi` | GitHub redirects both older URLs to `https://github.com/ingres-si/ingressi`. |
+| Docker images | The images of Caddy Proxy Manager | `ghcr.io/ingres-si/ingressi-{web,caddy,l4-port-manager}` | No longer updated: point your compose file at the new images, as `docker-compose.yml` here does. |
 | Container names in `docker-compose.yml` | `caddy-proxy-manager-*` | `ingressi-*` | The L4 port manager finds a caddy container under either name. Scripts that address containers by name need the new names once you use the new compose file. |
 | Caddy HTTP server name | `cpm` | `ingressi` | Changed. Prometheus metrics carry it as the `server` label: update dashboards and alerts that filter on `server="cpm"`. |
 | Default ClickHouse user | `cpm` | `ingressi` | The bundled ClickHouse container recreates its user from `CLICKHOUSE_USER` on every start, so nothing is needed. If you run your own ClickHouse and never set `CLICKHOUSE_USER`, set `CLICKHOUSE_USER=cpm`. |

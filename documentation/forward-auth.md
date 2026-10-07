@@ -1,6 +1,6 @@
 # Forward auth portal
 
-Ingressi has a built-in forward auth portal, so no external identity provider (Authentik, Authelia) is needed. The portal signs people in with a password or OAuth, and a host's excluded paths bypass authentication.
+Ingressi can put a sign-in page in front of a proxy host: visitors sign in with their Ingressi account (a password or OAuth) before the request reaches the app, and a host's excluded paths skip it. Someone who signed in to the dashboard through an identity provider (OIDC, SAML or an LDAP directory) is signed in without being asked again, so single sign-on across the apps they are granted comes from that provider. A dashboard session from a password or a passkey is not reused: the visitor signs in at the portal. The portal passes the user's identity to the app in [identity headers](#identity-headers). It is off on every host until you turn it on for that host. An external forward-auth server such as Authentik or Authelia can be used instead.
 
 ## How it works
 

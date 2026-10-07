@@ -37,7 +37,7 @@ Imported certificates are read from their PEM. For the certificates Caddy obtain
 
 ## Certificate authorities
 
-Certificate authorities for client certificates (mutual TLS): generate one here, which stores its private key encrypted and lets you issue client certificates, or import a CA's certificate so the client certificates it signs elsewhere are trusted. **Trusted by** lists the proxy hosts whose mutual TLS trusts the CA, its client certificates or a role holding them. The count of active client certificates, or **Show client certificates** in the CA's menu, opens the **Client certificates** tab filtered to that CA. From ten certificate authorities on, a search field filters them by name.
+Certificate authorities for client certificates (mutual TLS), an optional feature: no proxy host asks for a client certificate until you turn mutual TLS on for it. Generate a CA here, which stores its private key encrypted and lets you issue client certificates, or import a CA's certificate so the client certificates it signs elsewhere are trusted. **Trusted by** lists the proxy hosts whose mutual TLS trusts the CA, its client certificates or a role holding them. The count of active client certificates, or **Show client certificates** in the CA's menu, opens the **Client certificates** tab filtered to that CA. From ten certificate authorities on, a search field filters them by name.
 
 ## Client certificates
 

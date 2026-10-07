@@ -35,11 +35,13 @@ import {
   isMfaSessionRotation,
   mfaAfterRequest,
   mfaBeforeRequest,
+  requestSessionSignInMethod,
   signInAuditSummary,
   type MfaHookContext,
 } from "./mfa-auth";
 import { PASSKEY_DISABLED_PATHS, PASSKEY_SIGN_IN_PATH, createPasskeyPlugin, passkeyGuardPlugin } from "./passkey-auth";
-import { completedSignIn, noteFirstSignInStep, recordSignIn } from "./sign-in-activity";
+import { completedSignIn, noteFirstSignInStep, recordSignIn, type SignInMethod } from "./sign-in-activity";
+import { setSessionSignInMethod } from "./models/sessions";
 import { first } from "@/src/lib/db/ops";
 
 /** The enabled OAuth/OIDC providers, as Better Auth is built with them. */
@@ -237,6 +239,20 @@ async function refuseSignUpUnderSsoEnforcement(path: string): Promise<void> {
     message: "Email and password sign up is not enabled",
     code: "EMAIL_PASSWORD_SIGN_UP_DISABLED",
   });
+}
+
+/**
+ * Records on a new session how its sign-in was made. A session left without
+ * one (the write failed) is simply not reused by the forward-auth portal.
+ */
+async function markSessionSignInMethod(session: unknown, method: SignInMethod | null): Promise<void> {
+  const id = Number((session as { id?: unknown } | null)?.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return;
+  try {
+    await setSessionSignInMethod(id, method);
+  } catch {
+    // Bookkeeping only; never fail a sign-in over it.
+  }
 }
 
 /** Ingressi's checks on Better Auth requests; they run before the plugins' hooks. */
@@ -626,13 +642,23 @@ function createAuth(providers: LoadedProviders): any {
               // Null when the session is not a completed sign-in: a password
               // sign-in that still needs its second factor, or MFA being
               // turned on or off.
-              const summary = await signInAuditSummary(userId, context as Parameters<typeof signInAuditSummary>[1]);
+              const requestContext = context as Parameters<typeof signInAuditSummary>[1];
+              const summary = await signInAuditSummary(userId, requestContext);
               if (summary === null) {
+                // Turning MFA on or off replaces the caller's session: the new
+                // one keeps how the user signed in.
+                if (await isMfaSessionRotation(userId, requestContext)) {
+                  await markSessionSignInMethod(session, await requestSessionSignInMethod(requestContext));
+                }
                 await noteFirstSignInStep(userId, context);
                 return;
               }
+              const signIn = await completedSignIn(userId, context);
+              // The forward-auth portal reuses only sessions an identity
+              // provider created (portalMayReuseSession in auth.ts).
+              await markSessionSignInMethod(session, signIn.method);
               // users.lastSignInAt / lastSignInMethod and sign_in_sources (Users page, Sign-in and directories, their APIs).
-              await recordSignIn(userId, await completedSignIn(userId, context));
+              await recordSignIn(userId, signIn);
               const { createAuditEvent } = await import("./models/audit");
               await createAuditEvent({
                 userId,

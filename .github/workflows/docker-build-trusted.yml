@@ -33,12 +33,15 @@ jobs:
           - service: web
             dockerfile: docker/web/Dockerfile
             context: .
+            description: "Ingressi dashboard and REST API: configures the Ingressi reverse proxy"
           - service: caddy
             dockerfile: docker/caddy/Dockerfile
             context: .
+            description: "Ingressi reverse proxy: Caddy with Ingressi's modules"
           - service: l4-port-manager
             dockerfile: docker/l4-port-manager/Dockerfile
             context: .
+            description: "Publishes the TCP and UDP ports of Ingressi's L4 proxy hosts"
 
     steps:
       - name: Checkout repository
@@ -96,10 +99,14 @@ jobs:
           # metadata goes on the index as well as on each platform manifest.
           DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
+          # Each image says what it is, instead of inheriting the repository
+          # description.
           labels: |
             org.opencontainers.image.licenses=MIT AND Elastic-2.0
+            org.opencontainers.image.description=${{ matrix.description }}
           annotations: |
             org.opencontainers.image.licenses=MIT AND Elastic-2.0
+            org.opencontainers.image.description=${{ matrix.description }}
           images: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
           tags: |

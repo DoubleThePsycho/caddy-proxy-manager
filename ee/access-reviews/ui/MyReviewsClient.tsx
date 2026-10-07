@@ -89,7 +89,7 @@ export default function MyReviewsClient({ assignments, currentUserId, evidence =
     <div className="flex w-full min-w-0 flex-col gap-6">
       <PageHeader
         className="mb-0"
-        breadcrumb={["Identity", "My reviews"]}
+        breadcrumb={["Users and sign-in", "My reviews"]}
         title="My reviews"
         count={assignments.length > 0 ? assignments.length : null}
         description="Choose keep or revoke for each item, then confirm."

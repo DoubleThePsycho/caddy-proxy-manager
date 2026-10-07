@@ -1,7 +1,7 @@
 {
   "name": "ingressi",
   "version": "1.0.0",
-  "description": "Ingressi - reverse proxy and access management for Caddy (formerly Caddy Proxy Manager).",
+  "description": "Ingressi: self-hosted reverse proxy built on Caddy (formerly Caddy Proxy Manager).",
   "private": true,
   "scripts": {
     "dev": "next dev",

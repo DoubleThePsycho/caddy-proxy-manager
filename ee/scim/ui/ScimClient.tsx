@@ -382,7 +382,7 @@ export default function ScimClient(props: ScimClientProps) {
     <div className="flex w-full min-w-0 flex-col gap-5">
       <PageHeader
         className="mb-0"
-        breadcrumb={["Identity", props.canReadSignIn === false ? "Sign-in and directories" : { label: "Sign-in and directories", href: "/sign-in" }, "SCIM provisioning"]}
+        breadcrumb={["Users and sign-in", props.canReadSignIn === false ? "Sign-in and directories" : { label: "Sign-in and directories", href: "/sign-in" }, "SCIM provisioning"]}
         title="SCIM provisioning"
         description={`Let your identity provider create, update and disable ${productName} users and groups.`}
       />

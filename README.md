@@ -1,6 +1,6 @@
 # Ingressi
 
-Reverse proxy and access management for [Caddy](https://caddyserver.com/): a web interface for proxy hosts, certificates, WAF, access control and traffic analytics. Formerly **Caddy Proxy Manager**.
+Self-hosted reverse proxy built on [Caddy](https://caddyserver.com/): proxy hosts with automatic HTTPS, load balancing, TCP/UDP streams and traffic analytics, configured from a web dashboard and REST API. Optional per host: a web application firewall, access rules, rate limiting and a sign-in portal. Formerly **Caddy Proxy Manager**.
 
 [![License: MIT + Elastic-2.0 (ee/)](https://img.shields.io/badge/license-MIT%20%2B%20Elastic--2.0%20%28ee%2F%29-green.svg)](#license)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
@@ -27,7 +27,7 @@ Data persists in Docker volumes (caddy-manager-data, caddy-data, caddy-config, c
 
 ## Upgrading from Caddy Proxy Manager
 
-Caddy Proxy Manager is now Ingressi. Old names keep working, so nothing has to be done; [upgrading-to-ingressi.md](documentation/upgrading-to-ingressi.md) lists every rename. Before any upgrade, read the [upgrade notes](documentation/upgrade-notes.md) of every version since yours, then run `docker compose pull && docker compose up -d`.
+Caddy Proxy Manager is now Ingressi. The old header, cookie and database names keep working; [upgrading-to-ingressi.md](documentation/upgrading-to-ingressi.md) lists every rename and what to change. Before any upgrade, read the [upgrade notes](documentation/upgrade-notes.md) of every version since yours, then run `docker compose pull && docker compose up -d`.
 
 ## Features
 
@@ -35,12 +35,11 @@ The Community edition (MIT) includes:
 
 - **Proxy hosts:** reverse proxies with custom headers, several upstreams, load balancing (8 policies), active and passive health checks, retries, path-based routes, redirects and rewrites
 - **L4 proxy hosts:** TCP/UDP stream proxying with TLS SNI matching, proxy protocol (v1/v2), load balancing, health checks and geo blocking; a sidecar manages the Docker Compose ports
-- **Certificates:** automatic HTTPS through ACME (Let's Encrypt, ZeroSSL), DNS-01 with 22 DNS providers, imported certificates, and a built-in CA for client certificates (mTLS) with role-based path rules
-- **WAF:** Coraza with the OWASP Core Rule Set, per-host modes, rule exclusions and custom SecLang rules
-- **Access control:** access lists (address, country, continent and AS number rules, and basic auth), geo blocking and rate limiting
-- **Sign-in:** a built-in forward auth portal with users and groups, Authentik and other forward-auth servers, OAuth2/OIDC sign-in to the dashboard, multi-factor authentication and passkeys
+- **Certificates:** automatic HTTPS through ACME (Let's Encrypt, ZeroSSL), DNS-01 with 22 DNS providers, imported certificates, and an optional built-in CA for client certificates (mTLS) with role-based path rules
 - **Visibility:** traffic analytics in ClickHouse, security events and an audit log of every change
-- **Instance sync:** a master pushes its configuration to slaves, with secrets sealed to each slave's own key
+- **Optional protections, per host** (off until an administrator turns them on): a web application firewall (Coraza with the OWASP Core Rule Set, per-host modes, rule exclusions and custom SecLang rules), access lists (address, country, continent and AS number rules, and basic auth), geo blocking and rate limiting
+- **Users and sign-in:** dashboard accounts and groups, OAuth2/OIDC sign-in to the dashboard, multi-factor authentication and passkeys, and an optional sign-in portal in front of proxied apps, which reuses dashboard sign-ins from your identity provider and passes the user's identity to the app in headers (or Authentik and other forward-auth servers instead)
+- **Instance sync:** a master copies its own configuration to replicas, with secrets sealed to each replica's own key
 - **REST API** under `/api/v1/` with API tokens and an OpenAPI reference at `/api-docs`, and a command palette (Ctrl+K / ⌘K)
 - **Dark mode** and a responsive interface for phones
 
@@ -51,8 +50,8 @@ The paid editions (Homelab, Business and Enterprise) add features such as alerti
 - **Installing and running:** [Configuration reference](documentation/configuration.md), [Security](documentation/security.md), [Upgrade notes](documentation/upgrade-notes.md), [Upgrading from Caddy Proxy Manager](documentation/upgrading-to-ingressi.md), [Setup checklist](documentation/setup-checklist.md), [PostgreSQL](documentation/postgresql.md), [Instance sync](documentation/instance-sync.md), [Anonymous usage ping](documentation/usage-ping.md)
 - **Dashboard:** [Overview](documentation/overview.md), [Needs attention](documentation/needs-attention.md), [Search and the command palette](documentation/command-palette.md), [Settings](documentation/settings.md), [Profile, sessions and API tokens](documentation/profile.md), [Audit log](documentation/audit-log.md), [Charts](documentation/charts.md)
 - **Hosts and certificates:** [Proxy hosts](documentation/proxy-hosts.md), [Proxy host editor](documentation/proxy-host-editor.md), [L4 proxy hosts](documentation/l4-proxy-hosts.md), [Host tags](documentation/host-tags.md), [Certificates](documentation/certificates.md), [Default response](documentation/default-response.md), [Upstream DNS pinning](documentation/upstream-dns-pinning.md)
-- **Protection:** [Web application firewall](documentation/waf.md), [Security events](documentation/security-events.md), [Access lists](documentation/access-lists.md), [Geo blocking](documentation/geo-blocking.md), [Rate limiting](documentation/rate-limiting.md)
-- **Sign-in and users:** [Forward auth portal](documentation/forward-auth.md), [OAuth and OpenID Connect sign-in](documentation/oauth.md), [Users and groups](documentation/users-and-groups.md), [Sign-in and directories](documentation/sign-in-and-directories.md), [Multi-factor authentication](documentation/mfa.md)
+- **Optional protections:** [Web application firewall](documentation/waf.md), [Security events](documentation/security-events.md), [Access lists](documentation/access-lists.md), [Geo blocking](documentation/geo-blocking.md), [Rate limiting](documentation/rate-limiting.md)
+- **Users and sign-in:** [Forward auth portal](documentation/forward-auth.md), [OAuth and OpenID Connect sign-in](documentation/oauth.md), [Users and groups](documentation/users-and-groups.md), [Sign-in and directories](documentation/sign-in-and-directories.md), [Multi-factor authentication](documentation/mfa.md)
 - **Analytics:** [Traffic analytics](documentation/analytics.md)
 - **Paid features:** [ee/docs/](ee/docs/README.md)
 
@@ -83,6 +82,6 @@ Caddy is a trademark of its respective owner. Ingressi is an independent project
 
 ## Acknowledgments
 
-- [Caddy](https://caddyserver.com/), the web server Ingressi configures
+- [Caddy](https://caddyserver.com/), the web server Ingressi is built on
 - [Nginx Proxy Manager](https://github.com/NginxProxyManager/nginx-proxy-manager), which inspired the project
 - [Next.js](https://nextjs.org/), [shadcn/ui](https://ui.shadcn.com/) and [Drizzle ORM](https://orm.drizzle.team/)
