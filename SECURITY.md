@@ -44,7 +44,7 @@ cosign verify ghcr.io/ingres-si/ingressi-web:latest \
   --certificate-identity-regexp '^https://github\.com/ingres-si/(caddy-proxy-manager|ingressi)/\.github/workflows/docker-build-trusted\.yml@refs/(heads|tags)/'
 ```
 
-The same works for `ingressi-caddy` and `ingressi-l4-port-manager`, and for the images under their former `caddy-proxy-manager-*` names. Each GitHub release also has a CycloneDX SBOM of the source tree attached.
+The same works for `ingressi-caddy` and `ingressi-l4-port-manager`, and for the images under their former `caddy-proxy-manager-*` names. From v2.0.1, each GitHub release also has a CycloneDX SBOM of the source tree attached.
 
 ## Security Measures
 
@@ -53,7 +53,7 @@ The same works for `ingressi-caddy` and `ingressi-l4-port-manager`, and for the 
 Our CI/CD pipeline implements multiple security layers:
 
 1. **Fork PR Protection**: Pull requests from forks require manual approval (via `safe-to-build` label) before builds run
-2. **SBOM Generation**: Software Bill of Materials is generated for all builds, and a CycloneDX SBOM is attached to every release
+2. **SBOM Generation**: Software Bill of Materials is generated for all builds, and from v2.0.1 a CycloneDX SBOM is attached to every release
 3. **Provenance Attestation**: Build provenance is recorded for supply chain security
 4. **Signed Images**: Release images are signed with cosign keyless signing (see [Verifying Release Images](#verifying-release-images))
 5. **Limited Permissions**: Workflows use minimal required permissions

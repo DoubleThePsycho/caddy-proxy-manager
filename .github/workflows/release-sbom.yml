@@ -1,12 +1,16 @@
 name: Release SBOM
 
 # Attaches a CycloneDX SBOM of the source tree (JavaScript and Go
-# dependencies) to every published release. Each image also carries its own
-# SBOM attestation from the build (docker-build-trusted.yml).
+# dependencies) to the release of every version tag. Releases are immutable
+# once published, so the SBOM goes onto a draft first: pushing a tag creates a
+# draft release with its SBOM, and publishing the draft locks both
+# (gh release edit vX.Y.Z --draft=false --title … --notes-file …).
+# Each image also carries its own SBOM attestation from the build
+# (docker-build-trusted.yml).
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*']
 
 permissions:
   contents: write
@@ -18,10 +22,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Generate and attach the SBOM
+      - name: Generate the SBOM
         uses: anchore/sbom-action@v0
         with:
           path: .
           format: cyclonedx-json
-          artifact-name: ingressi-${{ github.event.release.tag_name }}.cdx.json
-          upload-release-assets: true
+          output-file: ingressi-${{ github.ref_name }}.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Attach it to the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --verify-tag --title "Ingressi $TAG" --notes "Release notes follow before publishing."
+          fi
+          gh release upload "$TAG" "ingressi-$TAG.cdx.json" --clobber
